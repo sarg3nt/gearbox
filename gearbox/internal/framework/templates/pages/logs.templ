@@ -1,0 +1,1099 @@
+package pages
+
+import "github.com/sarg3nt/gearbox/internal/framework/models"
+import "github.com/sarg3nt/gearbox/internal/framework/templates/layouts"
+import "github.com/sarg3nt/gearbox/internal/framework/templates/components"
+
+templ Logs(user *models.User, servers []models.ServerConfig) {
+	@layouts.Base("Logs", user, "/logs") {
+		<!-- Include ansi_up library for log colorization -->
+		<script type="module" src="/static/js/vendor/ansi_up_wrapper.js"></script>
+
+		<!-- Hidden container for page header content - will be moved to main header via JS -->
+		<div id="page-header-source" class="hidden">
+			<!-- Left side: Title with integrated server selector (matching Dashboard style) -->
+			<div class="flex items-center">
+				<h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">
+					Logs
+					if len(servers) > 1 {
+						<span class="text-gray-400 dark:text-gray-500 mx-2">:</span>
+						<span class="inline-block relative">
+							<select
+								id="server-select"
+								class="appearance-none bg-transparent text-xl font-bold text-gray-800 dark:text-gray-100 pr-7 cursor-pointer focus:outline-none hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+								onchange="onServerChange()"
+							>
+								for _, server := range servers {
+									<option value={ server.ID }>{ server.Name }</option>
+								}
+							</select>
+							<!-- Subtle dropdown indicator -->
+							<svg class="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+							</svg>
+						</span>
+					} else if len(servers) == 1 {
+						<span class="text-gray-400 dark:text-gray-500 mx-2">:</span>
+						<span id="single-server-name">{ servers[0].Name }</span>
+					}
+				</h2>
+			</div>
+			<!-- Right side spacer -->
+			<div class="flex-1"></div>
+			<!-- Controls -->
+			<div class="flex items-center space-x-3">
+				<!-- Log source and lines selectors -->
+				if len(servers) > 0 {
+					<select
+						id="log-select"
+						class="h-[38px] px-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+						onchange="onLogSourceChange()"
+					>
+						<option value="haproxy">HAProxy</option>
+						<option value="system">System</option>
+					</select>
+					<select
+						id="lines-select"
+						class="h-[38px] px-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+						onchange="loadLogs()"
+					>
+						<option value="50">50</option>
+						<option value="100" selected>100</option>
+						<option value="200">200</option>
+						<option value="500">500</option>
+					</select>
+				}
+
+				<!-- Filter input and severity -->
+				<div class="relative">
+					<input
+						type="text"
+						id="filter-input"
+						placeholder="Filter..."
+						class="h-[38px] w-32 px-3 py-1.5 pr-8 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+						oninput="filterLogs()"
+					/>
+					<button
+						type="button"
+						id="filter-clear"
+						class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hidden"
+						onclick="clearLogFilter()"
+					>
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+						</svg>
+					</button>
+				</div>
+				<select
+					id="severity-filter"
+					class="h-[38px] px-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+					onchange="filterLogs()"
+				>
+					<option value="all">All</option>
+					<option value="warnings">Warnings</option>
+					<option value="errors">Errors</option>
+				</select>
+
+				<!-- Font size slider -->
+				<div class="flex items-center gap-2">
+					<label class="text-sm font-medium text-gray-700 dark:text-gray-300">Font:</label>
+					<input
+						type="range"
+						id="font-size-slider"
+						min="10"
+						max="24"
+						value="14"
+						class="w-20 h-2 bg-gray-200 dark:bg-slate-600 rounded-lg appearance-none cursor-pointer"
+						oninput="updateFontSize(this.value)"
+					/>
+					<span id="font-size-value" class="text-sm text-gray-600 dark:text-gray-400 w-10">14px</span>
+				</div>
+
+				<!-- Manual Refresh button with SSE status indicator -->
+				<button
+					id="refresh-btn"
+					onclick="manualRefresh()"
+					class="p-2 rounded-lg transition-colors text-gray-400"
+					title="Connecting..."
+				>
+					<svg id="refresh-icon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+					</svg>
+				</button>
+
+				<!-- Copy button -->
+				<button
+					onclick="copyLogs()"
+					class="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-600 rounded transition-colors border border-gray-300 dark:border-slate-600"
+					title="Copy to Clipboard"
+				>
+					<svg id="copy-icon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+					</svg>
+				</button>
+
+				<!-- Download button -->
+				<button
+					onclick="downloadLogs()"
+					class="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-600 rounded transition-colors border border-gray-300 dark:border-slate-600"
+					title="Download Logs"
+				>
+					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+					</svg>
+				</button>
+
+				<!-- Fullscreen button -->
+				<button
+					onclick="toggleFullscreen()"
+					id="fullscreen-button"
+					class="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-600 rounded transition-colors border border-gray-300 dark:border-slate-600"
+					title="Browser Fullscreen"
+				>
+					<svg id="fullscreen-icon-normal" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+					</svg>
+					<svg id="fullscreen-icon-browser" class="w-5 h-5 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7l2 2m6-2l-2 2m-4 4l-2 2m8-2l2 2" opacity="0.5"></path>
+					</svg>
+					<svg id="fullscreen-icon-true" class="w-5 h-5 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4l4 4M8 4H4v4"></path>
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 4l-4 4M16 4h4v4"></path>
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 20l4-4M8 20H4v-4"></path>
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 20l-4-4M16 20h4v-4"></path>
+					</svg>
+				</button>
+			</div>
+		</div>
+
+		<!-- Hidden server ID for single-server mode -->
+		if len(servers) > 0 {
+			<input type="hidden" id="default-server-id" value={ servers[0].ID }/>
+		}
+
+		<div id="log-page-container" class="-mx-6 -mt-6">
+			if len(servers) == 0 {
+				<div class="p-6">
+					@components.InfoAlert("No servers configured.")
+				</div>
+			} else {
+				<!-- Log card - flush to edges, almost black background -->
+				<div id="log-card" class="bg-[#0d0d0d] overflow-hidden">
+					<!-- Log container -->
+					<div
+						id="log-container"
+						class="bg-[#0d0d0d] text-gray-300 px-4 py-3 font-mono text-sm overflow-auto"
+						style="font-size: 14px;"
+					>
+						@components.LoadingSpinner()
+					</div>
+				</div>
+			}
+		</div>
+
+		<!-- Fullscreen styles -->
+		<style>
+			.fullscreen-mode {
+				position: fixed !important;
+				top: 0 !important;
+				left: 0 !important;
+				width: 100vw !important;
+				height: 100vh !important;
+				margin: 0 !important;
+				border-radius: 0 !important;
+				display: flex !important;
+				flex-direction: column !important;
+				z-index: 9999 !important;
+			}
+			.fullscreen-mode #log-container {
+				flex: 1 !important;
+				height: auto !important;
+			}
+			/* ANSI color classes for ansi_up */
+			.ansi-black-fg { color: #4e4e4e; }
+			.ansi-red-fg { color: #ff6b6b; }
+			.ansi-green-fg { color: #69db7c; }
+			.ansi-yellow-fg { color: #ffd43b; }
+			.ansi-blue-fg { color: #74c0fc; }
+			.ansi-magenta-fg { color: #da77f2; }
+			.ansi-cyan-fg { color: #66d9e8; }
+			.ansi-white-fg { color: #f8f9fa; }
+			.ansi-bright-black-fg { color: #868e96; }
+			.ansi-bright-red-fg { color: #ff8787; }
+			.ansi-bright-green-fg { color: #8ce99a; }
+			.ansi-bright-yellow-fg { color: #ffe066; }
+			.ansi-bright-blue-fg { color: #91d5ff; }
+			.ansi-bright-magenta-fg { color: #e599f7; }
+			.ansi-bright-cyan-fg { color: #99e9f2; }
+			.ansi-bright-white-fg { color: #ffffff; }
+			.ansi-black-bg { background-color: #4e4e4e; }
+			.ansi-red-bg { background-color: #ff6b6b; }
+			.ansi-green-bg { background-color: #69db7c; }
+			.ansi-yellow-bg { background-color: #ffd43b; }
+			.ansi-blue-bg { background-color: #74c0fc; }
+			.ansi-magenta-bg { background-color: #da77f2; }
+			.ansi-cyan-bg { background-color: #66d9e8; }
+			.ansi-white-bg { background-color: #f8f9fa; }
+			.ansi-bold { font-weight: bold; }
+			.ansi-italic { font-style: italic; }
+			.ansi-underline { text-decoration: underline; }
+		</style>
+
+		<script>
+		let eventSource = null;
+		let rawLogContent = '';
+		let fullscreenState = 0; // 0 = normal, 1 = browser fullscreen, 2 = true fullscreen
+		let ansi_up_instance = null;
+		let currentFontSize = 14;
+		let logSourcesCache = {}; // Cache log sources per server
+		let currentLogSource = ''; // Track current log source for SSE filtering
+		let maxLogLines = 500; // Maximum lines to keep in view
+		const FONT_SIZE_STORAGE_KEY = 'logs-font-size';
+
+		// Move page header content to main header
+		function setupPageHeader() {
+			const source = document.getElementById('page-header-source');
+			const target = document.getElementById('header-page-content');
+			if (source && target) {
+				while (source.firstChild) {
+					target.appendChild(source.firstChild);
+				}
+			}
+		}
+
+		// Initialize ansi_up
+		function initAnsiUp() {
+			if (typeof AnsiUp !== 'undefined') {
+				ansi_up_instance = new AnsiUp();
+				ansi_up_instance.use_classes = true;
+			}
+		}
+
+		function getStoredFontSize() {
+			return parseInt(localStorage.getItem(FONT_SIZE_STORAGE_KEY)) || 14;
+		}
+
+		function updateFontSize(size) {
+			size = parseInt(size);
+			currentFontSize = size;
+			localStorage.setItem(FONT_SIZE_STORAGE_KEY, size);
+			const container = document.getElementById('log-container');
+			const valueDisplay = document.getElementById('font-size-value');
+			if (container) {
+				container.style.fontSize = size + 'px';
+				// Update line height to scale with font size (1.6x ratio)
+				container.style.lineHeight = (size * 1.6) + 'px';
+			}
+			if (valueDisplay) {
+				valueDisplay.textContent = size + 'px';
+			}
+		}
+
+		// Load available log sources for the selected server
+		async function loadLogSources(serverID) {
+			// Check cache first
+			if (logSourcesCache[serverID]) {
+				populateLogSourceDropdown(logSourcesCache[serverID]);
+				return;
+			}
+
+			try {
+				const response = await fetch(`/api/${serverID}/log-sources`);
+				const data = await response.json();
+
+				if (data.sources && data.sources.length > 0) {
+					logSourcesCache[serverID] = data.sources;
+					populateLogSourceDropdown(data.sources);
+				} else {
+					// Fallback to default sources
+					const defaultSources = [
+						{ name: 'haproxy', display_name: 'HAProxy' },
+						{ name: 'system', display_name: 'System' }
+					];
+					logSourcesCache[serverID] = defaultSources;
+					populateLogSourceDropdown(defaultSources);
+				}
+			} catch (error) {
+				console.error('Failed to load log sources:', error);
+				// Fallback to default sources on error
+				const defaultSources = [
+					{ name: 'haproxy', display_name: 'HAProxy' },
+					{ name: 'system', display_name: 'System' }
+				];
+				populateLogSourceDropdown(defaultSources);
+			}
+		}
+
+		function populateLogSourceDropdown(sources) {
+			const select = document.getElementById('log-select');
+			const currentValue = select.value;
+
+			// Clear existing options
+			select.innerHTML = '';
+
+			// Add new options
+			sources.forEach(source => {
+				const option = document.createElement('option');
+				option.value = source.name;
+				option.textContent = source.display_name;
+				select.appendChild(option);
+			});
+
+			// Try to restore previous selection, otherwise select first option
+			if (sources.some(s => s.name === currentValue)) {
+				select.value = currentValue;
+			} else if (sources.length > 0) {
+				select.value = sources[0].name;
+			}
+		}
+
+		// Get current server ID - handles both multi-server (select) and single-server (hidden input) modes
+		function getServerID() {
+			const selector = document.getElementById('server-select');
+			if (selector) return selector.value;
+			const defaultServer = document.getElementById('default-server-id');
+			if (defaultServer) return defaultServer.value;
+			return '';
+		}
+
+		// Called when server selection changes
+		function onServerChange() {
+			const serverID = getServerID();
+			loadLogSources(serverID);
+			loadLogs();
+			// Reconnect SSE for new server
+			initSSE();
+		}
+
+		// Called when log source selection changes
+		function onLogSourceChange() {
+			const logSelect = document.getElementById('log-select');
+			currentLogSource = logSelect.value;
+			loadLogs();
+		}
+
+		// SSE connection status - update refresh button color
+		function updateSSEStatus(status) {
+			const btn = document.getElementById('refresh-btn');
+			if (!btn) return;
+
+			// Remove all status classes
+			btn.classList.remove('text-green-500', 'text-red-500', 'text-yellow-500', 'text-gray-400');
+
+			switch (status) {
+				case 'connected':
+					btn.classList.add('text-green-500');
+					btn.title = 'Live - streaming data';
+					break;
+				case 'connecting':
+					btn.classList.add('text-yellow-500');
+					btn.title = 'Connecting...';
+					break;
+				case 'disconnected':
+					btn.classList.add('text-red-500');
+					btn.title = 'Disconnected - click to reconnect';
+					break;
+				default:
+					btn.classList.add('text-gray-400');
+					btn.title = 'Refresh';
+			}
+		}
+
+		// Initialize SSE connection for real-time log streaming
+		function initSSE() {
+			if (eventSource) {
+				eventSource.close();
+			}
+
+			const serverID = getServerID();
+
+			updateSSEStatus('connecting');
+
+			const sseUrl = serverID ? `/api/events?server=${serverID}` : '/api/events';
+			eventSource = new EventSource(sseUrl);
+
+			eventSource.onopen = function() {
+				console.log('SSE connected for logs');
+				updateSSEStatus('connected');
+			};
+
+			eventSource.onerror = function(e) {
+				console.error('SSE error:', e);
+				updateSSEStatus('disconnected');
+				// Reconnect after a delay
+				setTimeout(() => {
+					if (eventSource && eventSource.readyState === EventSource.CLOSED) {
+						initSSE();
+					}
+				}, 3000);
+			};
+
+			// Listen for log updates
+			eventSource.addEventListener('logs.updated', function(e) {
+				try {
+					const data = JSON.parse(e.data);
+					// Only append if the log source matches current selection
+					if (data.data && data.data.source === currentLogSource) {
+						appendLogLine(data.data.line);
+					}
+				} catch (err) {
+					console.error('Failed to parse log event:', err);
+				}
+			});
+
+			// Keep connection alive with heartbeat
+			eventSource.addEventListener('heartbeat', function(e) {
+				// Connection is alive
+			});
+		}
+
+		// Append a single log line to the container
+		function appendLogLine(line) {
+			if (!line || !line.trim()) return;
+
+			const container = document.getElementById('log-container');
+			if (!container) return;
+
+			// Update raw content
+			rawLogContent += (rawLogContent ? '\n' : '') + line;
+
+			// Create and append the colorized line
+			const lineHtml = colorizeHAProxyLog(line);
+			const tempDiv = document.createElement('div');
+			tempDiv.innerHTML = lineHtml;
+			const newLine = tempDiv.firstChild;
+
+			container.appendChild(newLine);
+
+			// Trim old lines if we exceed max
+			const lines = container.getElementsByClassName('log-line');
+			while (lines.length > maxLogLines) {
+				lines[0].remove();
+				// Also trim rawLogContent
+				const firstNewline = rawLogContent.indexOf('\n');
+				if (firstNewline > -1) {
+					rawLogContent = rawLogContent.substring(firstNewline + 1);
+				}
+			}
+
+			// Apply current filter to new line
+			filterSingleLine(newLine);
+
+			// Auto-scroll to bottom if near bottom
+			const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+			if (isNearBottom) {
+				container.scrollTop = container.scrollHeight;
+			}
+		}
+
+		// Filter a single line element
+		function filterSingleLine(lineEl) {
+			const input = document.getElementById('filter-input');
+			const filter = input ? input.value.toLowerCase() : '';
+			const severityFilter = document.getElementById('severity-filter');
+			const severityValue = severityFilter ? severityFilter.value : 'all';
+
+			const textMatch = filter === '' || lineEl.textContent.toLowerCase().includes(filter);
+			const severity = lineEl.getAttribute('data-severity') || 'normal';
+
+			let severityMatch = true;
+			if (severityValue === 'errors') {
+				severityMatch = severity === 'error';
+			} else if (severityValue === 'warnings') {
+				severityMatch = severity === 'warning' || severity === 'error';
+			}
+
+			lineEl.style.display = (textMatch && severityMatch) ? 'block' : 'none';
+		}
+
+		function loadLogs() {
+			const serverID = getServerID();
+			const logName = document.getElementById('log-select').value;
+			const lines = document.getElementById('lines-select').value;
+
+			if (!serverID) {
+				console.error('No server ID available');
+				return;
+			}
+
+			// Update current log source for SSE filtering
+			currentLogSource = logName;
+
+			// Update max lines based on selection
+			maxLogLines = parseInt(lines) || 500;
+
+			const url = `/api/${serverID}/logs/${logName}?lines=${lines}`;
+
+			fetch(url)
+				.then(response => response.json())
+				.then(data => {
+					rawLogContent = data.logs || 'No logs available';
+					displayLogs(rawLogContent);
+				})
+				.catch(error => {
+					document.getElementById('log-container').innerHTML =
+						'<div class="text-red-400">Error loading logs: ' + error.message + '</div>';
+				});
+		}
+
+		function getSeverity(line) {
+			// Firewall drop messages are informational, not errors
+			if (line.includes('nft-drop-input') || line.includes('nft-drop-output') || line.includes('nft-drop-forward')) {
+				return 'normal';
+			}
+
+			const upperLine = line.toUpperCase();
+			if (upperLine.includes('ERROR') || upperLine.includes('CRITICAL') || upperLine.includes('FATAL') ||
+			    upperLine.includes('FAIL') || upperLine.includes('[ERROR]') || /\berror:/i.test(line)) {
+				return 'error';
+			}
+			if (upperLine.includes('WARN') || upperLine.includes('WARNING') || upperLine.includes('[WARN')) {
+				return 'warning';
+			}
+			return 'normal';
+		}
+
+		function colorizeHAProxyLog(line) {
+			const severity = getSeverity(line);
+			let lineClass = '';
+			if (severity === 'error') lineClass = 'log-error-line';
+			else if (severity === 'warning') lineClass = 'log-warning-line';
+
+			// Pattern 1: HAProxy HTTP access log
+			// Jan 15 14:40:23 light-hugger haproxy[26292581]: 10.0.0.163:55619 [15/Jan/2026:14:40:23.190] https_front~ hardware_thor_backend/hardware_thor_backend_srv 0/0/11/9/20 200 1082
+			const accessLogRegex = /^(\w+\s+\d+\s+\d+:\d+:\d+)\s+(\S+)\s+(\S+)\[(\d+)\]:\s+(\S+:\d+)\s+\[([^\]]+)\]\s+(\S+)\s+(\S+)\s+([-\d\/]+)\s+(\d+)\s+(\d+)\s+(.*?)(?:\s+"([^"]+)")?$/;
+			let match = line.match(accessLogRegex);
+
+			if (match) {
+				const [_, timestamp, hostname, process, pid, clientAddr, acceptDate, frontend, backendServer, timings, statusCode, bytes, metadata, httpRequest] = match;
+
+				let statusClass = 'status-2xx';
+				const status = parseInt(statusCode);
+				if (status >= 500) statusClass = 'status-5xx';
+				else if (status >= 400) statusClass = 'status-4xx';
+				else if (status >= 300) statusClass = 'status-3xx';
+
+				let requestPart = '';
+				if (httpRequest) {
+					const httpParts = httpRequest.match(/^(\w+)\s+(.+?)\s+(HTTP\/[\d.]+)$/);
+					if (httpParts) {
+						const [__, method, path, protocol] = httpParts;
+						requestPart = ` <span class="log-quote">"</span><span class="http-method">${escapeHtml(method)}</span> <span class="http-path">${escapeHtml(path)}</span> <span class="http-protocol">${escapeHtml(protocol)}</span><span class="log-quote">"</span>`;
+					} else {
+						requestPart = ` <span class="log-quote">"</span><span class="http-path">${escapeHtml(httpRequest)}</span><span class="log-quote">"</span>`;
+					}
+				}
+
+				return `<div class="log-line ${lineClass}" data-severity="${severity}">` +
+					`<span class="log-timestamp">${escapeHtml(timestamp)}</span> ` +
+					`<span class="log-hostname">${escapeHtml(hostname)}</span> ` +
+					`<span class="log-process">${escapeHtml(process)}[${escapeHtml(pid)}]:</span> ` +
+					`<span class="log-client">${escapeHtml(clientAddr)}</span> ` +
+					`<span class="log-bracket">[</span><span class="log-date">${escapeHtml(acceptDate)}</span><span class="log-bracket">]</span> ` +
+					`<span class="log-frontend">${escapeHtml(frontend)}</span> ` +
+					`<span class="log-backend">${escapeHtml(backendServer)}</span> ` +
+					`<span class="log-timings">${escapeHtml(timings)}</span> ` +
+					`<span class="${statusClass}">${escapeHtml(statusCode)}</span> ` +
+					`<span class="log-bytes">${escapeHtml(bytes)}</span> ` +
+					`<span class="log-metadata">${escapeHtml(metadata)}</span>${requestPart}` +
+					`</div>`;
+			}
+
+			// Pattern 2: HAProxy status/server messages
+			// Jan 15 14:34:06 light-hugger haproxy[26292581]: [ WARNING ] (26292581) : Server vaultwarden_vaultwarden_backend/vaultwarden_vaultwarden_backend_srv is UP
+			const statusLogRegex = /^(\w+\s+\d+\s+\d+:\d+:\d+)\s+(\S+)\s+(\S+)\[(\d+)\]:\s+(.+)$/;
+			match = line.match(statusLogRegex);
+
+			if (match) {
+				const [_, timestamp, hostname, process, pid, message] = match;
+				let coloredMessage = escapeHtml(message);
+
+				// Highlight severity indicators
+				coloredMessage = coloredMessage.replace(/\[\s*(WARNING|WARN)\s*\]/gi, '<span class="keyword-warning">[$1]</span>');
+				coloredMessage = coloredMessage.replace(/\[\s*(ERROR|CRITICAL|FATAL)\s*\]/gi, '<span class="keyword-error">[$1]</span>');
+				coloredMessage = coloredMessage.replace(/\[\s*(INFO)\s*\]/gi, '<span class="keyword-info">[$1]</span>');
+
+				// Highlight server states
+				coloredMessage = coloredMessage.replace(/\b(is UP|UP)\b/g, '<span class="status-up">$1</span>');
+				coloredMessage = coloredMessage.replace(/\b(is DOWN|DOWN)\b/g, '<span class="status-down">$1</span>');
+				coloredMessage = coloredMessage.replace(/\b(failed|failure|handshake failure)\b/gi, '<span class="keyword-error">$1</span>');
+
+				// Highlight server/backend names
+				coloredMessage = coloredMessage.replace(/\b(\w+_backend\/\w+_srv)\b/g, '<span class="log-backend">$1</span>');
+				coloredMessage = coloredMessage.replace(/\b(Server\s+)(\S+)/g, '$1<span class="log-backend">$2</span>');
+
+				// Highlight IPs
+				coloredMessage = coloredMessage.replace(/\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/g, '<span class="ip-address">$1</span>');
+
+				// Highlight error codes/messages in parentheses
+				coloredMessage = coloredMessage.replace(/\(\s*(error:[^)]+)\s*\)/gi, '(<span class="keyword-error">$1</span>)');
+
+				return `<div class="log-line ${lineClass}" data-severity="${severity}">` +
+					`<span class="log-timestamp">${escapeHtml(timestamp)}</span> ` +
+					`<span class="log-hostname">${escapeHtml(hostname)}</span> ` +
+					`<span class="log-process">${escapeHtml(process)}[${escapeHtml(pid)}]:</span> ` +
+					`${coloredMessage}` +
+					`</div>`;
+			}
+
+			// Pattern 3: System/kernel logs (no haproxy process name)
+			// Jan 15 17:02:16 light-hugger kernel: nft-drop-input: IN=eno8 OUT= MAC=...
+			const systemLogRegex = /^(\w+\s+\d+\s+\d+:\d+:\d+)\s+(\S+)\s+(\S+):\s+(.+)$/;
+			match = line.match(systemLogRegex);
+
+			if (match) {
+				const [_, timestamp, hostname, process, message] = match;
+				let coloredMessage = escapeHtml(message);
+
+				// Highlight network interfaces
+				coloredMessage = coloredMessage.replace(/\b(IN|OUT|SRC|DST|PROTO|SPT|DPT|LEN|MAC)=/g, '<span class="sys-label">$1</span>=');
+
+				// Highlight IPs and MACs
+				coloredMessage = coloredMessage.replace(/=(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/g, '=<span class="ip-address">$1</span>');
+				coloredMessage = coloredMessage.replace(/=([a-f0-9]{2}:[a-f0-9]{2}:[a-f0-9]{2}:[a-f0-9]{2}:[a-f0-9]{2}:[a-f0-9]{2})/gi, '=<span class="mac-address">$1</span>');
+
+				// Highlight protocols
+				coloredMessage = coloredMessage.replace(/=(TCP|UDP|ICMP|HTTP|HTTPS)\b/gi, '=<span class="protocol">$1</span>');
+
+				// Highlight numbers
+				coloredMessage = coloredMessage.replace(/=(\d+)\b/g, '=<span class="sys-number">$1</span>');
+
+				// Highlight stats keyword
+				coloredMessage = coloredMessage.replace(/\b(stats)\b/gi, '<span class="keyword-info">$1</span>');
+
+				return `<div class="log-line ${lineClass}" data-severity="${severity}">` +
+					`<span class="log-timestamp">${escapeHtml(timestamp)}</span> ` +
+					`<span class="log-hostname">${escapeHtml(hostname)}</span> ` +
+					`<span class="sys-process">${escapeHtml(process)}:</span> ` +
+					`${coloredMessage}` +
+					`</div>`;
+			}
+
+			// Fallback: Generic colorization with ANSI support
+			let processedLine = line;
+			if (ansi_up_instance && /\x1b\[/.test(line)) {
+				processedLine = ansi_up_instance.ansi_to_html(line);
+			} else {
+				processedLine = escapeHtml(line);
+
+				// Extract timestamp if present at start
+				processedLine = processedLine.replace(/^(\w+\s+\d+\s+\d+:\d+:\d+)/, '<span class="log-timestamp">$1</span>');
+
+				// Highlight keywords
+				processedLine = processedLine.replace(/\b(ERROR|error|CRITICAL|FATAL|fatal|failed|failure)\b/gi, '<span class="keyword-error">$1</span>');
+				processedLine = processedLine.replace(/\b(WARN|warning|WARNING)\b/gi, '<span class="keyword-warning">$1</span>');
+				processedLine = processedLine.replace(/\b(INFO|info)\b/g, '<span class="keyword-info">$1</span>');
+				processedLine = processedLine.replace(/\b(DEBUG|debug)\b/gi, '<span class="keyword-debug">$1</span>');
+
+				// Color IP addresses
+				processedLine = processedLine.replace(/\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b/g, '<span class="ip-address">$1</span>');
+
+				// Color HTTP methods
+				processedLine = processedLine.replace(/\b(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\b/g, '<span class="http-method">$1</span>');
+
+				// Color HTTP status codes
+				processedLine = processedLine.replace(/\b([2345]\d{2})\b/g, (match) => {
+					const code = parseInt(match);
+					let cls = 'status-2xx';
+					if (code >= 500) cls = 'status-5xx';
+					else if (code >= 400) cls = 'status-4xx';
+					else if (code >= 300) cls = 'status-3xx';
+					return `<span class="${cls}">${match}</span>`;
+				});
+			}
+
+			return `<div class="log-line ${lineClass}" data-severity="${severity}">${processedLine}</div>`;
+		}
+
+		function displayLogs(logs) {
+			const container = document.getElementById('log-container');
+			const lines = logs.split('\n');
+
+			container.innerHTML = lines.map(line => {
+				if (!line.trim()) return '<div class="log-line"></div>';
+				return colorizeHAProxyLog(line);
+			}).join('');
+
+			// Apply CSS for log colorization
+			const styleEl = document.getElementById('log-level-styles');
+			if (!styleEl) {
+				const style = document.createElement('style');
+				style.id = 'log-level-styles';
+				style.textContent = `
+					.log-line { white-space: pre-wrap; word-break: break-all; padding: 2px 0; }
+
+					/* HAProxy log field colors */
+					.log-timestamp { color: #a78bfa; font-weight: 500; }
+					.log-hostname { color: #60a5fa; }
+					.log-process { color: #6ee7b7; }
+					.log-client { color: #fbbf24; }
+					.log-date { color: #c084fc; }
+					.log-bracket { color: #6b7280; }
+					.log-frontend { color: #34d399; font-weight: 500; }
+					.log-backend { color: #22d3ee; font-weight: 500; }
+					.log-timings { color: #fb923c; }
+					.log-bytes { color: #a3e635; }
+					.log-metadata { color: #94a3b8; }
+					.log-quote { color: #6b7280; }
+
+					/* System log colors */
+					.sys-process { color: #4ade80; font-weight: 500; }
+					.sys-label { color: #a78bfa; font-weight: 500; }
+					.sys-number { color: #fbbf24; }
+					.mac-address { color: #34d399; }
+					.protocol { color: #f472b6; font-weight: bold; }
+
+					/* HTTP request parts */
+					.http-method { color: #f472b6; font-weight: bold; }
+					.http-path { color: #fde047; }
+					.http-protocol { color: #818cf8; }
+
+					/* Status code colors */
+					.status-2xx { color: #4ade80; font-weight: bold; }
+					.status-3xx { color: #60a5fa; font-weight: bold; }
+					.status-4xx { color: #fbbf24; font-weight: bold; }
+					.status-5xx { color: #f87171; font-weight: bold; }
+
+					/* Server status colors */
+					.status-up { color: #4ade80; font-weight: bold; }
+					.status-down { color: #f87171; font-weight: bold; }
+
+					/* Keyword highlighting */
+					.keyword-error { color: #ff6b6b; font-weight: bold; background: rgba(255, 107, 107, 0.15); padding: 2px 4px; border-radius: 3px; }
+					.keyword-warning { color: #ffd43b; font-weight: bold; background: rgba(255, 212, 59, 0.15); padding: 2px 4px; border-radius: 3px; }
+					.keyword-info { color: #74c0fc; font-weight: bold; }
+					.keyword-debug { color: #868e96; }
+
+					/* IP addresses */
+					.ip-address { color: #fbbf24; }
+
+					/* Error/warning line highlighting */
+					.log-error-line { background: rgba(255, 107, 107, 0.08); border-left: 3px solid #ff6b6b; padding-left: 8px; }
+					.log-warning-line { background: rgba(255, 212, 59, 0.08); border-left: 3px solid #ffd43b; padding-left: 8px; }
+				`;
+				document.head.appendChild(style);
+			}
+
+			filterLogs();
+
+			// Auto-scroll to bottom
+			container.scrollTop = container.scrollHeight;
+		}
+
+		function filterLogs() {
+			const input = document.getElementById('filter-input');
+			const filter = input.value.toLowerCase();
+			const severityFilter = document.getElementById('severity-filter').value;
+			const container = document.getElementById('log-container');
+			const lines = container.getElementsByClassName('log-line');
+			const clearBtn = document.getElementById('filter-clear');
+
+			// Show/hide clear button
+			if (filter.length > 0) {
+				clearBtn.classList.remove('hidden');
+			} else {
+				clearBtn.classList.add('hidden');
+			}
+
+			for (let line of lines) {
+				const textMatch = filter === '' || line.textContent.toLowerCase().includes(filter);
+				const severity = line.getAttribute('data-severity') || 'normal';
+
+				let severityMatch = true;
+				if (severityFilter === 'errors') {
+					severityMatch = severity === 'error';
+				} else if (severityFilter === 'warnings') {
+					severityMatch = severity === 'warning' || severity === 'error';
+				}
+
+				if (textMatch && severityMatch) {
+					line.style.display = 'block';
+				} else {
+					line.style.display = 'none';
+				}
+			}
+		}
+
+		function clearLogFilter() {
+			const input = document.getElementById('filter-input');
+			input.value = '';
+			document.getElementById('filter-clear').classList.add('hidden');
+			filterLogs();
+			input.focus();
+		}
+
+		function escapeHtml(text) {
+			const div = document.createElement('div');
+			div.textContent = text;
+			return div.innerHTML;
+		}
+
+		function manualRefresh() {
+			const icon = document.getElementById('refresh-icon');
+			icon.classList.add('animate-spin');
+			loadLogs();
+			setTimeout(() => icon.classList.remove('animate-spin'), 1000);
+		}
+
+		// Get visible log content (respects text and severity filters)
+		function getVisibleLogContent() {
+			const container = document.getElementById('log-container');
+			if (!container) return '';
+
+			const lines = container.getElementsByClassName('log-line');
+			const visibleLines = [];
+
+			for (let line of lines) {
+				// Only include visible lines (not hidden by filter)
+				if (line.style.display !== 'none') {
+					visibleLines.push(line.textContent);
+				}
+			}
+
+			return visibleLines.join('\n');
+		}
+
+		function copyLogs() {
+			const copyIcon = document.getElementById('copy-icon');
+			const content = getVisibleLogContent();
+
+			navigator.clipboard.writeText(content).then(() => {
+				// Show success feedback
+				copyIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>';
+				if (window.showToast) {
+					window.showToast('Logs copied to clipboard', 'success', 2000);
+				}
+				setTimeout(() => {
+					copyIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>';
+				}, 2000);
+			}).catch(err => {
+				console.error('Failed to copy logs:', err);
+				if (window.showToast) {
+					window.showToast('Failed to copy logs to clipboard', 'error', 4000);
+				}
+			});
+		}
+
+		function downloadLogs() {
+			const serverSelect = document.getElementById('server-select');
+			const singleServerName = document.getElementById('single-server-name');
+			const logSelect = document.getElementById('log-select');
+			const serverName = serverSelect ? serverSelect.options[serverSelect.selectedIndex].text : (singleServerName ? singleServerName.textContent : 'server');
+			const logType = logSelect.value;
+			const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+			const filename = `${serverName}-${logType}-${timestamp}.log`;
+			const content = getVisibleLogContent();
+
+			const blob = new Blob([content], { type: 'text/plain' });
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = filename;
+			document.body.appendChild(a);
+			a.click();
+			document.body.removeChild(a);
+			URL.revokeObjectURL(url);
+		}
+
+		function toggleFullscreen() {
+			const logCard = document.getElementById('log-card');
+
+			// Cycle through states: 0 (normal) -> 1 (browser) -> 2 (true) -> 0 (normal)
+			if (fullscreenState === 0) {
+				// Enter browser fullscreen (state 1)
+				enterBrowserFullscreen();
+			} else if (fullscreenState === 1) {
+				// Enter true fullscreen (state 2)
+				logCard.requestFullscreen().catch(err => {
+					console.error('Failed to enter fullscreen:', err);
+				});
+			} else {
+				// Exit true fullscreen, go back to normal (state 0)
+				document.exitFullscreen().catch(err => {
+					console.error('Failed to exit fullscreen:', err);
+				});
+			}
+		}
+
+		function enterBrowserFullscreen() {
+			const logCard = document.getElementById('log-card');
+			const navElement = document.querySelector('nav');
+			const mainElement = document.querySelector('main');
+			const headerElement = document.querySelector('header');
+
+			fullscreenState = 1;
+			logCard.classList.add('fullscreen-mode');
+			if (navElement) navElement.classList.add('hidden');
+			if (headerElement) headerElement.classList.add('hidden');
+			if (mainElement) {
+				mainElement.style.padding = '0';
+				mainElement.style.maxWidth = 'none';
+			}
+			document.body.style.overflow = 'hidden';
+			updateFullscreenIcons();
+		}
+
+		function exitBrowserFullscreen() {
+			const logCard = document.getElementById('log-card');
+			const navElement = document.querySelector('nav');
+			const mainElement = document.querySelector('main');
+			const headerElement = document.querySelector('header');
+
+			fullscreenState = 0;
+			logCard.classList.remove('fullscreen-mode');
+			if (navElement) navElement.classList.remove('hidden');
+			if (headerElement) headerElement.classList.remove('hidden');
+			if (mainElement) {
+				mainElement.style.padding = '';
+				mainElement.style.maxWidth = '';
+			}
+			document.body.style.overflow = '';
+			updateFullscreenIcons();
+			updateLogContainerHeight();
+		}
+
+		function updateFullscreenIcons() {
+			const iconNormal = document.getElementById('fullscreen-icon-normal');
+			const iconBrowser = document.getElementById('fullscreen-icon-browser');
+			const iconTrue = document.getElementById('fullscreen-icon-true');
+			const button = document.getElementById('fullscreen-button');
+
+			// Hide all icons first
+			iconNormal.classList.add('hidden');
+			iconBrowser.classList.add('hidden');
+			iconTrue.classList.add('hidden');
+
+			// Show the appropriate icon and set tooltip
+			if (fullscreenState === 0) {
+				iconNormal.classList.remove('hidden');
+				button.title = 'Browser Fullscreen';
+			} else if (fullscreenState === 1) {
+				iconBrowser.classList.remove('hidden');
+				button.title = 'True Fullscreen (hide browser)';
+			} else {
+				iconTrue.classList.remove('hidden');
+				button.title = 'Exit Fullscreen';
+			}
+		}
+
+		// Handle true fullscreen state changes (triggered by API or Escape key)
+		document.addEventListener('fullscreenchange', function() {
+			const logCard = document.getElementById('log-card');
+			const headerElement = document.querySelector('header');
+
+			if (document.fullscreenElement) {
+				// Entered true fullscreen (state 2)
+				fullscreenState = 2;
+				logCard.classList.add('fullscreen-mode');
+				if (headerElement) headerElement.classList.add('hidden');
+			} else {
+				// Exited true fullscreen - go back to normal (state 0)
+				fullscreenState = 0;
+				logCard.classList.remove('fullscreen-mode');
+				if (headerElement) headerElement.classList.remove('hidden');
+				// Also restore nav/main in case we were in browser fullscreen before
+				const navElement = document.querySelector('nav');
+				const mainElement = document.querySelector('main');
+				if (navElement) navElement.classList.remove('hidden');
+				if (mainElement) {
+					mainElement.style.padding = '';
+					mainElement.style.maxWidth = '';
+				}
+				document.body.style.overflow = '';
+				updateLogContainerHeight();
+			}
+			updateFullscreenIcons();
+		});
+
+		// Handle Escape key for browser fullscreen (state 1)
+		document.addEventListener('keydown', function(e) {
+			if (e.key === 'Escape' && fullscreenState === 1) {
+				exitBrowserFullscreen();
+			}
+		});
+
+		// Calculate and set log container height to fit viewport
+		function updateLogContainerHeight() {
+			if (fullscreenState > 0) return; // Don't adjust in any fullscreen mode
+
+			const container = document.getElementById('log-container');
+			if (!container) return;
+
+			// Get viewport height
+			const viewportHeight = window.innerHeight;
+
+			// Get the container's position from top of viewport
+			const containerRect = container.getBoundingClientRect();
+			const containerTop = containerRect.top;
+
+			// Calculate available space: viewport height - container top (flush to bottom)
+			const availableHeight = viewportHeight - containerTop;
+
+			// Set a minimum height of 300px
+			const height = Math.max(300, availableHeight);
+
+			container.style.height = height + 'px';
+		}
+
+		// Initialize
+		document.addEventListener('DOMContentLoaded', async function() {
+			// Move page header content to main header
+			setupPageHeader();
+
+			initAnsiUp();
+
+			const storedFontSize = getStoredFontSize();
+			const fontSlider = document.getElementById('font-size-slider');
+			if (fontSlider) {
+				fontSlider.value = storedFontSize;
+				updateFontSize(storedFontSize);
+			}
+
+			// Set initial log container height
+			updateLogContainerHeight();
+
+			// Load log sources for initial server, then load logs
+			const serverID = getServerID();
+			if (serverID) {
+				await loadLogSources(serverID);
+			}
+
+			// Check for pre-selected log source from sessionStorage (e.g., from services page)
+			const preSelectedSource = sessionStorage.getItem('selected-log-source');
+			if (preSelectedSource) {
+				// Clear it so it doesn't persist on page refresh
+				sessionStorage.removeItem('selected-log-source');
+
+				// Try to select this source if it exists in the dropdown
+				const logSelect = document.getElementById('log-select');
+				if (logSelect) {
+					const optionExists = Array.from(logSelect.options).some(opt => opt.value === preSelectedSource);
+					if (optionExists) {
+						logSelect.value = preSelectedSource;
+					}
+				}
+			}
+
+			// Set initial log source
+			const logSelect = document.getElementById('log-select');
+			currentLogSource = logSelect ? logSelect.value : 'haproxy';
+
+			loadLogs();
+
+			// Initialize SSE for real-time log streaming
+			initSSE();
+		});
+
+		// Clean up SSE on page unload
+		window.addEventListener('beforeunload', function() {
+			if (eventSource) {
+				eventSource.close();
+			}
+		});
+
+		// Update log container height on window resize and zoom
+		window.addEventListener('resize', updateLogContainerHeight);
+		</script>
+	}
+}

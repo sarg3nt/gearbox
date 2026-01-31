@@ -1,0 +1,170 @@
+package dashboard
+
+import (
+	"fmt"
+)
+
+// DashboardGrid renders a dashboard with widgets in a grid layout
+templ DashboardGrid(layout Layout, widgets []RenderedWidget) {
+	<div class="dashboard-container p-4">
+		<!-- Grid layout -->
+		<div
+			class={ getDashboardGridClass(layout) }
+			data-dashboard="true"
+		>
+			for _, widget := range widgets {
+				<div
+					class={ getWidgetGridItemClass(widget.Position, layout.Columns) }
+					style={ getWidgetGridStyle(widget.Position) }
+					data-widget-id={ widget.ID }
+					data-row={ fmt.Sprintf("%d", widget.Position.Row) }
+					data-column={ fmt.Sprintf("%d", widget.Position.Column) }
+					data-width={ fmt.Sprintf("%d", widget.Position.Width) }
+				>
+					@widget.Component
+				</div>
+			}
+		</div>
+	</div>
+}
+
+// Helper functions for grid layout
+
+func getDashboardGridClass(layout Layout) string {
+	// Base grid class with auto-flow disabled to respect explicit positioning
+	class := "grid gap-" + fmt.Sprintf("%d", layout.Gap) + " grid-flow-row-dense "
+
+	// Grid columns
+	switch layout.Columns {
+	case 1:
+		class += "grid-cols-1"
+	case 2:
+		class += "grid-cols-2"
+	case 3:
+		class += "grid-cols-3"
+	case 4:
+		class += "grid-cols-4"
+	case 6:
+		class += "grid-cols-6"
+	case 12:
+		class += "grid-cols-12"
+	default:
+		class += "grid-cols-12" // Default to 12 columns
+	}
+
+	return class
+}
+
+func getWidgetGridItemClass(position WidgetPosition, totalColumns int) string {
+	class := ""
+
+	// Column span
+	if position.Width > 0 && position.Width <= totalColumns {
+		class += fmt.Sprintf("col-span-%d ", position.Width)
+	} else {
+		class += "col-span-12 " // Default to full width
+	}
+
+	// Height (if specified)
+	if position.Height != nil {
+		switch h := position.Height.(type) {
+		case string:
+			if h != "auto" {
+				// Custom height class
+				class += h + " "
+			}
+		case int:
+			// Fixed height in pixels
+			class += fmt.Sprintf("h-[%dpx] ", h)
+		case float64:
+			// Fixed height in pixels
+			class += fmt.Sprintf("h-[%dpx] ", int(h))
+		}
+	}
+
+	// Add widget container styling
+	class += "widget-container"
+
+	return class
+}
+
+// getWidgetGridStyle generates inline CSS for explicit grid positioning
+func getWidgetGridStyle(position WidgetPosition) string {
+	style := ""
+
+	// Explicit row positioning
+	if position.Row > 0 {
+		style += fmt.Sprintf("grid-row-start: %d; ", position.Row)
+	}
+
+	// Explicit column positioning
+	if position.Column > 0 {
+		style += fmt.Sprintf("grid-column-start: %d; ", position.Column)
+	}
+
+	return style
+}
+
+// ErrorWidget renders an error message when a widget fails to load
+templ ErrorWidget(widgetID string, widgetType string, errorMessage string) {
+	<div class="bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-600 rounded-lg p-4">
+		<div class="flex items-start gap-3">
+			<div class="flex-shrink-0">
+				<svg class="w-5 h-5 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+				</svg>
+			</div>
+			<div class="flex-1">
+				<h4 class="text-sm font-semibold text-red-800 dark:text-red-300 mb-1">
+					Widget Error
+				</h4>
+				<p class="text-sm text-red-700 dark:text-red-400 mb-2">
+					Failed to load widget: <code class="px-1 py-0.5 bg-red-100 dark:bg-red-800 rounded">{ widgetType }</code>
+				</p>
+				<details class="text-xs text-red-600 dark:text-red-400">
+					<summary class="cursor-pointer hover:text-red-800 dark:hover:text-red-200">
+						Show error details
+					</summary>
+					<pre class="mt-2 p-2 bg-red-100 dark:bg-red-800 rounded overflow-x-auto">{ errorMessage }</pre>
+				</details>
+			</div>
+		</div>
+	</div>
+}
+
+// LoadingWidget renders a loading placeholder for widgets
+templ LoadingWidget(widgetID string) {
+	<div class="bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg p-4">
+		<div class="animate-pulse">
+			<div class="h-4 bg-gray-300 dark:bg-slate-700 rounded w-1/2 mb-4"></div>
+			<div class="h-8 bg-gray-300 dark:bg-slate-700 rounded w-3/4 mb-3"></div>
+			<div class="h-4 bg-gray-300 dark:bg-slate-700 rounded w-full"></div>
+		</div>
+	</div>
+}
+
+// EmptyDashboard renders an empty dashboard with a message
+templ EmptyDashboard() {
+	<div class="flex items-center justify-center min-h-[400px]">
+		<div class="text-center">
+			<svg class="w-16 h-16 mx-auto text-gray-400 dark:text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"></path>
+			</svg>
+			<h3 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">
+				Empty Dashboard
+			</h3>
+			<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+				This dashboard has no widgets yet. Add widgets to customize your view.
+			</p>
+			<a
+				href="/settings/dashboards"
+				class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+			>
+				<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+				</svg>
+				Manage Dashboards
+			</a>
+		</div>
+	</div>
+}

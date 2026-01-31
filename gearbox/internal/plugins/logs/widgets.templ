@@ -1,0 +1,190 @@
+package logs
+
+// LogViewerWidget shows the full-featured log viewer
+templ LogViewerWidget(serverID string, defaultLines int, defaultSource string, showControls bool) {
+	<!-- Include ansi_up library for log colorization -->
+	<script type="module" src="/static/js/vendor/ansi_up_wrapper.js"></script>
+	<!-- Hidden server ID for JavaScript -->
+	<input type="hidden" id="default-server-id" value={ serverID }/>
+	if showControls {
+		<!-- In-widget controls -->
+		<div class="mb-4 flex flex-wrap items-center gap-3 bg-white dark:bg-slate-800 p-4 rounded-lg shadow">
+			<select
+				id="log-select"
+				class="h-[38px] px-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+				onchange="onLogSourceChange()"
+			>
+				if defaultSource == "haproxy" {
+					<option value="haproxy" selected>HAProxy</option>
+					<option value="system">System</option>
+				} else {
+					<option value="haproxy">HAProxy</option>
+					<option value="system" selected>System</option>
+				}
+			</select>
+			<select
+				id="lines-select"
+				class="h-[38px] px-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+				onchange="loadLogs()"
+			>
+				<option value="50">50</option>
+				<option value="100" selected>100</option>
+				<option value="200">200</option>
+				<option value="500">500</option>
+			</select>
+			<div class="relative">
+				<input
+					type="text"
+					id="filter-input"
+					placeholder="Filter..."
+					class="h-[38px] w-32 px-3 py-1.5 pr-8 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+					oninput="filterLogs()"
+				/>
+				<button
+					type="button"
+					id="filter-clear"
+					class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hidden"
+					onclick="clearLogFilter()"
+				>
+					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+					</svg>
+				</button>
+			</div>
+			<select
+				id="severity-filter"
+				class="h-[38px] px-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+				onchange="filterLogs()"
+			>
+				<option value="all">All</option>
+				<option value="warnings">Warnings</option>
+				<option value="errors">Errors</option>
+			</select>
+			<div class="flex items-center gap-2">
+				<label class="text-sm font-medium text-gray-700 dark:text-gray-300">Font:</label>
+				<input
+					type="range"
+					id="font-size-slider"
+					min="10"
+					max="24"
+					value="14"
+					class="w-20 h-2 bg-gray-200 dark:bg-slate-600 rounded-lg appearance-none cursor-pointer"
+					oninput="updateFontSize(this.value)"
+				/>
+				<span id="font-size-value" class="text-sm text-gray-600 dark:text-gray-400 w-10">14px</span>
+			</div>
+			<button
+				id="refresh-btn"
+				onclick="manualRefresh()"
+				class="p-2 rounded-lg transition-colors text-gray-400"
+				title="Connecting..."
+			>
+				<svg id="refresh-icon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+				</svg>
+			</button>
+			<button
+				onclick="copyLogs()"
+				class="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-600 rounded transition-colors border border-gray-300 dark:border-slate-600"
+				title="Copy to Clipboard"
+			>
+				<svg id="copy-icon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+				</svg>
+			</button>
+			<button
+				onclick="downloadLogs()"
+				class="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-600 rounded transition-colors border border-gray-300 dark:border-slate-600"
+				title="Download Logs"
+			>
+				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+				</svg>
+			</button>
+			<button
+				onclick="toggleFullscreen()"
+				id="fullscreen-button"
+				class="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-600 rounded transition-colors border border-gray-300 dark:border-slate-600"
+				title="Browser Fullscreen"
+			>
+				<svg id="fullscreen-icon-normal" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+				</svg>
+				<svg id="fullscreen-icon-browser" class="w-5 h-5 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7l2 2m6-2l-2 2m-4 4l-2 2m8-2l2 2" opacity="0.5"></path>
+				</svg>
+				<svg id="fullscreen-icon-true" class="w-5 h-5 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4l4 4M8 4H4v4"></path>
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 4l-4 4M16 4h4v4"></path>
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 20l4-4M8 20H4v-4"></path>
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 20l-4-4M16 20h4v-4"></path>
+				</svg>
+			</button>
+		</div>
+	}
+	<div id="log-page-container" class="-mx-6 -mt-6">
+		<!-- Log card - flush to edges, almost black background -->
+		<div id="log-card" class="bg-[#0d0d0d] overflow-hidden">
+			<!-- Log container -->
+			<div
+				id="log-container"
+				class="bg-[#0d0d0d] text-gray-300 px-4 py-3 font-mono text-sm overflow-auto"
+				style="font-size: 14px;"
+			>
+				<div class="flex items-center justify-center py-8">
+					<div class="animate-spin rounded-full h-8 w-8 border-2 border-blue-500 border-t-transparent"></div>
+				</div>
+			</div>
+		</div>
+	</div>
+	<!-- Fullscreen styles -->
+	<style>
+		.fullscreen-mode {
+			position: fixed !important;
+			top: 0 !important;
+			left: 0 !important;
+			width: 100vw !important;
+			height: 100vh !important;
+			margin: 0 !important;
+			border-radius: 0 !important;
+			display: flex !important;
+			flex-direction: column !important;
+			z-index: 9999 !important;
+		}
+		.fullscreen-mode #log-container {
+			flex: 1 !important;
+			height: auto !important;
+		}
+		/* ANSI color classes for ansi_up */
+		.ansi-black-fg { color: #4e4e4e; }
+		.ansi-red-fg { color: #ff6b6b; }
+		.ansi-green-fg { color: #69db7c; }
+		.ansi-yellow-fg { color: #ffd43b; }
+		.ansi-blue-fg { color: #74c0fc; }
+		.ansi-magenta-fg { color: #da77f2; }
+		.ansi-cyan-fg { color: #66d9e8; }
+		.ansi-white-fg { color: #f8f9fa; }
+		.ansi-bright-black-fg { color: #868e96; }
+		.ansi-bright-red-fg { color: #ff8787; }
+		.ansi-bright-green-fg { color: #8ce99a; }
+		.ansi-bright-yellow-fg { color: #ffe066; }
+		.ansi-bright-blue-fg { color: #91d5ff; }
+		.ansi-bright-magenta-fg { color: #e599f7; }
+		.ansi-bright-cyan-fg { color: #99e9f2; }
+		.ansi-bright-white-fg { color: #ffffff; }
+		.ansi-black-bg { background-color: #4e4e4e; }
+		.ansi-red-bg { background-color: #ff6b6b; }
+		.ansi-green-bg { background-color: #69db7c; }
+		.ansi-yellow-bg { background-color: #ffd43b; }
+		.ansi-blue-bg { background-color: #74c0fc; }
+		.ansi-magenta-bg { background-color: #da77f2; }
+		.ansi-cyan-bg { background-color: #66d9e8; }
+		.ansi-white-bg { background-color: #f8f9fa; }
+		.ansi-bold { font-weight: bold; }
+		.ansi-italic { font-style: italic; }
+		.ansi-underline { text-decoration: underline; }
+	</style>
+	<!-- Include the complete log viewer JavaScript -->
+	<script src="/static/js/logs/log-viewer.js"></script>
+}

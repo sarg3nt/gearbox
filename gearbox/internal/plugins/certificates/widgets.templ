@@ -1,0 +1,70 @@
+package certificates
+
+import "fmt"
+
+// CertExpirySummaryWidget renders the certificate expiry summary cards.
+templ CertExpirySummaryWidget(serverID string, refreshSeconds int) {
+	<div
+		hx-get={ fmt.Sprintf("/api/%s/certificates/summary", serverID) }
+		hx-trigger={ fmt.Sprintf("load, every %ds", refreshSeconds) }
+		hx-swap="innerHTML"
+		class="grid grid-cols-3 gap-4"
+	>
+		<div class="animate-pulse text-gray-400 col-span-3 text-center py-8">Loading certificate summary...</div>
+	</div>
+}
+
+// CertificatesListWidget renders the full certificates list.
+templ CertificatesListWidget(serverID string, refreshSeconds int, showFilters bool) {
+	<div class="bg-white dark:bg-slate-800 rounded-lg shadow">
+		<div class="p-6">
+			<div class="flex justify-between items-center mb-4">
+				<h3 class="text-lg font-semibold text-gray-900 dark:text-white">TLS Certificates</h3>
+				if showFilters {
+					<div class="flex items-center space-x-3">
+						<select id="cert-sort-inline" class="px-3 py-1.5 bg-slate-700 text-white border border-slate-600 rounded-md text-sm">
+							<option value="expiry-asc">Expiring Soonest</option>
+							<option value="expiry-desc">Expiring Latest</option>
+							<option value="domain-asc">Domain A-Z</option>
+						</select>
+						<select id="cert-filter-inline" class="px-3 py-1.5 bg-slate-700 text-white border border-slate-600 rounded-md text-sm">
+							<option value="all">All Certificates</option>
+							<option value="expiring">Expiring Soon</option>
+							<option value="expired">Expired</option>
+						</select>
+					</div>
+				}
+			</div>
+			<div
+				hx-get={ fmt.Sprintf("/api/%s/certificates", serverID) }
+				hx-trigger={ fmt.Sprintf("load, every %ds", refreshSeconds) }
+				hx-swap="innerHTML"
+				class="min-h-[300px]"
+			>
+				<div class="animate-pulse text-gray-400 text-center py-8">Loading certificates...</div>
+			</div>
+		</div>
+	</div>
+}
+
+// ExpiringCertsAlertWidget renders an alert for expiring certificates.
+templ ExpiringCertsAlertWidget(serverID string, refreshSeconds int, daysThreshold int, hideWhenEmpty bool) {
+	<div class="bg-white dark:bg-slate-800 rounded-lg shadow">
+		<div class="p-6">
+			<div class="flex items-center mb-4">
+				<svg class="w-6 h-6 text-yellow-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+				</svg>
+				<h3 class="text-lg font-semibold text-gray-900 dark:text-white">Expiring Soon</h3>
+			</div>
+			<div
+				hx-get={ fmt.Sprintf("/api/%s/certificates/expiring?days=%d&hide_when_empty=%t", serverID, daysThreshold, hideWhenEmpty) }
+				hx-trigger={ fmt.Sprintf("load, every %ds", refreshSeconds) }
+				hx-swap="innerHTML"
+				class="min-h-[100px]"
+			>
+				<div class="animate-pulse text-gray-400 text-center py-4">Checking certificates...</div>
+			</div>
+		</div>
+	</div>
+}

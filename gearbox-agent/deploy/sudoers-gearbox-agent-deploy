@@ -1,0 +1,25 @@
+# Sudoers file for gearbox-agent deployment
+# Install with: sudo cp sudoers-gearbox-agent-deploy /etc/sudoers.d/gearbox-agent-deploy
+# This file should be owned by root:root with mode 0440
+
+# Allow deployment of gearbox-agent binary
+dave ALL=(ALL) NOPASSWD: /usr/bin/cp /tmp/gearbox-agent /usr/local/bin/gearbox-agent
+dave ALL=(ALL) NOPASSWD: /usr/bin/chmod +x /usr/local/bin/gearbox-agent
+
+# Allow deployment of systemd service file
+dave ALL=(ALL) NOPASSWD: /usr/bin/cp /tmp/gearbox-agent.service /etc/systemd/system/gearbox-agent.service
+
+# Allow systemd operations for gearbox-agent
+dave ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop gearbox-agent
+dave ALL=(ALL) NOPASSWD: /usr/bin/systemctl start gearbox-agent
+dave ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart gearbox-agent
+dave ALL=(ALL) NOPASSWD: /usr/bin/systemctl status gearbox-agent
+dave ALL=(ALL) NOPASSWD: /usr/bin/systemctl daemon-reload
+
+# Allow reading API key
+dave ALL=(ALL) NOPASSWD: /usr/bin/cat /var/lib/gearbox-agent/api-key
+
+# Allow viewing logs (specific common invocations for sudo-rs compatibility)
+dave ALL=(ALL) NOPASSWD: /usr/bin/journalctl -u gearbox-agent
+dave ALL=(ALL) NOPASSWD: /usr/bin/journalctl -u gearbox-agent -n *
+dave ALL=(ALL) NOPASSWD: /usr/bin/journalctl -u gearbox-agent -f

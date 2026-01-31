@@ -1,0 +1,1249 @@
+package pages
+
+import "github.com/sarg3nt/gearbox/internal/framework/models"
+import "github.com/sarg3nt/gearbox/internal/framework/database"
+import "github.com/sarg3nt/gearbox/internal/framework/templates/layouts"
+import "github.com/sarg3nt/gearbox/internal/framework/ui"
+import "github.com/sarg3nt/gearbox/internal/framework/templates/components"
+import "fmt"
+
+templ Overview(user *models.User, servers []models.ServerConfig) {
+	@layouts.Base("Dashboard", user, "/") {
+		<!-- Hidden container for page header content - will be moved to main header via JS -->
+		<div id="page-header-source" class="hidden">
+			<!-- Left side: Title with integrated server selector -->
+			<div class="flex items-center">
+				<h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">
+					Dashboard
+					if len(servers) > 1 {
+						<span class="text-gray-400 dark:text-gray-500 mx-2">:</span>
+						<span class="inline-block relative">
+							<select
+								id="server-selector"
+								class="appearance-none bg-transparent text-xl font-bold text-gray-800 dark:text-gray-100 pr-7 cursor-pointer focus:outline-none hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+								onchange="switchServer(this.value)"
+							>
+								for _, server := range servers {
+									<option value={ server.ID } selected?={ server.ID == servers[0].ID }>{ server.Name }</option>
+								}
+							</select>
+							<!-- Subtle dropdown indicator -->
+							<svg class="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+							</svg>
+						</span>
+					} else if len(servers) == 1 {
+						<span class="text-gray-400 dark:text-gray-500 mx-2">:</span>
+						<span id="single-server-name">{ servers[0].Name }</span>
+					}
+				</h2>
+			</div>
+			<!-- Right side spacer to push controls to header's right side -->
+			<div class="flex-1"></div>
+			<!-- Controls: Global filters and refresh -->
+			<div class="flex items-center space-x-3">
+				<!-- Global health filter -->
+				<select
+					id="global-health-filter"
+					class="h-[38px] px-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+					onchange="applyGlobalFilters()"
+				>
+					<option value="all">All Status</option>
+					<option value="healthy">Healthy Only</option>
+					<option value="critical">Critical Only</option>
+				</select>
+				<!-- Disabled items filter -->
+				<select
+					id="global-disabled-filter"
+					class="h-[38px] px-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+					onchange="applyGlobalFilters()"
+				>
+					<option value="all">All Items</option>
+					<option value="active">Active Only</option>
+					<option value="disabled">Disabled Only</option>
+				</select>
+				<!-- Global text filter -->
+				<div class="relative">
+					<input
+						type="text"
+						id="global-backend-filter"
+						placeholder="Filter backends..."
+						class="h-[38px] w-40 px-3 py-1.5 pr-8 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+						oninput="applyGlobalFilters()"
+					/>
+					<button
+						type="button"
+						id="global-filter-clear"
+						class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hidden"
+						onclick="clearGlobalFilter()"
+					>
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+						</svg>
+					</button>
+				</div>
+				<!-- Manual refresh button with SSE status indicator -->
+				<button
+					id="refresh-btn"
+					onclick="manualRefresh()"
+					class="p-2 rounded-lg transition-colors text-gray-400"
+					title="Connecting..."
+				>
+					<svg id="refresh-icon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+					</svg>
+				</button>
+			</div>
+		</div>
+
+		if len(servers) == 0 {
+			@components.InfoAlert("No servers configured. Please check your configuration.")
+		}
+
+		for _, server := range servers {
+			<div
+				id={ fmt.Sprintf("server-%s-container", server.ID) }
+				class="space-y-6"
+				data-server-id={ server.ID }
+			>
+				<!-- Certificate warnings (populated via JavaScript) -->
+				<div
+					id={ fmt.Sprintf("server-%s-cert-warnings", server.ID) }
+					class="hidden"
+				></div>
+
+				<div
+					id={ fmt.Sprintf("server-%s-stats", server.ID) }
+					hx-get={ fmt.Sprintf("/htmx/%s/stats", server.ID) }
+					hx-trigger="load"
+					hx-swap="innerHTML"
+				>
+					@components.LoadingSpinner()
+				</div>
+
+				<div
+					id={ fmt.Sprintf("server-%s-metrics", server.ID) }
+					hx-get={ fmt.Sprintf("/htmx/%s/metrics", server.ID) }
+					hx-trigger="load"
+					hx-swap="innerHTML"
+				>
+					@components.LoadingSpinner()
+				</div>
+			</div>
+		}
+
+		<script>
+		// Move page header content to main header
+		function setupPageHeader() {
+			const source = document.getElementById('page-header-source');
+			const target = document.getElementById('header-page-content');
+			if (source && target) {
+				// Move all children from source to target
+				while (source.firstChild) {
+					target.appendChild(source.firstChild);
+				}
+			}
+		}
+
+		// SSE connection status - update refresh button color
+		function updateSSEStatus(status) {
+			const btn = document.getElementById('refresh-btn');
+			if (!btn) return;
+
+			// Remove all status classes
+			btn.classList.remove('text-green-500', 'text-red-500', 'text-yellow-500', 'text-gray-400');
+
+			switch (status) {
+				case 'connected':
+					btn.classList.add('text-green-500');
+					btn.title = 'Live - streaming data';
+					break;
+				case 'connecting':
+					btn.classList.add('text-yellow-500');
+					btn.title = 'Connecting...';
+					break;
+				case 'disconnected':
+					btn.classList.add('text-red-500');
+					btn.title = 'Disconnected - click to reconnect';
+					break;
+				default:
+					btn.classList.add('text-gray-400');
+					btn.title = 'Refresh';
+			}
+		}
+
+		// Server switching
+		function switchServer(serverID) {
+			// Hide all server containers
+			document.querySelectorAll('[data-server-id]').forEach(container => {
+				container.style.display = 'none';
+			});
+
+			// Show selected server container
+			const selectedContainer = document.querySelector(`[data-server-id="${serverID}"]`);
+			if (selectedContainer) {
+				selectedContainer.style.display = 'block';
+			}
+
+			// Save selection to global ServerSelector (sessionStorage for tab isolation)
+			if (window.ServerSelector) {
+				window.ServerSelector.setSelectedServer(serverID);
+			}
+
+			// Reinitialize SSE connection for new server
+			initSSE();
+
+			// Trigger refresh for the selected server
+			triggerRefresh();
+
+			// Load certificate warnings for the selected server
+			loadCertificateWarnings(serverID);
+		}
+
+		// SSE connection for real-time updates
+		// The agent pushes stats.updated and metrics.updated events every 2 seconds by default (configurable via HAPROXY_STATS_INTERVAL, range 1-60s)
+		let eventSource = null;
+		let isNavigatingAway = false;
+		const abortControllers = new Map(); // Per-server abort controllers
+		const certificateLoadTimers = new Map(); // Debounce timers for certificate loading
+
+		function initSSE() {
+			// Get current server ID for filtering
+			const serverSelector = document.getElementById('server-selector');
+			const serverID = serverSelector ? serverSelector.value : '';
+
+			// Close existing connection if any
+			if (eventSource) {
+				eventSource.close();
+			}
+
+			updateSSEStatus('connecting');
+
+			// Build SSE URL with optional server filter
+			const sseUrl = serverID ? `/api/events?server=${serverID}` : '/api/events';
+			eventSource = new EventSource(sseUrl);
+
+			eventSource.addEventListener('connected', function(e) {
+				console.log('SSE connected:', JSON.parse(e.data));
+				updateSSEStatus('connected');
+			});
+
+			// Listen for config changes - trigger immediate refresh
+			eventSource.addEventListener('config.changed', function(e) {
+				console.log('Config changed event received:', JSON.parse(e.data));
+				triggerRefresh();
+			});
+
+			// Listen for metadata refreshed - trigger immediate refresh
+			eventSource.addEventListener('metadata.refreshed', function(e) {
+				console.log('Metadata refreshed event received:', JSON.parse(e.data));
+				triggerRefresh();
+			});
+
+			// Listen for sync completed - trigger immediate refresh
+			eventSource.addEventListener('sync.completed', function(e) {
+				console.log('Sync completed event received:', JSON.parse(e.data));
+				triggerRefresh();
+			});
+
+			// Listen for server connected/disconnected
+			eventSource.addEventListener('server.connected', function(e) {
+				console.log('Server connected:', JSON.parse(e.data));
+				triggerRefresh();
+			});
+
+			eventSource.addEventListener('server.disconnected', function(e) {
+				console.log('Server disconnected:', JSON.parse(e.data));
+				triggerRefresh();
+			});
+
+			// Listen for stats updates (pushed every 2 seconds from agent)
+			eventSource.addEventListener('stats.updated', function(e) {
+				triggerRefresh();
+			});
+
+			// Listen for metrics updates (pushed every 2 seconds from agent)
+			eventSource.addEventListener('metrics.updated', function(e) {
+				triggerRefresh();
+			});
+
+			// Listen for certificate updates
+			eventSource.addEventListener('certificates.updated', function(e) {
+				const data = JSON.parse(e.data);
+				if (data.server_id) {
+					loadCertificateWarnings(data.server_id);
+				}
+			});
+
+			eventSource.onerror = function(e) {
+				console.error('SSE connection error:', e);
+				updateSSEStatus('disconnected');
+				// EventSource will automatically reconnect
+			};
+		}
+
+		function closeSSE() {
+			if (eventSource) {
+				eventSource.close();
+				eventSource = null;
+			}
+			// Also abort any in-flight certificate fetch requests and clear timers
+			abortControllers.forEach((controller) => controller.abort());
+			abortControllers.clear();
+			certificateLoadTimers.forEach((timer) => clearTimeout(timer));
+			certificateLoadTimers.clear();
+			isNavigatingAway = true;
+		}
+
+		function triggerRefresh() {
+			// Check if navigating away
+			if (isNavigatingAway) return;
+
+			// Check if we're still on the dashboard page
+			const serverContainers = document.querySelectorAll('[data-server-id]');
+			if (serverContainers.length === 0) {
+				// User navigated away, close SSE and stop
+				closeSSE();
+				return;
+			}
+
+			// Find all stats and metrics elements that need updating
+			const elements = document.querySelectorAll('[id$="-stats"], [id$="-metrics"]');
+
+			elements.forEach(el => {
+				const url = el.getAttribute('hx-get');
+				if (!url) return;
+
+				// Fetch updated HTML fragment
+				fetch(url, {
+					method: 'GET',
+					credentials: 'same-origin',
+					headers: { 'HX-Request': 'true' }
+				})
+				.then(response => {
+					if (!response.ok) throw new Error(`HTTP ${response.status}`);
+					return response.text();
+				})
+				.then(html => {
+					// Create a temporary container to parse the new HTML
+					const temp = document.createElement('div');
+					temp.innerHTML = html;
+
+					// Get the first child (the actual content) to morph
+					const newContent = temp.firstElementChild;
+					const oldContent = el.firstElementChild;
+
+					if (newContent && oldContent) {
+						// Use morphdom for surgical DOM updates
+						// This only updates elements that actually changed, preserving:
+						// - CSS pseudo-state (:hover, :focus)
+						// - Collapsible open/closed state
+						// - Scroll positions
+						morphdom(oldContent, newContent, {
+							// Preserve the open/closed state of collapsible sections
+							onBeforeElUpdated: function(fromEl, toEl) {
+								// Skip updating elements that are being hovered
+								// This prevents the flash when hovering
+								if (fromEl.matches(':hover')) {
+									// Still update children, just preserve the element itself
+									return true;
+								}
+
+								// Preserve collapsible state
+								if (fromEl.classList && fromEl.classList.contains('collapsible-content')) {
+									// Preserve hidden state from the current DOM
+									if (fromEl.classList.contains('hidden')) {
+										toEl.classList.add('hidden');
+									} else {
+										toEl.classList.remove('hidden');
+									}
+								}
+
+								// Preserve collapsible icon rotation
+								if (fromEl.classList && fromEl.classList.contains('collapsible-icon')) {
+									toEl.style.transform = fromEl.style.transform;
+								}
+
+								// Preserve filter visibility state on backend cards
+								// This prevents flashing when filters are applied
+								if (fromEl.classList && fromEl.classList.contains('backend-card')) {
+									if (fromEl.style.display === 'none') {
+										toEl.style.display = 'none';
+									}
+								}
+
+								return true;
+							},
+							// Don't update script tags - they've already run
+							onBeforeNodeDiscarded: function(node) {
+								if (node.tagName === 'SCRIPT') {
+									return false;
+								}
+								return true;
+							}
+						});
+					} else {
+						// Fallback to innerHTML if structure doesn't match
+						el.innerHTML = html;
+					}
+
+					// Re-apply filters after DOM update for any new elements
+					// No timeout needed since morphdom preserves existing filter state
+					if (typeof applyGlobalFilters === 'function') {
+						applyGlobalFilters();
+					}
+				})
+				.catch(error => {
+					console.error('Failed to refresh', el.id, ':', error);
+				});
+			});
+		}
+
+		function manualRefresh() {
+			const icon = document.getElementById('refresh-icon');
+			icon.classList.add('animate-spin');
+
+			// Reinitialize SSE to ensure connection is working
+			initSSE();
+
+			// Trigger data refresh
+			triggerRefresh();
+
+			setTimeout(() => icon.classList.remove('animate-spin'), 1000);
+		}
+
+		// Global filter functions
+		function applyGlobalFilters() {
+			const textFilter = document.getElementById('global-backend-filter').value.toLowerCase();
+			const healthFilter = document.getElementById('global-health-filter').value;
+			const disabledFilter = document.getElementById('global-disabled-filter').value;
+			const clearBtn = document.getElementById('global-filter-clear');
+
+			// Show/hide clear button
+			if (textFilter.length > 0) {
+				clearBtn.classList.remove('hidden');
+			} else {
+				clearBtn.classList.add('hidden');
+			}
+
+			// Apply filters to all backend cards across all containers
+			document.querySelectorAll('.backend-card').forEach(card => {
+				const name = card.dataset.backendName.toLowerCase();
+				const health = parseFloat(card.dataset.healthPercent || '0');
+				const isDisabled = card.dataset.disabled === 'true';
+
+				let showByText = textFilter === '' || name.includes(textFilter);
+				let showByHealth = true;
+				let showByDisabled = true;
+
+				if (healthFilter === 'healthy') {
+					showByHealth = health >= 90;
+				} else if (healthFilter === 'critical') {
+					showByHealth = health < 50;
+				}
+
+				if (disabledFilter === 'active') {
+					showByDisabled = !isDisabled;
+				} else if (disabledFilter === 'disabled') {
+					showByDisabled = isDisabled;
+				}
+
+				card.style.display = (showByText && showByHealth && showByDisabled) ? '' : 'none';
+			});
+
+			// Save filter state to localStorage
+			localStorage.setItem('global-text-filter', textFilter);
+			localStorage.setItem('global-health-filter', healthFilter);
+		}
+
+		function clearGlobalFilter() {
+			const input = document.getElementById('global-backend-filter');
+			const select = document.getElementById('global-health-filter');
+			const clearBtn = document.getElementById('global-filter-clear');
+
+			input.value = '';
+			select.value = 'all';
+			clearBtn.classList.add('hidden');
+
+			applyGlobalFilters();
+			input.focus();
+		}
+
+		// Certificate warning functions
+		function loadCertificateWarnings(serverID) {
+			if (!serverID) return;
+
+			// Check if we're navigating away
+			if (isNavigatingAway) return;
+
+			// Check if we're still on the dashboard page (cert-warnings container exists)
+			const container = document.getElementById('server-' + serverID + '-cert-warnings');
+			if (!container) {
+				// User navigated away, don't make the request
+				return;
+			}
+
+			// Debounce: if there's already a pending load for this server, cancel it
+			if (certificateLoadTimers.has(serverID)) {
+				clearTimeout(certificateLoadTimers.get(serverID));
+			}
+
+			// Schedule the certificate load after a short delay to debounce rapid calls
+			const timer = setTimeout(() => {
+				certificateLoadTimers.delete(serverID);
+
+				// Abort any existing request for this specific server
+				if (abortControllers.has(serverID)) {
+					abortControllers.get(serverID).abort();
+				}
+
+				// Create a new abort controller for this server's request
+				const controller = new AbortController();
+				abortControllers.set(serverID, controller);
+
+				fetchCertificateWarnings(serverID, controller);
+			}, 100); // 100ms debounce
+
+			certificateLoadTimers.set(serverID, timer);
+		}
+
+		function fetchCertificateWarnings(serverID, controller) {
+
+			fetch('/api/' + serverID + '/certificates', {
+				method: 'GET',
+				credentials: 'same-origin',
+				signal: controller.signal
+			})
+			.then(response => {
+				if (isNavigatingAway) return null;
+				if (!response.ok) return null;
+				return response.json();
+			})
+			.then(data => {
+				if (!data || isNavigatingAway) return;
+				renderCertificateWarnings(serverID, data);
+				// Clean up the abort controller after successful completion
+				abortControllers.delete(serverID);
+			})
+			.catch(err => {
+				// Ignore abort errors (expected when navigating away or when superseded by new request)
+				if (err.name === 'AbortError') return;
+				// Only log errors if we're still on the dashboard and not navigating
+				if (!isNavigatingAway && document.getElementById('server-' + serverID + '-cert-warnings')) {
+					console.error('Failed to load certificate warnings:', err);
+				}
+				// Clean up the abort controller after error
+				abortControllers.delete(serverID);
+			});
+		}
+
+		function renderCertificateWarnings(serverID, data) {
+			const container = document.getElementById('server-' + serverID + '-cert-warnings');
+			if (!container) return;
+
+			// Count certificates with warnings
+			const certs = data.certificates || [];
+			const expired = certs.filter(c => c.is_expired);
+			const critical = certs.filter(c => !c.is_expired && c.days_until_expiry <= 7);
+			const warning = certs.filter(c => !c.is_expired && c.days_until_expiry > 7 && c.days_until_expiry <= 30);
+
+			// If no warnings, hide the container
+			if (expired.length === 0 && critical.length === 0 && warning.length === 0) {
+				container.classList.add('hidden');
+				container.innerHTML = '';
+				return;
+			}
+
+			// Build warning HTML
+			let html = '<div class="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-4">';
+			html += '<div class="flex items-center justify-between mb-3">';
+			html += '<h4 class="text-lg font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">';
+			html += '<svg class="w-5 h-5 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">';
+			html += '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>';
+			html += '</svg>';
+			html += 'Certificate Warnings';
+			html += '</h4>';
+			html += '<a href="/certificates" class="text-sm text-blue-600 dark:text-blue-400 hover:underline">View All</a>';
+			html += '</div>';
+
+			html += '<div class="flex flex-wrap gap-3">';
+
+			if (expired.length > 0) {
+				html += '<div class="flex items-center gap-2 px-3 py-2 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-lg">';
+				html += '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">';
+				html += '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>';
+				html += '</svg>';
+				html += '<span class="font-medium">' + expired.length + ' Expired</span>';
+				html += '<span class="text-sm">(' + expired.map(c => c.domain).join(', ') + ')</span>';
+				html += '</div>';
+			}
+
+			if (critical.length > 0) {
+				html += '<div class="flex items-center gap-2 px-3 py-2 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 rounded-lg">';
+				html += '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">';
+				html += '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>';
+				html += '</svg>';
+				html += '<span class="font-medium">' + critical.length + ' Critical</span>';
+				html += '<span class="text-sm">(&lt; 7 days: ' + critical.map(c => c.domain).join(', ') + ')</span>';
+				html += '</div>';
+			}
+
+			if (warning.length > 0) {
+				html += '<div class="flex items-center gap-2 px-3 py-2 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 rounded-lg">';
+				html += '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">';
+				html += '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>';
+				html += '</svg>';
+				html += '<span class="font-medium">' + warning.length + ' Warning</span>';
+				html += '<span class="text-sm">(&lt; 30 days: ' + warning.map(c => c.domain).join(', ') + ')</span>';
+				html += '</div>';
+			}
+
+			html += '</div>';
+			html += '</div>';
+
+			container.innerHTML = html;
+			container.classList.remove('hidden');
+		}
+
+		function loadAllCertificateWarnings() {
+			// Don't load if navigating away
+			if (isNavigatingAway) return;
+
+			// Load certificate warnings for all visible servers
+			document.querySelectorAll('[data-server-id]').forEach(container => {
+				const serverID = container.dataset.serverId;
+				if (container.style.display !== 'none') {
+					loadCertificateWarnings(serverID);
+				}
+			});
+		}
+
+		// Initialize on page load
+		document.addEventListener('DOMContentLoaded', function() {
+			// Move page header content to main header
+			setupPageHeader();
+
+			// Restore global filters from localStorage
+			const savedTextFilter = localStorage.getItem('global-text-filter') || '';
+			const savedHealthFilter = localStorage.getItem('global-health-filter') || 'all';
+			const textInput = document.getElementById('global-backend-filter');
+			const healthSelect = document.getElementById('global-health-filter');
+
+			if (textInput && savedTextFilter) {
+				textInput.value = savedTextFilter;
+			}
+			if (healthSelect && savedHealthFilter) {
+				healthSelect.value = savedHealthFilter;
+			}
+
+			// Restore server selection using global ServerSelector (sessionStorage for tab isolation)
+			const serverSelector = document.getElementById('server-selector');
+			if (serverSelector && window.ServerSelector) {
+				const serverID = window.ServerSelector.initFromSelect(serverSelector);
+				if (serverID) {
+					// Only call switchServer if it's different from current visible server
+					// This avoids triggering unnecessary refreshes on page load
+					const currentlyVisible = document.querySelector('[data-server-id]:not([style*="display: none"])');
+					const needsSwitch = !currentlyVisible || currentlyVisible.dataset.serverId !== serverID;
+
+					if (needsSwitch) {
+						switchServer(serverID);
+					} else {
+						initSSE();
+					}
+				} else {
+					initSSE();
+				}
+			} else if (serverSelector && serverSelector.options.length > 0) {
+				// Fallback if ServerSelector not available
+				const firstServerID = serverSelector.options[0].value;
+				const currentlyVisible = document.querySelector('[data-server-id]:not([style*="display: none"])');
+				const needsSwitch = !currentlyVisible || currentlyVisible.dataset.serverId !== firstServerID;
+
+				if (needsSwitch) {
+					switchServer(firstServerID);
+				} else {
+					initSSE();
+				}
+			} else {
+				// No server selector (single server mode), just init SSE
+				initSSE();
+			}
+
+			// Load certificate warnings after a short delay (allow stats to load first)
+			setTimeout(loadAllCertificateWarnings, 1000);
+		});
+
+		// Clean up SSE connection when page unloads
+		window.addEventListener('beforeunload', function() {
+			closeSSE();
+		});
+
+		// Also clean up SSE when navigating away via links (SPA-style navigation)
+		// This catches cases where beforeunload doesn't fire
+		document.addEventListener('click', function(e) {
+			const link = e.target.closest('a');
+			if (link && link.href && !link.href.startsWith('#') && !link.target) {
+				// Internal navigation, close SSE
+				const currentUrl = new URL(window.location.href);
+				const linkUrl = new URL(link.href, window.location.origin);
+				// If navigating to a different page (not just a hash change)
+				if (linkUrl.pathname !== currentUrl.pathname) {
+					closeSSE();
+				}
+			}
+		});
+
+		// Filter state persistence
+		const filterState = {};
+
+		// Save filter state before htmx swap
+		document.body.addEventListener('htmx:beforeSwap', function(event) {
+			document.querySelectorAll('.backend-filter').forEach(input => {
+				if (input.value) {
+					filterState[input.dataset.target] = input.value;
+				}
+			});
+		});
+
+		// Restore filter state after htmx swap
+		document.body.addEventListener('htmx:afterSwap', function(event) {
+			// Apply global filters after HTMX update
+			applyGlobalFilters();
+
+			// Also restore local filters (for backward compatibility)
+			Object.entries(filterState).forEach(([target, value]) => {
+				const input = document.querySelector(`.backend-filter[data-target="${target}"]`);
+				if (input && value) {
+					input.value = value;
+					filterBackends(input);
+				}
+			});
+		});
+		</script>
+	}
+}
+
+templ StatsPartial(stats *models.HAProxyStats, serverID string, metadata *models.Metadata, disabledEntities []database.DisabledEntity, canManageDisabled bool) {
+	<div class="space-y-6" data-server-id={ serverID }>
+		<!-- Status Summary Doughnuts -->
+		@StatusSummarySection(stats, metadata, disabledEntities)
+
+		<!-- Iterate over sorted frontends (those with backends first) -->
+		for _, frontendStatus := range GetSortedFrontends(stats.Frontends, stats.Backends, metadata) {
+			@ui.CollapsibleSectionWithStats(
+				fmt.Sprintf("%s-frontend-%s", serverID, frontendStatus.Frontend.Name),
+				getFrontendDisplayTitle(frontendStatus),
+				"FRONTEND",
+				"bg-blue-600",
+				FormatFrontendStats(frontendStatus.Frontend),
+				true,
+			) {
+				<!-- Frontend header with status and details link -->
+				<div class="flex justify-between items-start mb-4">
+					<div class="flex items-center gap-3">
+						if frontendStatus.Frontend.Status == "OPEN" {
+							<span class="px-2 py-1 text-xs font-semibold rounded bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200">
+								ACTIVE
+							</span>
+						} else {
+							<span class="px-2 py-1 text-xs font-semibold rounded bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200">
+								{ frontendStatus.Frontend.Status }
+							</span>
+						}
+					</div>
+					<a href={ templ.SafeURL(fmt.Sprintf("/server/%s/frontend/%s", serverID, frontendStatus.Frontend.Name)) } class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 text-sm">
+						View Details →
+					</a>
+				</div>
+				<!-- HTTP to HTTPS redirect notice -->
+				if frontendStatus.IsHTTPRedirect {
+					<div class="mb-4 px-4 py-3 bg-gray-100 dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg">
+						<div class="flex items-center gap-2 text-gray-600 dark:text-gray-300">
+							<span class="text-sm">
+								Redirects HTTP traffic to HTTPS.
+							</span>
+						</div>
+					</div>
+				}
+
+				<!-- Show backends if has backends - all in one grid, no grouping -->
+				if frontendStatus.HasBackends {
+					<div id={ fmt.Sprintf("%s-backends-%s", serverID, frontendStatus.Frontend.Name) } class="backend-card-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+						for _, backend := range GetBackendsForFrontend(frontendStatus.Frontend.Name, stats.Backends, metadata) {
+							@BackendCard(backend, GetBackendDisplayName(backend.Name), GetContainersForBackend(backend.Name, metadata), ParseBackendName(backend.Name), metadata, IsBackendDisabled(backend.Name, BuildDisabledEntitiesMap(disabledEntities)), serverID, GetDisabledEntity(backend.Name, disabledEntities), canManageDisabled)
+						}
+					</div>
+				}
+			}
+		}
+
+		<!-- Show any backends that don't have metadata (orphaned or system backends) -->
+		if hasOrphanedBackends(stats, metadata) {
+			@ui.CollapsibleSection(
+				fmt.Sprintf("%s-system-backends", serverID),
+				"Other Backends",
+				"SYSTEM",
+				"bg-gray-600",
+				true,
+			) {
+				<p class="text-sm text-gray-600 dark:text-gray-400 mb-3">Backends without frontend routing metadata</p>
+				<div class="mb-3">
+					<span class="text-sm font-medium text-gray-600 dark:text-gray-400">System Backends</span>
+				</div>
+				<div id="backends-orphaned" class="backend-card-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+					for _, backend := range stats.Backends {
+						if isOrphanedBackend(backend.Name, metadata) && !isSystemBackend(backend.Name) {
+							@BackendCard(backend, GetBackendDisplayName(backend.Name), GetContainersForBackend(backend.Name, metadata), ParseBackendName(backend.Name), metadata, IsBackendDisabled(backend.Name, BuildDisabledEntitiesMap(disabledEntities)), serverID, GetDisabledEntity(backend.Name, disabledEntities), canManageDisabled)
+						}
+					}
+				</div>
+			}
+		}
+
+		<script>
+		function filterBackends(input) {
+			const filter = input.value.toLowerCase();
+			const targetId = input.dataset.target;
+			const container = document.getElementById(targetId);
+			const clearBtn = input.parentElement.querySelector('.filter-clear');
+
+			// Show/hide clear button
+			if (filter.length > 0) {
+				clearBtn.classList.remove('hidden');
+			} else {
+				clearBtn.classList.add('hidden');
+			}
+
+			// Apply both text and health filters
+			applyFilters(targetId);
+		}
+
+		function filterByHealth(select) {
+			const targetId = select.dataset.target;
+			applyFilters(targetId);
+		}
+
+		function applyFilters(targetId) {
+			const container = document.getElementById(targetId);
+			if (!container) return;
+
+			// Get filter values
+			const textFilter = document.querySelector(`.backend-filter[data-target="${targetId}"]`)?.value.toLowerCase() || '';
+			const healthFilter = document.querySelector(`.health-filter[data-target="${targetId}"]`)?.value || 'all';
+
+			// Filter cards
+			const cards = container.querySelectorAll('.backend-card');
+			cards.forEach(card => {
+				const name = card.dataset.backendName.toLowerCase();
+				const health = parseFloat(card.dataset.healthPercent || '0');
+
+				let showByText = textFilter === '' || name.includes(textFilter);
+				let showByHealth = true;
+
+				if (healthFilter === 'healthy') {
+					showByHealth = health >= 90;
+				} else if (healthFilter === 'critical') {
+					showByHealth = health < 50;
+				}
+
+				card.style.display = (showByText && showByHealth) ? '' : 'none';
+			});
+
+			// Hide hardware group container if all its cards are hidden
+			const hardwareGroup = container.querySelector('.border.rounded-lg.p-4.mb-4');
+			if (hardwareGroup) {
+				const visibleCards = hardwareGroup.querySelectorAll('.backend-card:not([style*="display: none"])');
+				hardwareGroup.style.display = visibleCards.length > 0 ? '' : 'none';
+			}
+		}
+
+		function clearFilter(button) {
+			const input = button.parentElement.querySelector('.backend-filter');
+			input.value = '';
+			button.classList.add('hidden');
+			const targetId = input.dataset.target;
+			applyFilters(targetId);
+			input.focus();
+		}
+
+		// Backend disable/enable toggle handler
+		// Register immediately (not on DOMContentLoaded) since this script is dynamically loaded
+		if (!window.backendToggleHandlerRegistered) {
+			window.backendToggleHandlerRegistered = true;
+			console.log('Backend toggle handler loaded');
+
+			document.addEventListener('change', async function(e) {
+				const checkbox = e.target.closest('.backend-toggle-checkbox');
+				if (!checkbox) return;
+
+				console.log('Toggle checkbox changed', checkbox);
+
+				e.stopPropagation();
+
+				const serverID = checkbox.dataset.serverId;
+				const backendName = checkbox.dataset.backendName;
+				const displayName = checkbox.dataset.displayName;
+				const isNowChecked = checkbox.checked;
+				const action = isNowChecked ? 'enable' : 'disable';
+
+				console.log('Toggle action:', {serverID, backendName, displayName, isNowChecked, action});
+
+				// Confirm disable action
+				if (!isNowChecked) {
+					const confirmed = await showConfirmDialog({
+						title: 'Disable Monitoring',
+						message: `Disable monitoring for "${displayName}"?\n\nThis will exclude it from health checks and status counts.`,
+						confirmText: 'Disable',
+						type: 'warning'
+					});
+					if (!confirmed) {
+						console.log('User cancelled disable');
+						// Revert checkbox state
+						checkbox.checked = true;
+						return;
+					}
+				}
+
+				// Visual feedback - disable checkbox during request
+				checkbox.disabled = true;
+
+				const apiUrl = `/api/${serverID}/${action}-entity`;
+				console.log('Making API call to:', apiUrl);
+
+				// Make API call
+				fetch(apiUrl, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+					},
+					body: JSON.stringify({
+						entity_type: 'backend',
+						entity_name: backendName,
+						notes: action === 'disable' ? 'Disabled via UI' : ''
+					})
+				})
+				.then(response => {
+					console.log('API response status:', response.status);
+					if (!response.ok) {
+						return response.text().then(text => {
+							console.error('API error response:', text);
+							throw new Error('Failed to ' + action + ' backend: ' + response.status);
+						});
+					}
+					return response.json();
+				})
+				.then(data => {
+					console.log('Backend ' + action + 'd successfully:', data);
+
+					// Find the stats container and trigger htmx refresh
+					const statsContainer = document.getElementById(`server-${serverID}-stats`);
+					console.log('Stats container found:', !!statsContainer, 'htmx available:', !!window.htmx);
+					if (statsContainer && window.htmx) {
+						// Trigger htmx to reload the stats container
+						console.log('Triggering htmx reload');
+						window.htmx.trigger(statsContainer, 'load');
+					} else {
+						// Fallback: reload the page
+						console.log('Reloading page');
+						window.location.reload();
+					}
+				})
+				.catch(error => {
+					console.error('Error:', error);
+					if (window.showToast) {
+						window.showToast('Failed to ' + action + ' backend: ' + error.message, 'error', 5000);
+					}
+					// Re-enable checkbox and revert state on error
+					checkbox.disabled = false;
+					checkbox.checked = !isNowChecked;
+				});
+			});
+		}
+		</script>
+	</div>
+}
+
+// BackendGridPartial renders just the backend grid without the status summary section
+templ BackendGridPartial(stats *models.HAProxyStats, serverID string, metadata *models.Metadata, disabledEntities []database.DisabledEntity, canManageDisabled bool) {
+	<div class="space-y-6" data-server-id={ serverID }>
+		<!-- Iterate over sorted frontends (those with backends first) -->
+		for _, frontendStatus := range GetSortedFrontends(stats.Frontends, stats.Backends, metadata) {
+			@ui.CollapsibleSectionWithStats(
+				fmt.Sprintf("%s-frontend-%s", serverID, frontendStatus.Frontend.Name),
+				getFrontendDisplayTitle(frontendStatus),
+				"FRONTEND",
+				"bg-blue-600",
+				FormatFrontendStats(frontendStatus.Frontend),
+				true,
+			) {
+				<!-- Frontend header with status and details link -->
+				<div class="flex justify-between items-start mb-4">
+					<div class="flex items-center gap-3">
+						if frontendStatus.Frontend.Status == "OPEN" {
+							<span class="px-2 py-1 text-xs font-semibold rounded bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200">
+								ACTIVE
+							</span>
+						} else {
+							<span class="px-2 py-1 text-xs font-semibold rounded bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200">
+								{ frontendStatus.Frontend.Status }
+							</span>
+						}
+					</div>
+					<a href={ templ.SafeURL(fmt.Sprintf("/server/%s/frontend/%s", serverID, frontendStatus.Frontend.Name)) } class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 text-sm">
+						View Details →
+					</a>
+				</div>
+				<!-- HTTP to HTTPS redirect notice -->
+				if frontendStatus.IsHTTPRedirect {
+					<div class="mb-4 px-4 py-3 bg-gray-100 dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg">
+						<div class="flex items-center gap-2 text-gray-600 dark:text-gray-300">
+							<span class="text-sm">
+								Redirects HTTP traffic to HTTPS.
+							</span>
+						</div>
+					</div>
+				}
+
+				<!-- Show backends if has backends - all in one grid, no grouping -->
+				if frontendStatus.HasBackends {
+					<div id={ fmt.Sprintf("%s-backends-%s", serverID, frontendStatus.Frontend.Name) } class="backend-card-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+						for _, backend := range GetBackendsForFrontend(frontendStatus.Frontend.Name, stats.Backends, metadata) {
+							@BackendCard(backend, GetBackendDisplayName(backend.Name), GetContainersForBackend(backend.Name, metadata), ParseBackendName(backend.Name), metadata, IsBackendDisabled(backend.Name, BuildDisabledEntitiesMap(disabledEntities)), serverID, GetDisabledEntity(backend.Name, disabledEntities), canManageDisabled)
+						}
+					</div>
+				}
+			}
+		}
+
+		<!-- Show any backends that don't have metadata (orphaned or system backends) -->
+		if hasOrphanedBackends(stats, metadata) {
+			@ui.CollapsibleSection(
+				fmt.Sprintf("%s-system-backends", serverID),
+				"Other Backends",
+				"SYSTEM",
+				"bg-gray-600",
+				true,
+			) {
+				<p class="text-sm text-gray-600 dark:text-gray-400 mb-3">Backends without frontend routing metadata</p>
+				<div class="mb-3">
+					<span class="text-sm font-medium text-gray-600 dark:text-gray-400">System Backends</span>
+				</div>
+				<div id="backends-orphaned" class="backend-card-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+					for _, backend := range stats.Backends {
+						if isOrphanedBackend(backend.Name, metadata) && !isSystemBackend(backend.Name) {
+							@BackendCard(backend, GetBackendDisplayName(backend.Name), GetContainersForBackend(backend.Name, metadata), ParseBackendName(backend.Name), metadata, IsBackendDisabled(backend.Name, BuildDisabledEntitiesMap(disabledEntities)), serverID, GetDisabledEntity(backend.Name, disabledEntities), canManageDisabled)
+						}
+					}
+				</div>
+			}
+		}
+	</div>
+}
+
+templ BackendCard(backend models.Backend, displayName string, containers []models.Container, groupInfo BackendGroupInfo, metadata *models.Metadata, isDisabled bool, serverID string, disabledEntity *database.DisabledEntity, canManageDisabled bool) {
+	<div
+		class="backend-card block border border-gray-200 dark:border-slate-600 rounded-lg p-5 transition bg-white dark:bg-slate-700 w-full relative"
+		data-backend-card
+		data-backend-name={ backend.Name }
+		data-backendName={ backend.Name }
+		data-health={ backend.Status }
+		data-health-percent={ fmt.Sprintf("%.0f", backend.HealthPercent) }
+		data-disabled={ fmt.Sprintf("%t", isDisabled) }
+		data-server-id={ serverID }
+		if isDisabled {
+			style="opacity: 0.6;"
+		}
+	>
+		<!-- Clickable card area -->
+		<a
+			href={ templ.SafeURL(fmt.Sprintf("/server/%s/backend/%s", serverID, backend.Name)) }
+			class="block hover:opacity-80 transition cursor-pointer"
+		>
+			<!-- Card Header - responsive layout -->
+			<div class="mb-3">
+				<!-- Row 1: Name and IP (wraps on small screens) -->
+				<div class="flex flex-wrap items-start gap-x-2 gap-y-1 pr-14">
+					if groupInfo.Group != "" && groupInfo.Group != groupInfo.Item && groupInfo.Group != "hardware" {
+						<h5 class="font-semibold text-base text-gray-800 dark:text-gray-100">
+							if GetServiceURL(backend.Name, metadata) != "" {
+								<span
+									class="capitalize text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:underline cursor-pointer"
+									data-service-url={ GetServiceURL(backend.Name, metadata) }
+									onclick="event.preventDefault(); event.stopPropagation(); window.open(this.dataset.serviceUrl, '_blank')"
+								>{ groupInfo.Group }</span>
+							} else {
+								<span class="capitalize">{ groupInfo.Group }</span>
+							}
+							<span class="text-gray-400 dark:text-gray-500"> → </span>
+							<span>{ displayName }</span>
+						</h5>
+					} else {
+						<h5 class="font-semibold text-base text-gray-800 dark:text-gray-100">
+							if GetServiceURL(backend.Name, metadata) != "" {
+								<span
+									class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:underline cursor-pointer"
+									data-service-url={ GetServiceURL(backend.Name, metadata) }
+									onclick="event.preventDefault(); event.stopPropagation(); window.open(this.dataset.serviceUrl, '_blank')"
+								>{ displayName }</span>
+							} else {
+								{ displayName }
+							}
+						</h5>
+					}
+					// IP address on same line or wraps to next line
+					if len(containers) == 0 && GetServerAddress(backend.Name, metadata) != "" {
+						<span class="text-sm text-gray-500 dark:text-gray-400 font-mono whitespace-nowrap">
+							{ GetServerAddress(backend.Name, metadata) }
+						</span>
+					}
+				</div>
+				<!-- Row 2: Controls - badges and icons (wraps earlier on constrained width) -->
+				<div class="flex flex-wrap items-center gap-1.5 mt-2 pr-14">
+					<!-- Type label (Hardware/Container) - based on backend group name -->
+					if groupInfo.Group == "hardware" {
+						<div class="relative group/type">
+							<span class="px-1.5 py-0.5 text-xs rounded bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 whitespace-nowrap cursor-help">HW</span>
+							<div class="absolute left-0 top-full mt-1 px-2 py-1 bg-gray-900 dark:bg-gray-800 text-white text-xs rounded shadow-lg opacity-0 invisible group-hover/type:opacity-100 group-hover/type:visible transition-all duration-200 z-30 whitespace-nowrap">
+								Hardware Service
+								<div class="absolute -top-1 left-2 w-2 h-2 bg-gray-900 dark:bg-gray-800 transform rotate-45"></div>
+							</div>
+						</div>
+					} else {
+						<div class="relative group/type">
+							<span class="px-1.5 py-0.5 text-xs rounded bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 whitespace-nowrap cursor-help">
+								if len(containers) > 1 {
+									{ fmt.Sprintf("%d", len(containers)) }x
+								}
+								CT
+							</span>
+							<div class="absolute left-0 top-full mt-1 px-2 py-1 bg-gray-900 dark:bg-gray-800 text-white text-xs rounded shadow-lg opacity-0 invisible group-hover/type:opacity-100 group-hover/type:visible transition-all duration-200 z-30 whitespace-nowrap">
+								if len(containers) > 1 {
+									{ fmt.Sprintf("%d Containers", len(containers)) }
+								} else {
+									Container Service
+								}
+								<div class="absolute -top-1 left-2 w-2 h-2 bg-gray-900 dark:bg-gray-800 transform rotate-45"></div>
+							</div>
+						</div>
+					}
+					<!-- Disabled badge with tooltip (shown next to status badge) -->
+					if isDisabled && disabledEntity != nil {
+						<div class="relative group">
+							<div class="px-2 py-1 text-xs font-semibold rounded bg-gray-500 dark:bg-gray-600 text-white cursor-help whitespace-nowrap">
+								DISABLED
+							</div>
+							<!-- Tooltip -->
+							<div class="absolute left-0 top-full mt-2 w-64 p-3 bg-gray-900 dark:bg-gray-800 text-white text-xs rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-30">
+								<div class="mb-2">
+									<span class="font-semibold">Disabled:</span>
+									<span class="text-gray-300">{ formatDisabledTime(disabledEntity.DisabledAt) }</span>
+								</div>
+								if disabledEntity.Notes != "" {
+									<div>
+										<span class="font-semibold">Notes:</span>
+										<div class="text-gray-300 mt-1">{ disabledEntity.Notes }</div>
+									</div>
+								}
+								<!-- Arrow pointing up to badge -->
+								<div class="absolute -top-1 left-4 w-2 h-2 bg-gray-900 dark:bg-gray-800 transform rotate-45"></div>
+							</div>
+						</div>
+					} else if isDisabled {
+						<div class="px-2 py-1 text-xs font-semibold rounded bg-gray-500 dark:bg-gray-600 text-white whitespace-nowrap">
+							DISABLED
+						</div>
+					}
+					@components.BackendHealthBadge(backend.HealthPercent)
+					<!-- Info icon with tooltip -->
+					<div class="relative group">
+						<svg class="w-4 h-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-help" fill="currentColor" viewBox="0 0 20 20">
+							<path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
+						</svg>
+						<!-- Tooltip -->
+						<div class="invisible group-hover:visible absolute right-0 top-6 w-64 p-3 bg-gray-900 dark:bg-gray-800 text-white text-xs rounded-lg shadow-lg z-10">
+							if len(containers) > 0 && hasSharedNetwork(containers) {
+								<p class="font-semibold mb-1">VPN Gateway Architecture</p>
+								<p>The backend container shares the network namespace of a VPN gateway. All traffic is routed through the VPN for privacy.</p>
+							} else if len(containers) > 1 {
+								<p class="font-semibold mb-1">Multi-Container Service</p>
+								<p>This service consists of multiple containers working together with shared dependencies.</p>
+							} else if len(containers) == 1 {
+								<p class="font-semibold mb-1">Simple Container</p>
+								<p>This is a standalone container service with direct HAProxy routing.</p>
+							} else {
+								<p class="font-semibold mb-1">Hardware Service</p>
+								<p>This service runs directly on hardware (not containerized) and is accessed via its IP address.</p>
+							}
+							<!-- Arrow pointing to icon -->
+							<div class="absolute -top-1 right-2 w-2 h-2 bg-gray-900 dark:bg-gray-800 transform rotate-45"></div>
+						</div>
+					</div>
+				</div>
+			</div>
+
+		<!-- Stats (Two-column layout) -->
+		<div class="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-gray-600 dark:text-gray-400 mb-3">
+			<div>Active: { fmt.Sprintf("%d", backend.ActiveServers) } / { fmt.Sprintf("%d", backend.TotalServers) } servers</div>
+			<div class="text-right">Queue: { fmt.Sprintf("%d", backend.QueueCurrent) }</div>
+			<div>Response Time: { fmt.Sprintf("%d ms", backend.ResponseTime) }</div>
+			<div class="text-right">Sessions: { fmt.Sprintf("%d", backend.CurrentSessions) }</div>
+		</div>
+
+			<!-- Container Architecture (only for non-hardware backends) -->
+			if len(containers) > 0 && groupInfo.Group != "hardware" {
+				@components.ContainerDiagram(containers, GetServerAddress(backend.Name, metadata))
+			}
+		</a>
+		<!-- Monitoring toggle switch - only shown if user has permission to manage disabled entities -->
+		if canManageDisabled {
+			<div class="absolute top-5 right-5 group/toggle">
+				<label class="relative inline-flex items-center cursor-pointer">
+					<input
+						type="checkbox"
+						class="backend-toggle-checkbox sr-only peer"
+						data-server-id={ serverID }
+						data-backend-name={ backend.Name }
+						data-display-name={ displayName }
+						if !isDisabled {
+							checked
+						}
+					/>
+					<div class="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-gray-500 peer-checked:bg-green-500"></div>
+				</label>
+				<!-- Tooltip for toggle -->
+				<div class="absolute right-0 top-full mt-2 w-48 p-2 bg-gray-900 dark:bg-gray-800 text-white text-xs rounded-lg shadow-lg opacity-0 invisible group-hover/toggle:opacity-100 group-hover/toggle:visible transition-all duration-200 z-30 text-center">
+					if isDisabled {
+						Click to enable health monitoring
+					} else {
+						Click to disable health monitoring
+					}
+					<div class="absolute -top-1 right-4 w-2 h-2 bg-gray-900 dark:bg-gray-800 transform rotate-45"></div>
+				</div>
+			</div>
+		}
+	</div>
+}
+
+templ StatusSummarySection(stats *models.HAProxyStats, metadata *models.Metadata, disabledEntities []database.DisabledEntity) {
+	<div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-300 dark:border-slate-600 p-6 mb-6">
+		<div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+			for _, summary := range []StatusSummary{CalculateStatusSummaryWithDisabled(stats, metadata, disabledEntities)} {
+				@components.StatusDoughnut(summary.HealthyFrontends, summary.TotalFrontends, "Frontends")
+				@components.StatusDoughnut(summary.HealthyBackends, summary.TotalBackends, "Backends")
+				@components.StatusDoughnut(summary.HealthyServices, summary.TotalServices, "Servers")
+			}
+		</div>
+	</div>
+}
+
+templ MetricsPartial(metrics *models.SystemMetrics) {
+	<div>
+		<h4 class="text-lg font-semibold mb-3 text-gray-800 dark:text-gray-100">System Metrics</h4>
+		@components.SystemMetrics(metrics)
+
+		if len(metrics.ServiceStatuses) > 0 {
+			@components.ServiceStatusList(metrics.ServiceStatuses)
+		}
+	</div>
+}

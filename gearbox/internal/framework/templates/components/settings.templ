@@ -1,0 +1,123 @@
+package components
+
+// SettingsSection wraps a group of settings with a title and description.
+templ SettingsSection(title, description string) {
+	<div class="space-y-6">
+		<div>
+			<h3 class="text-lg font-medium text-gray-900 dark:text-gray-100">{ title }</h3>
+			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+				{ description }
+			</p>
+		</div>
+		<div class="space-y-4">
+			{ children... }
+		</div>
+	</div>
+}
+
+// SettingsCheckbox renders a checkbox input with a label and help text.
+templ SettingsCheckbox(id, label, helpText string, checked bool) {
+	<div>
+		<div class="flex items-center">
+			<input
+				type="checkbox"
+				id={ id }
+				name={ id }
+				if checked {
+					checked
+				}
+				class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+			/>
+			<label for={ id } class="ml-2 block text-sm text-gray-700 dark:text-gray-300">
+				{ label }
+			</label>
+		</div>
+		if helpText != "" {
+			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+				{ helpText }
+			</p>
+		}
+	</div>
+}
+
+// SelectOption represents an option in a select dropdown.
+type SelectOption struct {
+	Value    string
+	Label    string
+	Selected bool
+}
+
+// SettingsSelect renders a select dropdown with a label and help text.
+templ SettingsSelect(id, label, helpText string, options []SelectOption) {
+	<div>
+		<label for={ id } class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+			{ label }
+		</label>
+		<select
+			id={ id }
+			name={ id }
+			class="mt-1 block w-full rounded-md border-gray-300 dark:border-slate-600 dark:bg-slate-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+		>
+			for _, opt := range options {
+				<option
+					value={ opt.Value }
+					if opt.Selected {
+						selected
+					}
+				>
+					{ opt.Label }
+				</option>
+			}
+		</select>
+		if helpText != "" {
+			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+				{ helpText }
+			</p>
+		}
+	</div>
+}
+
+// SettingsTextInput renders a text input with a label and help text.
+templ SettingsTextInput(id, label, placeholder, helpText, value string) {
+	<div>
+		<label for={ id } class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+			{ label }
+		</label>
+		<input
+			type="text"
+			id={ id }
+			name={ id }
+			placeholder={ placeholder }
+			value={ value }
+			class="mt-1 block w-full rounded-md border-gray-300 dark:border-slate-600 dark:bg-slate-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+		/>
+		if helpText != "" {
+			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+				{ helpText }
+			</p>
+		}
+	</div>
+}
+
+// SettingsNumberInput renders a number input with a label and help text.
+templ SettingsNumberInput(id, label, helpText string, value, min, max int) {
+	<div>
+		<label for={ id } class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+			{ label }
+		</label>
+		<input
+			type="number"
+			id={ id }
+			name={ id }
+			value={ intToString(value) }
+			min={ intToString(min) }
+			max={ intToString(max) }
+			class="mt-1 block w-full rounded-md border-gray-300 dark:border-slate-600 dark:bg-slate-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+		/>
+		if helpText != "" {
+			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+				{ helpText }
+			</p>
+		}
+	</div>
+}

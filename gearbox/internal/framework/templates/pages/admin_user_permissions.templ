@@ -1,0 +1,356 @@
+package pages
+
+import (
+	"fmt"
+	"github.com/sarg3nt/gearbox/internal/framework/models"
+	templcomponents "github.com/sarg3nt/gearbox/internal/framework/ui"
+	"github.com/sarg3nt/gearbox/internal/framework/templates/layouts"
+)
+
+templ AdminUserPermissions(
+	currentUser *models.User,
+	targetUser *models.User,
+	userPerms *models.UserPermissions,
+	components []models.Component,
+	templates []models.PermissionTemplate,
+	errorMessage, successMessage, csrfToken string,
+) {
+	@layouts.Base(fmt.Sprintf("Permissions - %s", targetUser.DisplayName()), currentUser, "/settings") {
+		<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+			<!-- Header -->
+			<div class="mb-8">
+				<div class="flex items-center space-x-4 mb-4">
+					<a
+						href="/settings/permissions"
+						class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+					>
+						<svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+						</svg>
+					</a>
+					<div>
+						<h1 class="text-3xl font-bold text-gray-900 dark:text-white">
+							Manage Permissions
+						</h1>
+						<p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
+							{ targetUser.DisplayName() } ({ targetUser.Email })
+						</p>
+					</div>
+				</div>
+
+				if targetUser.IsAdmin() {
+					<div class="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-4">
+						<div class="flex">
+							<div class="flex-shrink-0">
+								<svg class="h-5 w-5 text-purple-400" viewBox="0 0 20 20" fill="currentColor">
+									<path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
+								</svg>
+							</div>
+							<div class="ml-3">
+								<p class="text-sm text-purple-800 dark:text-purple-200">
+									This user is an <strong>Admin</strong> and has full access to all components and actions.
+									Individual permissions do not apply to admin users.
+								</p>
+							</div>
+						</div>
+					</div>
+				}
+			</div>
+
+			if errorMessage != "" {
+				@templcomponents.ToastOnLoad(errorMessage, "error")
+			}
+
+			if successMessage != "" {
+				@templcomponents.ToastOnLoad(successMessage, "success")
+			}
+
+			<!-- Quick Templates -->
+			if !targetUser.IsAdmin() {
+				<div class="mb-8 bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+					<h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Quick Apply Templates</h2>
+					<p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+						Apply a pre-configured permission template. This will replace all current permissions.
+					</p>
+					<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+						for _, template := range templates {
+							@templateCard(template, targetUser.ID, csrfToken)
+						}
+					</div>
+				</div>
+
+				<!-- Individual Permissions -->
+				<div class="bg-white dark:bg-gray-800 rounded-lg shadow">
+					<div class="px-6 py-5 border-b border-gray-200 dark:border-gray-700">
+						
+							<h2 class="text-lg font-semibold text-gray-900 dark:text-white">Individual Permissions</h2>
+							<p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
+							Configure specific permissions for each component
+							</p>
+						</div>
+
+					<form
+						id="permissions-form"
+						action={ templ.URL(fmt.Sprintf("/api/users/%s/permissions", targetUser.ID)) }
+						method="POST"
+						class="divide-y divide-gray-200 dark:divide-gray-700"
+					>
+						<input type="hidden" name="csrf_token" value={ csrfToken }/>
+
+						for _, component := range components {
+							@componentPermissionSection(component, userPerms, targetUser.ID)
+						}
+
+					</form>
+				</div>
+			}
+		</div>
+
+		<script>
+		function savePermissions() {
+			const form = document.getElementById('permissions-form');
+			const formData = new FormData(form);
+			const permissions = {};
+
+		// Build permissions object by checking all permission checkboxes
+		// Note: FormData only includes checked checkboxes, so we need to query them directly
+		form.querySelectorAll('input[type="checkbox"]').forEach(input => {
+			if (input.name.startsWith('perm_') && input.checked) {
+				// Use data attributes to avoid parsing issues with underscores
+				const component = input.dataset.component;
+				const permission = input.dataset.permission;
+
+				if (!permissions[component]) {
+					permissions[component] = [];
+				}
+				permissions[component].push(permission);
+			}
+		});
+
+			// Send to API
+			fetch(form.action, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'X-CSRF-Token': formData.get('csrf_token')
+				},
+				body: JSON.stringify({ permissions: permissions })
+			})
+			.then(response => response.json())
+			.then(data => {
+				if (data.success) {
+					showSavedIndicator();
+				} else {
+					if (window.showToast) { window.showToast(data.error || 'Failed to save permissions', 'error', 4000); } else { showAlertDialog({ title: 'Error', message: 'Error: ' + (data.error || 'Failed to save permissions'), type: 'error' }); }
+				}
+			})
+			.catch(error => {
+				console.error('Error:', error);
+				if (window.showToast) { window.showToast('Failed to save permissions', 'error', 4000); } else { showAlertDialog({ title: 'Error', message: 'Failed to save permissions', type: 'error' }); }
+			});
+		}
+
+		let saveTimeout = null;
+
+	// Show the saved toast notification
+	function showSavedIndicator() {
+		if (window.showToast) {
+			window.showToast('Permissions saved successfully', 'success', 2000);
+		}
+	}
+
+	// Auto-save function - saves immediately
+	function autoSavePermissions() {
+		// Save immediately without delay
+		savePermissions();
+	}
+
+	// Set up auto-save on permission changes
+	document.addEventListener('DOMContentLoaded', function() {
+		const form = document.getElementById('permissions-form');
+		if (form) {
+			// Listen for changes on all permission checkboxes
+			form.querySelectorAll('input[type="checkbox"]').forEach(input => {
+				if (input.name.startsWith('perm_')) {
+					input.addEventListener('change', function() {
+						// Update View checkbox state for this component
+						updateViewCheckboxState(this.dataset.component);
+						// Then auto-save
+						autoSavePermissions();
+					});
+				}
+			});
+
+			// Initialize View checkbox states on page load
+			initializeViewCheckboxStates();
+		}
+	});
+
+	// Get all permission checkboxes for a component
+	function getComponentCheckboxes(component) {
+		return document.querySelectorAll(`input[data-component="${component}"]`);
+	}
+
+	// Get the View checkbox for a component
+	function getViewCheckbox(component) {
+		return document.querySelector(`input[data-component="${component}"][data-permission="view"]`);
+	}
+
+	// Check if any non-View permission is checked for a component
+	function hasNonViewPermissionChecked(component) {
+		const checkboxes = getComponentCheckboxes(component);
+		for (const cb of checkboxes) {
+			if (cb.dataset.permission !== 'view' && cb.checked) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// Update the View checkbox state based on other permissions
+	function updateViewCheckboxState(component) {
+		const viewCheckbox = getViewCheckbox(component);
+		if (!viewCheckbox) return; // Component might not have a View permission
+
+		const hasSubPermission = hasNonViewPermissionChecked(component);
+
+		if (hasSubPermission) {
+			// Auto-check and disable the View checkbox
+			viewCheckbox.checked = true;
+			viewCheckbox.disabled = true;
+			// Add visual indicator that it's locked
+			viewCheckbox.closest('label').classList.add('opacity-60');
+		} else {
+			// Re-enable the View checkbox
+			viewCheckbox.disabled = false;
+			viewCheckbox.closest('label').classList.remove('opacity-60');
+		}
+	}
+
+	// Initialize all View checkbox states on page load
+	function initializeViewCheckboxStates() {
+		// Get all unique components
+		const components = new Set();
+		document.querySelectorAll('input[data-component]').forEach(input => {
+			components.add(input.dataset.component);
+		});
+
+		// Update each component's View checkbox state
+		components.forEach(component => {
+			updateViewCheckboxState(component);
+		});
+	}
+
+	// Set up event listeners for template buttons
+		document.addEventListener('DOMContentLoaded', function() {
+			document.querySelectorAll('.apply-template-btn').forEach(function(btn) {
+				btn.addEventListener('click', async function() {
+					const templateName = this.dataset.template;
+					const userID = this.dataset.userId;
+					const csrfToken = this.dataset.csrfToken;
+
+				// Use custom modal instead of browser confirm
+				const confirmed = await showConfirmDialog({
+					title: 'Apply Permission Template',
+					message: 'Apply template "' + templateName + '"? This will replace all current permissions.',
+					confirmText: 'Apply Template',
+					type: 'warning'
+				});
+
+				if (!confirmed) {
+						return;
+					}
+
+					fetch('/api/users/' + userID + '/permissions/template', {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+							'X-CSRF-Token': csrfToken
+						},
+						body: JSON.stringify({ template_name: templateName })
+					})
+					.then(response => response.json())
+					.then(data => {
+						if (data.success) {
+							if (window.showToast) {
+								window.showToast('Template applied successfully', 'success', 2500);
+							}
+							// Reload the page after toast is visible
+							setTimeout(() => {
+								window.location.reload();
+							}, 1500);
+						} else {
+							if (window.showToast) {
+								window.showToast(data.error || 'Failed to apply template', 'error', 4000);
+							} else {
+								showAlertDialog({ title: 'Error', message: 'Error: ' + (data.error || 'Failed to apply template'), type: 'error' });
+							}
+						}
+					})
+					.catch(error => {
+						console.error('Error:', error);
+						if (window.showToast) {
+							window.showToast('Failed to apply template', 'error', 4000);
+						} else {
+							showAlertDialog({ title: 'Error', message: 'Failed to apply template', type: 'error' });
+						}
+					});
+				});
+			});
+		});
+		</script>
+	}
+}
+
+templ templateCard(template models.PermissionTemplate, userID string, csrfToken string) {
+	<div
+		data-template={ template.Name }
+		data-user-id={ userID }
+		data-csrf-token={ csrfToken }
+		class="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:border-blue-500 dark:hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors cursor-pointer apply-template-btn"
+	>
+		<h3 class="font-medium text-gray-900 dark:text-white mb-1">{ template.Name }</h3>
+		<p class="text-sm text-gray-600 dark:text-gray-400 mb-3">{ template.Description }</p>
+		<span class="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 font-medium">
+			Apply Template →
+		</span>
+	</div>
+}
+
+templ componentPermissionSection(component models.Component, userPerms *models.UserPermissions, userID string) {
+	<div class="px-6 py-5">
+		<h3 class="text-base font-medium text-gray-900 dark:text-white mb-3">
+			{ models.GetComponentDisplayName(component) }
+		</h3>
+		<div class="space-y-3">
+			for _, permission := range models.GetAvailablePermissionsForComponent(component) {
+				@permissionCheckbox(component, permission, userPerms)
+			}
+		</div>
+	</div>
+}
+
+templ permissionCheckbox(component models.Component, permission models.Permission, userPerms *models.UserPermissions) {
+	<label class="flex items-start cursor-pointer">
+		<div class="flex items-center">
+			<input
+				type="checkbox"
+				name={ fmt.Sprintf("perm_%s_%s", component, permission) }
+				value="1"
+				checked?={ userPerms.HasPermission(component, permission) }
+				data-component={ string(component) }
+				data-permission={ string(permission) }
+				class="sr-only peer"
+			/>
+			<div class="relative w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-gray-500 peer-checked:bg-blue-600"></div>
+		</div>
+		<div class="ml-3">
+			<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+				{ models.GetPermissionDisplayName(permission) }
+			</span>
+			<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+				{ models.GetPermissionDescription(permission) }
+			</p>
+		</div>
+	</label>
+}

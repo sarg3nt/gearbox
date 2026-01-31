@@ -1,0 +1,48 @@
+# Binaries
+bin/
+/server
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+data/
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.out
+coverage.html
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated Templ files
+*_templ.go
+
+# Environment files
+.env
+.env.local
+
+# Development tools
+tmp/
+.air.toml
+
+# Build artifacts
+dist/

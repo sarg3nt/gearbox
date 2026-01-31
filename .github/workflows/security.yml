@@ -1,0 +1,156 @@
+name: Security Scanning
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    # Run security scans weekly on Monday at 9 AM UTC
+    - cron: '0 9 * * 1'
+
+permissions:
+  contents: read
+  security-events: write # Required for uploading SARIF results
+
+jobs:
+  gosec:
+    name: Go Security Scan (gosec)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+
+      - name: Run gosec for gearbox
+        uses: securego/gosec@master
+        with:
+          args: '-no-fail -fmt sarif -out gosec-gearbox.sarif ./gearbox/...'
+
+      - name: Run gosec for gearbox-agent
+        uses: securego/gosec@master
+        with:
+          args: '-no-fail -fmt sarif -out gosec-agent.sarif ./gearbox-agent/...'
+
+      - name: Upload gosec results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: gosec-gearbox.sarif
+          category: gosec-gearbox
+
+      - name: Upload gosec agent results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: gosec-agent.sarif
+          category: gosec-agent
+
+  trivy-repo:
+    name: Trivy Repository Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Run Trivy vulnerability scanner in repo mode
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+          category: trivy-repo
+
+  npm-audit:
+    name: NPM Security Audit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./gearbox
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      - name: Run npm audit
+        run: |
+          # Run audit and capture exit code
+          npm audit --json > npm-audit.json || true
+
+          # Check for high/critical vulnerabilities
+          CRITICAL=$(cat npm-audit.json | jq '.metadata.vulnerabilities.critical // 0')
+          HIGH=$(cat npm-audit.json | jq '.metadata.vulnerabilities.high // 0')
+
+          echo "Critical vulnerabilities: $CRITICAL"
+          echo "High vulnerabilities: $HIGH"
+
+          # Fail if critical or high vulnerabilities found
+          if [ "$CRITICAL" -gt 0 ] || [ "$HIGH" -gt 0 ]; then
+            echo "::error::Found $CRITICAL critical and $HIGH high severity vulnerabilities"
+            npm audit
+            exit 1
+          fi
+
+      - name: Upload npm audit results
+        uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: npm-audit-results
+          path: gearbox/npm-audit.json
+          retention-days: 30
+
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v6
+        with:
+          fail-on-severity: moderate
+          deny-licenses: GPL-3.0, AGPL-3.0
+
+  gitleaks:
+    name: Secret Scanning (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }} # Optional: for Gitleaks Pro
+
+  security-summary:
+    name: Security Scan Summary
+    runs-on: ubuntu-latest
+    needs: [gosec, trivy-repo, npm-audit, gitleaks]
+    if: always()
+    steps:
+      - name: Security scan results
+        run: |
+          echo "Security scanning completed!"
+          echo "Check the Security tab for detailed results."

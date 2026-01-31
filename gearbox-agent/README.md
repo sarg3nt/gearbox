@@ -1,0 +1,314 @@
+# Gearbox Agent
+
+A Go service that runs on monitored servers and workstations to provide:
+
+1. **Plugin-based data collection** - Gathers system metrics, service stats, logs, and security data
+2. **Secure REST API** - Exposes collected data over HTTPS with API key authentication
+3. **Real-time events** - WebSocket endpoint for live updates to Gearbox dashboard
+4. **Auto-discovery** - Detects installed services and enables relevant collectors
+
+**Universal Monitoring:** Works on ANY Linux system - HAProxy hosts, Docker hosts, TrueNAS Scale, workstations, bare servers.
+
+**HAProxy-Specific Features (when HAProxy is detected):**
+- Auto-configuration from Docker Compose labels in GitHub
+- HAProxy stats and runtime info collection
+- Replaces the original Python `haproxy-autoconfig.py` script
+
+## Table of Contents
+
+- [Quick Start](#quick-start)
+- [API Endpoints](#api-endpoints)
+- [Configuration](#configuration)
+- [Authentication](#authentication)
+- [Deployment](#deployment)
+- [Development](#development)
+- [Documentation](#documentation)
+
+## Quick Start
+
+### Installation
+
+```bash
+# Build for Linux
+make build-linux
+
+# First-time deployment (creates systemd service)
+make deploy-first
+
+# Subsequent deployments
+make deploy
+```
+
+### Verify Installation
+
+```bash
+# Check service status
+make status
+
+# Get API key
+make show-api-key
+
+# Test the API
+curl -sk -H "Authorization: Bearer YOUR_API_KEY" https://10.0.0.3:8405/health
+```
+
+## API Endpoints
+
+### Health & Monitoring
+
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/health` | GET | No | Health check (for load balancers) |
+| `/api/v1/metrics` | GET | Yes | System metrics (CPU, memory, disk, network) |
+| `/api/v1/services` | GET | Yes | Systemd service statuses |
+
+### HAProxy Data
+
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/api/v1/haproxy/stats` | GET | Yes | Parsed HAProxy stats (JSON or CSV) |
+| `/api/v1/haproxy/info` | GET | Yes | HAProxy runtime info |
+| `/api/v1/haproxy/tables` | GET | Yes | Stick table info |
+| `/api/v1/haproxy/validate` | GET | Yes | Validate HAProxy config |
+| `/api/v1/metadata` | GET | Yes | Backend/frontend metadata from sync |
+
+### Logs
+
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/api/v1/logs` | GET | Yes | List available log sources |
+| `/api/v1/logs/{name}` | GET | Yes | Fetch logs from a source |
+
+### Security
+
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/api/v1/security/summary` | GET | Yes | Quick security status overview |
+| `/api/v1/security/fail2ban` | GET | Yes | Fail2ban jail stats and bans |
+| `/api/v1/security/firewall` | GET | Yes | Firewall stats and blocks |
+
+### Sync
+
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/api/v1/sync/status` | GET | Yes | Git sync status |
+| `/api/v1/webhook/github` | POST | Signature | GitHub webhook receiver |
+| `/api/v1/webhook/info` | GET | Yes | Webhook configuration info |
+
+### WebSocket
+
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/api/v1/events/token` | POST | Yes | Exchange API key for WebSocket token |
+| `/api/v1/events` | GET | Token | Real-time event stream |
+| `/api/v1/events/info` | GET | Yes | WebSocket endpoint info |
+
+### Documentation
+
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/swagger/` | GET | No | Swagger UI |
+
+## Configuration
+
+All configuration is via environment variables. Set them in `/etc/default/gearbox-agent`.
+
+### Core Settings
+
+```bash
+# Server
+HAPROXY_AGENT_LISTEN=0.0.0.0:8405
+HAPROXY_AGENT_DATA_DIR=/var/lib/gearbox-agent
+HAPROXY_AGENT_LOG_LEVEL=info  # debug, info, warn, error
+
+# TLS (optional - uses self-signed if not set)
+HAPROXY_AGENT_TLS_CERT=/etc/haproxy/certs/sarg3.net.fullchain.crt
+HAPROXY_AGENT_TLS_KEY=/etc/haproxy/certs/sarg3.net.key
+```
+
+### Git Sync
+
+```bash
+HAPROXY_GIT_REPO=https://github.com/your-org/your-repo
+HAPROXY_GIT_PAT=ghp_your_personal_access_token
+HAPROXY_GIT_BRANCH=main
+HAPROXY_APPS_FOLDER=apps
+HAPROXY_POLL_INTERVAL=5m  # Supports: 60, 60s, 5m, 1h
+```
+
+### Webhook
+
+```bash
+HAPROXY_WEBHOOK_ENABLED=true
+HAPROXY_WEBHOOK_POLL_BACKUP=false  # Keep polling as backup
+```
+
+### HAProxy Stats
+
+```bash
+HAPROXY_STATS_SOCKET=/run/haproxy/admin.sock  # Preferred
+HAPROXY_STATS_URL=http://localhost:8404/stats  # Fallback
+HAPROXY_STATS_USER=admin
+HAPROXY_STATS_PASSWORD=secret
+```
+
+## Authentication
+
+### API Key
+
+All endpoints (except `/health` and `/swagger/`) require API key authentication:
+
+```bash
+curl -H "Authorization: Bearer YOUR_API_KEY" https://server:8405/api/v1/metrics
+```
+
+The API key is auto-generated on first run and stored at `/var/lib/gearbox-agent/api-key`.
+
+### CLI Commands
+
+```bash
+# Show current API key
+gearbox-agent --show-api-key
+
+# Rotate API key
+gearbox-agent --rotate-api-key
+
+# Show webhook secret
+gearbox-agent --show-webhook-secret
+
+# Generate webhook secret
+gearbox-agent --generate-webhook-secret
+```
+
+## Deployment
+
+### Prerequisites
+
+- Target server with HAProxy installed
+- SSH access to the server
+- Go 1.25+ for building
+
+### Passwordless Sudo Setup (Required for make deploy)
+
+The `make deploy` command requires passwordless sudo for specific commands. Ubuntu 24.04+ uses **sudo-rs** (Rust rewrite of sudo) which is stricter about command matching than traditional sudo.
+
+1. Copy the sudoers file to the server:
+
+   ```bash
+   scp deploy/sudoers-gearbox-agent-deploy dave@10.0.0.3:/tmp/
+   ```
+
+1. Install it on the server (requires password once):
+
+   ```bash
+   ssh dave@10.0.0.3 'sudo cp /tmp/sudoers-gearbox-agent-deploy /etc/sudoers.d/gearbox-agent-deploy && sudo chmod 0440 /etc/sudoers.d/gearbox-agent-deploy'
+   ```
+
+1. Verify it works:
+
+   ```bash
+   ssh dave@10.0.0.3 'sudo /usr/bin/systemctl status gearbox-agent'
+   ```
+
+The sudoers file grants passwordless access to:
+
+- `systemctl stop/start/restart/status gearbox-agent`
+- `systemctl daemon-reload`
+- `cp /tmp/gearbox-agent /usr/local/bin/gearbox-agent`
+- `chmod +x /usr/local/bin/gearbox-agent`
+- `cat /var/lib/gearbox-agent/api-key`
+- `journalctl -u gearbox-agent` (with various flags)
+
+**Important:** sudo-rs requires exact command matching. The Makefile uses full paths (`/usr/bin/systemctl`) and avoids extra flags not in the sudoers file.
+
+### Deploy
+
+```bash
+# Build and deploy
+make deploy
+
+# View logs
+make logs
+
+# Check status
+make status
+```
+
+### First-Time Installation
+
+```bash
+# First deployment (creates systemd service, directories, etc.)
+make deploy-first
+```
+
+### Manual Installation
+
+```bash
+# Copy binary
+scp bin/gearbox-agent-linux-amd64 user@server:/tmp/gearbox-agent
+ssh user@server 'sudo cp /tmp/gearbox-agent /usr/local/bin/'
+
+# Copy service file
+scp deploy/gearbox-agent.service user@server:/tmp/
+ssh user@server 'sudo cp /tmp/gearbox-agent.service /etc/systemd/system/'
+
+# Enable and start
+ssh user@server 'sudo systemctl daemon-reload && sudo systemctl enable gearbox-agent && sudo systemctl start gearbox-agent'
+```
+
+### Troubleshooting Deployment
+
+If `make deploy` fails with "Authentication failed":
+
+1. **Check sudo-rs compatibility**: Ubuntu 24.04+ uses sudo-rs which requires exact command matching
+2. **Verify sudoers file is installed**: `ssh dave@10.0.0.3 'sudo -l'` should list the allowed commands
+3. **Check file permissions**: Sudoers file must be owned by root:root with mode 0440
+4. **No extra flags**: Commands must match exactly (e.g., no `--no-pager` unless in sudoers)
+
+## Development
+
+### Commands
+
+```bash
+make build        # Build for current platform
+make build-linux  # Build for Linux amd64
+make test         # Run tests
+make lint         # Run linter
+make swagger      # Generate Swagger docs
+make fmt          # Format code
+make tidy         # Tidy dependencies
+```
+
+### Running Locally
+
+The agent uses Linux-specific syscalls and won't run on macOS. Use a Linux VM or deploy to a test server.
+
+### Code Structure
+
+```text
+gearbox-agent/
+├── cmd/gearbox-agent/    # Entry point
+├── internal/
+│   ├── api/              # HTTP handlers, middleware
+│   ├── compose/          # Docker Compose parser
+│   ├── config/           # Configuration loading
+│   ├── crypto/           # TLS, API keys, secrets
+│   ├── events/           # Event bus for WebSocket
+│   ├── github/           # GitHub API client
+│   ├── haproxy/          # Stats, config generation
+│   ├── logs/             # Log collection
+│   ├── metrics/          # System metrics
+│   ├── security/         # Fail2ban, firewall stats
+│   ├── state/            # Sync state persistence
+│   └── sync/             # Git sync service
+├── deploy/               # Systemd service file
+└── docs/                 # API documentation
+```
+
+## Documentation
+
+- [HAProxy API](docs/haproxy-api.md) - Stats, runtime info, validation
+- [Logs API](docs/logs-api.md) - Log streaming
+- [Security API](docs/security-api.md) - Fail2ban and firewall stats
+- [WebSocket Events](docs/websocket-events.md) - Real-time event streaming
+- [Webhook Setup](docs/webhook-setup.md) - GitHub webhook configuration

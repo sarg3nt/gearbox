@@ -1,0 +1,42 @@
+# Binaries
+gearbox/bin/
+gearbox-agent/bin/
+
+# Data
+gearbox/data/*.db
+gearbox/data/*.db-*
+gearbox/data/*.db-shm
+gearbox/data/*.db-wal
+gearbox-agent/data/
+
+# Environment
+gearbox/.env
+gearbox-agent/.env
+*.local.json
+
+# Development
+.DS_Store
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Build artifacts
+**/*_templ.go
+coverage.out
+*.test
+
+# Logs
+*.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+
+# Temporary files
+*.tmp
+*.bak

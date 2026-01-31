@@ -1,0 +1,274 @@
+package widgets
+
+import "fmt"
+
+// MetricCardData represents the data structure for a metric card
+type MetricCardData struct {
+	Title     string
+	Value     float64
+	Trend     float64 // Positive = increasing, negative = decreasing
+	Unit      string
+	Icon      string
+	Color     string // blue, green, yellow, red, gray
+	Format    string // number, percentage, bytes, duration
+	Threshold *MetricThreshold
+}
+
+type MetricThreshold struct {
+	Warning  float64
+	Critical float64
+}
+
+// MetricCardWidget renders a metric card from config and data
+templ MetricCardWidget(config map[string]any, data any) {
+	if cardData, ok := data.(MetricCardData); ok {
+		@MetricCard(cardData)
+	} else if cardData, ok := data.(map[string]any); ok {
+		@MetricCardFromMap(config, cardData)
+	} else {
+		@MetricCardFromValue(config)
+	}
+}
+
+// MetricCard renders a metric card with value, trend, and threshold coloring
+templ MetricCard(data MetricCardData) {
+	<div class={ getMetricCardClass(data.Color, data.Value, data.Threshold) }>
+		<!-- Header -->
+		<div class="flex items-start justify-between mb-3">
+			<h4 class="text-sm font-medium text-gray-600 dark:text-gray-400">{ data.Title }</h4>
+			if data.Icon != "" {
+				<div class="text-gray-400">
+					<!-- Icon placeholder - would use actual icon component -->
+					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
+					</svg>
+				</div>
+			}
+		</div>
+
+		<!-- Value -->
+		<div class="mb-2">
+			<span class="text-3xl font-bold text-gray-900 dark:text-gray-100">
+				{ formatMetricCardValue(data.Value, data.Format) }
+			</span>
+			if data.Unit != "" {
+				<span class="text-lg text-gray-500 dark:text-gray-400 ml-1">{ data.Unit }</span>
+			}
+		</div>
+
+		<!-- Trend indicator -->
+		if data.Trend != 0 {
+			<div class="flex items-center gap-1">
+				if data.Trend > 0 {
+					<!-- Up arrow -->
+					<svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"></path>
+					</svg>
+					<span class="text-sm text-green-600 dark:text-green-400 font-medium">
+						{ formatTrend(data.Trend) }
+					</span>
+				} else {
+					<!-- Down arrow -->
+					<svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path>
+					</svg>
+					<span class="text-sm text-red-600 dark:text-red-400 font-medium">
+						{ formatTrend(-data.Trend) }
+					</span>
+				}
+			</div>
+		}
+	</div>
+}
+
+// MetricCardFromMap renders a metric card from a map (for dynamic data)
+templ MetricCardFromMap(config map[string]any, data map[string]any) {
+	<div class={ getMetricCardClassFromConfig(config, data) }>
+		<!-- Header -->
+		<div class="flex items-start justify-between mb-3">
+			<h4 class="text-sm font-medium text-gray-600 dark:text-gray-400">
+				{ getStringConfig(config, "title", "Metric") }
+			</h4>
+			if icon := getStringConfig(config, "icon", ""); icon != "" {
+				<div class="text-gray-400">
+					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
+					</svg>
+				</div>
+			}
+		</div>
+
+		<!-- Value -->
+		<div class="mb-2">
+			if valueSource := getStringConfig(config, "value_source", ""); valueSource != "" {
+				if value, ok := data[valueSource]; ok {
+					<span class="text-3xl font-bold text-gray-900 dark:text-gray-100">
+						{ formatConfigValue(value, getStringConfig(config, "format", "number")) }
+					</span>
+				}
+			}
+		</div>
+
+		<!-- Trend indicator -->
+		if trendField := getStringConfig(config, "trend_field", ""); trendField != "" {
+			if trendValue, ok := data[trendField]; ok {
+				if trend, ok := trendValue.(float64); ok && trend != 0 {
+					@renderTrendIndicator(trend)
+				}
+			}
+		}
+	</div>
+}
+
+// MetricCardFromValue renders a metric card with a single value from config
+templ MetricCardFromValue(config map[string]any) {
+	<div class={ getMetricCardClassFromConfigOnly(config) }>
+		<!-- Header -->
+		<div class="flex items-start justify-between mb-3">
+			<h4 class="text-sm font-medium text-gray-600 dark:text-gray-400">
+				{ getStringConfig(config, "title", "Metric") }
+			</h4>
+		</div>
+
+		<!-- Value -->
+		<div class="mb-2">
+			if value, ok := config["value"]; ok {
+				<span class="text-3xl font-bold text-gray-900 dark:text-gray-100">
+					{ formatConfigValue(value, getStringConfig(config, "format", "number")) }
+				</span>
+			}
+		</div>
+	</div>
+}
+
+templ renderTrendIndicator(trend float64) {
+	<div class="flex items-center gap-1">
+		if trend > 0 {
+			<svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"></path>
+			</svg>
+			<span class="text-sm text-green-600 dark:text-green-400 font-medium">
+				{ formatTrend(trend) }
+			</span>
+		} else {
+			<svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path>
+			</svg>
+			<span class="text-sm text-red-600 dark:text-red-400 font-medium">
+				{ formatTrend(-trend) }
+			</span>
+		}
+	</div>
+}
+
+// Helper functions
+
+func getMetricCardClass(color string, value float64, threshold *MetricThreshold) string {
+	baseClass := "bg-white dark:bg-slate-900 border rounded-lg p-4 hover:shadow-md transition-shadow "
+
+	// Apply threshold coloring if configured
+	if threshold != nil {
+		if value >= threshold.Critical {
+			return baseClass + "border-red-500 dark:border-red-500"
+		} else if value >= threshold.Warning {
+			return baseClass + "border-yellow-500 dark:border-yellow-500"
+		}
+	}
+
+	// Apply color
+	switch color {
+	case "blue":
+		return baseClass + "border-blue-300 dark:border-blue-600"
+	case "green":
+		return baseClass + "border-green-300 dark:border-green-600"
+	case "yellow":
+		return baseClass + "border-yellow-300 dark:border-yellow-600"
+	case "red":
+		return baseClass + "border-red-300 dark:border-red-600"
+	case "gray":
+		return baseClass + "border-gray-300 dark:border-slate-600"
+	default:
+		return baseClass + "border-gray-300 dark:border-slate-600"
+	}
+}
+
+func getMetricCardClassFromConfig(config map[string]any, data map[string]any) string {
+	baseClass := "bg-white dark:bg-slate-900 border rounded-lg p-4 hover:shadow-md transition-shadow "
+
+	// Check for threshold configuration
+	if thresholdConfig, ok := config["threshold"].(map[string]any); ok {
+		if valueSource := getStringConfig(config, "value_source", ""); valueSource != "" {
+			if value, ok := data[valueSource]; ok {
+				if valueFloat, ok := value.(float64); ok {
+					if critical := getFloatConfig(thresholdConfig, "critical", 0); critical > 0 && valueFloat >= critical {
+						return baseClass + "border-red-500 dark:border-red-500"
+					}
+					if warning := getFloatConfig(thresholdConfig, "warning", 0); warning > 0 && valueFloat >= warning {
+						return baseClass + "border-yellow-500 dark:border-yellow-500"
+					}
+				}
+			}
+		}
+	}
+
+	// Apply color from config
+	color := getStringConfig(config, "color", "gray")
+	return baseClass + getColorBorder(color)
+}
+
+func getMetricCardClassFromConfigOnly(config map[string]any) string {
+	baseClass := "bg-white dark:bg-slate-900 border rounded-lg p-4 hover:shadow-md transition-shadow "
+	color := getStringConfig(config, "color", "gray")
+	return baseClass + getColorBorder(color)
+}
+
+func getColorBorder(color string) string {
+	switch color {
+	case "blue":
+		return "border-blue-300 dark:border-blue-600"
+	case "green":
+		return "border-green-300 dark:border-green-600"
+	case "yellow":
+		return "border-yellow-300 dark:border-yellow-600"
+	case "red":
+		return "border-red-300 dark:border-red-600"
+	default:
+		return "border-gray-300 dark:border-slate-600"
+	}
+}
+
+func formatMetricCardValue(value float64, format string) string {
+	switch format {
+	case "number":
+		return formatNumber(value)
+	case "percentage":
+		return formatPercentage(value)
+	case "bytes":
+		return formatBytes(value)
+	case "duration":
+		return formatDuration(value)
+	default:
+		return fmt.Sprintf("%.0f", value)
+	}
+}
+
+func formatConfigValue(value any, format string) string {
+	switch v := value.(type) {
+	case float64:
+		return formatMetricCardValue(v, format)
+	case int:
+		return formatMetricCardValue(float64(v), format)
+	case string:
+		return v
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+}
+
+func formatTrend(trend float64) string {
+	if trend >= 1 {
+		return fmt.Sprintf("%.1f%%", trend)
+	} else {
+		return fmt.Sprintf("%.2f%%", trend)
+	}
+}

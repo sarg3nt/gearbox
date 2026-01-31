@@ -1,0 +1,1635 @@
+package pages
+
+import (
+	"encoding/json"
+	"fmt"
+	"github.com/sarg3nt/gearbox/internal/framework/database"
+	"github.com/sarg3nt/gearbox/internal/framework/models"
+	"github.com/sarg3nt/gearbox/internal/framework/ui"
+	"github.com/sarg3nt/gearbox/internal/framework/templates/layouts"
+)
+
+// PluginsPage renders the plugins settings page.
+templ PluginsPage(user *models.User, servers []models.ServerConfig, currentServerID string, integrations []database.Plugin, successMsg, errorMsg string) {
+	@layouts.Base("Plugins", user, "/settings") {
+		<!-- Hidden container for page header content - will be moved to main header via JS -->
+		<div id="page-header-source" class="hidden">
+			<!-- Left side: Title with integrated server selector -->
+			<div class="flex items-center">
+				<h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">
+					Plugins
+					if len(servers) > 1 {
+						<span class="text-gray-400 dark:text-gray-500 mx-2">:</span>
+						<span class="inline-block relative">
+							<select
+								id="server-selector"
+								class="appearance-none bg-transparent text-xl font-bold text-gray-800 dark:text-gray-100 pr-7 cursor-pointer focus:outline-none hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+								onchange="switchServer(this.value)"
+							>
+								for _, server := range servers {
+									<option value={ server.ID } selected?={ server.ID == currentServerID }>{ server.Name }</option>
+								}
+							</select>
+							<!-- Subtle dropdown indicator -->
+							<svg class="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+							</svg>
+						</span>
+					} else if len(servers) == 1 {
+						<span class="text-gray-400 dark:text-gray-500 mx-2">:</span>
+						<span id="single-server-name">{ servers[0].Name }</span>
+					}
+				</h2>
+			</div>
+			<div class="flex-1"></div>
+			<a href="/settings" class="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center">
+				<svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+				</svg>
+				Back to Settings
+			</a>
+		</div>
+
+		<div class="max-w-4xl mx-auto px-4 py-8">
+			<input type="hidden" id="current-server-id" value={ currentServerID }/>
+
+			if successMsg != "" {
+				@ui.ToastOnLoad(successMsg, "success")
+			}
+
+			if errorMsg != "" {
+				@ui.ToastOnLoad(errorMsg, "error")
+			}
+
+			<!-- Reorder hint -->
+			<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+				Drag plugins to reorder them. The order will be reflected in the sidebar navigation.
+			</p>
+
+			<div id="plugins-list" class="space-y-4">
+				for _, integration := range integrations {
+					@pluginCard(integration, currentServerID)
+				}
+			</div>
+
+			<script src="/static/js/plugins/plugins-page.js"></script>
+		</div>
+	}
+}
+
+templ pluginCard(integration database.Plugin, serverID string) {
+	<div class="plugin-card bg-white dark:bg-slate-800 rounded-lg shadow p-6 transition-transform duration-200 ease-out" data-plugin-name={ integration.Name }>
+		<div class="flex items-center justify-between gap-4">
+			<div class="flex items-center space-x-4 min-w-0 flex-1">
+				<!-- Drag handle -->
+				<div class="drag-handle cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 p-1 -ml-2 flex-shrink-0">
+					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"></path>
+					</svg>
+				</div>
+				<div
+					class={ "plugin-icon w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0", templ.KV("bg-blue-100 dark:bg-blue-900", integration.Enabled), templ.KV("bg-gray-100 dark:bg-gray-700", !integration.Enabled) }
+					data-enabled-bg="bg-blue-100 dark:bg-blue-900"
+					data-disabled-bg="bg-gray-100 dark:bg-gray-700"
+				>
+					@pluginIcon(integration.Name, integration.Enabled)
+				</div>
+				<div class="min-w-0">
+					<h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{ integration.DisplayName }</h3>
+					<p class="text-sm text-gray-600 dark:text-gray-400 truncate">{ integration.Description }</p>
+				</div>
+			</div>
+			<div class="flex items-center space-x-4 flex-shrink-0">
+				// Show configure button for integrations with config
+				if integration.Name == database.PluginServices || integration.Name == database.PluginCertificates || integration.Name == database.PluginLogs || integration.Name == database.PluginMetrics || integration.Name == database.PluginTraffic || integration.Name == database.PluginAlerts {
+					<a
+						href={ templ.SafeURL("/settings/plugins/" + integration.Name + "?server=" + serverID) }
+						class="px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
+					>
+						Configure
+					</a>
+				}
+				// Toggle switch - uses JavaScript for AJAX toggle
+				<button
+					type="button"
+					onclick={ templ.ComponentScript{Call: "togglePlugin('" + integration.Name + "', '" + integration.DisplayName + "', this)"} }
+					class={ "plugin-toggle relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2",
+						templ.KV("bg-blue-600", integration.Enabled),
+						templ.KV("bg-gray-200 dark:bg-gray-600", !integration.Enabled) }
+					role="switch"
+					aria-checked={ boolToString(integration.Enabled) }
+					title={ toggleTitle(integration.Enabled) }
+					data-enabled={ boolToString(integration.Enabled) }
+				>
+					<span
+						class={ "toggle-indicator pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+							templ.KV("translate-x-5", integration.Enabled),
+							templ.KV("translate-x-0", !integration.Enabled) }
+					></span>
+				</button>
+			</div>
+		</div>
+	</div>
+}
+
+func boolToString(b bool) string {
+	if b {
+		return "true"
+	}
+	return "false"
+}
+
+func toggleTitle(enabled bool) string {
+	if enabled {
+		return "Click to disable"
+	}
+	return "Click to enable"
+}
+
+templ pluginIcon(name string, enabled bool) {
+	switch name {
+		case database.PluginLogs:
+			<svg class={ "w-6 h-6", templ.KV("text-blue-600 dark:text-blue-400", enabled), templ.KV("text-gray-400 dark:text-gray-500", !enabled) } fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+			</svg>
+		case database.PluginServices:
+			<svg class={ "w-6 h-6", templ.KV("text-blue-600 dark:text-blue-400", enabled), templ.KV("text-gray-400 dark:text-gray-500", !enabled) } fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"></path>
+			</svg>
+		case database.PluginCertificates:
+			<svg class={ "w-6 h-6", templ.KV("text-blue-600 dark:text-blue-400", enabled), templ.KV("text-gray-400 dark:text-gray-500", !enabled) } fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
+			</svg>
+		case database.PluginCertbot:
+			<svg class={ "w-6 h-6", templ.KV("text-blue-600 dark:text-blue-400", enabled), templ.KV("text-gray-400 dark:text-gray-500", !enabled) } fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+			</svg>
+		case database.PluginMetrics:
+			<svg class={ "w-6 h-6", templ.KV("text-blue-600 dark:text-blue-400", enabled), templ.KV("text-gray-400 dark:text-gray-500", !enabled) } fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 20h18M3 20V4"></path>
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 15l3-4 3 3 4-5"></path>
+			</svg>
+		case database.PluginAlerts:
+			<svg class={ "w-6 h-6", templ.KV("text-blue-600 dark:text-blue-400", enabled), templ.KV("text-gray-400 dark:text-gray-500", !enabled) } fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
+			</svg>
+		default:
+			<svg class={ "w-6 h-6", templ.KV("text-blue-600 dark:text-blue-400", enabled), templ.KV("text-gray-400 dark:text-gray-500", !enabled) } fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+			</svg>
+	}
+}
+
+// PluginDetailPage renders the detail/configuration page for a specific integration.
+templ PluginDetailPage(user *models.User, serverID string, serverName string, integration *database.Plugin, availableServices []string, availableLogSources []LogSourceInfo, successMsg, errorMsg string) {
+	@layouts.Base(integration.DisplayName + " Configuration", user, "/settings") {
+		<!-- Hidden container for page header content - will be moved to main header via JS -->
+		<div id="page-header-source" class="hidden">
+			<div class="flex items-center">
+				<h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">
+					{ integration.DisplayName }
+					if serverName != "" {
+						<span class="text-gray-400 dark:text-gray-500 mx-2">:</span>
+						<span class="text-gray-600 dark:text-gray-300">{ serverName }</span>
+					}
+				</h2>
+			</div>
+			<div class="flex-1"></div>
+			<a href={ templ.SafeURL("/settings/plugins?server=" + serverID) } class="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center">
+				<svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+				</svg>
+				Back to Plugins
+			</a>
+		</div>
+
+		<div class="max-w-4xl mx-auto px-4 py-8">
+
+			if successMsg != "" {
+				@ui.ToastOnLoad(successMsg, "success")
+			}
+
+			if errorMsg != "" {
+				@ui.ToastOnLoad(errorMsg, "error")
+			}
+
+			<div class="bg-white dark:bg-slate-800 rounded-lg shadow p-6">
+				switch integration.Name {
+					case database.PluginServices:
+						@servicesConfigForm(integration, serverID, availableServices)
+					case database.PluginLogs:
+						@logsConfigForm(integration, serverID, availableLogSources)
+					case database.PluginCertificates:
+						@certificatesConfigForm(integration, serverID)
+					case database.PluginMetrics:
+						@metricsConfigForm(integration, serverID)
+					case database.PluginTraffic:
+						@trafficConfigForm(integration, serverID)
+					case database.PluginAlerts:
+						@alertsConfigForm(integration, serverID)
+					case database.PluginOSUpdates:
+						@osUpdatesConfigForm(integration, serverID)
+					default:
+						<p class="text-gray-600 dark:text-gray-400">This integration has no additional configuration options.</p>
+				}
+			</div>
+
+			<script src="/static/js/plugins/integration-detail.js"></script>
+		</div>
+	}
+}
+
+templ servicesConfigForm(integration *database.Plugin, serverID string, availableServices []string) {
+	<form method="POST" action={ templ.SafeURL("/settings/plugins/" + integration.Name + "?server=" + serverID) }>
+		<div class="space-y-6">
+			<!-- Header with title and filter -->
+			<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+				<div>
+					<h3 class="text-lg font-medium text-gray-900 dark:text-gray-100">Monitored Services</h3>
+					<p class="text-sm text-gray-600 dark:text-gray-400">
+						Select which systemd services to monitor. These services will be displayed on the Services page.
+					</p>
+				</div>
+				if len(availableServices) > 0 {
+					<div class="relative">
+						<input
+							type="text"
+							id="service-filter"
+							placeholder="Filter..."
+							class="w-full sm:w-48 px-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+							oninput="filterServices(this.value)"
+						/>
+					</div>
+				}
+			</div>
+
+			<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3" id="services-grid">
+				for _, service := range availableServices {
+					@serviceToggleItem(service, isServiceSelected(integration.Config, service))
+				}
+			</div>
+
+			<div class="flex items-center space-x-4 pt-4">
+				<button
+					type="button"
+					onclick="toggleAllServices(true)"
+					class="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
+				>
+					Enable All
+				</button>
+				<button
+					type="button"
+					onclick="toggleAllServices(false)"
+					class="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
+				>
+					Disable All
+				</button>
+			</div>
+
+			<div class="border-t border-gray-200 dark:border-slate-700 pt-6">
+				<label class="flex items-center space-x-2">
+					<input
+						type="checkbox"
+						name="show_all"
+						checked?={ isShowAllEnabled(integration.Config) }
+						class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 dark:border-gray-600 rounded"
+					/>
+					<span class="text-sm text-gray-700 dark:text-gray-300">Show all services (not just curated list)</span>
+				</label>
+				<p class="text-xs text-gray-500 dark:text-gray-400 mt-1 ml-6">
+					When enabled, you can query any systemd service by name on the Services page.
+				</p>
+			</div>
+
+			<div class="flex justify-end pt-4">
+				<button
+					type="submit"
+					class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+				>
+					Save Configuration
+				</button>
+			</div>
+		</div>
+	</form>
+
+	<script src="/static/js/plugins/services-config.js"></script>
+}
+
+templ serviceToggleItem(service string, enabled bool) {
+	<div class="service-item flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-700 rounded-lg" data-name={ service }>
+		<span class="text-sm text-gray-700 dark:text-gray-300 truncate mr-3">{ service }</span>
+		<div class="flex items-center flex-shrink-0">
+			<input type="hidden" name="services" value={ service } disabled?={ !enabled }/>
+			<input type="hidden" name={ "service_enabled_" + service } value={ boolToString(enabled) }/>
+			<button
+				type="button"
+				onclick={ templ.ComponentScript{Call: "toggleServiceItem(this, '" + service + "')"} }
+				class={ "relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2",
+					templ.KV("bg-blue-600", enabled),
+					templ.KV("bg-gray-200 dark:bg-gray-600", !enabled) }
+				role="switch"
+				aria-checked={ boolToString(enabled) }
+			>
+				<span
+					class={ "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+						templ.KV("translate-x-5", enabled),
+						templ.KV("translate-x-0", !enabled) }
+				></span>
+			</button>
+		</div>
+	</div>
+}
+
+func isServiceSelected(config json.RawMessage, service string) bool {
+	var cfg database.ServicesConfig
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return false
+	}
+	for _, s := range cfg.MonitoredServices {
+		if s == service {
+			return true
+		}
+	}
+	return false
+}
+
+func isShowAllEnabled(config json.RawMessage) bool {
+	var cfg database.ServicesConfig
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return false
+	}
+	return cfg.ShowAll
+}
+
+templ logsConfigForm(integration *database.Plugin, serverID string, availableLogSources []LogSourceInfo) {
+	<form method="POST" action={ templ.SafeURL("/settings/plugins/" + integration.Name + "?server=" + serverID) }>
+		<div class="space-y-6">
+			<!-- Header with title and filter -->
+			<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+				<div>
+					<h3 class="text-lg font-medium text-gray-900 dark:text-gray-100">Available Log Sources</h3>
+					<p class="text-sm text-gray-600 dark:text-gray-400">
+						Select which log sources should be available in the log viewer dropdown.
+					</p>
+				</div>
+				if len(availableLogSources) > 0 {
+					<div class="relative">
+						<input
+							type="text"
+							id="log-filter"
+							placeholder="Filter..."
+							class="w-full sm:w-48 px-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+							oninput="filterLogSources(this.value)"
+						/>
+					</div>
+				}
+			</div>
+
+			if len(availableLogSources) == 0 {
+				<div class="text-center py-8">
+					<svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+					</svg>
+					<p class="mt-4 text-sm text-gray-500 dark:text-gray-400">
+						Unable to fetch log sources from the agent. Make sure the server is enabled and the agent is running.
+					</p>
+				</div>
+			} else {
+				<!-- System Logs Section -->
+				<div>
+					<h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center">
+						<svg class="w-4 h-4 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path>
+						</svg>
+						System Logs
+					</h4>
+					<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3" id="system-logs-grid">
+						for _, source := range availableLogSources {
+							if !source.IsServiceLog() {
+								@logSourceToggle(source)
+							}
+						}
+					</div>
+				</div>
+
+				<!-- Divider -->
+				<div class="border-t border-gray-200 dark:border-slate-700"></div>
+
+				<!-- Service Logs Section -->
+				<div>
+					<h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center">
+						<svg class="w-4 h-4 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"></path>
+						</svg>
+						Service Logs
+					</h4>
+					<p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
+						Enable log sources for services you're monitoring to view their logs from the Services page.
+					</p>
+					<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3" id="service-logs-grid">
+						for _, source := range availableLogSources {
+							if source.IsServiceLog() {
+								@logSourceToggle(source)
+							}
+						}
+					</div>
+				</div>
+
+				<div class="flex items-center space-x-4 pt-4 border-t border-gray-200 dark:border-slate-700">
+					<button
+						type="button"
+						onclick="toggleAllLogs(true)"
+						class="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
+					>
+						Enable All
+					</button>
+					<button
+						type="button"
+						onclick="toggleAllLogs(false)"
+						class="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
+					>
+						Disable All
+					</button>
+				</div>
+			}
+
+			if len(availableLogSources) > 0 {
+				<div class="flex justify-end pt-4">
+					<button
+						type="submit"
+						class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+					>
+						Save Configuration
+					</button>
+				</div>
+			}
+		</div>
+	</form>
+
+	<script src="/static/js/plugins/logs-config.js"></script>
+}
+
+templ logSourceToggle(source LogSourceInfo) {
+	<div class="log-source-item flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-700 rounded-lg" data-name={ source.Name } data-display={ source.DisplayName }>
+		<div class="flex-1 min-w-0 mr-3">
+			<span class="text-sm text-gray-700 dark:text-gray-300 block truncate">{ source.DisplayName }</span>
+			<div class="flex items-center gap-2">
+				<span class="text-xs text-gray-500 dark:text-gray-400 truncate">{ source.Name }</span>
+				if source.Type != "" {
+					<span class="text-xs bg-gray-200 dark:bg-slate-600 px-1.5 py-0.5 rounded whitespace-nowrap">
+						{ source.Type }
+					</span>
+				}
+			</div>
+		</div>
+		<div class="flex items-center flex-shrink-0">
+			<input type="hidden" name="log_sources" value={ source.Name } disabled?={ !source.Enabled }/>
+			<input type="hidden" name={ "log_enabled_" + source.Name } value={ boolToString(source.Enabled) }/>
+			<button
+				type="button"
+				onclick={ templ.ComponentScript{Call: "toggleLogSource(this, '" + source.Name + "')"} }
+				class={ "relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2",
+					templ.KV("bg-blue-600", source.Enabled),
+					templ.KV("bg-gray-200 dark:bg-gray-600", !source.Enabled) }
+				role="switch"
+				aria-checked={ boolToString(source.Enabled) }
+			>
+				<span
+					class={ "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+						templ.KV("translate-x-5", source.Enabled),
+						templ.KV("translate-x-0", !source.Enabled) }
+				></span>
+			</button>
+		</div>
+	</div>
+}
+
+templ certificatesConfigForm(integration *database.Plugin, serverID string) {
+	<form method="POST" action={ templ.SafeURL("/settings/plugins/" + integration.Name + "?server=" + serverID) }>
+		<div class="space-y-6">
+			<div>
+				<h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Certificates Settings</h3>
+				<p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+					Configure how SSL/TLS certificates are displayed and whether to show certbot renewal status.
+				</p>
+			</div>
+
+			<!-- Certbot Integration Toggle -->
+			<div class="border border-gray-200 dark:border-slate-600 rounded-lg p-4">
+				<div class="flex items-center justify-between">
+					<div>
+						<span class="text-sm font-medium text-gray-700 dark:text-gray-300">Enable Certbot Renewal Monitoring</span>
+						<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+							When enabled, the certificate viewer will display certbot renewal status and timer information.
+						</p>
+					</div>
+					<button
+						type="button"
+						id="certbot-toggle"
+						class={ "relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2",
+							templ.KV("bg-blue-600", getCertbotEnabled(integration.Config)),
+							templ.KV("bg-gray-200 dark:bg-gray-600", !getCertbotEnabled(integration.Config)) }
+						role="switch"
+						aria-checked={ boolToString(getCertbotEnabled(integration.Config)) }
+						onclick="toggleCertbotEnabled(this)"
+					>
+						<span
+							class={ "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+								templ.KV("translate-x-5", getCertbotEnabled(integration.Config)),
+								templ.KV("translate-x-0", !getCertbotEnabled(integration.Config)) }
+						></span>
+					</button>
+					<input
+						type="hidden"
+						name="certbot_enabled_value"
+						id="certbot-enabled-input"
+						value={ boolToString(getCertbotEnabled(integration.Config)) }
+					/>
+				</div>
+			</div>
+
+			<!-- Certbot Configuration (shown when certbot is enabled) -->
+			<div id="certbot-options" class={ templ.KV("hidden", !getCertbotEnabled(integration.Config)) }>
+				<div class="border-l-4 border-blue-500 pl-4 py-2 mb-4">
+					<h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Certbot Renewal Configuration</h4>
+					<p class="text-xs text-gray-500 dark:text-gray-400">
+						Configure how certbot automatic certificate renewal is set up on your server.
+					</p>
+				</div>
+
+				<div class="space-y-4">
+					<div>
+						<label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+							Renewal Method
+						</label>
+						<div class="space-y-2">
+							<label class="flex items-center space-x-3 p-3 border border-gray-200 dark:border-slate-600 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700">
+								<input
+									type="radio"
+									name="renewal_method"
+									value="systemd"
+									checked?={ getCertbotMethodFromCerts(integration.Config) == "systemd" }
+									class="h-4 w-4 text-blue-600 focus:ring-blue-500"
+									onclick="document.getElementById('systemd-config').classList.remove('hidden'); document.getElementById('cron-config').classList.add('hidden');"
+								/>
+								<div>
+									<span class="text-sm font-medium text-gray-700 dark:text-gray-300">Systemd Timer</span>
+									<p class="text-xs text-gray-500 dark:text-gray-400">Renewal is handled by a systemd timer service</p>
+								</div>
+							</label>
+							<label class="flex items-center space-x-3 p-3 border border-gray-200 dark:border-slate-600 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700">
+								<input
+									type="radio"
+									name="renewal_method"
+									value="cron"
+									checked?={ getCertbotMethodFromCerts(integration.Config) == "cron" }
+									class="h-4 w-4 text-blue-600 focus:ring-blue-500"
+									onclick="document.getElementById('cron-config').classList.remove('hidden'); document.getElementById('systemd-config').classList.add('hidden');"
+								/>
+								<div>
+									<span class="text-sm font-medium text-gray-700 dark:text-gray-300">Cron Job</span>
+									<p class="text-xs text-gray-500 dark:text-gray-400">Renewal is handled by a cron job</p>
+								</div>
+							</label>
+							<label class="flex items-center space-x-3 p-3 border border-gray-200 dark:border-slate-600 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700">
+								<input
+									type="radio"
+									name="renewal_method"
+									value="none"
+									checked?={ getCertbotMethodFromCerts(integration.Config) == "none" }
+									class="h-4 w-4 text-blue-600 focus:ring-blue-500"
+									onclick="document.getElementById('systemd-config').classList.add('hidden'); document.getElementById('cron-config').classList.add('hidden');"
+								/>
+								<div>
+									<span class="text-sm font-medium text-gray-700 dark:text-gray-300">Manual / Not Configured</span>
+									<p class="text-xs text-gray-500 dark:text-gray-400">Certificates are renewed manually or auto-renewal is not configured</p>
+								</div>
+							</label>
+						</div>
+					</div>
+
+					// Systemd Timer Configuration
+					<div id="systemd-config" class={ templ.KV("hidden", getCertbotMethodFromCerts(integration.Config) != "systemd") }>
+						<label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+							Timer Service Name
+						</label>
+						<input
+							type="text"
+							name="service_name"
+							value={ getCertbotServiceNameFromCerts(integration.Config) }
+							placeholder="certbot.timer"
+							class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+						/>
+						<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+							Common values: <code class="bg-gray-100 dark:bg-slate-600 px-1 rounded">certbot.timer</code>,
+							<code class="bg-gray-100 dark:bg-slate-600 px-1 rounded">certbot-renew.timer</code>,
+							<code class="bg-gray-100 dark:bg-slate-600 px-1 rounded">letsencrypt.timer</code>
+						</p>
+					</div>
+
+					// Cron Configuration
+					<div id="cron-config" class={ templ.KV("hidden", getCertbotMethodFromCerts(integration.Config) != "cron") }>
+						<label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+							Cron File Path (optional)
+						</label>
+						<input
+							type="text"
+							name="cron_path"
+							value={ getCertbotCronPathFromCerts(integration.Config) }
+							placeholder="/etc/cron.d/certbot"
+							class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+						/>
+						<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+							Path to the cron file or leave empty for auto-detection in <code class="bg-gray-100 dark:bg-slate-600 px-1 rounded">/etc/cron.d/</code>
+						</p>
+					</div>
+				</div>
+			</div>
+
+			<div class="flex justify-end pt-4 border-t border-gray-200 dark:border-slate-700">
+				<button
+					type="submit"
+					class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+				>
+					Save Configuration
+				</button>
+			</div>
+		</div>
+	</form>
+
+	<script src="/static/js/plugins/certificates-config.js"></script>
+}
+
+func getCertbotEnabled(config json.RawMessage) bool {
+	var cfg database.CertificatesConfig
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return true // default
+	}
+	return cfg.CertbotEnabled
+}
+
+func getCertbotMethodFromCerts(config json.RawMessage) string {
+	var cfg database.CertificatesConfig
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return "systemd"
+	}
+	if cfg.Certbot.RenewalMethod == "" {
+		return "systemd"
+	}
+	return string(cfg.Certbot.RenewalMethod)
+}
+
+func getCertbotServiceNameFromCerts(config json.RawMessage) string {
+	var cfg database.CertificatesConfig
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return "certbot.timer"
+	}
+	if cfg.Certbot.ServiceName == "" {
+		return "certbot.timer"
+	}
+	return cfg.Certbot.ServiceName
+}
+
+func getCertbotCronPathFromCerts(config json.RawMessage) string {
+	var cfg database.CertificatesConfig
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return ""
+	}
+	return cfg.Certbot.CronPath
+}
+
+templ metricsConfigForm(integration *database.Plugin, serverID string) {
+	<form method="POST" action={ templ.SafeURL("/settings/plugins/" + integration.Name + "?server=" + serverID) }>
+		<div class="space-y-6">
+			<div>
+				<h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Metrics Data Storage</h3>
+				<p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+					Configure how system metrics data (CPU, memory, disk, network) is collected and stored.
+					Historical data enables trend analysis and performance monitoring over time.
+				</p>
+			</div>
+
+			<!-- Store History Toggle -->
+			<div class="border border-gray-200 dark:border-slate-600 rounded-lg p-4">
+				<div class="flex items-center justify-between">
+					<div>
+						<span class="text-sm font-medium text-gray-700 dark:text-gray-300">Enable Historical Data Storage</span>
+						<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+							When enabled, metrics are stored in the database for historical analysis.
+							When disabled, only real-time metrics are shown.
+						</p>
+					</div>
+					<input type="hidden" name="store_history" value="off"/>
+					<button
+						type="button"
+						id="store-history-toggle"
+						class={ "relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2",
+							templ.KV("bg-blue-600", getMetricsStoreHistory(integration.Config)),
+							templ.KV("bg-gray-200 dark:bg-gray-600", !getMetricsStoreHistory(integration.Config)) }
+						role="switch"
+						aria-checked={ boolToString(getMetricsStoreHistory(integration.Config)) }
+						onclick="toggleStoreHistory(this)"
+					>
+						<span
+							class={ "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+								templ.KV("translate-x-5", getMetricsStoreHistory(integration.Config)),
+								templ.KV("translate-x-0", !getMetricsStoreHistory(integration.Config)) }
+						></span>
+					</button>
+					<input
+						type="hidden"
+						name="store_history_value"
+						id="store-history-input"
+						value={ boolToString(getMetricsStoreHistory(integration.Config)) }
+					/>
+				</div>
+			</div>
+
+			<!-- Retention Options (shown when store_history is enabled) -->
+			<div id="retention-options" class={ templ.KV("hidden", !getMetricsStoreHistory(integration.Config)) }>
+				<label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+					Data Retention Policy
+				</label>
+				<div class="space-y-3">
+					<label class="flex items-start space-x-3 p-3 border border-gray-200 dark:border-slate-600 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700">
+						<input
+							type="radio"
+							name="retention_type"
+							value="days"
+							checked?={ getMetricsRetentionType(integration.Config) == "days" }
+							class="h-4 w-4 mt-0.5 text-blue-600 focus:ring-blue-500"
+							onclick="document.getElementById('days-config').classList.remove('hidden'); document.getElementById('size-config').classList.add('hidden');"
+						/>
+						<div class="flex-1">
+							<span class="text-sm font-medium text-gray-700 dark:text-gray-300">Retain by Age</span>
+							<p class="text-xs text-gray-500 dark:text-gray-400">Keep data for a specified number of days</p>
+						</div>
+					</label>
+					<label class="flex items-start space-x-3 p-3 border border-gray-200 dark:border-slate-600 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700">
+						<input
+							type="radio"
+							name="retention_type"
+							value="size"
+							checked?={ getMetricsRetentionType(integration.Config) == "size" }
+							class="h-4 w-4 mt-0.5 text-blue-600 focus:ring-blue-500"
+							onclick="document.getElementById('size-config').classList.remove('hidden'); document.getElementById('days-config').classList.add('hidden');"
+						/>
+						<div class="flex-1">
+							<span class="text-sm font-medium text-gray-700 dark:text-gray-300">Retain by Size</span>
+							<p class="text-xs text-gray-500 dark:text-gray-400">Keep data up to a maximum storage size</p>
+						</div>
+					</label>
+				</div>
+
+				<!-- Days Configuration -->
+				<div id="days-config" class={ "mt-4", templ.KV("hidden", getMetricsRetentionType(integration.Config) != "days") }>
+					<label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+						Days to Keep Data
+					</label>
+					<select
+						name="retention_days"
+						class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+					>
+						<option value="1" selected?={ getMetricsRetentionDays(integration.Config) == 1 }>1 day</option>
+						<option value="3" selected?={ getMetricsRetentionDays(integration.Config) == 3 }>3 days</option>
+						<option value="7" selected?={ getMetricsRetentionDays(integration.Config) == 7 }>7 days (recommended)</option>
+						<option value="14" selected?={ getMetricsRetentionDays(integration.Config) == 14 }>14 days</option>
+						<option value="30" selected?={ getMetricsRetentionDays(integration.Config) == 30 }>30 days</option>
+						<option value="90" selected?={ getMetricsRetentionDays(integration.Config) == 90 }>90 days</option>
+					</select>
+					<p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
+						Longer retention provides more historical data but uses more storage.
+						7 days is recommended for most use cases.
+					</p>
+				</div>
+
+				<!-- Size Configuration -->
+				<div id="size-config" class={ "mt-4", templ.KV("hidden", getMetricsRetentionType(integration.Config) != "size") }>
+					<label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+						Maximum Storage Size (MB)
+					</label>
+					<select
+						name="retention_size_mb"
+						class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+					>
+						<option value="50" selected?={ getMetricsRetentionSize(integration.Config) == 50 }>50 MB</option>
+						<option value="100" selected?={ getMetricsRetentionSize(integration.Config) == 100 }>100 MB (recommended)</option>
+						<option value="250" selected?={ getMetricsRetentionSize(integration.Config) == 250 }>250 MB</option>
+						<option value="500" selected?={ getMetricsRetentionSize(integration.Config) == 500 }>500 MB</option>
+						<option value="1000" selected?={ getMetricsRetentionSize(integration.Config) == 1000 }>1 GB</option>
+					</select>
+					<p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
+						SQLite performs well with databases up to several GB.
+						100 MB provides approximately 2-4 weeks of data at default collection intervals.
+					</p>
+				</div>
+			</div>
+
+			<!-- Storage Stats and Clear Button -->
+			<div class="border-t border-gray-200 dark:border-slate-700 pt-6">
+				<h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Current Storage Usage</h4>
+				<div id="storage-stats" class="bg-gray-50 dark:bg-slate-700 rounded-lg p-4">
+					<div class="text-sm text-gray-500 dark:text-gray-400">Loading storage statistics...</div>
+				</div>
+				<div class="mt-4 flex items-center justify-between">
+					<p class="text-xs text-gray-500 dark:text-gray-400">
+						Clearing metrics data is permanent and cannot be undone.
+					</p>
+					<button
+						type="button"
+						onclick="confirmClearMetrics()"
+						class="px-3 py-1.5 text-sm text-red-600 dark:text-red-400 border border-red-300 dark:border-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+					>
+						Clear All Metrics Data
+					</button>
+				</div>
+			</div>
+
+			<div class="flex justify-end pt-4 border-t border-gray-200 dark:border-slate-700">
+				<button
+					type="submit"
+					class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+				>
+					Save Configuration
+				</button>
+			</div>
+		</div>
+	</form>
+
+	<script src="/static/js/plugins/metrics-config.js"></script>
+}
+
+func getMetricsStoreHistory(config json.RawMessage) bool {
+	var cfg database.MetricsConfig
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return true // default
+	}
+	return cfg.StoreHistory
+}
+
+func getMetricsRetentionType(config json.RawMessage) string {
+	var cfg database.MetricsConfig
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return "days" // default
+	}
+	if cfg.RetentionType == "" {
+		return "days"
+	}
+	return string(cfg.RetentionType)
+}
+
+func getMetricsRetentionDays(config json.RawMessage) int {
+	var cfg database.MetricsConfig
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return 7 // default
+	}
+	if cfg.RetentionDays == 0 {
+		return 7
+	}
+	return cfg.RetentionDays
+}
+
+func getMetricsRetentionSize(config json.RawMessage) int {
+	var cfg database.MetricsConfig
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return 100 // default
+	}
+	if cfg.RetentionSizeMB == 0 {
+		return 100
+	}
+	return cfg.RetentionSizeMB
+}
+
+// Traffic config helper functions
+func getTrafficOutboundBandwidth(config json.RawMessage) int {
+	var cfg database.TrafficConfig
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return 1000 // default 1000 Mbps
+	}
+	if cfg.OutboundBandwidth == 0 {
+		return 1000
+	}
+	return cfg.OutboundBandwidth
+}
+
+func getTrafficOutboundUnit(config json.RawMessage) string {
+	var cfg database.TrafficConfig
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return "mbps"
+	}
+	if cfg.OutboundBandwidthUnit == "" {
+		return "mbps"
+	}
+	return string(cfg.OutboundBandwidthUnit)
+}
+
+func getTrafficInboundBandwidth(config json.RawMessage) int {
+	var cfg database.TrafficConfig
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return 0 // default: use outbound
+	}
+	return cfg.InboundBandwidth
+}
+
+func getTrafficInboundUnit(config json.RawMessage) string {
+	var cfg database.TrafficConfig
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return "mbps"
+	}
+	if cfg.InboundBandwidthUnit == "" {
+		return "mbps"
+	}
+	return string(cfg.InboundBandwidthUnit)
+}
+
+func getTrafficInternalBandwidth(config json.RawMessage) int {
+	var cfg database.TrafficConfig
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return 1000 // default 1000 Mbps (1 Gbps)
+	}
+	if cfg.InternalBandwidth == 0 {
+		return 1000
+	}
+	return cfg.InternalBandwidth
+}
+
+func getTrafficInternalUnit(config json.RawMessage) string {
+	var cfg database.TrafficConfig
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return "mbps"
+	}
+	if cfg.InternalBandwidthUnit == "" {
+		return "mbps"
+	}
+	return string(cfg.InternalBandwidthUnit)
+}
+
+func getTrafficRetentionDays(config json.RawMessage) int {
+	var cfg database.TrafficConfig
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return 7 // default
+	}
+	if cfg.RetentionDays == 0 {
+		return 7
+	}
+	return cfg.RetentionDays
+}
+
+templ trafficConfigForm(integration *database.Plugin, serverID string) {
+	<form method="POST" action={ templ.SafeURL("/settings/plugins/" + integration.Name + "?server=" + serverID) }>
+		<div class="space-y-6">
+			<div>
+				<h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Bandwidth Configuration</h3>
+				<p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+					Configure your network bandwidth to enable accurate traffic visualization.
+					The visualization will show traffic intensity relative to your available bandwidth -
+					connections using a high percentage of bandwidth will show faster-moving particles and color indicators.
+				</p>
+			</div>
+
+			<!-- Section: External Traffic (Internet) -->
+			<div class="border-l-4 border-blue-500 pl-4 py-2">
+				<h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">External Traffic (Internet)</h4>
+				<p class="text-xs text-gray-500 dark:text-gray-400">
+					Bandwidth settings for traffic from public IP addresses (e.g., 174.x.x.x).
+				</p>
+			</div>
+
+			<!-- Outbound Bandwidth -->
+			<div class="border border-gray-200 dark:border-slate-600 rounded-lg p-4">
+				<label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+					Outbound Bandwidth (Upload to Internet)
+				</label>
+				<p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
+					This is the maximum upload speed from your HAProxy server to the internet.
+					For most home/small business connections, this is typically lower than download speed.
+				</p>
+				<div class="flex items-center gap-3">
+					<input
+						type="number"
+						name="outbound_bandwidth"
+						value={ intToString(getTrafficOutboundBandwidth(integration.Config)) }
+						min="1"
+						max="100000"
+						class="w-32 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+					/>
+					<select
+						name="outbound_bandwidth_unit"
+						class="px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+					>
+						<option value="mbps" selected?={ getTrafficOutboundUnit(integration.Config) == "mbps" }>Mbps</option>
+						<option value="gbps" selected?={ getTrafficOutboundUnit(integration.Config) == "gbps" }>Gbps</option>
+					</select>
+				</div>
+				<p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
+					Common values: Home fiber: 100-1000 Mbps | Business: 1-10 Gbps | Data center: 10+ Gbps
+				</p>
+			</div>
+
+			<!-- Inbound Bandwidth (Optional) -->
+			<div class="border border-gray-200 dark:border-slate-600 rounded-lg p-4">
+				<label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+					Inbound Bandwidth (Download from Internet) - Optional
+				</label>
+				<p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
+					Leave at 0 to use the same value as outbound bandwidth.
+					Only set this if your download speed is significantly different from upload.
+				</p>
+				<div class="flex items-center gap-3">
+					<input
+						type="number"
+						name="inbound_bandwidth"
+						value={ intToString(getTrafficInboundBandwidth(integration.Config)) }
+						min="0"
+						max="100000"
+						placeholder="0 = same as outbound"
+						class="w-32 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+					/>
+					<select
+						name="inbound_bandwidth_unit"
+						class="px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+					>
+						<option value="mbps" selected?={ getTrafficInboundUnit(integration.Config) == "mbps" }>Mbps</option>
+						<option value="gbps" selected?={ getTrafficInboundUnit(integration.Config) == "gbps" }>Gbps</option>
+					</select>
+				</div>
+			</div>
+
+			<!-- Section: Internal Traffic (LAN) -->
+			<div class="border-l-4 border-green-500 pl-4 py-2 mt-6">
+				<h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Internal Traffic (LAN)</h4>
+				<p class="text-xs text-gray-500 dark:text-gray-400">
+					Bandwidth settings for traffic from private IP addresses (10.x.x.x, 192.168.x.x, 172.16-31.x.x).
+				</p>
+			</div>
+
+			<!-- Internal Bandwidth -->
+			<div class="border border-gray-200 dark:border-slate-600 rounded-lg p-4">
+				<label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+					Internal Network Bandwidth
+				</label>
+				<p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
+					Maximum bandwidth available on your internal network (LAN).
+					This is typically much higher than internet bandwidth - usually 1 Gbps or 10 Gbps for local connections.
+				</p>
+				<div class="flex items-center gap-3">
+					<input
+						type="number"
+						name="internal_bandwidth"
+						value={ intToString(getTrafficInternalBandwidth(integration.Config)) }
+						min="1"
+						max="100000"
+						class="w-32 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+					/>
+					<select
+						name="internal_bandwidth_unit"
+						class="px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+					>
+						<option value="mbps" selected?={ getTrafficInternalUnit(integration.Config) == "mbps" }>Mbps</option>
+						<option value="gbps" selected?={ getTrafficInternalUnit(integration.Config) == "gbps" }>Gbps</option>
+					</select>
+				</div>
+				<p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
+					Common values: Gigabit LAN: 1000 Mbps (1 Gbps) | 10G network: 10 Gbps
+				</p>
+			</div>
+
+			<!-- Section: Data Retention -->
+			<div class="border-l-4 border-purple-500 pl-4 py-2 mt-6">
+				<h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Historical Data Retention</h4>
+				<p class="text-xs text-gray-500 dark:text-gray-400">
+					Configure how long to keep historical traffic data in the database.
+				</p>
+			</div>
+
+			<!-- Retention Days -->
+			<div class="border border-gray-200 dark:border-slate-600 rounded-lg p-4">
+				<label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+					Days to Keep Traffic Data
+				</label>
+				<p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
+					Historical traffic data older than this will be automatically deleted during cleanup.
+					Traffic sources, flows, snapshots, and anomalies are all subject to this retention policy.
+				</p>
+				<select
+					name="retention_days"
+					class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+				>
+					<option value="1" selected?={ getTrafficRetentionDays(integration.Config) == 1 }>1 day</option>
+					<option value="3" selected?={ getTrafficRetentionDays(integration.Config) == 3 }>3 days</option>
+					<option value="7" selected?={ getTrafficRetentionDays(integration.Config) == 7 }>7 days (recommended)</option>
+					<option value="14" selected?={ getTrafficRetentionDays(integration.Config) == 14 }>14 days</option>
+					<option value="30" selected?={ getTrafficRetentionDays(integration.Config) == 30 }>30 days</option>
+					<option value="90" selected?={ getTrafficRetentionDays(integration.Config) == 90 }>90 days</option>
+				</select>
+				<p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
+					Longer retention provides more historical data but uses more storage.
+					7 days is recommended for most use cases.
+				</p>
+			</div>
+
+			<!-- Visualization Preview Info -->
+			<div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+				<div class="flex items-start gap-3">
+					<svg class="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+					</svg>
+					<div class="text-sm text-blue-700 dark:text-blue-300">
+						<p class="font-medium mb-1">How bandwidth affects visualization:</p>
+						<ul class="list-disc list-inside space-y-1 text-xs">
+							<li><strong>Particle speed:</strong> Faster particles = higher bandwidth utilization</li>
+							<li><strong>Particle count:</strong> More particles = more active connections</li>
+							<li><strong>Line color:</strong> Green → Yellow → Red as bandwidth usage increases</li>
+							<li><strong>&gt;80% bandwidth:</strong> Lines turn red with rapid particle movement</li>
+						</ul>
+					</div>
+				</div>
+			</div>
+
+			<div class="flex justify-end pt-4 border-t border-gray-200 dark:border-slate-700">
+				<button
+					type="submit"
+					class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+				>
+					Save Configuration
+				</button>
+			</div>
+		</div>
+	</form>
+}
+
+func intToString(i int) string {
+	return fmt.Sprintf("%d", i)
+}
+
+// alertsConfigForm renders the configuration form for alerts integration
+templ alertsConfigForm(integration *database.Plugin, serverID string) {
+	<form method="POST" action={ templ.SafeURL("/settings/plugins/" + integration.Name + "?server=" + serverID) }>
+		<div class="space-y-6">
+			<div>
+				<h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Alerts Configuration</h3>
+				<p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+					Configure how alerts are processed, displayed, and retained.
+				</p>
+			</div>
+
+			<!-- Live Streaming Toggle -->
+			<div class="border border-gray-200 dark:border-slate-600 rounded-lg p-4">
+				<div class="flex items-center justify-between">
+					<div>
+						<span class="text-sm font-medium text-gray-700 dark:text-gray-300">Enable Live Streaming</span>
+						<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+							When enabled, alerts will update in real-time via Server-Sent Events (SSE).
+						</p>
+					</div>
+					<button
+						type="button"
+						id="live-streaming-toggle"
+						class={ "relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2",
+							templ.KV("bg-blue-600", getAlertsLiveStreaming(integration.Config)),
+							templ.KV("bg-gray-200 dark:bg-gray-600", !getAlertsLiveStreaming(integration.Config)) }
+						role="switch"
+						aria-checked={ boolToString(getAlertsLiveStreaming(integration.Config)) }
+						onclick="toggleBooleanField(this, 'enable_live_streaming_value')"
+					>
+						<span
+							class={ "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+								templ.KV("translate-x-5", getAlertsLiveStreaming(integration.Config)),
+								templ.KV("translate-x-0", !getAlertsLiveStreaming(integration.Config)) }
+						></span>
+					</button>
+					<input
+						type="hidden"
+						name="enable_live_streaming_value"
+						id="enable_live_streaming_value"
+						value={ boolToString(getAlertsLiveStreaming(integration.Config)) }
+					/>
+				</div>
+			</div>
+
+			<!-- Suppress After Acknowledgement -->
+			<div class="border border-gray-200 dark:border-slate-600 rounded-lg p-4">
+				<div class="flex items-center justify-between mb-4">
+					<div>
+						<span class="text-sm font-medium text-gray-700 dark:text-gray-300">Suppress Alerts After Acknowledgement</span>
+						<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+							When enabled, no new alerts for the same rule will be created while an alert is acknowledged.
+						</p>
+					</div>
+					<button
+						type="button"
+						id="suppress-after-ack-toggle"
+						class={ "relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2",
+							templ.KV("bg-blue-600", getAlertsSuppressAfterAck(integration.Config)),
+							templ.KV("bg-gray-200 dark:bg-gray-600", !getAlertsSuppressAfterAck(integration.Config)) }
+						role="switch"
+						aria-checked={ boolToString(getAlertsSuppressAfterAck(integration.Config)) }
+						onclick="toggleBooleanField(this, 'suppress_after_ack_value')"
+					>
+						<span
+							class={ "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+								templ.KV("translate-x-5", getAlertsSuppressAfterAck(integration.Config)),
+								templ.KV("translate-x-0", !getAlertsSuppressAfterAck(integration.Config)) }
+						></span>
+					</button>
+					<input
+						type="hidden"
+						name="suppress_after_ack_value"
+						id="suppress_after_ack_value"
+						value={ boolToString(getAlertsSuppressAfterAck(integration.Config)) }
+					/>
+				</div>
+				<div id="suppress-minutes-config" class={ templ.KV("hidden", !getAlertsSuppressAfterAck(integration.Config)) }>
+					<label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+						Suppression Duration (minutes)
+					</label>
+					<input
+						type="number"
+						name="suppress_minutes"
+						value={ intToString(getAlertsSuppressMinutes(integration.Config)) }
+						min="1"
+						max="1440"
+						class="w-32 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+					/>
+					<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+						How long to suppress duplicate alerts after acknowledgement (1-1440 minutes). For metric-based alerts with thresholds, new alerts will still be created if the condition worsens significantly.
+					</p>
+				</div>
+			</div>
+
+			<!-- Auto-resolve Configuration -->
+			<div class="border border-gray-200 dark:border-slate-600 rounded-lg p-4">
+				<label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+					Auto-resolve Acknowledged Alerts (hours)
+				</label>
+				<p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
+					Automatically resolve acknowledged alerts after a set time. Set to 0 to disable.
+				</p>
+				<select
+					name="auto_resolve_hours"
+					class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+				>
+					<option value="0" selected?={ getAlertsAutoResolveHours(integration.Config) == 0 }>Disabled</option>
+					<option value="1" selected?={ getAlertsAutoResolveHours(integration.Config) == 1 }>1 hour</option>
+					<option value="4" selected?={ getAlertsAutoResolveHours(integration.Config) == 4 }>4 hours</option>
+					<option value="8" selected?={ getAlertsAutoResolveHours(integration.Config) == 8 }>8 hours</option>
+					<option value="24" selected?={ getAlertsAutoResolveHours(integration.Config) == 24 }>24 hours</option>
+					<option value="48" selected?={ getAlertsAutoResolveHours(integration.Config) == 48 }>48 hours</option>
+					<option value="72" selected?={ getAlertsAutoResolveHours(integration.Config) == 72 }>72 hours</option>
+				</select>
+			</div>
+
+			<!-- Retention Days -->
+			<div class="border border-gray-200 dark:border-slate-600 rounded-lg p-4">
+				<label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+					Days to Keep Resolved Alerts
+				</label>
+				<p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
+					Resolved alerts older than this will be automatically deleted during cleanup.
+				</p>
+				<select
+					name="retention_days"
+					class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+				>
+					<option value="7" selected?={ getAlertsRetentionDays(integration.Config) == 7 }>7 days</option>
+					<option value="14" selected?={ getAlertsRetentionDays(integration.Config) == 14 }>14 days</option>
+					<option value="30" selected?={ getAlertsRetentionDays(integration.Config) == 30 }>30 days (recommended)</option>
+					<option value="60" selected?={ getAlertsRetentionDays(integration.Config) == 60 }>60 days</option>
+					<option value="90" selected?={ getAlertsRetentionDays(integration.Config) == 90 }>90 days</option>
+					<option value="180" selected?={ getAlertsRetentionDays(integration.Config) == 180 }>180 days</option>
+				</select>
+			</div>
+
+			<!-- Alert Rules Link -->
+			<div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+				<div class="flex items-start gap-3">
+					<svg class="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
+					</svg>
+					<div class="flex-1">
+						<p class="text-sm text-blue-700 dark:text-blue-300 font-medium mb-1">Alert Rules</p>
+						<p class="text-xs text-blue-600 dark:text-blue-400 mb-2">
+							Configure which conditions trigger alerts, including CPU/memory thresholds, backend status, certificates, and more.
+						</p>
+						<a
+							href={ templ.SafeURL("/settings/plugins/alerts/rules?server=" + serverID) }
+							class="inline-flex items-center text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-medium"
+						>
+							Manage Alert Rules
+							<svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+							</svg>
+						</a>
+					</div>
+				</div>
+			</div>
+
+			<div class="flex justify-end pt-4 border-t border-gray-200 dark:border-slate-700">
+				<button
+					type="submit"
+					class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+				>
+					Save Configuration
+				</button>
+			</div>
+		</div>
+	</form>
+
+	<script src="/static/js/plugins/alerts-config.js"></script>
+}
+
+// Helper functions for alerts config
+func getAlertsLiveStreaming(config json.RawMessage) bool {
+	var cfg database.AlertsConfig
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return true // Default enabled
+	}
+	return cfg.EnableLiveStreaming
+}
+
+func getAlertsSuppressAfterAck(config json.RawMessage) bool {
+	var cfg database.AlertsConfig
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return true // Default enabled
+	}
+	return cfg.SuppressAfterAck
+}
+
+func getAlertsSuppressMinutes(config json.RawMessage) int {
+	var cfg database.AlertsConfig
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return 60 // Default 60 minutes
+	}
+	if cfg.SuppressMinutes == 0 {
+		return 60
+	}
+	return cfg.SuppressMinutes
+}
+
+func getAlertsAutoResolveHours(config json.RawMessage) int {
+	var cfg database.AlertsConfig
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return 0 // Default disabled
+	}
+	return cfg.AutoResolveHours
+}
+
+func getAlertsRetentionDays(config json.RawMessage) int {
+	var cfg database.AlertsConfig
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return 30 // Default 30 days
+	}
+	if cfg.RetentionDays == 0 {
+		return 30
+	}
+	return cfg.RetentionDays
+}
+
+// OS Updates configuration form
+templ osUpdatesConfigForm(integration *database.Plugin, serverID string) {
+	<form method="POST" action={ templ.SafeURL("/settings/plugins/" + integration.Name + "?server=" + serverID) }>
+		<div class="space-y-6">
+			<div>
+				<h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">OS Updates Configuration</h3>
+				<p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+					Configure how OS updates are monitored, checked, and installed on this server.
+				</p>
+			</div>
+
+			<!-- Check Frequency -->
+			<div class="border border-gray-200 dark:border-slate-600 rounded-lg p-4">
+				<label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+					Update Check Frequency
+				</label>
+				<p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
+					How often to automatically check for available updates (via apt update).
+				</p>
+				<div class="flex items-center gap-2">
+					<input
+						type="number"
+						name="check_frequency_minutes"
+						min="15"
+						max="1440"
+						value={ fmt.Sprintf("%d", getOSUpdatesCheckFrequency(integration.Config)) }
+						class="w-24 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-gray-100"
+					/>
+					<span class="text-sm text-gray-600 dark:text-gray-400">minutes</span>
+				</div>
+			</div>
+
+			<!-- Alerting Settings -->
+			<div class="border border-gray-200 dark:border-slate-600 rounded-lg p-4">
+				<h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Alert Settings</h4>
+
+				<!-- Alert on Available -->
+				<div class="flex items-center justify-between mb-4">
+					<div>
+						<span class="text-sm text-gray-700 dark:text-gray-300">Alert when updates available</span>
+						<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+							Create an alert when package updates are available.
+						</p>
+					</div>
+					<button
+						type="button"
+						id="alert-on-available-toggle"
+						class={ "relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2",
+							templ.KV("bg-blue-600", getOSUpdatesAlertOnAvailable(integration.Config)),
+							templ.KV("bg-gray-200 dark:bg-gray-600", !getOSUpdatesAlertOnAvailable(integration.Config)) }
+						role="switch"
+						aria-checked={ boolToString(getOSUpdatesAlertOnAvailable(integration.Config)) }
+						onclick="toggleOSUpdatesField(this, 'alert_on_available_value')"
+					>
+						<span
+							class={ "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+								templ.KV("translate-x-5", getOSUpdatesAlertOnAvailable(integration.Config)),
+								templ.KV("translate-x-0", !getOSUpdatesAlertOnAvailable(integration.Config)) }
+						></span>
+					</button>
+					<input type="hidden" name="alert_on_available_value" id="alert_on_available_value" value={ boolToString(getOSUpdatesAlertOnAvailable(integration.Config)) }/>
+				</div>
+
+				<!-- Alert Threshold -->
+				<div class="grid grid-cols-2 gap-4">
+					<div>
+						<label class="block text-sm text-gray-700 dark:text-gray-300 mb-1">Update alert threshold</label>
+						<p class="text-xs text-gray-500 dark:text-gray-400 mb-2">Alert when N+ updates pending (0 = any)</p>
+						<input
+							type="number"
+							name="alert_threshold"
+							min="0"
+							max="100"
+							value={ fmt.Sprintf("%d", getOSUpdatesAlertThreshold(integration.Config)) }
+							class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-gray-100"
+						/>
+					</div>
+					<div>
+						<label class="block text-sm text-gray-700 dark:text-gray-300 mb-1">Security alert threshold</label>
+						<p class="text-xs text-gray-500 dark:text-gray-400 mb-2">Alert when N+ security updates (0 = any)</p>
+						<input
+							type="number"
+							name="security_alert_threshold"
+							min="0"
+							max="100"
+							value={ fmt.Sprintf("%d", getOSUpdatesSecurityThreshold(integration.Config)) }
+							class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-gray-100"
+						/>
+					</div>
+				</div>
+			</div>
+
+			<!-- Snapshot Settings -->
+			<div class="border border-gray-200 dark:border-slate-600 rounded-lg p-4">
+				<div class="flex items-center justify-between">
+					<div>
+						<span class="text-sm font-medium text-gray-700 dark:text-gray-300">Create snapshot before updates</span>
+						<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+							Automatically create a package snapshot before installing updates for rollback capability.
+						</p>
+					</div>
+					<button
+						type="button"
+						id="create-snapshot-toggle"
+						class={ "relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2",
+							templ.KV("bg-blue-600", getOSUpdatesCreateSnapshot(integration.Config)),
+							templ.KV("bg-gray-200 dark:bg-gray-600", !getOSUpdatesCreateSnapshot(integration.Config)) }
+						role="switch"
+						aria-checked={ boolToString(getOSUpdatesCreateSnapshot(integration.Config)) }
+						onclick="toggleOSUpdatesField(this, 'create_snapshot_before_value')"
+					>
+						<span
+							class={ "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+								templ.KV("translate-x-5", getOSUpdatesCreateSnapshot(integration.Config)),
+								templ.KV("translate-x-0", !getOSUpdatesCreateSnapshot(integration.Config)) }
+						></span>
+					</button>
+					<input type="hidden" name="create_snapshot_before_value" id="create_snapshot_before_value" value={ boolToString(getOSUpdatesCreateSnapshot(integration.Config)) }/>
+				</div>
+			</div>
+
+			<!-- Pipx Settings -->
+			<div class="border border-gray-200 dark:border-slate-600 rounded-lg p-4">
+				<div class="flex items-center justify-between">
+					<div>
+						<span class="text-sm font-medium text-gray-700 dark:text-gray-300">Show pipx package management</span>
+						<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+							Display the pipx (Python CLI tools) management section on the OS Updates page.
+						</p>
+					</div>
+					<button
+						type="button"
+						id="show-pipx-toggle"
+						class={ "relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2",
+							templ.KV("bg-blue-600", getOSUpdatesShowPipx(integration.Config)),
+							templ.KV("bg-gray-200 dark:bg-gray-600", !getOSUpdatesShowPipx(integration.Config)) }
+						role="switch"
+						aria-checked={ boolToString(getOSUpdatesShowPipx(integration.Config)) }
+						onclick="toggleOSUpdatesField(this, 'show_pipx_value')"
+					>
+						<span
+							class={ "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+								templ.KV("translate-x-5", getOSUpdatesShowPipx(integration.Config)),
+								templ.KV("translate-x-0", !getOSUpdatesShowPipx(integration.Config)) }
+						></span>
+					</button>
+					<input type="hidden" name="show_pipx_value" id="show_pipx_value" value={ boolToString(getOSUpdatesShowPipx(integration.Config)) }/>
+				</div>
+			</div>
+
+			<!-- History Retention -->
+			<div class="border border-gray-200 dark:border-slate-600 rounded-lg p-4">
+				<label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+					History Retention
+				</label>
+				<p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
+					How long to display update history entries.
+				</p>
+				<div class="flex items-center gap-2">
+					<input
+						type="number"
+						name="history_retention_days"
+						min="7"
+						max="365"
+						value={ fmt.Sprintf("%d", getOSUpdatesHistoryRetention(integration.Config)) }
+						class="w-24 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-gray-100"
+					/>
+					<span class="text-sm text-gray-600 dark:text-gray-400">days</span>
+				</div>
+			</div>
+
+			<!-- Submit Button -->
+			<div class="flex justify-end pt-4 border-t border-gray-200 dark:border-slate-600">
+				<button
+					type="submit"
+					class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+				>
+					Save Configuration
+				</button>
+			</div>
+		</div>
+	</form>
+
+	<script src="/static/js/plugins/os-updates-config.js"></script>
+}
+
+// Helper functions for OS Updates config
+func getOSUpdatesCheckFrequency(config json.RawMessage) int {
+	var cfg database.OSUpdatesConfig
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return 60 // Default 60 minutes
+	}
+	if cfg.CheckFrequencyMinutes == 0 {
+		return 60
+	}
+	return cfg.CheckFrequencyMinutes
+}
+
+func getOSUpdatesAlertOnAvailable(config json.RawMessage) bool {
+	var cfg database.OSUpdatesConfig
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return true // Default enabled
+	}
+	return cfg.AlertOnAvailable
+}
+
+func getOSUpdatesAlertThreshold(config json.RawMessage) int {
+	var cfg database.OSUpdatesConfig
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return 0
+	}
+	return cfg.AlertThreshold
+}
+
+func getOSUpdatesSecurityThreshold(config json.RawMessage) int {
+	var cfg database.OSUpdatesConfig
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return 0
+	}
+	return cfg.SecurityAlertThreshold
+}
+
+func getOSUpdatesCreateSnapshot(config json.RawMessage) bool {
+	var cfg database.OSUpdatesConfig
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return true // Default enabled
+	}
+	return cfg.CreateSnapshotBefore
+}
+
+func getOSUpdatesShowPipx(config json.RawMessage) bool {
+	var cfg database.OSUpdatesConfig
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return true // Default enabled
+	}
+	return cfg.ShowPipx
+}
+
+func getOSUpdatesHistoryRetention(config json.RawMessage) int {
+	var cfg database.OSUpdatesConfig
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return 90 // Default 90 days
+	}
+	if cfg.HistoryRetentionDays == 0 {
+		return 90
+	}
+	return cfg.HistoryRetentionDays
+}

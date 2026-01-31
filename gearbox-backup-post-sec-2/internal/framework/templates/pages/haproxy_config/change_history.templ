@@ -1,0 +1,33 @@
+package haproxy_config
+
+import "github.com/sarg3nt/gearbox/internal/framework/database"
+
+templ ChangeHistory(changes []database.ConfigChange) {
+	<!-- Recent Changes -->
+	if len(changes) > 0 {
+		<div class="mt-6 bg-white dark:bg-slate-800 rounded-lg shadow p-4">
+			<h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Recent Changes</h3>
+			<div class="space-y-2">
+				for _, change := range changes {
+					<div class="flex items-center justify-between text-sm py-2 border-b border-gray-100 dark:border-slate-700 last:border-0">
+						<div class="flex items-center gap-3">
+							<span class={ "px-2 py-1 rounded text-xs font-medium",
+								templ.KV("bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300", change.ChangeType == "manual"),
+								templ.KV("bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300", change.ChangeType == "git_sync"),
+								templ.KV("bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300", change.ChangeType == "restore") }>
+								{ string(change.ChangeType) }
+							</span>
+							if change.ChangedByName != "" {
+								<span class="text-gray-600 dark:text-gray-400">by { change.ChangedByName }</span>
+							}
+							if change.ChangeReason != "" {
+								<span class="text-gray-500 dark:text-gray-500">- { change.ChangeReason }</span>
+							}
+						</div>
+						<span class="text-gray-500 dark:text-gray-500">{ change.CreatedAt.Format("Jan 2 15:04") }</span>
+					</div>
+				}
+			</div>
+		</div>
+	}
+}

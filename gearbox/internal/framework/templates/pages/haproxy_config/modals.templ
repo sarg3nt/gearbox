@@ -1,0 +1,191 @@
+package haproxy_config
+
+templ Modals() {
+	<!-- Backups Modal -->
+	<div id="backups-modal" class="hidden fixed inset-0 z-50 overflow-y-auto">
+		<div class="flex items-center justify-center min-h-screen px-4">
+			<div id="backups-modal-backdrop" class="fixed inset-0 bg-black bg-opacity-50"></div>
+			<div class="relative bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-2xl w-full p-6">
+				<h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Configuration Backups</h3>
+				<div id="backups-list" class="space-y-2">
+					<p class="text-gray-500">Loading...</p>
+				</div>
+				<div class="mt-4 flex justify-end">
+					<button id="close-backups-btn" class="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">
+						Close
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
+	<!-- Error Dialog for tampered markers -->
+	<div id="marker-error-modal" class="hidden fixed inset-0 z-50 overflow-y-auto">
+		<div class="flex items-center justify-center min-h-screen px-4">
+			<div class="fixed inset-0 bg-black bg-opacity-50"></div>
+			<div class="relative bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-2xl w-full">
+				<!-- Header with warning icon -->
+				<div class="bg-red-600 dark:bg-red-700 rounded-t-lg px-6 py-4 flex items-center gap-3">
+					<svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+					</svg>
+					<h3 class="text-xl font-bold text-white">Configuration Error</h3>
+				</div>
+				<!-- Body -->
+				<div class="p-6">
+					<pre id="marker-error-text" class="font-mono text-sm whitespace-pre-wrap text-gray-800 dark:text-gray-200 bg-gray-100 dark:bg-slate-700 rounded-lg p-4 max-h-96 overflow-auto"></pre>
+				</div>
+				<!-- Footer -->
+				<div class="px-6 py-4 bg-gray-50 dark:bg-slate-700 rounded-b-lg flex justify-between items-center">
+					<button
+						id="reload-page-btn"
+						class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+					>
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+						</svg>
+						Reload Page
+					</button>
+					<button
+						id="close-marker-error-btn"
+						class="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+					>
+						Close
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
+	<!-- Save Reason Dialog -->
+	<div id="save-reason-modal" class="hidden fixed inset-0 z-50 overflow-y-auto">
+		<div class="flex items-center justify-center min-h-screen px-4">
+			<div id="save-reason-backdrop" class="fixed inset-0 bg-black bg-opacity-50"></div>
+			<div class="relative bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-md w-full">
+				<!-- Header -->
+				<div class="bg-blue-600 dark:bg-blue-700 rounded-t-lg px-6 py-4 flex items-center gap-3">
+					<svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+					</svg>
+					<h3 class="text-lg font-bold text-white">Save Configuration</h3>
+				</div>
+				<!-- Body -->
+				<div class="p-6">
+					<label for="save-reason-input" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+						Reason for this change (optional)
+					</label>
+					<input
+						type="text"
+						id="save-reason-input"
+						class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+						placeholder="e.g., Updated timeout settings"
+					/>
+				</div>
+				<!-- Footer -->
+				<div class="px-6 py-4 bg-gray-50 dark:bg-slate-700 rounded-b-lg flex justify-end gap-3">
+					<button
+						id="cancel-save-reason-btn"
+						class="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+					>
+						Cancel
+					</button>
+					<button
+						id="confirm-save-reason-btn"
+						class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
+					>
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+						</svg>
+						Save & Apply
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
+	<!-- Validation Output Dialog -->
+	<div id="validation-modal" class="hidden fixed inset-0 z-50 overflow-y-auto">
+		<div class="flex items-center justify-center min-h-screen px-4">
+			<div id="validation-modal-backdrop" class="fixed inset-0 bg-black bg-opacity-50"></div>
+			<div class="relative bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-2xl w-full">
+				<!-- Header -->
+				<div id="validation-modal-header" class="rounded-t-lg px-6 py-4 flex items-center gap-3">
+					<svg id="validation-icon-success" class="w-6 h-6 text-white hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+					</svg>
+					<svg id="validation-icon-error" class="w-6 h-6 text-white hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+					</svg>
+					<h3 id="validation-modal-title" class="text-lg font-bold text-white">Validation Result</h3>
+				</div>
+				<!-- Body -->
+				<div class="p-6">
+					<pre id="validation-modal-text" class="font-mono text-sm whitespace-pre-wrap bg-gray-100 dark:bg-slate-700 rounded-lg p-4 max-h-96 overflow-auto"></pre>
+				</div>
+				<!-- Footer -->
+				<div class="px-6 py-4 bg-gray-50 dark:bg-slate-700 rounded-b-lg flex justify-end">
+					<button
+						id="close-validation-modal-btn"
+						class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+					>
+						Close
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
+	<!-- Insert Snippets Modal -->
+	<div id="snippets-modal" class="hidden fixed inset-0 z-50 overflow-y-auto">
+		<div class="flex items-center justify-center min-h-screen px-4">
+			<div id="snippets-modal-backdrop" class="fixed inset-0 bg-black bg-opacity-50"></div>
+			<div class="relative bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[85vh] flex flex-col">
+				<!-- Header -->
+				<div class="bg-purple-600 dark:bg-purple-700 rounded-t-lg px-6 py-4 flex items-center gap-3">
+					<svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+					</svg>
+					<h3 class="text-lg font-bold text-white">Insert Configuration Snippet</h3>
+				</div>
+				<!-- Search -->
+				<div class="px-6 py-3 border-b border-gray-200 dark:border-slate-700">
+					<input
+						type="text"
+						id="snippet-search"
+						placeholder="Search snippets..."
+						class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+					/>
+				</div>
+				<!-- Two-column content -->
+				<div class="flex-1 flex overflow-hidden min-h-0">
+					<!-- Left: Categories + items -->
+					<div class="w-1/2 border-r border-gray-200 dark:border-slate-700 overflow-y-auto">
+						<div id="snippet-categories" class="p-4 space-y-4"></div>
+					</div>
+					<!-- Right: Preview + description -->
+					<div class="w-1/2 overflow-y-auto p-4 bg-gray-50 dark:bg-slate-900">
+						<div id="snippet-preview">
+							<h4 class="font-medium text-gray-700 dark:text-gray-300 mb-2">Select a snippet</h4>
+							<p class="text-gray-500 dark:text-gray-400 text-sm">Choose from the list on the left to see a preview and description.</p>
+						</div>
+					</div>
+				</div>
+				<!-- Footer -->
+				<div class="px-6 py-4 bg-gray-50 dark:bg-slate-700 rounded-b-lg flex justify-between items-center">
+					<button
+						id="cancel-snippets-btn"
+						class="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+					>
+						Cancel
+					</button>
+					<button
+						id="insert-snippet-btn"
+						disabled
+						class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+					>
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+						</svg>
+						Insert at Cursor
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
+}

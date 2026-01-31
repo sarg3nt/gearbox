@@ -1,0 +1,159 @@
+package haproxy
+
+import (
+	"fmt"
+	"github.com/sarg3nt/gearbox/internal/framework/models"
+	"github.com/sarg3nt/gearbox/internal/framework/database"
+	"github.com/sarg3nt/gearbox/internal/framework/ui"
+	"github.com/sarg3nt/gearbox/internal/framework/templates/components"
+	"github.com/sarg3nt/gearbox/internal/framework/templates/pages"
+)
+
+// HAProxyStatusSummaryWidget renders the three status doughnuts (Frontends, Backends, Servers)
+templ HAProxyStatusSummaryWidget(config map[string]any, data any) {
+	// Cast data to the expected type
+	if statsData, ok := data.(map[string]any); ok {
+		if stats, ok := statsData["stats"].(*models.HAProxyStats); ok {
+			if metadata, ok := statsData["metadata"].(*models.Metadata); ok {
+				if disabledEntities, ok := statsData["disabled_entities"].([]database.DisabledEntity); ok {
+					@pages.StatusSummarySection(stats, metadata, disabledEntities)
+				}
+			}
+		}
+	}
+}
+
+// HAProxyBackendGridWidget renders the backend status grid with collapsible sections
+// This widget wraps the StatsPartial from pages package
+templ HAProxyBackendGridWidget(config map[string]any, data any) {
+	// Cast data to the expected type
+	if statsData, ok := data.(map[string]any); ok {
+		if stats, ok := statsData["stats"].(*models.HAProxyStats); ok {
+			if metadata, ok := statsData["metadata"].(*models.Metadata); ok {
+				if disabledEntities, ok := statsData["disabled_entities"].([]database.DisabledEntity); ok {
+					if serverID, ok := statsData["server_id"].(string); ok {
+						if canManageDisabled, ok := statsData["can_manage_disabled"].(bool); ok {
+							// Render the complete stats partial (without status summary)
+							// This includes all frontends with their backends
+							<div class="space-y-6">
+								for _, frontendStatus := range pages.GetSortedFrontends(stats.Frontends, stats.Backends, metadata) {
+									@ui.CollapsibleSectionWithStats(
+										fmt.Sprintf("%s-frontend-%s", serverID, frontendStatus.Frontend.Name),
+										frontendStatus.Frontend.Name,
+										"FRONTEND",
+										"bg-blue-600",
+										pages.FormatFrontendStats(frontendStatus.Frontend),
+										getBoolConfig(config, "default_collapsed", false),
+									) {
+										<!-- Frontend status badge -->
+										<div class="flex justify-between items-start mb-4">
+											<div class="flex items-center gap-3">
+												if frontendStatus.Frontend.Status == "OPEN" {
+													<span class="px-2 py-1 text-xs font-semibold rounded bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200">
+														ACTIVE
+													</span>
+												} else {
+													<span class="px-2 py-1 text-xs font-semibold rounded bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200">
+														{ frontendStatus.Frontend.Status }
+													</span>
+												}
+											</div>
+											<a href={ templ.SafeURL(fmt.Sprintf("/server/%s/frontend/%s", serverID, frontendStatus.Frontend.Name)) } class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 text-sm">
+												View Details →
+											</a>
+										</div>
+										<!-- Backends grid -->
+										if frontendStatus.HasBackends {
+											<div class="backend-card-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+												for _, backend := range pages.GetBackendsForFrontend(frontendStatus.Frontend.Name, stats.Backends, metadata) {
+													@pages.BackendCard(
+														backend,
+														pages.GetBackendDisplayName(backend.Name),
+														pages.GetContainersForBackend(backend.Name, metadata),
+														pages.ParseBackendName(backend.Name),
+														metadata,
+														pages.IsBackendDisabled(backend.Name, pages.BuildDisabledEntitiesMap(disabledEntities)),
+														serverID,
+														pages.GetDisabledEntity(backend.Name, disabledEntities),
+														canManageDisabled,
+													)
+												}
+											</div>
+										}
+									}
+								}
+							</div>
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// SystemMetricsWidget renders system metrics (CPU, memory, disk, network)
+templ SystemMetricsWidget(config map[string]any, data any) {
+	if metricsData, ok := data.(map[string]any); ok {
+		if metrics, ok := metricsData["metrics"].(*models.SystemMetrics); ok {
+			<div>
+				if getBoolConfig(config, "show_title", true) {
+					<h4 class="text-lg font-semibold mb-3 text-gray-800 dark:text-gray-100">System Metrics</h4>
+				}
+				@components.SystemMetrics(metrics)
+			</div>
+		}
+	}
+}
+
+// ServiceStatusWidget renders service status list
+templ ServiceStatusWidget(config map[string]any, data any) {
+	if metricsData, ok := data.(map[string]any); ok {
+		if metrics, ok := metricsData["metrics"].(*models.SystemMetrics); ok {
+			if len(metrics.ServiceStatuses) > 0 {
+				@components.ServiceStatusList(metrics.ServiceStatuses)
+			}
+		}
+	}
+}
+
+// CertificateWarningsWidget renders certificate warnings
+templ CertificateWarningsWidget(config map[string]any, data any) {
+	if certData, ok := data.(map[string]any); ok {
+		if certs, ok := certData["certificates"].([]any); ok {
+			if len(certs) > 0 || !getBoolConfig(config, "hide_when_empty", true) {
+				<div class="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-4">
+					<div class="flex items-center justify-between mb-3">
+						<h4 class="text-lg font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
+							<svg class="w-5 h-5 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+							</svg>
+							Certificate Warnings
+						</h4>
+						<a href="/certificates" class="text-sm text-blue-600 dark:text-blue-400 hover:underline">View All</a>
+					</div>
+					<div class="flex flex-wrap gap-3">
+						<div class="text-sm text-gray-600 dark:text-gray-400">
+							{ fmt.Sprintf("%d certificates need attention", len(certs)) }
+						</div>
+					</div>
+				</div>
+			}
+		}
+	}
+}
+
+// Helper function to get boolean config value
+func getBoolConfig(config map[string]any, key string, defaultVal bool) bool {
+	if val, ok := config[key].(bool); ok {
+		return val
+	}
+	return defaultVal
+}
+
+// Helper function to get string config value
+func getStringConfig(config map[string]any, key string, defaultVal string) string {
+	if val, ok := config[key].(string); ok {
+		return val
+	}
+	return defaultVal
+}

@@ -1,0 +1,162 @@
+package widgets
+
+import "fmt"
+
+// CollapsibleContainerWidget renders a collapsible container with nested widgets
+templ CollapsibleContainerWidget(id string, config map[string]any, nestedWidgets []templ.Component) {
+	@CollapsibleContainer(
+		id,
+		getStringConfig(config, "title", "Container"),
+		getStringConfig(config, "subtitle", ""),
+		getBoolConfig(config, "default_collapsed", false),
+		getBoolConfig(config, "persist_state", true),
+		getBadgeConfig(config),
+		nestedWidgets,
+	)
+}
+
+// CollapsibleContainer creates a collapsible container with nested content
+templ CollapsibleContainer(id string, title string, subtitle string, defaultCollapsed bool, persistState bool, badge *BadgeConfig, nestedWidgets []templ.Component) {
+	<div class="border border-gray-300 dark:border-slate-600 rounded-lg overflow-hidden mb-4" data-collapsible-id={ id } data-persist={ fmt.Sprintf("%v", persistState) }>
+		<!-- Header (clickable to toggle) -->
+		<div
+			class="bg-gray-50 dark:bg-slate-800 p-4 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
+			onclick={ toggleCollapsibleContainer(id, persistState) }
+		>
+			<div class="flex items-center justify-between">
+				<div class="flex items-center gap-3 flex-1 min-w-0">
+					if badge != nil {
+						<div class={ getBadgeClass(badge) }>{ badge.Text }</div>
+					}
+					<div class="flex-1 min-w-0">
+						<h4 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{ title }</h4>
+						if subtitle != "" {
+							<p class="text-sm text-gray-500 dark:text-gray-400">{ subtitle }</p>
+						}
+					</div>
+				</div>
+				<div class="flex items-center gap-2">
+					<!-- Collapse/Expand icon -->
+					<svg
+						class="w-5 h-5 text-gray-500 dark:text-gray-400 transition-transform duration-200 collapsible-icon"
+						data-target={ id }
+						fill="none"
+						stroke="currentColor"
+						viewBox="0 0 24 24"
+					>
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+					</svg>
+				</div>
+			</div>
+		</div>
+
+		<!-- Collapsible content -->
+		<div
+			id={ id }
+			class={ "collapsible-content bg-white dark:bg-slate-900", templ.KV("hidden", defaultCollapsed) }
+		>
+			<div class="p-4 space-y-4">
+				for _, widget := range nestedWidgets {
+					@widget
+				}
+			</div>
+		</div>
+	</div>
+}
+
+// BadgeConfig represents badge configuration
+type BadgeConfig struct {
+	Text  string
+	Color string // blue, green, yellow, red, gray
+}
+
+func getBadgeConfig(config map[string]any) *BadgeConfig {
+	if badgeConfig, ok := config["badge"].(map[string]any); ok {
+		text := getStringConfig(badgeConfig, "text", "")
+		if text != "" {
+			return &BadgeConfig{
+				Text:  text,
+				Color: getStringConfig(badgeConfig, "color", "blue"),
+			}
+		}
+	}
+	return nil
+}
+
+func getBadgeClass(badge *BadgeConfig) string {
+	baseClass := "px-2 py-1 rounded text-xs font-semibold text-white "
+	switch badge.Color {
+	case "blue":
+		return baseClass + "bg-blue-500"
+	case "green":
+		return baseClass + "bg-green-500"
+	case "yellow":
+		return baseClass + "bg-yellow-500"
+	case "red":
+		return baseClass + "bg-red-500"
+	case "gray":
+		return baseClass + "bg-gray-500"
+	default:
+		return baseClass + "bg-blue-500"
+	}
+}
+
+script toggleCollapsibleContainer(id string, persistState bool) {
+	// Get the content element
+	const content = document.getElementById(id);
+	const icon = document.querySelector(`[data-target="${id}"]`);
+
+	if (content && icon) {
+		// Toggle visibility
+		content.classList.toggle('hidden');
+
+		// Rotate icon
+		if (content.classList.contains('hidden')) {
+			icon.style.transform = 'rotate(-90deg)';
+		} else {
+			icon.style.transform = 'rotate(0deg)';
+		}
+
+		// Save state to localStorage if persist is enabled
+		if (persistState) {
+			const isOpen = !content.classList.contains('hidden');
+			localStorage.setItem(`collapsible-${id}`, isOpen ? 'open' : 'closed');
+		}
+	}
+}
+
+// CollapsibleContainerRestoreScript restores collapsible states from localStorage
+templ CollapsibleContainerRestoreScript() {
+	<script>
+	function restoreCollapsibleContainerStates() {
+		// Find all collapsible containers with persist enabled
+		document.querySelectorAll('[data-collapsible-id][data-persist="true"]').forEach(function(section) {
+			const id = section.getAttribute('data-collapsible-id');
+			const savedState = localStorage.getItem('collapsible-' + id);
+
+			if (savedState) {
+				const content = document.getElementById(id);
+				const icon = document.querySelector('[data-target="' + id + '"]');
+
+				if (content && icon) {
+					if (savedState === 'closed') {
+						content.classList.add('hidden');
+						icon.style.transform = 'rotate(-90deg)';
+					} else {
+						content.classList.remove('hidden');
+						icon.style.transform = 'rotate(0deg)';
+					}
+				}
+			}
+		});
+	}
+
+	// Restore states on initial page load
+	document.addEventListener('DOMContentLoaded', restoreCollapsibleContainerStates);
+
+	// Restore states after HTMX swaps content
+	document.body.addEventListener('htmx:afterSwap', function() {
+		setTimeout(restoreCollapsibleContainerStates, 10);
+	});
+	</script>
+}

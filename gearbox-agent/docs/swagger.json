@@ -1,0 +1,954 @@
+{
+    "schemes": [
+        "https"
+    ],
+    "swagger": "2.0",
+    "info": {
+        "description": "REST API for monitoring and managing HAProxy instances. Provides endpoints for system metrics, HAProxy stats, log streaming, security monitoring, and real-time WebSocket events.",
+        "title": "Gearbox Agent API",
+        "termsOfService": "https://github.com/sarg3nt/gearbox-agent",
+        "contact": {
+            "name": "Gearbox Agent Support",
+            "url": "https://github.com/sarg3nt/gearbox-agent/issues"
+        },
+        "license": {
+            "name": "MIT",
+            "url": "https://opensource.org/licenses/MIT"
+        },
+        "version": "1.0"
+    },
+    "host": "localhost:8405",
+    "basePath": "/",
+    "paths": {
+        "/api/v1/events": {
+            "get": {
+                "description": "Upgrades to WebSocket connection for real-time event streaming. First obtain a token via POST /api/v1/events/token, then connect with ?token=\u003ctoken\u003e. Events: sync.started, sync.completed, sync.failed, config.changed, webhook.received.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "WebSocket"
+                ],
+                "summary": "WebSocket events stream",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Short-lived WebSocket token from /api/v1/events/token",
+                        "name": "token",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "101": {
+                        "description": "Switching Protocols - WebSocket connection established"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/events/info": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns information about the WebSocket endpoint including available event types and current subscriber count.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "WebSocket"
+                ],
+                "summary": "WebSocket info",
+                "responses": {
+                    "200": {
+                        "description": "WebSocket endpoint info",
+                        "schema": {
+                            "$ref": "#/definitions/api.WSInfoResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/events/token": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Exchanges an API key for a short-lived (60 second) single-use token for WebSocket authentication. Use the returned token in the WebSocket connection query parameter.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "WebSocket"
+                ],
+                "summary": "Exchange API key for WebSocket token",
+                "responses": {
+                    "200": {
+                        "description": "WebSocket token",
+                        "schema": {
+                            "$ref": "#/definitions/api.WSTokenResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "405": {
+                        "description": "Method not allowed",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to generate token",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/metadata": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns HAProxy configuration metadata including frontends, backends, and their settings from the last sync.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sync"
+                ],
+                "summary": "HAProxy metadata",
+                "responses": {
+                    "200": {
+                        "description": "HAProxy metadata",
+                        "schema": {
+                            "$ref": "#/definitions/api.MetadataResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "503": {
+                        "description": "Sync service not configured or pending",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/sync/status": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the status of the Git sync service including last sync time, error status, and backend count.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sync"
+                ],
+                "summary": "Sync status",
+                "responses": {
+                    "200": {
+                        "description": "Sync status",
+                        "schema": {
+                            "$ref": "#/definitions/api.SyncStatusResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "503": {
+                        "description": "Sync service not configured",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/traffic": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns traffic analysis data including per-IP statistics from stick tables and backend aggregations.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Traffic"
+                ],
+                "summary": "Traffic analysis",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 100,
+                        "description": "Limit number of sources returned",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 10,
+                        "description": "Number of top sources to return",
+                        "name": "top_n",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Include all IPs, not just those with data",
+                        "name": "include_all",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Traffic analysis data",
+                        "schema": {
+                            "$ref": "#/definitions/traffic.TrafficResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to fetch traffic data",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "503": {
+                        "description": "HAProxy stats not configured",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/traffic/summary": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a summary of traffic statistics without individual IP details.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Traffic"
+                ],
+                "summary": "Traffic summary",
+                "responses": {
+                    "200": {
+                        "description": "Traffic summary",
+                        "schema": {
+                            "$ref": "#/definitions/traffic.TrafficSummary"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to fetch traffic data",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/webhook/github": {
+            "post": {
+                "description": "Receives GitHub push events and triggers a sync. Authenticated via HMAC-SHA256 signature in X-Hub-Signature-256 header.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Webhook"
+                ],
+                "summary": "GitHub webhook",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "GitHub HMAC signature",
+                        "name": "X-Hub-Signature-256",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "GitHub event type",
+                        "name": "X-GitHub-Event",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "GitHub push payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.GitHubPushPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Webhook processed successfully",
+                        "schema": {
+                            "$ref": "#/definitions/api.WebhookSuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/api.WebhookErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid or missing signature",
+                        "schema": {
+                            "$ref": "#/definitions/api.WebhookErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/webhook/info": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns webhook configuration information including the URL to configure in GitHub.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Webhook"
+                ],
+                "summary": "Webhook info",
+                "responses": {
+                    "200": {
+                        "description": "Webhook configuration info",
+                        "schema": {
+                            "$ref": "#/definitions/api.WebhookInfoResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/health": {
+            "get": {
+                "description": "Returns the health status of the gearbox-agent service. No authentication required.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Health"
+                ],
+                "summary": "Health check",
+                "responses": {
+                    "200": {
+                        "description": "Service is healthy",
+                        "schema": {
+                            "$ref": "#/definitions/api.HealthResponse"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "api.GitHubPushPayload": {
+            "type": "object",
+            "properties": {
+                "head_commit": {
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "string"
+                        },
+                        "message": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "pusher": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "ref": {
+                    "type": "string"
+                },
+                "repository": {
+                    "type": "object",
+                    "properties": {
+                        "full_name": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "api.HealthResponse": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "example": "ok"
+                },
+                "timestamp": {
+                    "type": "string",
+                    "example": "2024-01-17T10:30:00Z"
+                },
+                "uptime": {
+                    "type": "string",
+                    "example": "2h30m15s"
+                },
+                "version": {
+                    "type": "string",
+                    "example": "1.0.0"
+                }
+            }
+        },
+        "api.MetadataResponse": {
+            "type": "object",
+            "properties": {
+                "last_error": {
+                    "type": "string"
+                },
+                "last_sync_time": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/haproxy.Metadata"
+                }
+            }
+        },
+        "api.SyncStatusResponse": {
+            "type": "object",
+            "properties": {
+                "backend_count": {
+                    "type": "integer"
+                },
+                "last_error": {
+                    "type": "string"
+                },
+                "last_sync_time": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.WSInfoResponse": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "endpoint": {
+                    "type": "string",
+                    "example": "/api/v1/events"
+                },
+                "event_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "sync.started",
+                        "sync.completed",
+                        "sync.failed",
+                        "config.changed",
+                        "webhook.received"
+                    ]
+                },
+                "subscribers": {
+                    "type": "integer",
+                    "example": 2
+                }
+            }
+        },
+        "api.WSTokenResponse": {
+            "type": "object",
+            "properties": {
+                "expires_in": {
+                    "description": "Seconds until expiry",
+                    "type": "integer",
+                    "example": 60
+                },
+                "token": {
+                    "type": "string",
+                    "example": "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456"
+                }
+            }
+        },
+        "api.WebhookErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string",
+                    "example": "invalid_signature"
+                },
+                "message": {
+                    "type": "string",
+                    "example": "Signature verification failed"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "error"
+                }
+            }
+        },
+        "api.WebhookInfoResponse": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "message": {
+                    "type": "string",
+                    "example": "Configure this URL in GitHub repository settings"
+                },
+                "webhook_url": {
+                    "type": "string",
+                    "example": "https://proxy.example.com:8405/api/v1/webhook/github"
+                }
+            }
+        },
+        "api.WebhookSuccessResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "example": "Sync triggered"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "accepted"
+                }
+            }
+        },
+        "haproxy.ACLMetadata": {
+            "type": "object",
+            "properties": {
+                "type": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
+        "haproxy.ActiveSession": {
+            "type": "object",
+            "properties": {
+                "age_seconds": {
+                    "description": "How long the session has been active",
+                    "type": "integer"
+                },
+                "backend": {
+                    "type": "string"
+                },
+                "bytes_in": {
+                    "type": "integer"
+                },
+                "bytes_out": {
+                    "type": "integer"
+                },
+                "frontend": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "idle_seconds": {
+                    "description": "How long since last activity",
+                    "type": "integer"
+                },
+                "request_count": {
+                    "description": "Number of requests in this session",
+                    "type": "integer"
+                },
+                "server": {
+                    "type": "string"
+                },
+                "source_ip": {
+                    "type": "string"
+                },
+                "source_port": {
+                    "type": "integer"
+                }
+            }
+        },
+        "haproxy.BackendMetadata": {
+            "type": "object",
+            "properties": {
+                "acls": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/haproxy.ACLMetadata"
+                    }
+                },
+                "app_name": {
+                    "type": "string"
+                },
+                "containers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/haproxy.ContainerMetadata"
+                    }
+                },
+                "frontend": {
+                    "type": "string"
+                },
+                "hostname": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "public": {
+                    "type": "boolean"
+                },
+                "rate_limit": {
+                    "type": "integer"
+                },
+                "servers": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "ssl_enabled": {
+                    "type": "boolean"
+                },
+                "ssl_verify": {
+                    "type": "string"
+                }
+            }
+        },
+        "haproxy.ConnectionFlow": {
+            "type": "object",
+            "properties": {
+                "active_connections": {
+                    "type": "integer"
+                },
+                "backend": {
+                    "type": "string"
+                },
+                "bytes_in": {
+                    "type": "integer"
+                },
+                "bytes_out": {
+                    "type": "integer"
+                },
+                "source_ip": {
+                    "type": "string"
+                },
+                "total_requests": {
+                    "type": "integer"
+                }
+            }
+        },
+        "haproxy.ContainerMetadata": {
+            "type": "object",
+            "properties": {
+                "depends_on": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "is_backend": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "network_mode": {
+                    "type": "string"
+                }
+            }
+        },
+        "haproxy.FrontendMetadata": {
+            "type": "object",
+            "properties": {
+                "backends": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "haproxy.Metadata": {
+            "type": "object",
+            "properties": {
+                "backends": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/haproxy.BackendMetadata"
+                    }
+                },
+                "frontends": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/haproxy.FrontendMetadata"
+                    }
+                },
+                "generated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "traffic.BackendTrafficData": {
+            "type": "object",
+            "properties": {
+                "avg_response_time": {
+                    "type": "integer"
+                },
+                "bytes_in": {
+                    "type": "integer"
+                },
+                "bytes_out": {
+                    "type": "integer"
+                },
+                "error_rate": {
+                    "type": "number"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "response_2xx": {
+                    "type": "integer"
+                },
+                "response_3xx": {
+                    "type": "integer"
+                },
+                "response_4xx": {
+                    "type": "integer"
+                },
+                "response_5xx": {
+                    "type": "integer"
+                },
+                "total_requests": {
+                    "type": "integer"
+                },
+                "unique_ips": {
+                    "type": "integer"
+                }
+            }
+        },
+        "traffic.TrafficResponse": {
+            "type": "object",
+            "properties": {
+                "active_sessions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/haproxy.ActiveSession"
+                    }
+                },
+                "backend_traffic": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/traffic.BackendTrafficData"
+                    }
+                },
+                "collected_at": {
+                    "type": "string"
+                },
+                "connection_flows": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/haproxy.ConnectionFlow"
+                    }
+                },
+                "sources": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/traffic.TrafficSourceData"
+                    }
+                },
+                "top_by_bytes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/traffic.TrafficSourceData"
+                    }
+                },
+                "top_by_connections": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/traffic.TrafficSourceData"
+                    }
+                },
+                "top_by_requests": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/traffic.TrafficSourceData"
+                    }
+                },
+                "total_sources": {
+                    "type": "integer"
+                }
+            }
+        },
+        "traffic.TrafficSourceData": {
+            "type": "object",
+            "properties": {
+                "backend": {
+                    "type": "string"
+                },
+                "bytes_in": {
+                    "type": "integer"
+                },
+                "bytes_out": {
+                    "type": "integer"
+                },
+                "connections": {
+                    "type": "integer"
+                },
+                "frontend": {
+                    "type": "string"
+                },
+                "http_request_rate": {
+                    "description": "HTTP requests per period",
+                    "type": "integer"
+                },
+                "ip_address": {
+                    "type": "string"
+                },
+                "last_seen": {
+                    "type": "string"
+                },
+                "requests": {
+                    "type": "integer"
+                },
+                "session_rate": {
+                    "description": "Sessions per period",
+                    "type": "integer"
+                }
+            }
+        },
+        "traffic.TrafficSummary": {
+            "type": "object",
+            "properties": {
+                "avg_response_time": {
+                    "type": "integer"
+                },
+                "backend_count": {
+                    "type": "integer"
+                },
+                "collected_at": {
+                    "type": "string"
+                },
+                "error_rate": {
+                    "type": "number"
+                },
+                "frontend_count": {
+                    "type": "integer"
+                },
+                "total_bytes_in": {
+                    "type": "integer"
+                },
+                "total_bytes_out": {
+                    "type": "integer"
+                },
+                "total_requests": {
+                    "type": "integer"
+                },
+                "total_response_2xx": {
+                    "type": "integer"
+                },
+                "total_response_3xx": {
+                    "type": "integer"
+                },
+                "total_response_4xx": {
+                    "type": "integer"
+                },
+                "total_response_5xx": {
+                    "type": "integer"
+                },
+                "unique_ips": {
+                    "type": "integer"
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "BearerAuth": {
+            "description": "API key authentication. Use format: Bearer YOUR_API_KEY",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
+    }
+}

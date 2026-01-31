@@ -1,0 +1,150 @@
+package components
+
+import (
+	"github.com/sarg3nt/gearbox/internal/framework/models"
+	"strings"
+)
+
+// ContainerDiagram displays all containers in a backend with their relationships
+templ ContainerDiagram(containers []models.Container, serverAddress string) {
+	if len(containers) > 0 {
+		<div class="mt-3">
+			if hasVPNGatewayPattern(containers) {
+				<!-- VPN Gateway Pattern: Stacked visualization -->
+				@vpnGatewayDiagram(containers, serverAddress)
+			} else if len(containers) == 1 {
+				<!-- Single Container: Taller box with IP on second line -->
+				@singleContainerDiagram(containers[0], serverAddress)
+			} else {
+				<!-- Multi Container Pattern: Stacked visualization -->
+				@simpleContainerDiagram(containers, serverAddress)
+			}
+		</div>
+	}
+}
+
+// hasVPNGatewayPattern checks if containers use the VPN gateway pattern (shared network)
+func hasVPNGatewayPattern(containers []models.Container) bool {
+	for _, container := range containers {
+		if container.NetworkMode != "" &&
+			container.NetworkMode != "bridge" &&
+			container.NetworkMode != "host" &&
+			strings.HasPrefix(container.NetworkMode, "service:") {
+			return true
+		}
+	}
+	return false
+}
+
+// getGatewayContainer returns the gateway container (the one with IsBackend=true)
+func getGatewayContainer(containers []models.Container) *models.Container {
+	for _, container := range containers {
+		if container.IsBackend {
+			return &container
+		}
+	}
+	return nil
+}
+
+// getNestedContainers returns containers that share the gateway's network
+func getNestedContainers(containers []models.Container) []models.Container {
+	var nested []models.Container
+	for _, container := range containers {
+		if !container.IsBackend && strings.HasPrefix(container.NetworkMode, "service:") {
+			nested = append(nested, container)
+		}
+	}
+	return nested
+}
+
+// singleContainerDiagram renders a single container with IP on second line
+templ singleContainerDiagram(container models.Container, serverAddress string) {
+	<div class="px-4 py-3 bg-blue-100 dark:bg-blue-900 border-2 border-blue-500 rounded-lg">
+		<div class="text-sm font-semibold text-blue-900 dark:text-blue-100">
+			{ container.Name }
+		</div>
+		if serverAddress != "" {
+			<div class="text-xs text-blue-700 dark:text-blue-300 font-mono mt-1">
+				{ serverAddress }
+			</div>
+		}
+	</div>
+}
+
+// vpnGatewayDiagram renders the VPN gateway pattern as stacked rows
+templ vpnGatewayDiagram(containers []models.Container, serverAddress string) {
+	if gateway := getGatewayContainer(containers); gateway != nil {
+		<div class="space-y-2">
+			<!-- Gateway container (top row) -->
+			<div class="px-4 py-3 bg-blue-100 dark:bg-blue-900 border-2 border-blue-500 rounded-lg">
+				<div class="text-sm font-semibold text-blue-900 dark:text-blue-100">
+					{ gateway.Name }
+				</div>
+				if serverAddress != "" {
+					<div class="text-xs text-blue-700 dark:text-blue-300 font-mono mt-1">
+						{ serverAddress }
+					</div>
+				}
+			</div>
+
+			<!-- Nested containers (subsequent rows) -->
+			for _, nestedContainer := range getNestedContainers(containers) {
+				<div class="px-4 py-3 bg-gray-100 dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-lg">
+					<div class="text-sm text-gray-700 dark:text-gray-300">
+						{ nestedContainer.Name }
+					</div>
+					if len(nestedContainer.DependsOn) > 0 {
+						<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+							<span>↳ depends on:</span>
+							for i, dep := range nestedContainer.DependsOn {
+								<span class="font-mono">{ dep }</span>
+								if i < len(nestedContainer.DependsOn)-1 {
+									<span>, </span>
+								}
+							}
+						</div>
+					}
+				</div>
+			}
+		</div>
+	}
+}
+
+// simpleContainerDiagram renders multi-container services as stacked rows
+templ simpleContainerDiagram(containers []models.Container, serverAddress string) {
+	<div class="space-y-2">
+		for _, container := range containers {
+			if container.IsBackend {
+				<!-- Backend container (top row) -->
+				<div class="px-4 py-3 bg-blue-100 dark:bg-blue-900 border-2 border-blue-500 rounded-lg">
+					<div class="text-sm font-semibold text-blue-900 dark:text-blue-100">
+						{ container.Name }
+					</div>
+					if serverAddress != "" {
+						<div class="text-xs text-blue-700 dark:text-blue-300 font-mono mt-1">
+							{ serverAddress }
+						</div>
+					}
+				</div>
+			} else {
+				<!-- Supporting container -->
+				<div class="px-4 py-3 bg-gray-100 dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-lg">
+					<div class="text-sm text-gray-700 dark:text-gray-300">
+						{ container.Name }
+					</div>
+					if len(container.DependsOn) > 0 {
+						<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+							<span>↳ depends on:</span>
+							for i, dep := range container.DependsOn {
+								<span class="font-mono">{ dep }</span>
+								if i < len(container.DependsOn)-1 {
+									<span>, </span>
+								}
+							}
+						</div>
+					}
+				</div>
+			}
+		}
+	</div>
+}

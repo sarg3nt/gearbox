@@ -1,0 +1,58 @@
+package components
+
+// LiveRefreshButton creates a refresh button that changes color based on SSE connection status
+// The button shows:
+// - Green when connected (Live)
+// - Yellow when connecting
+// - Red when disconnected
+// - Gray as default
+//
+// Usage: Include this button in your page header controls section, then call updateSSEStatus(status)
+// from your JavaScript to update the button's appearance based on connection state.
+templ LiveRefreshButton() {
+	<button
+		id="refresh-btn"
+		onclick="manualRefresh()"
+		class="p-2 rounded-lg transition-colors text-gray-400"
+		title="Connecting..."
+	>
+		<svg id="refresh-icon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+		</svg>
+	</button>
+}
+
+// LiveRefreshButtonScript provides the JavaScript function to update the button status
+// This should be included once per page that uses the LiveRefreshButton component
+templ LiveRefreshButtonScript() {
+	<script>
+		// SSE connection status - update refresh button color
+		// Status can be: 'connected', 'connecting', 'disconnected'
+		function updateSSEStatus(status) {
+			const btn = document.getElementById('refresh-btn');
+			if (!btn) return;
+
+			// Remove all status classes
+			btn.classList.remove('text-green-500', 'text-red-500', 'text-yellow-500', 'text-gray-400');
+
+			// Add appropriate class and update title
+			switch (status) {
+				case 'connected':
+					btn.classList.add('text-green-500');
+					btn.title = 'Live - streaming data';
+					break;
+				case 'connecting':
+					btn.classList.add('text-yellow-500');
+					btn.title = 'Connecting...';
+					break;
+				case 'disconnected':
+					btn.classList.add('text-red-500');
+					btn.title = 'Disconnected - click to retry';
+					break;
+				default:
+					btn.classList.add('text-gray-400');
+					btn.title = 'Connection status unknown';
+			}
+		}
+	</script>
+}

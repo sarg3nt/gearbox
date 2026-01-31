@@ -1,0 +1,101 @@
+/**
+ * Modal Dialog Components
+ * Reusable modal/dialog styles
+ */
+
+/* Modal overlay */
+.modal-overlay {
+    @apply fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto;
+}
+
+/* Modal container (centers content) */
+.modal-container {
+    @apply flex items-center justify-center min-h-screen p-4;
+}
+
+/* Modal content box */
+.modal-content {
+    @apply bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden;
+}
+
+/* Modal header */
+.modal-header {
+    @apply flex items-center justify-between p-4 border-b border-gray-200 dark:border-slate-700;
+}
+
+.modal-title {
+    @apply text-lg font-semibold text-gray-900 dark:text-gray-100;
+}
+
+.modal-close-btn {
+    @apply text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors;
+}
+
+/* Modal body */
+.modal-body {
+    @apply p-6 overflow-y-auto;
+}
+
+.modal-body-scrollable {
+    @apply max-h-[calc(90vh-8rem)];
+}
+
+/* Modal footer */
+.modal-footer {
+    @apply flex items-center justify-end gap-3 p-4 border-t border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900;
+}
+
+/* Modal size variants */
+.modal-content-sm {
+    @apply max-w-md;
+}
+
+.modal-content-md {
+    @apply max-w-2xl;
+}
+
+.modal-content-lg {
+    @apply max-w-4xl;
+}
+
+.modal-content-xl {
+    @apply max-w-6xl;
+}
+
+.modal-content-full {
+    @apply max-w-7xl;
+}
+
+/* Modal animation */
+.modal-overlay {
+    animation: fadeIn 0.2s ease-out;
+}
+
+.modal-content {
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Hide modal utility */
+.modal-hidden {
+    display: none;
+}

@@ -1,0 +1,203 @@
+package widgets
+
+import "fmt"
+
+// RefreshControlWidget renders a refresh control widget
+templ RefreshControlWidget(id string, config map[string]any) {
+	@RefreshControl(
+		id,
+		getBoolConfig(config, "auto_refresh", true),
+		getIntConfig(config, "interval", 5),
+		getBoolConfig(config, "show_status", true),
+		getBoolConfig(config, "manual_refresh", true),
+	)
+}
+
+// RefreshControl creates a refresh control widget with auto-refresh and manual refresh
+templ RefreshControl(id string, autoRefresh bool, interval int, showStatus bool, manualRefresh bool) {
+	<div class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-slate-800 rounded-lg border border-gray-300 dark:border-slate-600">
+		<!-- Auto-refresh toggle -->
+		<div class="flex items-center gap-2">
+			<label class="relative inline-flex items-center cursor-pointer">
+				<input
+					type="checkbox"
+					id={ fmt.Sprintf("auto-refresh-%s", id) }
+					class="sr-only peer"
+					checked?={ autoRefresh }
+					onchange={ toggleAutoRefresh(id, interval) }
+				/>
+				<div class="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+			</label>
+			<span class="text-sm text-gray-700 dark:text-gray-300">Auto-refresh</span>
+		</div>
+
+		<!-- Interval display -->
+		if autoRefresh {
+			<span class="text-sm text-gray-500 dark:text-gray-400">
+				Every { fmt.Sprintf("%d", interval) }s
+			</span>
+		}
+
+		<!-- Connection status -->
+		if showStatus {
+			<div class="flex items-center gap-1">
+				<div
+					id={ fmt.Sprintf("status-%s", id) }
+					class="w-2 h-2 rounded-full bg-green-500"
+					data-status="connected"
+				></div>
+				<span
+					id={ fmt.Sprintf("status-text-%s", id) }
+					class="text-xs text-gray-500 dark:text-gray-400"
+				>
+					Connected
+				</span>
+			</div>
+		}
+
+		<!-- Manual refresh button -->
+		if manualRefresh {
+			<button
+				id={ fmt.Sprintf("refresh-btn-%s", id) }
+				onclick={ manualRefreshClick(id) }
+				class="ml-auto px-3 py-1 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
+			>
+				<svg class="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+				</svg>
+				Refresh
+			</button>
+		}
+	</div>
+}
+
+script toggleAutoRefresh(id string, interval int) {
+	const checkbox = document.getElementById(`auto-refresh-${id}`);
+	const isEnabled = checkbox.checked;
+
+	if (isEnabled) {
+		// Start auto-refresh
+		startAutoRefresh(id, interval);
+	} else {
+		// Stop auto-refresh
+		stopAutoRefresh(id);
+	}
+
+	// Store preference
+	localStorage.setItem(`auto-refresh-${id}`, isEnabled ? 'enabled' : 'disabled');
+}
+
+script manualRefreshClick(id string) {
+	// Trigger refresh event
+	const event = new CustomEvent('dashboard-refresh', {
+		detail: { source: 'manual', widgetId: id }
+	});
+	document.dispatchEvent(event);
+
+	// Show loading state on button
+	const btn = document.getElementById(`refresh-btn-${id}`);
+	if (btn) {
+		btn.disabled = true;
+		btn.classList.add('opacity-50');
+		setTimeout(() => {
+			btn.disabled = false;
+			btn.classList.remove('opacity-50');
+		}, 1000);
+	}
+
+	// Trigger HTMX refresh if available
+	if (typeof htmx !== 'undefined') {
+		const dashboard = document.querySelector('[data-dashboard]');
+		if (dashboard) {
+			htmx.trigger(dashboard, 'refresh');
+		}
+	}
+}
+
+// RefreshControlScript provides the JavaScript for auto-refresh functionality
+templ RefreshControlScript() {
+	<script>
+	// Auto-refresh intervals storage
+	const autoRefreshIntervals = {};
+
+	function startAutoRefresh(id, interval) {
+		// Clear any existing interval
+		stopAutoRefresh(id);
+
+		// Start new interval
+		autoRefreshIntervals[id] = setInterval(() => {
+			const event = new CustomEvent('dashboard-refresh', {
+				detail: { source: 'auto', widgetId: id }
+			});
+			document.dispatchEvent(event);
+
+			// Trigger HTMX refresh if available
+			if (typeof htmx !== 'undefined') {
+				const dashboard = document.querySelector('[data-dashboard]');
+				if (dashboard) {
+					htmx.trigger(dashboard, 'refresh');
+				}
+			}
+		}, interval * 1000);
+
+		updateStatus(id, 'connected', 'Connected');
+	}
+
+	function stopAutoRefresh(id) {
+		if (autoRefreshIntervals[id]) {
+			clearInterval(autoRefreshIntervals[id]);
+			delete autoRefreshIntervals[id];
+			updateStatus(id, 'disconnected', 'Disconnected');
+		}
+	}
+
+	function updateStatus(id, status, text) {
+		const statusEl = document.getElementById(`status-${id}`);
+		const textEl = document.getElementById(`status-text-${id}`);
+
+		if (statusEl) {
+			statusEl.className = 'w-2 h-2 rounded-full';
+			if (status === 'connected') {
+				statusEl.classList.add('bg-green-500');
+			} else if (status === 'connecting') {
+				statusEl.classList.add('bg-yellow-500', 'animate-pulse');
+			} else {
+				statusEl.classList.add('bg-gray-400');
+			}
+		}
+
+		if (textEl) {
+			textEl.textContent = text;
+		}
+	}
+
+	// Restore auto-refresh state on page load
+	function restoreAutoRefreshStates() {
+		document.querySelectorAll('[id^="auto-refresh-"]').forEach(checkbox => {
+			const id = checkbox.id.replace('auto-refresh-', '');
+			const savedState = localStorage.getItem(`auto-refresh-${id}`);
+
+			if (savedState === 'enabled' && checkbox.checked) {
+				// Get interval from data attribute or default to 5
+				const interval = parseInt(checkbox.dataset.interval || '5');
+				startAutoRefresh(id, interval);
+			}
+		});
+	}
+
+	// Initialize on page load
+	document.addEventListener('DOMContentLoaded', restoreAutoRefreshStates);
+
+	// Restore after HTMX swaps
+	document.body.addEventListener('htmx:afterSwap', () => {
+		setTimeout(restoreAutoRefreshStates, 10);
+	});
+
+	// Clean up intervals on page unload
+	window.addEventListener('beforeunload', () => {
+		Object.keys(autoRefreshIntervals).forEach(id => {
+			stopAutoRefresh(id);
+		});
+	});
+	</script>
+}

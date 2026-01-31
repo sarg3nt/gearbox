@@ -1,0 +1,28 @@
+# Configuration for auto-assign bot
+# https://github.com/kentaro-m/auto-assign-action
+
+# Add reviewers to pull requests
+addReviewers: true
+
+# Add assignees to pull requests
+addAssignees: false
+
+# A list of reviewers to be added to pull requests (GitHub user name)
+reviewers:
+  - sarg3nt
+
+# A number of reviewers added to the pull request
+# Set 0 to add all the reviewers (default: 0)
+numberOfReviewers: 0
+
+# A list of assignees to be added to pull requests (GitHub user name)
+assignees: []
+
+# A number of assignees added to the pull request
+# Set 0 to add all the assignees (default: 0)
+numberOfAssignees: 0
+
+# A list of keywords to be skipped when adding reviewers
+skipKeywords:
+  - wip
+  - draft

@@ -1,0 +1,175 @@
+package widgets
+
+import (
+	"fmt"
+	"strconv"
+)
+
+// PlacementBoxWidget renders a placement box container for widgets
+// This is the fundamental building block for dashboard layouts
+templ PlacementBoxWidget(config map[string]any, content templ.Component) {
+	@PlacementBox(
+		getStringConfig(config, "width", "full"),
+		getBoolConfig(config, "border", true),
+		getBoolConfig(config, "shadow", true),
+		getStringConfig(config, "padding", "normal"),
+		getStringConfig(config, "background", "white"),
+	) {
+		@content
+	}
+}
+
+// PlacementBox creates a container with configurable styling
+templ PlacementBox(width string, border bool, shadow bool, padding string, background string) {
+	<div
+		class={
+			getPlacementBoxClasses(width, border, shadow, padding, background),
+		}
+	>
+		{ children... }
+	</div>
+}
+
+// Helper functions for PlacementBox
+
+func getPlacementBoxClasses(width string, border bool, shadow bool, padding string, background string) string {
+	classes := ""
+
+	// Width classes (responsive grid)
+	switch width {
+	case "small":
+		classes += "col-span-12 md:col-span-3 " // 3 columns on medium+
+	case "medium":
+		classes += "col-span-12 md:col-span-6 " // 6 columns on medium+
+	case "full":
+		classes += "col-span-12 " // Full width
+	default:
+		classes += "col-span-12 "
+	}
+
+	// Border
+	if border {
+		classes += "border border-gray-300 dark:border-slate-600 "
+	}
+
+	// Shadow
+	if shadow {
+		classes += "shadow-sm hover:shadow-md transition-shadow "
+	}
+
+	// Padding
+	switch padding {
+	case "none":
+		classes += "p-0 "
+	case "small":
+		classes += "p-2 "
+	case "normal":
+		classes += "p-4 "
+	case "large":
+		classes += "p-6 "
+	default:
+		classes += "p-4 "
+	}
+
+	// Background
+	switch background {
+	case "white":
+		classes += "bg-white dark:bg-slate-900 "
+	case "gray":
+		classes += "bg-gray-50 dark:bg-slate-800 "
+	case "transparent":
+		classes += "bg-transparent "
+	default:
+		classes += "bg-white dark:bg-slate-900 "
+	}
+
+	// Rounded corners
+	classes += "rounded-lg "
+
+	return classes
+}
+
+// Helper functions for config parsing
+
+func getStringConfig(config map[string]any, key string, defaultValue string) string {
+	if val, ok := config[key]; ok {
+		if strVal, ok := val.(string); ok {
+			return strVal
+		}
+	}
+	return defaultValue
+}
+
+func getBoolConfig(config map[string]any, key string, defaultValue bool) bool {
+	if val, ok := config[key]; ok {
+		if boolVal, ok := val.(bool); ok {
+			return boolVal
+		}
+	}
+	return defaultValue
+}
+
+func getIntConfig(config map[string]any, key string, defaultValue int) int {
+	if val, ok := config[key]; ok {
+		switch v := val.(type) {
+		case int:
+			return v
+		case float64:
+			return int(v)
+		case string:
+			if intVal, err := strconv.Atoi(v); err == nil {
+				return intVal
+			}
+		}
+	}
+	return defaultValue
+}
+
+func getFloatConfig(config map[string]any, key string, defaultValue float64) float64 {
+	if val, ok := config[key]; ok {
+		switch v := val.(type) {
+		case float64:
+			return v
+		case int:
+			return float64(v)
+		case string:
+			if floatVal, err := strconv.ParseFloat(v, 64); err == nil {
+				return floatVal
+			}
+		}
+	}
+	return defaultValue
+}
+
+func formatNumber(num float64) string {
+	if num >= 1000000 {
+		return fmt.Sprintf("%.1fM", num/1000000)
+	} else if num >= 1000 {
+		return fmt.Sprintf("%.1fK", num/1000)
+	}
+	return fmt.Sprintf("%.0f", num)
+}
+
+func formatBytes(bytes float64) string {
+	if bytes >= 1024*1024*1024 {
+		return fmt.Sprintf("%.2f GB", bytes/(1024*1024*1024))
+	} else if bytes >= 1024*1024 {
+		return fmt.Sprintf("%.2f MB", bytes/(1024*1024))
+	} else if bytes >= 1024 {
+		return fmt.Sprintf("%.2f KB", bytes/1024)
+	}
+	return fmt.Sprintf("%.0f B", bytes)
+}
+
+func formatPercentage(pct float64) string {
+	return fmt.Sprintf("%.1f%%", pct)
+}
+
+func formatDuration(seconds float64) string {
+	if seconds >= 3600 {
+		return fmt.Sprintf("%.1fh", seconds/3600)
+	} else if seconds >= 60 {
+		return fmt.Sprintf("%.1fm", seconds/60)
+	}
+	return fmt.Sprintf("%.0fs", seconds)
+}

@@ -1,0 +1,59 @@
+package traffic
+
+import (
+	"github.com/sarg3nt/gearbox/internal/framework/models"
+)
+
+templ PageHeader(servers []models.ServerConfig) {
+	<!-- Hidden container for page header content -->
+	<div id="page-header-source" class="hidden">
+		<div class="flex items-center">
+			<h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">
+				Traffic Analysis
+				if len(servers) > 1 {
+					<span class="text-gray-400 dark:text-gray-500 mx-2">:</span>
+					<span class="inline-block relative">
+						<select
+							id="server-selector"
+							class="appearance-none bg-transparent text-xl font-bold text-gray-800 dark:text-gray-100 pr-7 cursor-pointer focus:outline-none hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+						>
+							for _, server := range servers {
+								<option value={ server.ID } selected?={ server.ID == servers[0].ID }>{ server.Name }</option>
+							}
+						</select>
+						<svg class="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+						</svg>
+					</span>
+				} else if len(servers) == 1 {
+					<span class="text-gray-400 dark:text-gray-500 mx-2">:</span>
+					<span>{ servers[0].Name }</span>
+				}
+			</h2>
+		</div>
+		<div class="flex-1"></div>
+		<div class="flex items-center space-x-3">
+			<!-- Time range selector -->
+			<select
+				id="time-range-selector"
+				class="h-[38px] px-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+			>
+				<option value="1h">Last Hour</option>
+				<option value="6h">Last 6 Hours</option>
+				<option value="24h" selected>Last 24 Hours</option>
+				<option value="7d">Last 7 Days</option>
+				<option value="30d">Last 30 Days</option>
+			</select>
+			<!-- Refresh button with SSE status indicator -->
+			<button
+				id="refresh-btn"
+				class="p-2 rounded-lg transition-colors text-gray-400"
+				title="Connecting..."
+			>
+				<svg id="refresh-icon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+				</svg>
+			</button>
+		</div>
+	</div>
+}

@@ -1,0 +1,28 @@
+package traffic
+
+import "github.com/sarg3nt/gearbox/internal/framework/templates/components"
+
+// trafficSettingsComponent renders the traffic plugin settings page.
+templ trafficSettingsComponent(config map[string]any) {
+	{{ enableGeoIP := getConfigBool(config, "enable_geoip", true) }}
+	{{ topSourcesCount := getConfigInt(config, "top_sources_count", 10) }}
+	@components.SettingsSection("Traffic Analysis Settings", "Configure traffic analysis and visualization options.") {
+		@components.SettingsCheckbox(
+			"enable_geoip",
+			"Enable GeoIP enrichment",
+			"When enabled, traffic sources will be enriched with geographic location data.",
+			enableGeoIP,
+		)
+		@components.SettingsSelect(
+			"top_sources_count",
+			"Top Sources Display Count",
+			"Number of top traffic sources to display in the analysis.",
+			[]components.SelectOption{
+				{Value: "5", Label: "5 sources", Selected: topSourcesCount == 5},
+				{Value: "10", Label: "10 sources", Selected: topSourcesCount == 10},
+				{Value: "20", Label: "20 sources", Selected: topSourcesCount == 20},
+				{Value: "50", Label: "50 sources", Selected: topSourcesCount == 50},
+			},
+		)
+	}
+}

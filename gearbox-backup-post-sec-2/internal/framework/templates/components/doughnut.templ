@@ -1,0 +1,109 @@
+package components
+
+import "fmt"
+import "math"
+
+// DoughnutChart creates an SVG doughnut chart
+// percentage: 0-100, the filled portion of the doughnut
+// size: diameter in pixels
+// strokeWidth: thickness of the doughnut ring
+// color: CSS color for the filled portion (e.g., "text-green-500")
+templ DoughnutChart(percentage float64, size int, strokeWidth int, color string) {
+	<svg class="transform -rotate-90" width={ fmt.Sprintf("%d", size) } height={ fmt.Sprintf("%d", size) } viewBox={ fmt.Sprintf("0 0 %d %d", size, size) }>
+		<!-- Background circle (gray) -->
+		<circle
+			cx={ fmt.Sprintf("%d", size/2) }
+			cy={ fmt.Sprintf("%d", size/2) }
+			r={ fmt.Sprintf("%d", (size/2)-strokeWidth/2) }
+			fill="none"
+			stroke="currentColor"
+			stroke-width={ fmt.Sprintf("%d", strokeWidth) }
+			class="text-gray-200 dark:text-gray-700"
+		></circle>
+		<!-- Foreground circle (colored, based on percentage) -->
+		<circle
+			cx={ fmt.Sprintf("%d", size/2) }
+			cy={ fmt.Sprintf("%d", size/2) }
+			r={ fmt.Sprintf("%d", (size/2)-strokeWidth/2) }
+			fill="none"
+			stroke="currentColor"
+			stroke-width={ fmt.Sprintf("%d", strokeWidth) }
+			stroke-linecap="round"
+			class={ color }
+			style={ fmt.Sprintf("stroke-dasharray: %f %f", calculateCircumference(size, strokeWidth)*percentage/100, calculateCircumference(size, strokeWidth)) }
+		></circle>
+	</svg>
+}
+
+// DoughnutWithLabel creates a doughnut chart with centered label
+templ DoughnutWithLabel(percentage float64, label string, value string, size int) {
+	<div class="relative inline-block">
+		@DoughnutChart(percentage, size, size/8, getColorForPercentage(percentage))
+		<div class="absolute inset-0 flex flex-col items-center justify-center">
+			<div class="text-center">
+				<div class="text-2xl font-bold text-gray-800 dark:text-gray-100">{ value }</div>
+				<div class="text-xs text-gray-500 dark:text-gray-400">{ label }</div>
+			</div>
+		</div>
+	</div>
+}
+
+// StatusDoughnut creates a status indicator doughnut (for Frontends/Backends/Services)
+// healthy: count of healthy items
+// total: total count of items
+// label: what to display (e.g., "Frontends", "Backends")
+templ StatusDoughnut(healthy int, total int, label string) {
+	if total > 0 {
+		<div class="flex flex-col items-center">
+			<div class="relative inline-block">
+				@DoughnutChart(float64(healthy)/float64(total)*100, 144, 18, getColorForHealthCount(healthy, total))
+				<div class="absolute inset-0 flex flex-col items-center justify-center">
+					<div class="text-center">
+						if healthy < total {
+							<div class="text-3xl font-bold text-white bg-red-500 rounded-full px-3 py-1">{ fmt.Sprintf("%d", healthy) }</div>
+						} else {
+							<div class="text-3xl font-bold text-gray-800 dark:text-gray-100">{ fmt.Sprintf("%d", healthy) }</div>
+						}
+						<div class="text-sm text-gray-500 dark:text-gray-400">of { fmt.Sprintf("%d", total) }</div>
+					</div>
+				</div>
+			</div>
+			<div class="mt-2 text-sm font-medium text-gray-700 dark:text-gray-300">{ label }</div>
+		</div>
+	}
+}
+
+// calculateCircumference calculates the circumference of the doughnut
+func calculateCircumference(size int, strokeWidth int) float64 {
+	radius := float64(size/2 - strokeWidth/2)
+	return 2 * math.Pi * radius
+}
+
+// getColorForPercentage returns a Tailwind color class based on percentage
+// Green < 80%, Yellow 80-90%, Red > 90%
+func getColorForPercentage(percentage float64) string {
+	if percentage < 80 {
+		return "text-green-500"
+	} else if percentage < 90 {
+		return "text-yellow-500"
+	} else {
+		return "text-red-500"
+	}
+}
+
+// getColorForHealthCount returns a color based on health ratio
+// For health metrics: HIGH percentage = GREEN (good), LOW percentage = RED (bad)
+func getColorForHealthCount(healthy int, total int) string {
+	if total == 0 {
+		return "text-gray-500"
+	}
+	percentage := float64(healthy) / float64(total) * 100
+	// Inverted logic from getColorForPercentage: high health % = green
+	if percentage >= 90 {
+		return "text-green-500"
+	} else if percentage >= 80 {
+		return "text-yellow-500"
+	} else {
+		return "text-red-500"
+	}
+}

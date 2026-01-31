@@ -1,0 +1,207 @@
+package api
+
+import (
+	"encoding/json"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/gorilla/websocket"
+	"github.com/sarg3nt/gearbox-agent/internal/framework/events"
+)
+
+func TestWSHandler_HandleWSInfo(t *testing.T) {
+	eventBus := events.NewBus()
+	defer eventBus.Close()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	handler := NewWSHandler(eventBus, logger)
+
+	req := httptest.NewRequest("GET", "/api/v1/events/info", nil)
+	rr := httptest.NewRecorder()
+
+	handler.HandleWSInfo(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("HandleWSInfo() status = %v, want %v", rr.Code, http.StatusOK)
+	}
+
+	var resp WSInfoResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if !resp.Enabled {
+		t.Error("HandleWSInfo() enabled = false, want true")
+	}
+
+	if resp.Endpoint != "/api/v1/events" {
+		t.Errorf("HandleWSInfo() endpoint = %v, want /api/v1/events", resp.Endpoint)
+	}
+
+	if len(resp.EventTypes) == 0 {
+		t.Error("HandleWSInfo() returned no event types")
+	}
+
+	// Check that expected event types are present
+	expectedTypes := []string{
+		string(events.EventSyncStarted),
+		string(events.EventSyncCompleted),
+		string(events.EventSyncFailed),
+		string(events.EventConfigChanged),
+	}
+	for _, expected := range expectedTypes {
+		found := false
+		for _, et := range resp.EventTypes {
+			if et == expected {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("HandleWSInfo() missing event type %s", expected)
+		}
+	}
+}
+
+func TestWSHandler_HandleEvents(t *testing.T) {
+	eventBus := events.NewBus()
+	defer eventBus.Close()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	handler := NewWSHandler(eventBus, logger)
+
+	// Create test server
+	server := httptest.NewServer(http.HandlerFunc(handler.HandleEvents))
+	defer server.Close()
+
+	// Convert http:// to ws://
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+
+	// Connect WebSocket client
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("Failed to connect WebSocket: %v", err)
+	}
+	defer conn.Close()
+
+	// Publish an event
+	testEvent := events.NewEvent(events.EventSyncStarted, map[string]interface{}{
+		"test_key": "test_value",
+	})
+	eventBus.Publish(testEvent)
+
+	// Read the event from WebSocket
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_, message, err := conn.ReadMessage()
+	if err != nil {
+		t.Fatalf("Failed to read WebSocket message: %v", err)
+	}
+
+	// Parse the event
+	var receivedEvent events.Event
+	if err := json.Unmarshal(message, &receivedEvent); err != nil {
+		t.Fatalf("Failed to unmarshal event: %v", err)
+	}
+
+	if receivedEvent.Type != events.EventSyncStarted {
+		t.Errorf("Event type = %s, want %s", receivedEvent.Type, events.EventSyncStarted)
+	}
+
+	if receivedEvent.Data["test_key"] != "test_value" {
+		t.Errorf("Event data = %v, want test_key:test_value", receivedEvent.Data)
+	}
+}
+
+func TestWSHandler_MultipleEvents(t *testing.T) {
+	eventBus := events.NewBus()
+	defer eventBus.Close()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	handler := NewWSHandler(eventBus, logger)
+
+	server := httptest.NewServer(http.HandlerFunc(handler.HandleEvents))
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("Failed to connect WebSocket: %v", err)
+	}
+	defer conn.Close()
+
+	// Publish multiple events
+	eventTypes := []events.EventType{
+		events.EventSyncStarted,
+		events.EventSyncCompleted,
+		events.EventConfigChanged,
+	}
+
+	for _, et := range eventTypes {
+		eventBus.Publish(events.NewEvent(et, nil))
+	}
+
+	// Read all events
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	for i, expectedType := range eventTypes {
+		_, message, err := conn.ReadMessage()
+		if err != nil {
+			t.Fatalf("Failed to read event %d: %v", i, err)
+		}
+
+		var event events.Event
+		if err := json.Unmarshal(message, &event); err != nil {
+			t.Fatalf("Failed to unmarshal event %d: %v", i, err)
+		}
+
+		if event.Type != expectedType {
+			t.Errorf("Event %d type = %s, want %s", i, event.Type, expectedType)
+		}
+	}
+}
+
+func TestWSHandler_SubscriberCount(t *testing.T) {
+	eventBus := events.NewBus()
+	defer eventBus.Close()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	handler := NewWSHandler(eventBus, logger)
+
+	server := httptest.NewServer(http.HandlerFunc(handler.HandleEvents))
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+
+	// Initial count should be 0
+	if eventBus.SubscriberCount() != 0 {
+		t.Errorf("Initial SubscriberCount = %d, want 0", eventBus.SubscriberCount())
+	}
+
+	// Connect a client
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("Failed to connect WebSocket: %v", err)
+	}
+
+	// Give time for connection to register
+	time.Sleep(50 * time.Millisecond)
+
+	if eventBus.SubscriberCount() != 1 {
+		t.Errorf("SubscriberCount after connect = %d, want 1", eventBus.SubscriberCount())
+	}
+
+	// Disconnect
+	conn.Close()
+
+	// Give time for disconnection to process
+	time.Sleep(50 * time.Millisecond)
+
+	if eventBus.SubscriberCount() != 0 {
+		t.Errorf("SubscriberCount after disconnect = %d, want 0", eventBus.SubscriberCount())
+	}
+}

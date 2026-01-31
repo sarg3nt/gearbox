@@ -1,0 +1,67 @@
+package pages
+
+import (
+	"github.com/sarg3nt/gearbox/internal/framework/agent"
+	"github.com/sarg3nt/gearbox/internal/framework/database"
+	"github.com/sarg3nt/gearbox/internal/framework/models"
+	"github.com/sarg3nt/gearbox/internal/framework/templates/layouts"
+	"github.com/sarg3nt/gearbox/internal/framework/templates/pages/haproxy_config"
+)
+
+// HAProxyConfigPage renders the HAProxy configuration editor page.
+templ HAProxyConfigPage(user *models.User, server *database.ServerDB, config *agent.HAProxyConfigResponse, gitConfig *database.ServerGitConfig, changes []database.ConfigChange, canEdit bool) {
+	@layouts.Base("HAProxy Configuration", user, "/config") {
+		@haproxy_config.EditorHeader(server, config, canEdit)
+		<!-- Hidden inputs to pass data to JavaScript -->
+		<input type="hidden" id="server-id-source" value={ server.ServerID }/>
+		<input type="hidden" id="config-sha-source" value={ config.SHA256 }/>
+		<textarea id="config-content-source" class="hidden">{ config.Content }</textarea>
+		@haproxy_config.EditorPanel(canEdit)
+		@haproxy_config.ChangeHistory(changes)
+		@haproxy_config.Modals()
+		<link rel="stylesheet" href="/static/css/haproxy_config_editor.css"/>
+		<script src="/static/js/haproxy_config/editor.js"></script>
+	}
+}
+
+templ HAProxyConfigPageWithError(user *models.User, server *database.ServerDB, errorMsg string, canEdit bool) {
+	@layouts.Base("HAProxy Configuration", user, "/config") {
+		<div id="page-header-source" class="hidden">
+			<div class="flex items-center">
+				<h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">HAProxy Configuration</h2>
+				<span class="ml-3 text-sm text-gray-500 dark:text-gray-400">{ server.Name }</span>
+			</div>
+		</div>
+		<div class="max-w-4xl mx-auto px-4 py-8">
+			<div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+				<div class="flex items-center gap-3">
+					<svg class="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+					</svg>
+					<div>
+						<h3 class="font-semibold text-red-700 dark:text-red-300">Error Loading Configuration</h3>
+						<p class="text-sm text-red-600 dark:text-red-400">{ errorMsg }</p>
+					</div>
+				</div>
+			</div>
+			<div class="mt-4">
+				<a href="/settings/servers" class="text-blue-600 dark:text-blue-400 hover:underline">
+					← Back to HAProxy Servers
+				</a>
+			</div>
+		</div>
+		<script>
+		function setupPageHeader() {
+			const source = document.getElementById('page-header-source');
+			const target = document.getElementById('header-page-content');
+			if (source && target) {
+				while (source.firstChild) {
+					target.appendChild(source.firstChild);
+				}
+				source.remove();
+			}
+		}
+		document.addEventListener('DOMContentLoaded', setupPageHeader);
+		</script>
+	}
+}

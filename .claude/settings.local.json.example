@@ -1,0 +1,39 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ll)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git pull:*)",
+      "Bash(git checkout:*)",
+      "Bash(git mv:*)",
+      "Bash(git rm:*)",
+      "Bash(python3:*)",
+      "Bash(go mod tidy:*)",
+      "Bash(go build:*)",
+      "Bash(go test:*)",
+      "Bash(go get:*)",
+      "Bash(go install:*)",
+      "Bash(make build:*)",
+      "Bash(make deploy:*)",
+      "Bash(make templ-generate:*)",
+      "Bash(make test:*)",
+      "Bash(make dev-local:*)",
+      "Bash(~/go/bin/templ generate:*)",
+      "Bash(/Users/dave/.local/share/mise/installs/go/*/bin/templ generate:*)",
+      "Bash(cat:*)",
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "Bash(chmod:*)",
+      "Bash(xargs:*)",
+      "Bash(git check-ignore:*)",
+      "Bash(test:*)",
+      "Bash(npx --yes markdownlint-cli:*)",
+      "Bash(curl:*)",
+      "Bash(docker:*)",
+      "mcp__Ref__ref_search_documentation",
+      "mcp__better-icons__*"
+    ]
+  }
+}

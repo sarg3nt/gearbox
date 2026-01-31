@@ -1,0 +1,409 @@
+package components
+
+import (
+	"fmt"
+)
+
+// TableConfig holds configuration for enhanced tables
+type TableConfig struct {
+	ID           string
+	Title        string
+	Description  string
+	EnableSort   bool
+	EnableSearch bool
+	EnablePaging bool
+	EnableExport bool
+	PageSize     int
+	Columns      []TableColumn
+}
+
+// TableColumn defines a column in the table
+type TableColumn struct {
+	Key       string
+	Label     string
+	Sortable  bool
+	DataType  string // "string", "number", "bytes", "percent", "date"
+	Width     string // CSS width
+	Alignment string // "left", "center", "right"
+}
+
+// SortableTableHeader renders a sortable table header
+templ SortableTableHeader(tableID string, columns []TableColumn, defaultSort string, defaultOrder string) {
+	<thead class="bg-gray-50 dark:bg-slate-700">
+		<tr>
+			for _, col := range columns {
+				if col.Sortable {
+					<th
+						class={ "px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-600 select-none transition-colors",
+							templ.KV("text-right", col.Alignment == "right"),
+							templ.KV("text-center", col.Alignment == "center") }
+						style={ fmt.Sprintf("width: %s", col.Width) }
+						data-sort-key={ col.Key }
+						data-sort-type={ col.DataType }
+						onclick={ templ.ComponentScript{Call: fmt.Sprintf("sortTable('%s', '%s', '%s')", tableID, col.Key, col.DataType)} }
+					>
+						<div class="flex items-center gap-1">
+							<span>{ col.Label }</span>
+							<span class="sort-indicator text-gray-300 dark:text-gray-500" data-key={ col.Key }>
+								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path>
+								</svg>
+							</span>
+						</div>
+					</th>
+				} else {
+					<th
+						class={ "px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase",
+							templ.KV("text-right", col.Alignment == "right"),
+							templ.KV("text-center", col.Alignment == "center") }
+						style={ fmt.Sprintf("width: %s", col.Width) }
+					>
+						{ col.Label }
+					</th>
+				}
+			}
+		</tr>
+	</thead>
+}
+
+// TableToolbar renders the search, filter, and export controls
+templ TableToolbar(tableID string, config TableConfig) {
+	<div class="p-4 border-b border-gray-200 dark:border-slate-700">
+		<div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+			<div>
+				<h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{ config.Title }</h3>
+				if config.Description != "" {
+					<p class="text-sm text-gray-500 dark:text-gray-400">{ config.Description }</p>
+				}
+			</div>
+			<div class="flex flex-wrap items-center gap-2">
+				if config.EnableSearch {
+					<div class="relative">
+						<input
+							type="text"
+							id={ fmt.Sprintf("%s-search", tableID) }
+							placeholder="Search..."
+							class="w-48 pl-8 pr-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+							oninput={ templ.ComponentScript{Call: fmt.Sprintf("filterTable('%s', this.value)", tableID)} }
+						/>
+						<svg class="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+						</svg>
+					</div>
+				}
+				if config.EnableExport {
+					<button
+						onclick={ templ.ComponentScript{Call: fmt.Sprintf("exportTableCSV('%s', '%s')", tableID, config.Title)} }
+						class="px-3 py-1.5 text-sm bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-700 dark:text-gray-300 rounded-lg transition-colors flex items-center gap-1.5"
+						title="Export to CSV"
+					>
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+						</svg>
+						<span class="hidden sm:inline">Export</span>
+					</button>
+				}
+			</div>
+		</div>
+	</div>
+}
+
+// TablePagination renders pagination controls
+templ TablePagination(tableID string, pageSize int) {
+	<div id={ fmt.Sprintf("%s-pagination", tableID) } class="px-4 py-3 border-t border-gray-200 dark:border-slate-700 flex flex-col sm:flex-row items-center justify-between gap-3">
+		<div class="text-sm text-gray-500 dark:text-gray-400">
+			<span id={ fmt.Sprintf("%s-page-info", tableID) }>Showing 1-{ fmt.Sprintf("%d", pageSize) } of 0</span>
+		</div>
+		<div class="flex items-center gap-2">
+			<select
+				id={ fmt.Sprintf("%s-page-size", tableID) }
+				class="px-2 py-1 text-sm border border-gray-300 dark:border-slate-600 rounded bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300"
+				onchange={ templ.ComponentScript{Call: fmt.Sprintf("changePageSize('%s', this.value)", tableID)} }
+			>
+				<option value="10" selected?={ pageSize == 10 }>10</option>
+				<option value="25" selected?={ pageSize == 25 }>25</option>
+				<option value="50" selected?={ pageSize == 50 }>50</option>
+				<option value="100" selected?={ pageSize == 100 }>100</option>
+			</select>
+			<div class="flex gap-1">
+				<button
+					id={ fmt.Sprintf("%s-prev-page", tableID) }
+					onclick={ templ.ComponentScript{Call: fmt.Sprintf("prevPage('%s')", tableID)} }
+					class="px-2 py-1 text-sm bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-700 dark:text-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+					disabled
+				>
+					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+					</svg>
+				</button>
+				<button
+					id={ fmt.Sprintf("%s-next-page", tableID) }
+					onclick={ templ.ComponentScript{Call: fmt.Sprintf("nextPage('%s')", tableID)} }
+					class="px-2 py-1 text-sm bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-700 dark:text-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+					disabled
+				>
+					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+					</svg>
+				</button>
+			</div>
+		</div>
+	</div>
+}
+
+// EnhancedTableScripts provides the JavaScript for table functionality
+templ EnhancedTableScripts() {
+	<script>
+	// Table state management
+	const tableStates = new Map();
+
+	function getTableState(tableID) {
+		if (!tableStates.has(tableID)) {
+			tableStates.set(tableID, {
+				data: [],
+				filteredData: [],
+				sortKey: null,
+				sortOrder: 'asc',
+				currentPage: 1,
+				pageSize: 25,
+				searchQuery: ''
+			});
+		}
+		return tableStates.get(tableID);
+	}
+
+	// Initialize table with data
+	function initEnhancedTable(tableID, data, defaultSort = null, defaultOrder = 'desc', pageSize = 25) {
+		const state = getTableState(tableID);
+		state.data = data;
+		state.filteredData = [...data];
+		state.pageSize = pageSize;
+		state.sortKey = defaultSort;
+		state.sortOrder = defaultOrder;
+
+		if (defaultSort) {
+			sortTableData(tableID, defaultSort, defaultOrder);
+		}
+
+		renderTable(tableID);
+	}
+
+	// Sort table by column
+	function sortTable(tableID, key, dataType) {
+		const state = getTableState(tableID);
+
+		// Toggle sort order if same key
+		if (state.sortKey === key) {
+			state.sortOrder = state.sortOrder === 'asc' ? 'desc' : 'asc';
+		} else {
+			state.sortKey = key;
+			state.sortOrder = 'desc'; // Default to descending for numeric data
+		}
+
+		sortTableData(tableID, key, state.sortOrder, dataType);
+		state.currentPage = 1;
+		renderTable(tableID);
+		updateSortIndicators(tableID, key, state.sortOrder);
+	}
+
+	function sortTableData(tableID, key, order, dataType) {
+		const state = getTableState(tableID);
+
+		state.filteredData.sort((a, b) => {
+			let valA = getNestedValue(a, key);
+			let valB = getNestedValue(b, key);
+
+			// Handle null/undefined
+			if (valA == null) valA = '';
+			if (valB == null) valB = '';
+
+			// Type-specific comparison
+			if (dataType === 'number' || dataType === 'bytes' || dataType === 'percent') {
+				valA = parseFloat(valA) || 0;
+				valB = parseFloat(valB) || 0;
+			} else if (dataType === 'date') {
+				valA = new Date(valA).getTime() || 0;
+				valB = new Date(valB).getTime() || 0;
+			} else {
+				valA = String(valA).toLowerCase();
+				valB = String(valB).toLowerCase();
+			}
+
+			if (valA < valB) return order === 'asc' ? -1 : 1;
+			if (valA > valB) return order === 'asc' ? 1 : -1;
+			return 0;
+		});
+	}
+
+	// Get nested object value by dot notation key
+	function getNestedValue(obj, key) {
+		return key.split('.').reduce((o, k) => (o && o[k] !== undefined) ? o[k] : null, obj);
+	}
+
+	// Update sort indicators in header
+	function updateSortIndicators(tableID, activeKey, order) {
+		const table = document.getElementById(tableID);
+		if (!table) return;
+
+		table.querySelectorAll('.sort-indicator').forEach(indicator => {
+			const key = indicator.dataset.key;
+			if (key === activeKey) {
+				indicator.classList.remove('text-gray-300', 'dark:text-gray-500');
+				indicator.classList.add('text-blue-500');
+				indicator.innerHTML = order === 'asc'
+					? '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"></path></svg>'
+					: '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>';
+			} else {
+				indicator.classList.add('text-gray-300', 'dark:text-gray-500');
+				indicator.classList.remove('text-blue-500');
+				indicator.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path></svg>';
+			}
+		});
+	}
+
+	// Filter table by search query
+	function filterTable(tableID, query) {
+		const state = getTableState(tableID);
+		state.searchQuery = query.toLowerCase();
+		state.currentPage = 1;
+
+		if (!state.searchQuery) {
+			state.filteredData = [...state.data];
+		} else {
+			state.filteredData = state.data.filter(row => {
+				return Object.values(row).some(val => {
+					if (val == null) return false;
+					return String(val).toLowerCase().includes(state.searchQuery);
+				});
+			});
+		}
+
+		// Re-apply sort if active
+		if (state.sortKey) {
+			sortTableData(tableID, state.sortKey, state.sortOrder);
+		}
+
+		renderTable(tableID);
+	}
+
+	// Pagination controls
+	function nextPage(tableID) {
+		const state = getTableState(tableID);
+		const totalPages = Math.ceil(state.filteredData.length / state.pageSize);
+		if (state.currentPage < totalPages) {
+			state.currentPage++;
+			renderTable(tableID);
+		}
+	}
+
+	function prevPage(tableID) {
+		const state = getTableState(tableID);
+		if (state.currentPage > 1) {
+			state.currentPage--;
+			renderTable(tableID);
+		}
+	}
+
+	function changePageSize(tableID, size) {
+		const state = getTableState(tableID);
+		state.pageSize = parseInt(size);
+		state.currentPage = 1;
+		renderTable(tableID);
+	}
+
+	// Render table with current state
+	function renderTable(tableID) {
+		const state = getTableState(tableID);
+		const tbody = document.getElementById(tableID + '-body');
+		if (!tbody) return;
+
+		// Calculate pagination
+		const start = (state.currentPage - 1) * state.pageSize;
+		const end = start + state.pageSize;
+		const pageData = state.filteredData.slice(start, end);
+		const totalPages = Math.ceil(state.filteredData.length / state.pageSize);
+
+		// Call custom render function if defined
+		const renderFn = window[tableID + 'Render'];
+		if (typeof renderFn === 'function') {
+			renderFn(tbody, pageData, start);
+		}
+
+		// Update pagination info
+		const pageInfo = document.getElementById(tableID + '-page-info');
+		if (pageInfo) {
+			const showingStart = state.filteredData.length > 0 ? start + 1 : 0;
+			const showingEnd = Math.min(end, state.filteredData.length);
+			pageInfo.textContent = `Showing ${showingStart}-${showingEnd} of ${state.filteredData.length}`;
+		}
+
+		// Update pagination buttons
+		const prevBtn = document.getElementById(tableID + '-prev-page');
+		const nextBtn = document.getElementById(tableID + '-next-page');
+		if (prevBtn) prevBtn.disabled = state.currentPage <= 1;
+		if (nextBtn) nextBtn.disabled = state.currentPage >= totalPages;
+	}
+
+	// Export to CSV
+	function exportTableCSV(tableID, filename) {
+		const state = getTableState(tableID);
+		if (!state.filteredData || state.filteredData.length === 0) {
+			showAlertDialog({
+				title: 'No Data',
+				message: 'No data to export',
+				type: 'info'
+			});
+			return;
+		}
+
+		// Get column headers from first row
+		const headers = Object.keys(state.filteredData[0]);
+
+		// Build CSV content
+		let csv = headers.join(',') + '\n';
+		state.filteredData.forEach(row => {
+			const values = headers.map(h => {
+				let val = row[h];
+				if (val == null) val = '';
+				// Escape quotes and wrap in quotes if contains comma or newline
+				val = String(val).replace(/"/g, '""');
+				if (val.includes(',') || val.includes('\n') || val.includes('"')) {
+					val = '"' + val + '"';
+				}
+				return val;
+			});
+			csv += values.join(',') + '\n';
+		});
+
+		// Download
+		const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+		const link = document.createElement('a');
+		const url = URL.createObjectURL(blob);
+		link.setAttribute('href', url);
+		link.setAttribute('download', `${filename.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`);
+		link.style.visibility = 'hidden';
+		document.body.appendChild(link);
+		link.click();
+		document.body.removeChild(link);
+	}
+
+	// Format helper functions
+	function formatBytes(bytes) {
+		if (bytes === 0) return '0 B';
+		const k = 1024;
+		const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+		const i = Math.floor(Math.log(bytes) / Math.log(k));
+		return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+	}
+
+	function formatNumber(num) {
+		if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+		if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+		return num.toString();
+	}
+
+	function formatPercent(num) {
+		return num.toFixed(2) + '%';
+	}
+	</script>
+}

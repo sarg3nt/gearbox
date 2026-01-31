@@ -1,0 +1,180 @@
+// Package api provides the HTTP/HTTPS API server and core endpoints for the HAProxy agent.
+// It handles authentication, rate limiting, WebSocket connections, and webhook integration.
+// Plugin-specific routes are registered via the plugin system's RegisterRoutes method.
+package api
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	httpSwagger "github.com/swaggo/http-swagger"
+
+	_ "github.com/sarg3nt/gearbox-agent/docs" // Swagger docs
+	"github.com/sarg3nt/gearbox-agent/internal/framework/events"
+	frameworkmiddleware "github.com/sarg3nt/gearbox-agent/internal/framework/middleware"
+)
+
+// Server represents the HTTP API server.
+type Server struct {
+	httpServer *http.Server
+	router     chi.Router
+	logger     *slog.Logger
+	apiKey     string
+	certFile   string
+	keyFile    string
+}
+
+// ServerConfig holds configuration for the API server.
+type ServerConfig struct {
+	ListenAddr       string
+	APIKey           string
+	CertFile         string
+	KeyFile          string
+	Version          string
+	Logger           *slog.Logger
+	MetadataProvider MetadataProvider
+
+	// Webhook settings (optional)
+	WebhookEnabled bool
+	WebhookSecret  string
+	WebhookURL     string
+	SyncTrigger    SyncTrigger
+
+	// WebSocket settings (optional)
+	EventBus *events.Bus
+
+	// HAProxy settings (optional)
+	HAProxyStatsSocket   string
+	HAProxyStatsURL      string
+	HAProxyStatsUser     string
+	HAProxyStatsPassword string
+	HAProxyConfigPath    string
+
+	// Certificate settings (optional)
+	CertbotTimer string // Custom certbot timer name for renewal detection
+}
+
+// NewServer creates a new API server.
+func NewServer(cfg ServerConfig) *Server {
+	// Create handlers
+	handlers := NewHandlers(cfg.MetadataProvider, cfg.Version)
+
+	// Create chi router
+	r := chi.NewRouter()
+
+	// Global middleware
+	r.Use(middleware.RequestID)
+	r.Use(middleware.RealIP)
+	r.Use(frameworkmiddleware.RequestLogger(cfg.Logger))
+	r.Use(frameworkmiddleware.PanicRecovery(cfg.Logger))
+	r.Use(frameworkmiddleware.MaxBodySize(frameworkmiddleware.MaxRequestBodySize))
+
+	// Create rate limiter (50 req/sec with burst of 100)
+	rateLimiter := frameworkmiddleware.DefaultRateLimiter(cfg.Logger)
+
+	// Health endpoint (no auth required, no rate limit)
+	r.Get("/health", handlers.Health)
+
+	// Swagger UI (no auth required)
+	r.Get("/swagger", httpSwagger.Handler(httpSwagger.URL("/swagger/doc.json")))
+	r.Get("/swagger/*", httpSwagger.Handler(httpSwagger.URL("/swagger/doc.json")))
+
+	// Webhook endpoint (uses GitHub signature verification, not API key)
+	var webhookHandler *WebhookHandler
+	if cfg.WebhookEnabled && cfg.WebhookSecret != "" {
+		webhookHandler = NewWebhookHandler(cfg.WebhookSecret, cfg.SyncTrigger, cfg.WebhookURL, cfg.Logger)
+		r.With(frameworkmiddleware.RateLimitMiddleware(rateLimiter)).Post("/api/v1/webhook/github", webhookHandler.HandleWebhook)
+	}
+
+	// WebSocket handler (optional, uses token auth)
+	var wsHandler *WSHandler
+	var wsTokenMgr *WSTokenManager
+	if cfg.EventBus != nil {
+		wsHandler = NewWSHandler(cfg.EventBus, cfg.Logger)
+		wsTokenMgr = NewWSTokenManager()
+		r.With(frameworkmiddleware.RateLimitMiddleware(rateLimiter)).Get("/api/v1/events", func(w http.ResponseWriter, r *http.Request) {
+			// Validate short-lived token (required)
+			token := r.URL.Query().Get("token")
+			if token == "" || wsTokenMgr == nil || !wsTokenMgr.ValidateToken(token) {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+			wsHandler.HandleEvents(w, r)
+		})
+	}
+
+	// Protected API routes (require API key auth)
+	r.Group(func(r chi.Router) {
+		r.Use(frameworkmiddleware.RateLimitMiddleware(rateLimiter))
+		r.Use(frameworkmiddleware.APIKeyAuth(cfg.APIKey, cfg.Logger))
+
+		// Core endpoints (not handled by plugins)
+		r.Get("/api/v1/metadata", handlers.Metadata)
+		r.Get("/api/v1/sync/status", handlers.SyncStatus)
+
+		// Webhook info (if enabled)
+		if webhookHandler != nil {
+			r.Get("/api/v1/webhook/info", webhookHandler.HandleWebhookInfo)
+		}
+
+		// WebSocket token exchange (if enabled)
+		if wsTokenMgr != nil {
+			r.Post("/api/v1/events/token", wsTokenMgr.HandleWSTokenExchange)
+			if wsHandler != nil {
+				r.Get("/api/v1/events/info", wsHandler.HandleWSInfo)
+			}
+		}
+	})
+
+	return &Server{
+		httpServer: &http.Server{
+			Addr:         cfg.ListenAddr,
+			Handler:      r,
+			ReadTimeout:  15 * time.Second,
+			WriteTimeout: 15 * time.Second,
+			IdleTimeout:  60 * time.Second,
+		},
+		router:   r,
+		logger:   cfg.Logger,
+		apiKey:   cfg.APIKey,
+		certFile: cfg.CertFile,
+		keyFile:  cfg.KeyFile,
+	}
+}
+
+// Router returns the chi router for plugin route registration.
+func (s *Server) Router() chi.Router {
+	return s.router
+}
+
+// APIKey returns the server's API key for middleware configuration.
+func (s *Server) APIKey() string {
+	return s.apiKey
+}
+
+// Logger returns the server's logger.
+func (s *Server) Logger() *slog.Logger {
+	return s.logger
+}
+
+// Start starts the HTTPS server.
+func (s *Server) Start() error {
+	s.logger.Info("Starting HTTPS server", "addr", s.httpServer.Addr)
+	err := s.httpServer.ListenAndServeTLS(s.certFile, s.keyFile)
+	if err != nil && err != http.ErrServerClosed {
+		return fmt.Errorf("server error: %w", err)
+	}
+	return nil
+}
+
+// Shutdown gracefully shuts down the server.
+func (s *Server) Shutdown(ctx context.Context) error {
+	s.logger.Info("Shutting down server...")
+	return s.httpServer.Shutdown(ctx)
+}
+

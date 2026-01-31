@@ -1,0 +1,34 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:base"
+  ],
+  "packageRules": [
+    {
+      "matchUpdateTypes": ["minor", "patch"],
+      "matchCurrentVersion": "!/^0/",
+      "automerge": true,
+      "automergeType": "pr",
+      "automergeStrategy": "squash"
+    },
+    {
+      "matchDatasources": ["docker"],
+      "matchUpdateTypes": ["major"],
+      "labels": ["dependencies", "docker", "major"]
+    },
+    {
+      "matchDatasources": ["go"],
+      "matchUpdateTypes": ["major"],
+      "labels": ["dependencies", "go", "major"]
+    }
+  ],
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 2,
+  "semanticCommits": "enabled",
+  "commitMessagePrefix": "chore(deps):",
+  "labels": ["dependencies"],
+  "schedule": ["before 10am on Monday"],
+  "timezone": "UTC",
+  "assignees": ["sarg3nt"],
+  "reviewers": ["sarg3nt"]
+}

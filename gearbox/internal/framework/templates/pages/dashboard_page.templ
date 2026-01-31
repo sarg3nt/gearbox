@@ -1,0 +1,415 @@
+package pages
+
+import (
+	"github.com/sarg3nt/gearbox/internal/framework/dashboard"
+	"github.com/sarg3nt/gearbox/internal/framework/models"
+	"github.com/sarg3nt/gearbox/internal/framework/templates/layouts"
+)
+
+// DashboardPage renders a complete dashboard page
+templ DashboardPage(dash *dashboard.Dashboard, content templ.Component, user *models.User, currentPath string) {
+	@layouts.Base(dash.Name, user, currentPath) {
+		<!-- Hidden container for page header content - will be moved to main header via JS -->
+		<div id="page-header-source" class="hidden">
+			<!-- Left side: Dashboard title -->
+			<div class="flex items-center">
+				<h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">
+					{ dash.Name }
+				</h2>
+			</div>
+			<!-- Right side spacer -->
+			<div class="flex-1"></div>
+			<!-- Controls: Filters and actions -->
+			<div class="flex items-center space-x-3">
+				<!-- Global health filter -->
+				<select
+					id="global-health-filter"
+					class="h-[38px] px-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+					onchange="applyGlobalFilters()"
+				>
+					<option value="all">All Status</option>
+					<option value="healthy">Healthy Only</option>
+					<option value="critical">Critical Only</option>
+				</select>
+				<!-- Disabled items filter -->
+				<select
+					id="global-disabled-filter"
+					class="h-[38px] px-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+					onchange="applyGlobalFilters()"
+				>
+					<option value="all">All Items</option>
+					<option value="active">Active Only</option>
+					<option value="disabled">Disabled Only</option>
+				</select>
+				<!-- Global text filter -->
+				<div class="relative">
+					<input
+						type="text"
+						id="global-backend-filter"
+						placeholder="Filter backends..."
+						class="h-[38px] w-40 px-3 py-1.5 pr-8 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+						oninput="applyGlobalFilters()"
+					/>
+					<button
+						type="button"
+						id="global-filter-clear"
+						class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hidden"
+						onclick="clearGlobalFilter()"
+					>
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+						</svg>
+					</button>
+				</div>
+				<!-- Manual refresh button with SSE status indicator -->
+				<button
+					id="refresh-btn"
+					onclick="manualRefresh()"
+					class="p-2 rounded-lg transition-colors text-gray-400"
+					title="Connecting..."
+				>
+					<svg id="refresh-icon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+					</svg>
+				</button>
+				if dash.Editable {
+					<!-- Edit button - redirects to dedicated editor page -->
+					<a
+						href={ templ.SafeURL("/dashboards/" + dash.Slug + "/edit") }
+						class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
+						title="Edit Dashboard"
+					>
+						<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+						</svg>
+					</a>
+				}
+			</div>
+		</div>
+
+		<!-- Dashboard content -->
+		<div id="dashboard-content-wrapper" class="dashboard-view-mode">
+			@content
+		</div>
+
+
+		<!-- Dashboard scripts -->
+		@DashboardPageScript()
+	}
+}
+
+// DashboardListPage renders the dashboard management page
+templ DashboardListPage(dashboards []dashboard.DashboardMetadata, user *models.User, currentPath string) {
+	@layouts.Base("Dashboards", user, currentPath) {
+		<div class="mb-6">
+			<div class="flex items-center justify-between">
+				<div>
+					<h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100">
+						Dashboards
+					</h1>
+					<p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+						Manage your custom and plugin-provided dashboards
+					</p>
+				</div>
+				<a
+					href="/dashboards/create"
+					class="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+				>
+					<svg class="w-4 h-4 inline-block mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+					</svg>
+					New Dashboard
+				</a>
+			</div>
+		</div>
+
+		<!-- Dashboards grid -->
+		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+			for _, dash := range dashboards {
+				@DashboardCard(dash)
+			}
+		</div>
+
+		if len(dashboards) == 0 {
+			<div class="text-center py-12">
+				<svg class="w-16 h-16 mx-auto text-gray-400 dark:text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"></path>
+				</svg>
+				<h3 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">
+					No Dashboards
+				</h3>
+				<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+					Create your first dashboard to get started
+				</p>
+			</div>
+		}
+	}
+}
+
+// DashboardCard renders a dashboard card in the list
+templ DashboardCard(dash dashboard.DashboardMetadata) {
+	<div class="bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg p-4 hover:shadow-md transition-shadow">
+		<div class="flex items-start justify-between mb-3">
+			<div class="flex-1 min-w-0">
+				<h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100 truncate">
+					{ dash.Name }
+				</h3>
+				if dash.Description != "" {
+					<p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+						{ dash.Description }
+					</p>
+				}
+			</div>
+			if dash.PluginName != nil {
+				<span class="px-2 py-1 text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded">
+					Plugin
+				</span>
+			}
+		</div>
+
+		<div class="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mb-4">
+			<span>{ dash.CreatedBy }</span>
+			if dash.UpdatedAt.Unix() > 0 {
+				<span>Updated { dash.UpdatedAt.Format("Jan 2, 2006") }</span>
+			}
+		</div>
+
+		<div class="flex gap-2">
+			<a
+				href={ templ.SafeURL("/dashboards/" + dash.Slug) }
+				class="flex-1 px-3 py-2 text-sm font-medium text-center text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded transition-colors"
+			>
+				View
+			</a>
+			if dash.Editable {
+				<a
+					href={ templ.SafeURL("/dashboards/" + dash.Slug + "/edit") }
+					class="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 bg-gray-50 dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 rounded transition-colors"
+				>
+					Edit
+				</a>
+				<button
+					onclick={ deleteDashboard(dash.Slug) }
+					class="px-3 py-2 text-sm font-medium text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
+				>
+					Delete
+				</button>
+			}
+		</div>
+	</div>
+}
+
+script deleteDashboard(slug string) {
+	showConfirmDialog({
+		title: 'Delete Dashboard',
+		message: 'Are you sure you want to delete this dashboard? This action cannot be undone.',
+		confirmText: 'Delete',
+		type: 'danger'
+	}).then(confirmed => {
+		if (confirmed) {
+			// Send delete request
+			fetch(`/api/dashboards/${slug}`, {
+				method: 'DELETE',
+			})
+			.then(response => {
+				if (response.ok) {
+					// Reload the page
+					window.location.reload();
+				} else {
+					showAlertDialog({
+						title: 'Error',
+						message: 'Failed to delete dashboard',
+						type: 'error'
+					});
+				}
+			})
+			.catch(error => {
+				console.error('Error deleting dashboard:', error);
+				showAlertDialog({
+					title: 'Error',
+					message: 'Failed to delete dashboard',
+					type: 'error'
+				});
+			});
+		}
+	});
+}
+
+// DashboardCreatePage renders the dashboard creation form
+templ DashboardCreatePage(user *models.User, currentPath string) {
+	@layouts.Base("Create Dashboard", user, currentPath) {
+		<div class="max-w-2xl mx-auto">
+			<div class="mb-6">
+				<h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100">
+					Create Dashboard
+				</h1>
+				<p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+					Create a new custom dashboard
+				</p>
+			</div>
+
+			<form action="/api/dashboards" method="POST" class="space-y-6">
+				<!-- Name -->
+				<div>
+					<label for="name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+						Dashboard Name
+					</label>
+					<input
+						type="text"
+						id="name"
+						name="name"
+						required
+						class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+						placeholder="My Dashboard"
+					/>
+				</div>
+
+				<!-- Description -->
+				<div>
+					<label for="description" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+						Description
+					</label>
+					<textarea
+						id="description"
+						name="description"
+						rows="3"
+						class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+						placeholder="Describe what this dashboard shows..."
+					></textarea>
+				</div>
+
+				<!-- Buttons -->
+				<div class="flex gap-3">
+					<button
+						type="submit"
+						class="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+					>
+						Create Dashboard
+					</button>
+					<a
+						href="/settings/dashboards"
+						class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
+					>
+						Cancel
+					</a>
+				</div>
+			</form>
+		</div>
+	}
+}
+
+// DashboardPageScript provides JavaScript for dashboard page functionality
+templ DashboardPageScript() {
+	<script>
+	// Move page header content to main header
+	function setupPageHeader() {
+		const source = document.getElementById('page-header-source');
+		const target = document.getElementById('header-page-content');
+		if (source && target) {
+			// Move all children from source to target
+			while (source.firstChild) {
+				target.appendChild(source.firstChild);
+			}
+		}
+	}
+
+	// Apply global filters (health, disabled, text)
+	window.applyGlobalFilters = function() {
+		const healthFilter = document.getElementById('global-health-filter')?.value || 'all';
+		const disabledFilter = document.getElementById('global-disabled-filter')?.value || 'all';
+		const textFilter = document.getElementById('global-backend-filter')?.value.toLowerCase() || '';
+
+		// Show/hide clear button
+		const clearBtn = document.getElementById('global-filter-clear');
+		if (clearBtn) {
+			clearBtn.classList.toggle('hidden', !textFilter);
+		}
+
+		// Apply filters to all backend cards
+		document.querySelectorAll('[data-backend-card]').forEach(card => {
+			const health = card.dataset.health || '';
+			const disabled = card.dataset.disabled === 'true';
+			const name = card.dataset.backendName?.toLowerCase() || '';
+
+			let show = true;
+
+			// Health filter
+			if (healthFilter === 'healthy' && health !== 'UP') show = false;
+			if (healthFilter === 'critical' && health === 'UP') show = false;
+
+			// Disabled filter
+			if (disabledFilter === 'active' && disabled) show = false;
+			if (disabledFilter === 'disabled' && !disabled) show = false;
+
+			// Text filter
+			if (textFilter && !name.includes(textFilter)) show = false;
+
+			card.style.display = show ? '' : 'none';
+		});
+	};
+
+	// Clear global text filter
+	window.clearGlobalFilter = function() {
+		const input = document.getElementById('global-backend-filter');
+		if (input) {
+			input.value = '';
+			applyGlobalFilters();
+		}
+	};
+
+	// Manual refresh
+	window.manualRefresh = function() {
+		// Trigger HTMX refresh on all widgets
+		document.querySelectorAll('[hx-get]').forEach(el => {
+			if (el.getAttribute('hx-trigger') === 'load') {
+				htmx.trigger(el, 'load');
+			}
+		});
+	};
+
+	// SSE connection status - update refresh button color
+	function updateSSEStatus(status) {
+		const btn = document.getElementById('refresh-btn');
+		if (!btn) return;
+
+		btn.classList.remove('text-gray-400', 'text-green-500', 'text-red-500', 'text-yellow-500');
+
+		switch(status) {
+			case 'connected':
+				btn.classList.add('text-green-500');
+				btn.title = 'Connected - Live updates enabled';
+				break;
+			case 'connecting':
+				btn.classList.add('text-yellow-500');
+				btn.title = 'Connecting...';
+				break;
+			case 'error':
+			case 'disconnected':
+				btn.classList.add('text-red-500');
+				btn.title = 'Disconnected - Click to refresh';
+				break;
+			default:
+				btn.classList.add('text-gray-400');
+				btn.title = 'Unknown status';
+		}
+	}
+
+	// Initialize on page load
+	document.addEventListener('DOMContentLoaded', function() {
+		setupPageHeader();
+
+		// Dashboard uses HTMX (on-demand loading), not SSE (continuous streaming)
+		// Set status to connected since HTMX is always ready
+		updateSSEStatus('connected');
+
+		// Listen for HTMX events to update status if needed
+		document.body.addEventListener('htmx:afterRequest', function(evt) {
+			if (evt.detail.successful) {
+				updateSSEStatus('connected');
+			} else {
+				updateSSEStatus('disconnected');
+			}
+		});
+	});
+	</script>
+}

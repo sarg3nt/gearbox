@@ -1,0 +1,420 @@
+package pages
+
+import (
+	"github.com/sarg3nt/gearbox/internal/framework/database"
+	"github.com/sarg3nt/gearbox/internal/framework/models"
+	"github.com/sarg3nt/gearbox/internal/framework/templates/layouts"
+	"fmt"
+)
+
+// DisabledEntitiesPage renders the admin page for managing disabled entities across all servers.
+templ DisabledEntitiesPage(user *models.User, entities []database.DisabledEntity, servers []models.ServerConfig, userNames map[string]string) {
+	@layouts.Base("Disabled Entities", user, "/settings") {
+		<!-- Hidden container for page header content - will be moved to main header via JS -->
+		<div id="page-header-source" class="hidden">
+			<!-- Left side: Title with integrated server selector -->
+			<div class="flex items-center">
+				<h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">
+					Disabled Entities
+					if len(servers) > 1 {
+						<span class="text-gray-400 dark:text-gray-500 mx-2">:</span>
+						<span class="inline-block relative">
+							<select
+								id="server-selector"
+								class="appearance-none bg-transparent text-xl font-bold text-gray-800 dark:text-gray-100 pr-7 cursor-pointer focus:outline-none hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+								onchange="filterByServer(this.value)"
+							>
+								for _, server := range servers {
+									<option value={ server.ID }>{ server.Name }</option>
+								}
+							</select>
+							<!-- Subtle dropdown indicator -->
+							<svg class="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+							</svg>
+						</span>
+					} else if len(servers) == 1 {
+						<span class="text-gray-400 dark:text-gray-500 mx-2">:</span>
+						<span>{ servers[0].Name }</span>
+					}
+				</h2>
+			</div>
+			<!-- Right side spacer -->
+			<div class="flex-1"></div>
+			<!-- Controls: Search and type filter -->
+			<div class="flex items-center space-x-3">
+				<!-- Search by name -->
+				<input
+					type="text"
+					id="search-entity"
+					placeholder="Search..."
+					class="w-40 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-white"
+				/>
+				<!-- Filter by entity type -->
+				<select
+					id="filter-type"
+					class="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-white"
+				>
+					<option value="">All Types</option>
+					<option value="backend">Backend</option>
+					<option value="frontend">Frontend</option>
+					<option value="service">Service</option>
+				</select>
+			</div>
+		</div>
+
+		<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+			<!-- Bulk actions bar -->
+			<div class="mb-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 hidden" id="bulk-actions-bar">
+				<div class="flex items-center justify-between">
+					<div class="flex items-center space-x-3">
+						<span class="text-sm font-medium text-blue-900 dark:text-blue-100">
+							<span id="selected-count">0</span> selected
+						</span>
+						<button
+							type="button"
+							onclick="clearSelection()"
+							class="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200"
+						>
+							Clear selection
+						</button>
+					</div>
+					<div class="flex items-center space-x-2">
+						<button
+							type="button"
+							onclick="bulkEnableEntities()"
+							class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+						>
+							<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+							</svg>
+							Enable Selected
+						</button>
+					</div>
+				</div>
+			</div>
+			<!-- Entities table or empty state -->
+			if len(entities) == 0 {
+				<div class="bg-white dark:bg-slate-800 rounded-lg shadow border border-gray-200 dark:border-slate-600 min-h-[300px] flex flex-col items-center justify-center p-12">
+					<div class="w-16 h-16 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center mb-6">
+						<svg class="h-8 w-8 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+						</svg>
+					</div>
+					<h3 class="text-xl font-semibold text-gray-900 dark:text-white mb-2">No Disabled Entities</h3>
+					<p class="text-gray-500 dark:text-gray-400 text-center max-w-md">
+						All backends, frontends, and services are currently enabled for health monitoring.
+					</p>
+				</div>
+			} else {
+				<div class="bg-white dark:bg-slate-800 rounded-lg shadow overflow-hidden">
+					<table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+						<thead class="bg-gray-50 dark:bg-slate-700">
+							<tr>
+								<th scope="col" class="px-6 py-3 text-left">
+									<input
+										type="checkbox"
+										id="select-all"
+										onchange="toggleSelectAll(this)"
+										class="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+									/>
+								</th>
+								<th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Type</th>
+								<th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Entity Name</th>
+								<th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Disabled At</th>
+								<th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Disabled By</th>
+								<th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
+							</tr>
+						</thead>
+						<tbody class="bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-gray-700" id="entities-tbody">
+							for _, entity := range entities {
+								<tr
+									class="entity-row"
+									data-server-id={ entity.ServerID }
+									data-entity-type={ string(entity.EntityType) }
+									data-entity-name={ entity.EntityName }
+								>
+									<td class="px-6 py-4 whitespace-nowrap">
+										<input
+											type="checkbox"
+											class="entity-checkbox rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+											data-server-id={ entity.ServerID }
+											data-entity-type={ string(entity.EntityType) }
+											data-entity-name={ entity.EntityName }
+											onchange="updateBulkActionsBar()"
+										/>
+									</td>
+									<td class="px-6 py-4 whitespace-nowrap">
+										<span class={ getEntityTypeBadgeClass(entity.EntityType) }>
+											{ string(entity.EntityType) }
+										</span>
+									</td>
+									<td class="px-6 py-4">
+										<div class="text-sm text-gray-900 dark:text-white font-mono">{ entity.EntityName }</div>
+									</td>
+									<td class="px-6 py-4 whitespace-nowrap">
+										<div class="text-sm text-gray-900 dark:text-white">
+											{ formatDisabledTime(entity.DisabledAt) }
+										</div>
+									</td>
+									<td class="px-6 py-4 whitespace-nowrap">
+										<div class="text-sm text-gray-900 dark:text-white">
+											{ getDisabledByName(entity.DisabledBy, userNames) }
+										</div>
+									</td>
+									<td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+										<button
+											type="button"
+											onclick={ templ.ComponentScript{Call: fmt.Sprintf("enableEntity('%s', '%s', '%s')", entity.ServerID, string(entity.EntityType), entity.EntityName)} }
+											class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+										>
+											<svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+											</svg>
+											Enable
+										</button>
+									</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
+			}
+		</div>
+		<!-- JavaScript for filtering, bulk operations, and API calls -->
+		<script>
+			// Current server filter value
+			let currentServerFilter = '';
+
+			function setupPageHeader() {
+				const source = document.getElementById('page-header-source');
+				const target = document.getElementById('header-page-content');
+				if (source && target) {
+					while (source.firstChild) {
+						target.appendChild(source.firstChild);
+					}
+					source.remove();
+				}
+			}
+
+			// Filter by server (called from server selector in header)
+			function filterByServer(serverID) {
+				currentServerFilter = serverID;
+				// Use global ServerSelector for tab isolation
+				if (window.ServerSelector) {
+					window.ServerSelector.setSelectedServer(serverID);
+				}
+				applyFilters();
+			}
+
+			// Filter entities based on search and filter inputs
+			function applyFilters() {
+				const searchTerm = document.getElementById('search-entity')?.value.toLowerCase() || '';
+				const typeFilter = document.getElementById('filter-type')?.value || '';
+
+				const rows = document.querySelectorAll('.entity-row');
+				rows.forEach(row => {
+					const entityName = row.dataset.entityName.toLowerCase();
+					const serverId = row.dataset.serverId;
+					const entityType = row.dataset.entityType;
+
+					const matchesSearch = !searchTerm || entityName.includes(searchTerm);
+					const matchesServer = !currentServerFilter || serverId === currentServerFilter;
+					const matchesType = !typeFilter || entityType === typeFilter;
+
+					if (matchesSearch && matchesServer && matchesType) {
+						row.style.display = '';
+					} else {
+						row.style.display = 'none';
+						// Uncheck hidden rows
+						const checkbox = row.querySelector('.entity-checkbox');
+						if (checkbox) checkbox.checked = false;
+					}
+				});
+
+				updateBulkActionsBar();
+			}
+
+			// Initialize page
+			document.addEventListener('DOMContentLoaded', function() {
+				setupPageHeader();
+
+				// Restore server selection using global ServerSelector (sessionStorage for tab isolation)
+				const serverSelector = document.getElementById('server-selector');
+				if (serverSelector && window.ServerSelector) {
+					currentServerFilter = window.ServerSelector.initFromSelect(serverSelector) || '';
+				} else if (serverSelector && serverSelector.options.length > 0) {
+					currentServerFilter = serverSelector.options[0].value;
+				}
+
+				// Attach filter event listeners (after header is set up)
+				const searchInput = document.getElementById('search-entity');
+				const typeSelect = document.getElementById('filter-type');
+				if (searchInput) searchInput.addEventListener('input', applyFilters);
+				if (typeSelect) typeSelect.addEventListener('change', applyFilters);
+
+				// Apply initial filters
+				applyFilters();
+			});
+
+			// Toggle all checkboxes
+			function toggleSelectAll(checkbox) {
+				const checkboxes = document.querySelectorAll('.entity-checkbox');
+				checkboxes.forEach(cb => {
+					// Only select visible rows
+					const row = cb.closest('.entity-row');
+					if (row && row.style.display !== 'none') {
+						cb.checked = checkbox.checked;
+					}
+				});
+				updateBulkActionsBar();
+			}
+
+			// Update bulk actions bar visibility and count
+			function updateBulkActionsBar() {
+				const checkboxes = document.querySelectorAll('.entity-checkbox:checked');
+				const bulkBar = document.getElementById('bulk-actions-bar');
+				const countSpan = document.getElementById('selected-count');
+
+				if (checkboxes.length > 0) {
+					bulkBar.classList.remove('hidden');
+					countSpan.textContent = checkboxes.length;
+				} else {
+					bulkBar.classList.add('hidden');
+					// Also uncheck "select all"
+					document.getElementById('select-all').checked = false;
+				}
+			}
+
+			// Clear all selections
+			function clearSelection() {
+				const checkboxes = document.querySelectorAll('.entity-checkbox');
+				checkboxes.forEach(cb => cb.checked = false);
+				document.getElementById('select-all').checked = false;
+				updateBulkActionsBar();
+			}
+
+			// Enable a single entity
+			async function enableEntity(serverId, entityType, entityName) {
+				const confirmed = await showConfirmDialog({
+					title: 'Enable Entity',
+					message: `Enable ${entityType} "${entityName}"?\n\nThis will include it in health monitoring.`,
+					confirmText: 'Enable',
+					type: 'info'
+				});
+				if (!confirmed) return;
+
+				fetch(`/api/${serverId}/enable-entity`, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+					},
+					body: JSON.stringify({
+						entity_type: entityType,
+						entity_name: entityName
+					})
+				})
+				.then(response => {
+					if (!response.ok) {
+						throw new Error('Failed to enable entity');
+					}
+					return response.json();
+				})
+				.then(data => {
+					console.log('Entity enabled:', data);
+					// Reload the page to show updated list
+					window.location.reload();
+				})
+				.catch(error => {
+					console.error('Error enabling entity:', error);
+					if (window.showToast) {
+						window.showToast('Failed to enable entity. Please try again.', 'error', 5000);
+					}
+				});
+			}
+
+			// Bulk enable selected entities
+			async function bulkEnableEntities() {
+				const checkboxes = document.querySelectorAll('.entity-checkbox:checked');
+				if (checkboxes.length === 0) return;
+
+				const confirmed = await showConfirmDialog({
+					title: 'Enable Selected Entities',
+					message: `Enable ${checkboxes.length} selected entities?\n\nThey will be included in health monitoring.`,
+					confirmText: 'Enable All',
+					type: 'info'
+				});
+				if (!confirmed) return;
+
+				const promises = [];
+				checkboxes.forEach(checkbox => {
+					const serverId = checkbox.dataset.serverId;
+					const entityType = checkbox.dataset.entityType;
+					const entityName = checkbox.dataset.entityName;
+
+					const promise = fetch(`/api/${serverId}/enable-entity`, {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+						},
+						body: JSON.stringify({
+							entity_type: entityType,
+							entity_name: entityName
+						})
+					});
+
+					promises.push(promise);
+				});
+
+				Promise.all(promises)
+					.then(() => {
+						console.log('Bulk enable completed');
+						window.location.reload();
+					})
+					.catch(error => {
+						console.error('Error in bulk enable:', error);
+						if (window.showToast) {
+							window.showToast('Some entities failed to enable. Please refresh and try again.', 'warning', 5000);
+						}
+						window.location.reload();
+					});
+			}
+		</script>
+	}
+}
+
+// Helper function to get server name from server ID
+func getServerName(serverID string, servers []models.ServerConfig) string {
+	for _, server := range servers {
+		if server.ID == serverID {
+			return server.Name
+		}
+	}
+	return serverID
+}
+
+// Helper function to get badge class based on entity type
+func getEntityTypeBadgeClass(entityType database.EntityType) string {
+	switch entityType {
+	case database.EntityTypeBackend:
+		return "px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+	case database.EntityTypeFrontend:
+		return "px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200"
+	case database.EntityTypeService:
+		return "px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+	default:
+		return "px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200"
+	}
+}
+
+// Helper function to get the name of the user who disabled an entity
+func getDisabledByName(userID *string, userNames map[string]string) string {
+	if userID == nil {
+		return "-"
+	}
+	if name, exists := userNames[*userID]; exists {
+		return name
+	}
+	return "Unknown User"
+}
+

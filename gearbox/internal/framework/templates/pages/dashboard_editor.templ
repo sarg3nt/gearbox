@@ -1,0 +1,385 @@
+package pages
+
+import (
+	"encoding/json"
+	"fmt"
+	"github.com/sarg3nt/gearbox/internal/framework/dashboard"
+	"github.com/sarg3nt/gearbox/internal/framework/models"
+	"github.com/sarg3nt/gearbox/internal/framework/templates/layouts"
+	"github.com/sarg3nt/gearbox/internal/framework/widget"
+)
+
+// DashboardEditorPage renders the visual dashboard editor with live widget preview
+templ DashboardEditorPage(dash *dashboard.Dashboard, content templ.Component, widgets []*widget.WidgetDefinition, user *models.User, currentPath string) {
+	@layouts.Base("Edit Dashboard", user, currentPath) {
+		<!-- Edit Mode Indicator -->
+		<div class="mb-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+			<div class="flex items-center justify-between">
+				<div class="flex items-center gap-2">
+					<svg class="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+					</svg>
+					<span class="text-sm font-medium text-blue-900 dark:text-blue-100">Editing: { dash.Name }</span>
+				</div>
+				<div class="flex gap-2">
+					<button
+						onclick="toggleWidgetPalette()"
+						class="px-3 py-1.5 text-sm font-medium text-blue-700 dark:text-blue-300 hover:text-blue-900 dark:hover:text-blue-100 bg-white dark:bg-slate-800 border border-blue-300 dark:border-blue-600 rounded hover:bg-blue-50 dark:hover:bg-slate-700 transition-colors"
+					>
+						<svg class="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+						</svg>
+						Add Widget
+					</button>
+					<button
+						onclick="saveDashboard()"
+						class="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors"
+					>
+						Save Changes
+					</button>
+					<a
+						href={ templ.SafeURL("/dashboards/" + dash.Slug) }
+						class="px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
+					>
+						Cancel
+					</a>
+				</div>
+			</div>
+		</div>
+
+		<!-- Widget Palette Panel (collapsible) -->
+		<div id="widget-palette-panel" class="hidden mb-4 bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg shadow-lg">
+			<div class="p-4 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
+				<h3 class="font-semibold text-gray-900 dark:text-gray-100">Available Widgets</h3>
+				<button onclick="toggleWidgetPalette()" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+					</svg>
+				</button>
+			</div>
+			<div class="p-4 max-h-96 overflow-y-auto">
+				@WidgetPalette(widgets)
+			</div>
+		</div>
+
+		<!-- Dashboard Grid with live widgets and edit overlay -->
+		<div
+			id="dashboard-grid-editor"
+			class="relative min-h-[600px] border-2 border-dashed border-blue-300 dark:border-blue-600 rounded-lg p-4 bg-blue-50/30 dark:bg-blue-900/10"
+			data-dashboard-id={ dash.Slug }
+		>
+			<!-- Live dashboard content -->
+			<div id="dashboard-live-content" class="dashboard-editor-mode">
+				@content
+			</div>
+
+			<!-- Empty State shown when no widgets -->
+			if len(dash.Widgets) == 0 {
+				<div id="empty-state" class="flex items-center justify-center h-96">
+					<div class="text-center">
+						<svg class="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+						</svg>
+						<p class="text-gray-600 dark:text-gray-400">Click "Add Widget" to get started</p>
+					</div>
+				</div>
+			}
+		</div>
+
+		<!-- Editor CSS -->
+		<style>
+		/* Edit mode overlay for widgets */
+		.dashboard-editor-mode .widget-container {
+			position: relative;
+			outline: 2px dashed transparent;
+			outline-offset: 4px;
+			transition: outline-color 0.2s;
+		}
+
+		.dashboard-editor-mode .widget-container:hover {
+			outline-color: #3b82f6;
+		}
+
+		/* Edit controls overlay */
+		.dashboard-editor-mode .widget-container::before {
+			content: '';
+			position: absolute;
+			top: -8px;
+			left: -8px;
+			right: -8px;
+			bottom: -8px;
+			pointer-events: none;
+			border-radius: 8px;
+		}
+
+		.dashboard-editor-mode .widget-container:hover::before {
+			background: rgba(59, 130, 246, 0.05);
+		}
+
+		/* Widget edit toolbar - always visible, inside widget */
+		.widget-edit-toolbar {
+			position: absolute;
+			top: 4px;
+			right: 4px;
+			display: flex;
+			gap: 4px;
+			z-index: 10;
+		}
+
+		/* Drag handle at top center */
+		.widget-drag-handle-center {
+			position: absolute;
+			top: 0;
+			left: 50%;
+			transform: translateX(-50%);
+			padding: 8px 14px;
+			background: transparent;
+			color: white;
+			border-radius: 0 0 6px 6px;
+			cursor: grab;
+			z-index: 11;
+			display: flex;
+			align-items: center;
+			transition: opacity 0.2s;
+		}
+
+		.widget-drag-handle-center:hover {
+			opacity: 0.8;
+		}
+
+		.widget-drag-handle-center:active {
+			cursor: grabbing;
+		}
+
+		.widget-drag-handle-center svg {
+			width: 24px;
+			height: 12px;
+		}
+
+		.widget-edit-btn {
+			width: 32px;
+			height: 32px;
+			padding: 0;
+			background: transparent;
+			color: white;
+			border: none;
+			border-radius: 6px;
+			cursor: pointer;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			transition: opacity 0.2s;
+		}
+
+		.widget-edit-btn:hover {
+			opacity: 0.8;
+		}
+
+		.widget-edit-btn svg {
+			width: 18px;
+			height: 18px;
+		}
+
+		/* Widget containers get smooth transitions during reordering */
+		.widget-container {
+			transition: transform 0.15s ease-out;
+		}
+
+		/* Chosen state - the original widget that stays in place (faded) */
+		.widget-chosen {
+			opacity: 0.4;
+			transition: opacity 0.2s;
+		}
+
+		.widget-chosen * {
+			pointer-events: none;
+		}
+
+		/* Drag replica - the copy being dragged (follows cursor) */
+		.widget-drag-replica {
+			opacity: 0.95;
+			background: white;
+			box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+			transform: rotate(2deg);
+			z-index: 1000;
+			cursor: grabbing !important;
+		}
+
+		/* Ghost/placeholder where the item will be dropped */
+		.widget-dragging {
+			opacity: 0.3;
+			background: rgba(59, 130, 246, 0.05);
+			border: 2px dashed #3b82f6 !important;
+		}
+
+		/* Swap highlight - the item that will swap with the dragged item */
+		.widget-swap-highlight {
+			outline: 2px solid #3b82f6;
+			outline-offset: 2px;
+			transition: outline 0.1s;
+		}
+		</style>
+
+		<!-- Widget Configuration Modal -->
+		@WidgetConfigModal()
+
+		<!-- Dashboard Data (JSON) -->
+		<div id="dashboard-widgets-data" style="display:none;" data-widgets={ widgetsToJSONAttr(dash.Widgets) }></div>
+
+		<!-- Editor Scripts -->
+		@DashboardEditorScript(dash)
+	}
+}
+
+// WidgetPalette renders the widget library sidebar
+templ WidgetPalette(widgets []*widget.WidgetDefinition) {
+	<div class="p-4">
+		<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Widgets</h2>
+
+		<!-- Search -->
+		<input
+			type="text"
+			id="widget-search"
+			placeholder="Search widgets..."
+			class="w-full px-3 py-2 mb-4 border border-gray-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900"
+			oninput="filterWidgets(this.value)"
+		/>
+
+		<!-- Widget Categories -->
+		<div class="space-y-6">
+			@widgetsByCategory(widgets, "layout", "Layout")
+			@widgetsByCategory(widgets, "status-metrics", "Status & Metrics")
+			@widgetsByCategory(widgets, "data-visualization", "Charts")
+			@widgetsByCategory(widgets, "data-display", "Tables & Lists")
+			@widgetsByCategory(widgets, "control", "Controls")
+		</div>
+	</div>
+}
+
+templ widgetsByCategory(widgets []*widget.WidgetDefinition, category string, title string) {
+	<div class="widget-category" data-category={ category }>
+		<h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">{ title }</h3>
+		<div class="space-y-2">
+			for _, w := range widgets {
+				if w.Category == category {
+					@WidgetCard(w)
+				}
+			}
+		</div>
+	</div>
+}
+
+// WidgetCard renders a draggable widget card
+templ WidgetCard(w *widget.WidgetDefinition) {
+	<div
+		class="widget-card p-3 border border-gray-300 dark:border-slate-600 rounded-lg cursor-move hover:bg-gray-50 dark:hover:bg-slate-800"
+		draggable="true"
+		data-widget-type={ w.Type }
+		data-widget-name={ w.Name }
+		ondragstart="handleWidgetDragStart(event)"
+	>
+		<div class="flex items-start gap-2">
+			<div class="flex-1">
+				<h4 class="text-sm font-medium text-gray-900 dark:text-gray-100">{ w.Name }</h4>
+				<p class="text-xs text-gray-600 dark:text-gray-400 mt-1">{ w.Description }</p>
+			</div>
+		</div>
+	</div>
+}
+
+// WidgetPlaceholder renders a widget in the editor
+templ WidgetPlaceholder(w dashboard.Widget) {
+	<div
+		class="widget-placeholder bg-white dark:bg-slate-900 border-2 border-gray-300 dark:border-slate-600 rounded-lg p-4 relative"
+		data-widget-id={ w.ID }
+		data-widget-type={ w.Type }
+		style={ getWidgetStyle(w.Position) }
+	>
+		<!-- Widget Header -->
+		<div class="flex items-center justify-between mb-2 pb-2 border-b border-gray-200 dark:border-slate-700">
+			<span class="text-sm font-medium text-gray-700 dark:text-gray-300">{ w.Type }</span>
+			<div class="flex gap-1">
+				<button
+					onclick={ configureWidget(w.ID) }
+					class="p-1 hover:bg-gray-100 dark:hover:bg-slate-800 rounded"
+					title="Configure"
+				>
+					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+					</svg>
+				</button>
+				<button
+					onclick={ deleteWidget(w.ID) }
+					class="p-1 hover:bg-red-100 dark:hover:bg-red-900/20 text-red-600 rounded"
+					title="Delete"
+				>
+					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+					</svg>
+				</button>
+			</div>
+		</div>
+
+		<!-- Widget Preview -->
+		<div class="text-xs text-gray-500 dark:text-gray-400">
+			Widget ID: { w.ID }
+		</div>
+
+		<!-- Resize Handle -->
+		<div class="absolute bottom-2 right-2 w-4 h-4 cursor-nwse-resize">
+			<svg class="w-full h-full text-gray-400" fill="currentColor" viewBox="0 0 24 24">
+				<path d="M22 22H20V20H22V22ZM22 18H20V16H22V18ZM18 22H16V20H18V22ZM18 18H16V16H18V18ZM14 22H12V20H14V22Z"></path>
+			</svg>
+		</div>
+	</div>
+}
+
+// WidgetConfigModal renders the configuration modal
+templ WidgetConfigModal() {
+	<div id="config-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+		<div class="bg-white dark:bg-slate-900 rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] overflow-hidden">
+			<div class="p-6 border-b border-gray-200 dark:border-slate-700">
+				<h2 class="text-xl font-semibold text-gray-900 dark:text-gray-100">Configure Widget</h2>
+			</div>
+			<div class="p-6 overflow-y-auto max-h-[60vh]" id="config-form">
+				<!-- Dynamic form will be inserted here -->
+			</div>
+			<div class="p-6 border-t border-gray-200 dark:border-slate-700 flex justify-end gap-2">
+				<button onclick="closeConfigModal()" class="px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg">Cancel</button>
+				<button onclick="saveWidgetConfig()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg">Save</button>
+			</div>
+		</div>
+	</div>
+}
+
+// DashboardEditorScript provides the editor JavaScript
+
+// DashboardEditorScript provides the editor JavaScript
+templ DashboardEditorScript(dash *dashboard.Dashboard) {
+	<!-- Load Sortable.js module -->
+	<script type="module" src="/static/js/dashboard/sortable-loader.js"></script>
+	<!-- Load dashboard editor logic -->
+	<script src="/static/js/dashboard/editor.js" defer></script>
+}
+
+// Helper functions
+func getWidgetStyle(pos dashboard.WidgetPosition) string {
+	return fmt.Sprintf("grid-column: span %d;", pos.Width)
+}
+
+func widgetsToJSONAttr(widgets []dashboard.Widget) string {
+	data, err := json.Marshal(widgets)
+	if err != nil {
+		return "[]"
+	}
+	return string(data)
+}
+
+script configureWidget(widgetId string) {
+	configureWidget(widgetId);
+}
+
+script deleteWidget(widgetId string) {
+	deleteWidget(widgetId);
+}

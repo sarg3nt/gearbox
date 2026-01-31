@@ -1,0 +1,1075 @@
+package pages
+
+import (
+	"github.com/sarg3nt/gearbox/internal/framework/models"
+	"github.com/sarg3nt/gearbox/internal/framework/templates/layouts"
+)
+
+templ AlertsPage(user *models.User, servers []models.ServerConfig, perms *models.UserPermissions) {
+	@layouts.Base("Alerts", user, "/alerts") {
+		<!-- Hidden container for page header content -->
+		<div id="page-header-source" class="hidden">
+			<div class="flex items-center">
+				<h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">
+					Alerts
+					if len(servers) > 1 {
+						<span class="text-gray-400 dark:text-gray-500 mx-2">:</span>
+						<span class="inline-block relative">
+							<select
+								id="server-selector"
+								class="appearance-none bg-transparent text-xl font-bold text-gray-800 dark:text-gray-100 pr-7 cursor-pointer focus:outline-none hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+								onchange="switchServer(this.value)"
+							>
+								for _, server := range servers {
+									<option value={ server.ID } selected?={ server.ID == servers[0].ID }>{ server.Name }</option>
+								}
+							</select>
+							<svg class="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+							</svg>
+						</span>
+					} else if len(servers) == 1 {
+						<span class="text-gray-400 dark:text-gray-500 mx-2">:</span>
+						<span>{ servers[0].Name }</span>
+					}
+				</h2>
+			</div>
+			<div class="flex-1"></div>
+			<div class="flex items-center space-x-3">
+				<!-- Search input -->
+				<input
+					type="text"
+					id="alert-search"
+					placeholder="Search alerts..."
+					oninput="filterAlerts(this.value)"
+					class="w-48 h-[38px] px-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+				/>
+				<!-- Status filter -->
+				<select
+					id="status-filter"
+					class="h-[38px] px-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+					onchange="changeStatusFilter(this.value)"
+				>
+					<option value="all">All Alerts</option>
+					<option value="active" selected>Active Only</option>
+					<option value="acknowledged">Acknowledged</option>
+					<option value="resolved">Resolved</option>
+				</select>
+				<!-- Refresh button -->
+				<button
+					id="refresh-btn"
+					onclick="refreshAlertsData()"
+					class="p-2 rounded-lg transition-colors text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+					title="Refresh"
+				>
+					<svg id="refresh-icon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+					</svg>
+				</button>
+			</div>
+		</div>
+
+		<!-- Store server ID for JavaScript -->
+		if len(servers) > 0 {
+			<input type="hidden" id="default-server-id" value={ servers[0].ID }/>
+		}
+
+		<!-- Permission flags for UI -->
+		<input type="hidden" id="can-action-alerts" value={ boolToString(perms != nil && perms.HasPermission(models.ComponentAlerts, models.PermissionAction)) }/>
+		<input type="hidden" id="can-configure-alerts" value={ boolToString(perms != nil && perms.HasPermission(models.ComponentAlerts, models.PermissionConfigure)) }/>
+
+		if len(servers) == 0 {
+			<div class="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+				<p class="text-yellow-700 dark:text-yellow-300">No servers configured. Please add a server in settings.</p>
+			</div>
+		} else {
+			<!-- Main content area -->
+			<div class="space-y-6">
+				<!-- Alert Summary Cards -->
+				<div id="alert-summary" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+					<div class="bg-white dark:bg-slate-800 rounded-lg shadow p-4">
+						<div class="flex items-center justify-between">
+							<span class="text-sm text-gray-500 dark:text-gray-400">Active Alerts</span>
+							<svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+							</svg>
+						</div>
+						<p id="active-count" class="text-2xl font-bold text-gray-800 dark:text-gray-100 mt-2">-</p>
+						<p class="text-xs text-gray-400 mt-1">Requires attention</p>
+					</div>
+					<div class="bg-white dark:bg-slate-800 rounded-lg shadow p-4">
+						<div class="flex items-center justify-between">
+							<span class="text-sm text-gray-500 dark:text-gray-400">Acknowledged</span>
+							<svg class="w-5 h-5 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+							</svg>
+						</div>
+						<p id="acknowledged-count" class="text-2xl font-bold text-gray-800 dark:text-gray-100 mt-2">-</p>
+						<p class="text-xs text-gray-400 mt-1">Being investigated</p>
+					</div>
+					<div class="bg-white dark:bg-slate-800 rounded-lg shadow p-4">
+						<div class="flex items-center justify-between">
+							<span class="text-sm text-gray-500 dark:text-gray-400">Resolved</span>
+							<svg class="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+							</svg>
+						</div>
+						<p id="resolved-count" class="text-2xl font-bold text-gray-800 dark:text-gray-100 mt-2">-</p>
+						<p class="text-xs text-gray-400 mt-1">Total resolved</p>
+					</div>
+					<a href="#" id="rules-card-link" class="block bg-white dark:bg-slate-800 rounded-lg shadow p-4 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">
+						<div class="flex items-center justify-between">
+							<span class="text-sm text-gray-500 dark:text-gray-400">Alert Rules</span>
+							<svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+							</svg>
+						</div>
+						<p id="rules-count" class="text-2xl font-bold text-gray-800 dark:text-gray-100 mt-2">-</p>
+						<p class="text-xs text-gray-400 mt-1"><span id="enabled-rules">-</span> enabled · <span class="text-blue-500">Configure →</span></p>
+					</a>
+				</div>
+
+				<!-- Active Alerts Table -->
+				<div class="bg-white dark:bg-slate-800 rounded-lg shadow">
+					<div class="p-4 border-b border-gray-200 dark:border-slate-700 flex justify-between items-center">
+						<div>
+							<h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">Alerts</h3>
+							<p class="text-sm text-gray-500 dark:text-gray-400">System alerts and notifications</p>
+						</div>
+						<div class="flex items-center gap-2">
+							<!-- Bulk actions (shown when items selected) -->
+							if perms != nil && perms.HasPermission(models.ComponentAlerts, models.PermissionAction) {
+								<div id="bulk-actions" class="hidden flex items-center gap-2 mr-4">
+									<span id="selected-count" class="text-sm text-gray-600 dark:text-gray-400">0 selected</span>
+									<button
+										onclick="bulkAcknowledge()"
+										class="px-3 py-1.5 text-sm bg-yellow-100 dark:bg-yellow-900/30 hover:bg-yellow-200 dark:hover:bg-yellow-900/50 text-yellow-700 dark:text-yellow-400 rounded-lg transition-colors"
+									>
+										Acknowledge Selected
+									</button>
+									<button
+										onclick="bulkResolve()"
+										class="px-3 py-1.5 text-sm bg-green-100 dark:bg-green-900/30 hover:bg-green-200 dark:hover:bg-green-900/50 text-green-700 dark:text-green-400 rounded-lg transition-colors"
+									>
+										Resolve Selected
+									</button>
+								</div>
+							}
+						</div>
+					</div>
+					<div class="overflow-x-auto">
+						<table class="w-full text-sm">
+							<thead class="bg-gray-50 dark:bg-slate-700">
+								<tr>
+									if perms != nil && perms.HasPermission(models.ComponentAlerts, models.PermissionAction) {
+										<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
+											<input type="checkbox" id="select-all-alerts" onchange="toggleSelectAllAlerts(this.checked)" class="w-4 h-4 rounded border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700"/>
+										</th>
+									}
+									<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Severity</th>
+									<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Title</th>
+									<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Message</th>
+									<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Status</th>
+									<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Ack/Resolved By</th>
+									<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Triggered</th>
+									if perms != nil && perms.HasPermission(models.ComponentAlerts, models.PermissionAction) {
+										<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Actions</th>
+									}
+								</tr>
+							</thead>
+							<tbody id="alerts-table" class="divide-y divide-gray-200 dark:divide-slate-600">
+								<tr>
+									<td colspan="9" class="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+										Loading...
+									</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+				</div>
+			</div>
+
+			<!-- Alert Detail Modal -->
+			<div id="alert-detail-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+				<div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+					<div class="p-4 border-b border-gray-200 dark:border-slate-700 flex justify-between items-center">
+						<h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">Alert Details</h3>
+						<button onclick="hideAlertDetailModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+							<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+							</svg>
+						</button>
+					</div>
+					<div class="p-4 space-y-4">
+						<input type="hidden" id="detail-alert-id"/>
+						<div class="grid grid-cols-2 gap-4">
+							<div>
+								<label class="text-xs text-gray-500 dark:text-gray-400 uppercase">Title</label>
+								<p id="detail-alert-title" class="text-gray-800 dark:text-gray-200 font-medium"></p>
+							</div>
+							<div>
+								<label class="text-xs text-gray-500 dark:text-gray-400 uppercase">Type</label>
+								<p id="detail-alert-type" class="text-gray-600 dark:text-gray-400"></p>
+							</div>
+						</div>
+						<div>
+							<label class="text-xs text-gray-500 dark:text-gray-400 uppercase">Message</label>
+							<p id="detail-alert-message" class="text-gray-600 dark:text-gray-400"></p>
+						</div>
+						<div class="grid grid-cols-3 gap-4">
+							<div>
+								<label class="text-xs text-gray-500 dark:text-gray-400 uppercase">Severity</label>
+								<p id="detail-alert-severity" class="text-gray-600 dark:text-gray-400"></p>
+							</div>
+							<div>
+								<label class="text-xs text-gray-500 dark:text-gray-400 uppercase">Status</label>
+								<p id="detail-alert-status" class="text-gray-600 dark:text-gray-400"></p>
+							</div>
+							<div>
+								<label class="text-xs text-gray-500 dark:text-gray-400 uppercase">Triggered</label>
+								<p id="detail-alert-triggered" class="text-gray-600 dark:text-gray-400"></p>
+							</div>
+						</div>
+
+						<!-- Notes Section -->
+						<div class="border-t border-gray-200 dark:border-slate-700 pt-4">
+							<h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Notes & Activity</h4>
+							<div id="alert-notes-list" class="space-y-3 max-h-48 overflow-y-auto mb-4">
+								<p class="text-gray-500 dark:text-gray-400 text-sm">Loading notes...</p>
+							</div>
+
+							if perms != nil && perms.HasPermission(models.ComponentAlerts, models.PermissionAction) {
+								<!-- Add Note Form -->
+								<div class="space-y-3">
+									<textarea
+										id="action-note"
+										rows="2"
+										placeholder="Add a note (optional for acknowledge/resolve)..."
+										class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+									></textarea>
+									<div class="flex justify-end gap-2">
+										<button
+											onclick="addAlertNote()"
+											class="px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg transition-colors"
+										>
+											Add Note
+										</button>
+										<button
+											id="detail-ack-btn"
+											onclick="acknowledgeAlertWithNote()"
+											class="px-3 py-1.5 text-sm bg-yellow-100 dark:bg-yellow-900/30 hover:bg-yellow-200 dark:hover:bg-yellow-900/50 text-yellow-700 dark:text-yellow-400 rounded-lg transition-colors"
+										>
+											Acknowledge
+										</button>
+										<button
+											id="detail-resolve-btn"
+											onclick="resolveAlertWithNote()"
+											class="px-3 py-1.5 text-sm bg-green-100 dark:bg-green-900/30 hover:bg-green-200 dark:hover:bg-green-900/50 text-green-700 dark:text-green-400 rounded-lg transition-colors"
+										>
+											Resolve
+										</button>
+									</div>
+								</div>
+							}
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Bulk Action Prompt Modal -->
+			<div id="bulk-action-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+				<div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-md w-full mx-4">
+					<div class="p-4 border-b border-gray-200 dark:border-slate-700 flex justify-between items-center">
+						<h3 id="bulk-action-title" class="text-lg font-semibold text-gray-800 dark:text-gray-100">Bulk Action</h3>
+						<button onclick="closeBulkActionModal(false)" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+							<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+							</svg>
+						</button>
+					</div>
+					<div class="p-4 space-y-4">
+						<p id="bulk-action-message" class="text-sm text-gray-600 dark:text-gray-400"></p>
+						<div>
+							<label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Note (optional)</label>
+							<textarea
+								id="bulk-action-note"
+								rows="3"
+								placeholder="Add a note for this action..."
+								class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+							></textarea>
+						</div>
+						<div class="flex justify-end gap-3">
+							<button
+								type="button"
+								onclick="closeBulkActionModal(false)"
+								class="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+							>
+								Cancel
+							</button>
+							<button
+								type="button"
+								id="bulk-action-confirm-btn"
+								onclick="closeBulkActionModal(true)"
+								class="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+							>
+								Confirm
+							</button>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Error Toast -->
+			<div id="error-toast" class="hidden fixed bottom-4 right-4 z-50">
+				<div class="bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-700 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg shadow-lg flex items-center gap-3">
+					<svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+					</svg>
+					<span id="error-toast-message" class="text-sm"></span>
+					<button onclick="hideErrorToast()" class="ml-2 text-red-500 hover:text-red-700 dark:hover:text-red-300">
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+						</svg>
+					</button>
+				</div>
+			</div>
+		}
+
+		<script>
+		let currentServerID = '';
+		let alertsData = [];
+		let rulesData = [];
+		let currentStatusFilter = 'active';
+		let canAction = false;
+		let canConfigure = false;
+		let selectedAlertIds = new Set();
+		let eventSource = null;
+		let reconnectTimeout = null;
+
+		function canActionAlerts() {
+			const el = document.getElementById('can-action-alerts');
+			return el && el.value === 'true';
+		}
+
+		function canConfigureAlerts() {
+			const el = document.getElementById('can-configure-alerts');
+			return el && el.value === 'true';
+		}
+
+		// Move page header content to main header
+		function setupPageHeader() {
+			const source = document.getElementById('page-header-source');
+			const target = document.getElementById('header-page-content');
+			if (source && target) {
+				// Move all children from source to target
+				while (source.firstChild) {
+					target.appendChild(source.firstChild);
+				}
+			}
+		}
+
+		document.addEventListener('DOMContentLoaded', function() {
+			setupPageHeader();
+			canAction = canActionAlerts();
+			canConfigure = canConfigureAlerts();
+			const serverInput = document.getElementById('default-server-id');
+			if (serverInput) {
+				currentServerID = serverInput.value;
+				refreshAlertsData();
+				initSSE();
+			}
+		});
+
+		// Clean up SSE on page unload
+		window.addEventListener('beforeunload', function() {
+			if (eventSource) {
+				eventSource.close();
+			}
+		});
+
+		// SSE connection status
+		function updateSSEStatus(status) {
+			const btn = document.getElementById('refresh-btn');
+			if (!btn) return;
+
+			// Remove all status classes
+			btn.classList.remove('text-green-500', 'text-red-500', 'text-yellow-500', 'text-gray-400');
+
+			switch (status) {
+				case 'connected':
+					btn.classList.add('text-green-500');
+					btn.title = 'Live - streaming alerts';
+					break;
+				case 'connecting':
+					btn.classList.add('text-yellow-500');
+					btn.title = 'Connecting...';
+					break;
+				case 'disconnected':
+					btn.classList.add('text-red-500');
+					btn.title = 'Disconnected - click to retry';
+					break;
+				default:
+					btn.classList.add('text-gray-400');
+					btn.title = 'Refresh';
+			}
+		}
+
+		function initSSE() {
+			if (!currentServerID) return;
+
+			// Close existing connection
+			if (eventSource) {
+				eventSource.close();
+			}
+			if (reconnectTimeout) {
+				clearTimeout(reconnectTimeout);
+				reconnectTimeout = null;
+			}
+
+			updateSSEStatus('connecting');
+
+			const sseUrl = '/api/events?server=' + currentServerID;
+			eventSource = new EventSource(sseUrl);
+
+			eventSource.onopen = function() {
+				updateSSEStatus('connected');
+			};
+
+			eventSource.onerror = function() {
+				updateSSEStatus('disconnected');
+				eventSource.close();
+				eventSource = null;
+				// Reconnect after 5 seconds
+				reconnectTimeout = setTimeout(initSSE, 5000);
+			};
+
+			// Handle alert events
+			eventSource.addEventListener('alert.triggered', function(e) {
+				try {
+					const data = JSON.parse(e.data);
+					handleNewAlert(data);
+				} catch (err) {
+					console.error('Failed to parse alert.triggered event:', err);
+				}
+			});
+
+			eventSource.addEventListener('alert.acknowledged', function(e) {
+				try {
+					const data = JSON.parse(e.data);
+					handleAlertAcknowledged(data);
+				} catch (err) {
+					console.error('Failed to parse alert.acknowledged event:', err);
+				}
+			});
+
+			eventSource.addEventListener('alert.resolved', function(e) {
+				try {
+					const data = JSON.parse(e.data);
+					handleAlertResolved(data);
+				} catch (err) {
+					console.error('Failed to parse alert.resolved event:', err);
+				}
+			});
+
+			eventSource.addEventListener('alert.count_updated', function(e) {
+				try {
+					// Refresh the summary counts
+					loadAlertSummary();
+				} catch (err) {
+					console.error('Failed to handle alert.count_updated event:', err);
+				}
+			});
+		}
+
+		function handleNewAlert(data) {
+			// Refresh alerts list when a new alert is triggered
+			loadAlerts();
+			loadAlertSummary();
+
+			// Show toast notification for new alert
+			if (window.showToast) {
+				const severity = data.severity || 'info';
+				const type = severity === 'critical' ? 'error' : (severity === 'warning' ? 'warning' : 'info');
+				window.showToast('New Alert: ' + (data.title || 'Alert triggered'), type, 5000);
+			}
+		}
+
+		function handleAlertAcknowledged(data) {
+			// Update the alert in the local data if present
+			const alertID = data.alert_id;
+			const alertIndex = alertsData.findIndex(a => a.id === alertID);
+			if (alertIndex !== -1) {
+				alertsData[alertIndex].status = 'acknowledged';
+				renderAlertsTable(alertsData);
+			}
+			loadAlertSummary();
+		}
+
+		function handleAlertResolved(data) {
+			// Update the alert in the local data if present
+			const alertID = data.alert_id;
+			const alertIndex = alertsData.findIndex(a => a.id === alertID);
+			if (alertIndex !== -1) {
+				alertsData[alertIndex].status = 'resolved';
+				renderAlertsTable(alertsData);
+			}
+			loadAlertSummary();
+		}
+
+		function switchServer(serverID) {
+			currentServerID = serverID;
+			refreshAlertsData();
+			initSSE(); // Reinitialize SSE for new server
+		}
+
+		function changeStatusFilter(status) {
+			currentStatusFilter = status;
+			loadAlerts();
+		}
+
+		async function refreshAlertsData() {
+			if (!currentServerID) return;
+
+			const refreshIcon = document.getElementById('refresh-icon');
+			if (refreshIcon) refreshIcon.classList.add('animate-spin');
+
+			try {
+				await Promise.all([
+					loadAlertSummary(),
+					loadAlerts(),
+					loadRules()
+				]);
+			} catch (err) {
+				console.error('Failed to refresh alerts data:', err);
+			} finally {
+				if (refreshIcon) refreshIcon.classList.remove('animate-spin');
+			}
+		}
+
+		async function loadAlertSummary() {
+			try {
+				const response = await fetch(`/api/${currentServerID}/alerts/summary`);
+				if (!response.ok) throw new Error('Failed to load alert summary');
+				const data = await response.json();
+
+				document.getElementById('active-count').textContent = data.total_active || 0;
+				document.getElementById('acknowledged-count').textContent = data.total_acknowledged || 0;
+				document.getElementById('resolved-count').textContent = data.total_resolved || 0;
+			} catch (err) {
+				console.error('Failed to load alert summary:', err);
+			}
+		}
+
+		async function loadAlerts() {
+			try {
+				let url = `/api/${currentServerID}/alerts`;
+				if (currentStatusFilter !== 'all') {
+					url += `?status=${currentStatusFilter}`;
+				}
+				const response = await fetch(url);
+				if (!response.ok) throw new Error('Failed to load alerts');
+				const data = await response.json();
+
+				alertsData = data.alerts || [];
+				renderAlertsTable(alertsData);
+			} catch (err) {
+				console.error('Failed to load alerts:', err);
+				document.getElementById('alerts-table').innerHTML = `
+					<tr><td colspan="6" class="px-4 py-8 text-center text-gray-500 dark:text-gray-400">Failed to load alerts</td></tr>
+				`;
+			}
+		}
+
+		function getAlertCheckboxCell(alert) {
+			if (!canAction) return '';
+			// Only allow selection of active or acknowledged alerts for bulk actions
+			if (alert.status === 'active' || alert.status === 'acknowledged') {
+				var checked = selectedAlertIds.has(alert.id) ? 'checked' : '';
+				return '<td class="px-4 py-3" onclick="event.stopPropagation()"><input type="checkbox" class="alert-checkbox w-4 h-4 rounded border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700" data-alert-id="' + alert.id + '" ' + checked + ' onchange="toggleAlertSelection(' + alert.id + ', this.checked)"/></td>';
+			}
+			return '<td class="px-4 py-3"></td>';
+		}
+
+		function getAckResolvedByCell(alert) {
+			if (alert.status === 'acknowledged' && alert.acknowledged_by_email) {
+				return '<td class="px-4 py-3 text-gray-600 dark:text-gray-400 text-xs"><span class="text-yellow-600 dark:text-yellow-400">Ack:</span> ' + escapeHtml(alert.acknowledged_by_email) + '<br/><span class="text-gray-400">' + formatDate(alert.acknowledged_at) + '</span></td>';
+			}
+			if (alert.status === 'resolved') {
+				var text = '';
+				if (alert.acknowledged_by_email) {
+					text += '<span class="text-yellow-600 dark:text-yellow-400">Ack:</span> ' + escapeHtml(alert.acknowledged_by_email) + '<br/>';
+				}
+				if (alert.resolved_by_email) {
+					text += '<span class="text-green-600 dark:text-green-400">Res:</span> ' + escapeHtml(alert.resolved_by_email) + '<br/><span class="text-gray-400">' + formatDate(alert.resolved_at) + '</span>';
+				} else {
+					text += '<span class="text-green-600 dark:text-green-400">Auto-resolved</span><br/><span class="text-gray-400">' + formatDate(alert.resolved_at) + '</span>';
+				}
+				return '<td class="px-4 py-3 text-gray-600 dark:text-gray-400 text-xs">' + text + '</td>';
+			}
+			return '<td class="px-4 py-3 text-gray-400 dark:text-gray-500">-</td>';
+		}
+
+		function getAlertActionCell(alert) {
+			if (!canAction) return '';
+			if (alert.status === 'active') {
+				return '<td class="px-4 py-3" onclick="event.stopPropagation()"><div class="flex gap-1">' +
+					'<button onclick="acknowledgeAlert(' + alert.id + ')" class="px-2 py-1 text-xs bg-yellow-100 dark:bg-yellow-900/30 hover:bg-yellow-200 dark:hover:bg-yellow-900/50 text-yellow-700 dark:text-yellow-400 rounded transition-colors" title="Acknowledge">Ack</button>' +
+					'<button onclick="resolveAlert(' + alert.id + ')" class="px-2 py-1 text-xs bg-green-100 dark:bg-green-900/30 hover:bg-green-200 dark:hover:bg-green-900/50 text-green-700 dark:text-green-400 rounded transition-colors" title="Resolve">Resolve</button>' +
+					'</div></td>';
+			}
+			if (alert.status === 'acknowledged') {
+				return '<td class="px-4 py-3" onclick="event.stopPropagation()">' +
+					'<button onclick="resolveAlert(' + alert.id + ')" class="px-2 py-1 text-xs bg-green-100 dark:bg-green-900/30 hover:bg-green-200 dark:hover:bg-green-900/50 text-green-700 dark:text-green-400 rounded transition-colors">Resolve</button>' +
+					'</td>';
+			}
+			return '<td class="px-4 py-3">-</td>';
+		}
+
+		function renderAlertsTable(alerts) {
+			const tbody = document.getElementById('alerts-table');
+			if (!alerts || alerts.length === 0) {
+				tbody.innerHTML = '<tr><td colspan="9" class="px-4 py-8 text-center text-gray-500 dark:text-gray-400">No alerts</td></tr>';
+				return;
+			}
+
+			const severityColors = {
+				critical: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400',
+				warning: 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400',
+				info: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+			};
+			const statusColors = {
+				active: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400',
+				acknowledged: 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400',
+				resolved: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400',
+				silenced: 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
+			};
+
+			tbody.innerHTML = alerts.map(function(alert) {
+				var sevColor = severityColors[alert.severity] || 'bg-gray-100 text-gray-700';
+				var statColor = statusColors[alert.status] || 'bg-gray-100 text-gray-700';
+				return '<tr class="hover:bg-gray-50 dark:hover:bg-slate-700 cursor-pointer" onclick="showAlertDetailModal(' + alert.id + ')">' +
+					getAlertCheckboxCell(alert) +
+					'<td class="px-4 py-3"><span class="px-2 py-1 text-xs rounded ' + sevColor + '">' + escapeHtml(alert.severity) + '</span></td>' +
+					'<td class="px-4 py-3 text-gray-800 dark:text-gray-200 font-medium">' + escapeHtml(alert.title) + '</td>' +
+					'<td class="px-4 py-3 text-gray-600 dark:text-gray-400 max-w-md truncate">' + escapeHtml(alert.message) + '</td>' +
+					'<td class="px-4 py-3"><span class="px-2 py-1 text-xs rounded ' + statColor + '">' + escapeHtml(alert.status) + '</span></td>' +
+					getAckResolvedByCell(alert) +
+					'<td class="px-4 py-3 text-gray-600 dark:text-gray-400">' + formatDate(alert.triggered_at) + '</td>' +
+					getAlertActionCell(alert) +
+					'</tr>';
+			}).join('');
+
+			// Update select-all checkbox state
+			updateSelectAllCheckbox();
+		}
+
+		function filterAlerts(query) {
+			const filtered = alertsData.filter(alert =>
+				alert.title.toLowerCase().includes(query.toLowerCase()) ||
+				alert.message.toLowerCase().includes(query.toLowerCase())
+			);
+			renderAlertsTable(filtered);
+		}
+
+		async function loadRules() {
+			try {
+				var response = await fetch('/api/' + currentServerID + '/alerts/rules');
+				if (!response.ok) throw new Error('Failed to load rules');
+				var data = await response.json();
+
+				rulesData = data.rules || [];
+				var enabledCount = rulesData.filter(function(r) { return r.enabled; }).length;
+				document.getElementById('rules-count').textContent = rulesData.length;
+				document.getElementById('enabled-rules').textContent = enabledCount;
+
+				// Update rules card link
+				var rulesCardLink = document.getElementById('rules-card-link');
+				if (rulesCardLink) {
+					rulesCardLink.href = '/settings/plugins/alerts/rules?server=' + currentServerID;
+				}
+			} catch (err) {
+				console.error('Failed to load rules:', err);
+				document.getElementById('rules-count').textContent = '-';
+				document.getElementById('enabled-rules').textContent = '-';
+			}
+		}
+
+		async function acknowledgeAlert(alertID) {
+			try {
+				var response = await fetch('/api/alerts/' + alertID + '/acknowledge', { method: 'POST' });
+				if (!response.ok) throw new Error('Failed to acknowledge alert');
+				await refreshAlertsData();
+			} catch (err) {
+				showErrorToast('Failed to acknowledge alert: ' + err.message);
+			}
+		}
+
+		async function resolveAlert(alertID) {
+			try {
+				var response = await fetch('/api/alerts/' + alertID + '/resolve', { method: 'POST' });
+				if (!response.ok) throw new Error('Failed to resolve alert');
+				await refreshAlertsData();
+			} catch (err) {
+				showErrorToast('Failed to resolve alert: ' + err.message);
+			}
+		}
+
+		function showAlertDetailModal(alertID) {
+			const alert = alertsData.find(a => a.id === alertID);
+			if (!alert) return;
+
+			document.getElementById('detail-alert-title').textContent = alert.title;
+			document.getElementById('detail-alert-message').textContent = alert.message;
+			document.getElementById('detail-alert-severity').textContent = alert.severity;
+			document.getElementById('detail-alert-status').textContent = alert.status;
+			document.getElementById('detail-alert-triggered').textContent = formatDate(alert.triggered_at);
+			document.getElementById('detail-alert-type').textContent = alert.type;
+			document.getElementById('detail-alert-id').value = alertID;
+
+			// Show/hide action buttons based on status
+			const ackBtn = document.getElementById('detail-ack-btn');
+			const resolveBtn = document.getElementById('detail-resolve-btn');
+			if (ackBtn) ackBtn.style.display = alert.status === 'active' ? 'inline-block' : 'none';
+			if (resolveBtn) resolveBtn.style.display = (alert.status === 'active' || alert.status === 'acknowledged') ? 'inline-block' : 'none';
+
+			// Load notes
+			loadAlertNotes(alertID);
+
+			document.getElementById('alert-detail-modal').classList.remove('hidden');
+		}
+
+		function hideAlertDetailModal() {
+			document.getElementById('alert-detail-modal').classList.add('hidden');
+		}
+
+		async function loadAlertNotes(alertID) {
+			const notesList = document.getElementById('alert-notes-list');
+			notesList.innerHTML = '<p class="text-gray-500 dark:text-gray-400 text-sm">Loading notes...</p>';
+
+			try {
+				const response = await fetch(`/api/alerts/${alertID}/notes`);
+				if (!response.ok) throw new Error('Failed to load notes');
+				const data = await response.json();
+
+				if (!data.notes || data.notes.length === 0) {
+					notesList.innerHTML = '<p class="text-gray-500 dark:text-gray-400 text-sm italic">No notes yet</p>';
+					return;
+				}
+
+				notesList.innerHTML = data.notes.map(note => `
+					<div class="border-l-2 border-gray-300 dark:border-gray-600 pl-3 py-2">
+						<div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+							<span class="font-medium">${escapeHtml(note.user_email || 'Unknown')}</span>
+							<span>&bull;</span>
+							<span>${formatDate(note.created_at)}</span>
+							<span class="px-1.5 py-0.5 rounded text-xs ${note.note_type === 'acknowledge' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400' : note.note_type === 'resolve' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'}">${escapeHtml(note.note_type)}</span>
+						</div>
+						<p class="text-sm text-gray-700 dark:text-gray-300 mt-1">${escapeHtml(note.note)}</p>
+					</div>
+				`).join('');
+			} catch (err) {
+				notesList.innerHTML = '<p class="text-red-500 text-sm">Failed to load notes</p>';
+			}
+		}
+
+		async function acknowledgeAlertWithNote() {
+			const alertID = document.getElementById('detail-alert-id').value;
+			const note = document.getElementById('action-note').value;
+
+			try {
+				const response = await fetch(`/api/alerts/${alertID}/acknowledge`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ note: note })
+				});
+				if (!response.ok) throw new Error('Failed to acknowledge alert');
+
+				document.getElementById('action-note').value = '';
+				hideAlertDetailModal();
+				await refreshAlertsData();
+			} catch (err) {
+				showErrorToast('Failed to acknowledge alert: ' + err.message);
+			}
+		}
+
+		async function resolveAlertWithNote() {
+			const alertID = document.getElementById('detail-alert-id').value;
+			const note = document.getElementById('action-note').value;
+
+			try {
+				const response = await fetch(`/api/alerts/${alertID}/resolve`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ note: note })
+				});
+				if (!response.ok) throw new Error('Failed to resolve alert');
+
+				document.getElementById('action-note').value = '';
+				hideAlertDetailModal();
+				await refreshAlertsData();
+			} catch (err) {
+				showErrorToast('Failed to resolve alert: ' + err.message);
+			}
+		}
+
+		async function addAlertNote() {
+			const alertID = document.getElementById('detail-alert-id').value;
+			const note = document.getElementById('action-note').value;
+
+			if (!note.trim()) {
+				showErrorToast('Please enter a note');
+				return;
+			}
+
+			try {
+				const response = await fetch(`/api/alerts/${alertID}/notes`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ note: note })
+				});
+				if (!response.ok) throw new Error('Failed to add note');
+
+				document.getElementById('action-note').value = '';
+				await loadAlertNotes(alertID);
+			} catch (err) {
+				showErrorToast('Failed to add note: ' + err.message);
+			}
+		}
+
+		function formatDate(dateStr) {
+			if (!dateStr) return '-';
+			const date = new Date(dateStr);
+			return date.toLocaleString();
+		}
+
+		function escapeHtml(text) {
+			if (!text) return '';
+			const div = document.createElement('div');
+			div.textContent = text;
+			return div.innerHTML;
+		}
+
+		// Checkbox selection functions
+		function toggleAlertSelection(alertId, checked) {
+			if (checked) {
+				selectedAlertIds.add(alertId);
+			} else {
+				selectedAlertIds.delete(alertId);
+			}
+			updateBulkActionsUI();
+			updateSelectAllCheckbox();
+		}
+
+		function toggleSelectAllAlerts(checked) {
+			const checkboxes = document.querySelectorAll('.alert-checkbox');
+			checkboxes.forEach(function(cb) {
+				const alertId = parseInt(cb.dataset.alertId);
+				cb.checked = checked;
+				if (checked) {
+					selectedAlertIds.add(alertId);
+				} else {
+					selectedAlertIds.delete(alertId);
+				}
+			});
+			updateBulkActionsUI();
+		}
+
+		function updateSelectAllCheckbox() {
+			const selectAllCb = document.getElementById('select-all-alerts');
+			if (!selectAllCb) return;
+
+			const checkboxes = document.querySelectorAll('.alert-checkbox');
+			const checkedCount = document.querySelectorAll('.alert-checkbox:checked').length;
+
+			if (checkboxes.length === 0) {
+				selectAllCb.checked = false;
+				selectAllCb.indeterminate = false;
+			} else if (checkedCount === 0) {
+				selectAllCb.checked = false;
+				selectAllCb.indeterminate = false;
+			} else if (checkedCount === checkboxes.length) {
+				selectAllCb.checked = true;
+				selectAllCb.indeterminate = false;
+			} else {
+				selectAllCb.checked = false;
+				selectAllCb.indeterminate = true;
+			}
+		}
+
+		function updateBulkActionsUI() {
+			const bulkActions = document.getElementById('bulk-actions');
+			const selectedCount = document.getElementById('selected-count');
+			if (!bulkActions) return;
+
+			if (selectedAlertIds.size > 0) {
+				bulkActions.classList.remove('hidden');
+				if (selectedCount) {
+					selectedCount.textContent = selectedAlertIds.size + ' selected';
+				}
+			} else {
+				bulkActions.classList.add('hidden');
+			}
+		}
+
+		// Bulk action modal helpers
+		let bulkActionResolve = null;
+		let bulkActionNote = '';
+
+		function showBulkActionModal(options) {
+			return new Promise((resolve) => {
+				bulkActionResolve = resolve;
+
+				const modal = document.getElementById('bulk-action-modal');
+				const title = document.getElementById('bulk-action-title');
+				const message = document.getElementById('bulk-action-message');
+				const confirmBtn = document.getElementById('bulk-action-confirm-btn');
+				const noteInput = document.getElementById('bulk-action-note');
+
+				title.textContent = options.title || 'Bulk Action';
+				message.textContent = options.message || '';
+				confirmBtn.textContent = options.confirmText || 'Confirm';
+				noteInput.value = '';
+				bulkActionNote = '';
+
+				// Set button color based on action type
+				confirmBtn.className = 'px-4 py-2 text-sm text-white rounded-lg transition-colors';
+				if (options.type === 'acknowledge') {
+					confirmBtn.classList.add('bg-yellow-600', 'hover:bg-yellow-700');
+				} else if (options.type === 'resolve') {
+					confirmBtn.classList.add('bg-green-600', 'hover:bg-green-700');
+				} else {
+					confirmBtn.classList.add('bg-blue-600', 'hover:bg-blue-700');
+				}
+
+				modal.classList.remove('hidden');
+				noteInput.focus();
+			});
+		}
+
+		function closeBulkActionModal(confirmed) {
+			const modal = document.getElementById('bulk-action-modal');
+			const noteInput = document.getElementById('bulk-action-note');
+
+			// Capture note value before hiding modal
+			const noteValue = noteInput ? noteInput.value : '';
+
+			modal.classList.add('hidden');
+
+			if (bulkActionResolve) {
+				const resolver = bulkActionResolve;
+				bulkActionResolve = null;
+				if (confirmed) {
+					resolver({ confirmed: true, note: noteValue });
+				} else {
+					resolver({ confirmed: false, note: '' });
+				}
+			}
+		}
+
+		// Error toast helpers
+		let errorToastTimeout = null;
+
+		function showErrorToast(message) {
+			const toast = document.getElementById('error-toast');
+			const messageEl = document.getElementById('error-toast-message');
+
+			messageEl.textContent = message;
+			toast.classList.remove('hidden');
+
+			// Auto-hide after 5 seconds
+			if (errorToastTimeout) clearTimeout(errorToastTimeout);
+			errorToastTimeout = setTimeout(hideErrorToast, 5000);
+		}
+
+		function hideErrorToast() {
+			const toast = document.getElementById('error-toast');
+			toast.classList.add('hidden');
+			if (errorToastTimeout) {
+				clearTimeout(errorToastTimeout);
+				errorToastTimeout = null;
+			}
+		}
+
+		async function bulkAcknowledge() {
+			if (selectedAlertIds.size === 0) return;
+
+			const result = await showBulkActionModal({
+				title: 'Acknowledge Alerts',
+				message: 'Acknowledge ' + selectedAlertIds.size + ' selected alert(s)?',
+				confirmText: 'Acknowledge',
+				type: 'acknowledge'
+			});
+
+			if (!result.confirmed) return;
+
+			try {
+				const alertIds = Array.from(selectedAlertIds);
+				for (const alertId of alertIds) {
+					const response = await fetch('/api/alerts/' + alertId + '/acknowledge', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({ note: result.note || '' })
+					});
+					if (!response.ok) {
+						throw new Error('Failed to acknowledge alert ' + alertId);
+					}
+				}
+
+				selectedAlertIds.clear();
+				updateBulkActionsUI();
+				await refreshAlertsData();
+			} catch (err) {
+				showErrorToast('Failed to acknowledge some alerts: ' + err.message);
+				// Still refresh to show partial success
+				await refreshAlertsData();
+			}
+		}
+
+		async function bulkResolve() {
+			if (selectedAlertIds.size === 0) return;
+
+			const result = await showBulkActionModal({
+				title: 'Resolve Alerts',
+				message: 'Resolve ' + selectedAlertIds.size + ' selected alert(s)?',
+				confirmText: 'Resolve',
+				type: 'resolve'
+			});
+
+			if (!result.confirmed) return;
+
+			try {
+				const alertIds = Array.from(selectedAlertIds);
+				for (const alertId of alertIds) {
+					const response = await fetch('/api/alerts/' + alertId + '/resolve', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({ note: result.note || '' })
+					});
+					if (!response.ok) {
+						throw new Error('Failed to resolve alert ' + alertId);
+					}
+				}
+
+				selectedAlertIds.clear();
+				updateBulkActionsUI();
+				await refreshAlertsData();
+			} catch (err) {
+				showErrorToast('Failed to resolve some alerts: ' + err.message);
+				// Still refresh to show partial success
+				await refreshAlertsData();
+			}
+		}
+
+		// Handle Escape key for bulk action modal
+		document.addEventListener('keydown', function(e) {
+			if (e.key === 'Escape') {
+				const modal = document.getElementById('bulk-action-modal');
+				if (modal && !modal.classList.contains('hidden')) {
+					closeBulkActionModal(false);
+				}
+			}
+		});
+		</script>
+	}
+}

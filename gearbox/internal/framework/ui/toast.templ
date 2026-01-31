@@ -1,0 +1,21 @@
+// Package ui provides reusable UI components for the HAProxy monitoring framework.
+// These components can be used by plugins and core application code.
+package ui
+
+// ToastOnLoad triggers a toast notification when the page loads.
+// Use this to show success/error messages from query parameters.
+// Uses a data attribute to pass the message safely to JavaScript.
+templ ToastOnLoad(message, toastType string) {
+	<div class="hidden toast-on-load" data-toast-message={ message } data-toast-type={ toastType }></div>
+}
+
+// Toast provides a reusable toast notification component
+// that appears in the top-right corner of the viewport
+templ Toast() {
+	<!-- Toast Container - Fixed position at top-right -->
+	<div id="toast-container" class="fixed top-4 right-4 z-[9999] flex flex-col space-y-2 pointer-events-none">
+		<!-- Toasts will be dynamically added here -->
+	</div>
+	<!-- Load toast notification system -->
+	<script src="/static/js/utils/toast.js" defer></script>
+}

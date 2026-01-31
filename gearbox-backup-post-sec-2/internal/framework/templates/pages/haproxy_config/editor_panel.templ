@@ -1,0 +1,28 @@
+package haproxy_config
+
+templ EditorPanel(canEdit bool) {
+	<div id="config-page-container" class="-mx-6 -mt-6 -mb-6">
+		<!-- Editor Card - flush to edges, almost black background -->
+		<div id="editor-card" class="bg-[#0d0d0d] overflow-hidden">
+			<div id="editor-wrapper" class="flex overflow-auto">
+				<!-- Line numbers gutter -->
+				<div id="line-numbers" class="bg-[#0d0d0d] text-gray-500 py-2 font-mono text-sm select-none border-r border-gray-800 flex-shrink-0 sticky left-0"></div>
+				<!-- Editor content -->
+				<div
+					id="config-editor"
+					class="bg-[#0d0d0d] text-gray-300 px-4 py-2 font-mono text-sm flex-1 outline-none"
+					if canEdit {
+						contenteditable="true"
+					}
+					spellcheck="false"
+				></div>
+			</div>
+		</div>
+		<!-- Line Help Tooltip -->
+		<div id="line-help-tooltip" class="fixed hidden w-80 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg z-[60] pointer-events-none">
+			<div class="font-bold text-blue-400 mb-1" id="tooltip-directive"></div>
+			<div class="text-gray-200 mb-2" id="tooltip-description"></div>
+			<div class="text-gray-400 text-[10px]" id="tooltip-docs-hint">Click line number for full docs</div>
+		</div>
+	</div>
+}

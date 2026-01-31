@@ -1,0 +1,83 @@
+# Gitleaks configuration file
+# https://github.com/gitleaks/gitleaks
+
+title = "Gearbox Secret Scanning Configuration"
+
+[extend]
+# Extend default gitleaks config
+useDefault = true
+
+[[rules]]
+id = "gearbox-session-secret"
+description = "Gearbox SESSION_SECRET"
+regex = '''SESSION_SECRET\s*=\s*["']?([a-f0-9]{64,})["']?'''
+tags = ["key", "gearbox"]
+
+[[rules]]
+id = "gearbox-admin-password"
+description = "Gearbox ADMIN_PASSWORD in environment files"
+regex = '''ADMIN_PASSWORD\s*=\s*["']?([^"'\s]{8,})["']?'''
+tags = ["password", "gearbox"]
+path = '''(\.env|docker-compose\.yml|\.env\..*)'''
+
+[[rules]]
+id = "github-pat"
+description = "GitHub Personal Access Token"
+regex = '''ghp_[0-9a-zA-Z]{36}'''
+tags = ["key", "github"]
+
+[[rules]]
+id = "api-key-generic"
+description = "Generic API Key"
+regex = '''(?i)(api[_-]?key|apikey)\s*[:=]\s*["']?([a-z0-9]{32,})["']?'''
+tags = ["key", "api"]
+
+[[rules]]
+id = "private-key"
+description = "Private Key"
+regex = '''-----BEGIN (RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----'''
+tags = ["key", "private"]
+
+[[rules]]
+id = "jwt-token"
+description = "JWT Token"
+regex = '''eyJ[A-Za-z0-9_-]*\.eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*'''
+tags = ["token", "jwt"]
+
+# Allowlist - paths to ignore
+[allowlist]
+paths = [
+    '''\.git/''',
+    '''node_modules/''',
+    '''vendor/''',
+    '''\.idea/''',
+    '''\.vscode/''',
+    '''coverage\.out''',
+    '''go\.sum''',
+    '''package-lock\.json''',
+    '''\.md$''',  # Allow markdown files (documentation examples)
+]
+
+# Allowlist - specific regexes to ignore
+regexes = [
+    '''example\.com''',
+    '''localhost''',
+    '''127\.0\.0\.1''',
+    '''0\.0\.0\.0''',
+    '''YOUR_[A-Z_]+''',  # Placeholder values like YOUR_API_KEY
+    '''REPLACE_ME''',
+    '''CHANGE_ME''',
+    '''<[A-Z_]+>''',     # Placeholder values like <API_KEY>
+]
+
+# Allowlist - commits to ignore
+commits = []
+
+# Stopwords - tokens that if found will stop gitleaks
+stopwords = [
+    "example",
+    "test",
+    "demo",
+    "placeholder",
+    "sample",
+]

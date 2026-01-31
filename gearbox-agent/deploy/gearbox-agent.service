@@ -1,0 +1,39 @@
+[Unit]
+Description=Gearbox Agent - Server monitoring and management agent
+Documentation=https://github.com/sarg3nt/ubuntu-ha-proxy-install
+After=network-online.target haproxy.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+
+# Main executable
+ExecStart=/usr/local/bin/gearbox-agent
+
+# Environment variables (can be overridden in /etc/default/gearbox-agent)
+Environment=HAPROXY_AGENT_LISTEN=0.0.0.0:8405
+Environment=HAPROXY_AGENT_DATA_DIR=/var/lib/gearbox-agent
+Environment=HAPROXY_AGENT_LOG_LEVEL=info
+
+# Optional: Load additional environment from file
+EnvironmentFile=-/etc/default/gearbox-agent
+
+# Restart policy
+Restart=always
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=false
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/gearbox-agent /etc/haproxy /etc/letsencrypt
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gearbox-agent
+
+[Install]
+WantedBy=multi-user.target
