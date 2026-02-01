@@ -1400,10 +1400,10 @@ May your configs be valid and your uptime eternal. 🙏`
 					list.innerHTML = data.backups.map(b => `
 						<div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-700 rounded-lg">
 							<div>
-								<div class="font-medium text-gray-900 dark:text-gray-100">${b.reason || 'Unknown'}</div>
+								<div class="font-medium text-gray-900 dark:text-gray-100">${escapeHtml(b.reason || 'Unknown')}</div>
 								<div class="text-sm text-gray-500 dark:text-gray-400">${new Date(b.created_at).toLocaleString()}</div>
 							</div>
-							<button onclick="restoreBackup('${b.id}')" class="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm">
+							<button onclick="restoreBackup('${escapeHtml(b.id)}')" class="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm">
 								Restore
 							</button>
 						</div>

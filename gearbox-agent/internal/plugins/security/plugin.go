@@ -872,6 +872,12 @@ func (p *Plugin) validateConfig(content string) (string, error) {
 	}
 	defer os.Remove(tmpFile.Name())
 
+	// Ensure restrictive permissions on temp file (owner read/write only)
+	if err := os.Chmod(tmpFile.Name(), 0600); err != nil {
+		tmpFile.Close()
+		return "", fmt.Errorf("failed to set temp file permissions: %w", err)
+	}
+
 	if _, err := tmpFile.WriteString(content); err != nil {
 		tmpFile.Close()
 		return "", fmt.Errorf("failed to write temp file: %w", err)

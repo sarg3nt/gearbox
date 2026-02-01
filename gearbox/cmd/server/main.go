@@ -498,24 +498,32 @@ func main() {
 		_, _ = w.Write([]byte("# Prometheus metrics will be added here\n"))
 	})
 
-	// Public routes - authentication
-	r.Get("/login", h.LoginPage)
-	r.Post("/login", h.LoginPost)
+	// Rate limiter for authentication endpoints (5 req/sec, burst of 10 per IP)
+	// Protects against brute force and credential stuffing attacks
+	authRateLimiter := gbmiddleware.NewRateLimiter(5, 10, logger)
+	defer authRateLimiter.Close()
 
-	// Public routes - account request
-	r.Get("/request-account", h.RequestAccountPage)
-	r.Post("/request-account", h.RequestAccountPost)
-	r.Get("/request-account/success", h.RequestAccountSuccessPage)
+	// Public routes - authentication (rate limited)
+	r.Group(func(r chi.Router) {
+		r.Use(gbmiddleware.RateLimitMiddleware(authRateLimiter))
+		r.Get("/login", h.LoginPage)
+		r.Post("/login", h.LoginPost)
 
-	// Public routes - password reset
-	r.Get("/forgot-password", h.ForgotPasswordPage)
-	r.Post("/forgot-password", h.ForgotPasswordPost)
-	r.Get("/reset-password", h.ResetPasswordPage)
-	r.Post("/reset-password", h.ResetPasswordPost)
+		// Account request
+		r.Get("/request-account", h.RequestAccountPage)
+		r.Post("/request-account", h.RequestAccountPost)
+		r.Get("/request-account/success", h.RequestAccountSuccessPage)
 
-	// Public routes - passkey authentication
-	r.Get("/api/passkey/login/begin", h.PasskeyLoginBegin)
-	r.Post("/api/passkey/login/finish", h.PasskeyLoginFinish)
+		// Password reset
+		r.Get("/forgot-password", h.ForgotPasswordPage)
+		r.Post("/forgot-password", h.ForgotPasswordPost)
+		r.Get("/reset-password", h.ResetPasswordPage)
+		r.Post("/reset-password", h.ResetPasswordPost)
+
+		// Passkey authentication
+		r.Get("/api/passkey/login/begin", h.PasskeyLoginBegin)
+		r.Post("/api/passkey/login/finish", h.PasskeyLoginFinish)
+	})
 
 	// SSE endpoint - needs auth but NO timeout (long-lived connections)
 	r.Group(func(r chi.Router) {

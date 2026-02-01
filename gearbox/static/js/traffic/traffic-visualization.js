@@ -12,6 +12,13 @@ let animationFrame = null;
 let tooltipPinned = false; // Track if tooltip is pinned by click
 let activeFilter = null; // Track active filter for tables
 
+// HTML escaping for safe DOM insertion
+function escapeHtml(text) {
+	const div = document.createElement('div');
+	div.textContent = text;
+	return div.innerHTML;
+}
+
 // Client-side source persistence with fade timer
 // Sources from stick tables persist for 2 minutes to show connection history
 const SOURCE_PERSISTENCE_MS = 120000; // 2 minute fade timer
@@ -414,18 +421,18 @@ function updateTopSourcesTable(sources) {
 	}
 
 	if (filteredSources.length === 0) {
-		tbody.innerHTML = `<tr><td colspan="5" class="px-4 py-8 text-center text-gray-500 dark:text-gray-400">No traffic matching filter: ${activeFilter?.label || ''}</td></tr>`;
+		tbody.innerHTML = `<tr><td colspan="5" class="px-4 py-8 text-center text-gray-500 dark:text-gray-400">No traffic matching filter: ${escapeHtml(activeFilter?.label || '')}</td></tr>`;
 		return;
 	}
 
 	tbody.innerHTML = filteredSources.slice(0, 15).map(source => {
 		const isHighlighted = activeFilter?.type === 'source' && activeFilter?.value === source.ip_address;
 		return `
-		<tr class="hover:bg-gray-50 dark:hover:bg-slate-700 cursor-pointer ${isHighlighted ? 'bg-violet-50 dark:bg-violet-900/30' : ''}" onclick="highlightNode('source-${source.ip_address}')">
-			<td class="px-4 py-3 font-mono text-gray-800 dark:text-gray-200">${source.ip_address}</td>
+		<tr class="hover:bg-gray-50 dark:hover:bg-slate-700 cursor-pointer ${isHighlighted ? 'bg-violet-50 dark:bg-violet-900/30' : ''}" onclick="highlightNode('source-${escapeHtml(source.ip_address)}')">
+			<td class="px-4 py-3 font-mono text-gray-800 dark:text-gray-200">${escapeHtml(source.ip_address)}</td>
 			<td class="px-4 py-3 text-gray-600 dark:text-gray-300">${formatNumber(source.requests || source.http_request_rate || 0)}</td>
 			<td class="px-4 py-3 text-gray-600 dark:text-gray-300">${formatBytes((source.bytes_in || 0) + (source.bytes_out || 0))}</td>
-			<td class="px-4 py-3 text-gray-600 dark:text-gray-300">${source.backend ? normalizeBackendName(source.backend) : '-'}</td>
+			<td class="px-4 py-3 text-gray-600 dark:text-gray-300">${source.backend ? escapeHtml(normalizeBackendName(source.backend)) : '-'}</td>
 			<td class="px-4 py-3">
 				<span class="px-2 py-1 text-xs rounded-full bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200">Active</span>
 			</td>
@@ -448,7 +455,7 @@ function updateBackendTrafficTable(backends) {
 	}
 
 	if (filteredBackends.length === 0) {
-		tbody.innerHTML = `<tr><td colspan="6" class="px-4 py-8 text-center text-gray-500 dark:text-gray-400">No traffic matching filter: ${activeFilter?.label || ''}</td></tr>`;
+		tbody.innerHTML = `<tr><td colspan="6" class="px-4 py-8 text-center text-gray-500 dark:text-gray-400">No traffic matching filter: ${escapeHtml(activeFilter?.label || '')}</td></tr>`;
 		return;
 	}
 
@@ -465,10 +472,10 @@ function updateBackendTrafficTable(backends) {
 		}
 
 		const isHighlighted = activeFilter?.type === 'backend' && activeFilter?.value === backend.name;
-		const displayName = normalizeBackendName(backend.name);
+		const displayName = escapeHtml(normalizeBackendName(backend.name));
 
 		return `
-			<tr class="hover:bg-gray-50 dark:hover:bg-slate-700 cursor-pointer ${isHighlighted ? 'bg-emerald-50 dark:bg-emerald-900/30' : ''}" onclick="highlightNode('backend-${backend.name}')">
+			<tr class="hover:bg-gray-50 dark:hover:bg-slate-700 cursor-pointer ${isHighlighted ? 'bg-emerald-50 dark:bg-emerald-900/30' : ''}" onclick="highlightNode('backend-${escapeHtml(backend.name)}')">
 				<td class="px-4 py-3 font-medium text-gray-800 dark:text-gray-200">${displayName}</td>
 				<td class="px-4 py-3 text-gray-600 dark:text-gray-300">${formatNumber(backend.total_requests || 0)}</td>
 				<td class="px-4 py-3 text-gray-600 dark:text-gray-300">${formatBytes((backend.bytes_in || 0) + (backend.bytes_out || 0))}</td>
@@ -1940,7 +1947,7 @@ function showNodeDetails(event, d) {
 	if (d.type === 'haproxy') {
 		// HAProxy node for a specific backend flow
 		const data = d.data;
-		const backendName = data.backend ? normalizeBackendName(data.backend) : 'Unknown';
+		const backendName = data.backend ? escapeHtml(normalizeBackendName(data.backend)) : 'Unknown';
 		html = '<div class="text-blue-400 font-bold text-lg mb-2">HAProxy Router</div>' +
 			'<div class="text-gray-200">Routing to: <span class="text-emerald-300">' + backendName + '</span></div>' +
 			'<div class="mt-3 pt-3 border-t border-slate-600">' +
@@ -1952,10 +1959,10 @@ function showNodeDetails(event, d) {
 		showFilterButton = true;
 
 		// Show which backend this source is connecting to
-		const backendName = data.backend ? normalizeBackendName(data.backend) : 'Unknown';
+		const backendName = data.backend ? escapeHtml(normalizeBackendName(data.backend)) : 'Unknown';
 
 		html = '<div class="text-violet-400 font-bold text-lg mb-2">Source IP</div>' +
-			'<div class="font-mono text-gray-200 text-lg">' + data.ip_address + '</div>' +
+			'<div class="font-mono text-gray-200 text-lg">' + escapeHtml(data.ip_address) + '</div>' +
 			'<div class="mt-3 pt-3 border-t border-slate-600">' +
 			'<div class="text-sm mb-2">' +
 			'<div><span class="text-gray-400">Requests:</span> <span class="text-violet-300 font-bold">' + formatNumber(data.requests || 0) + '</span></div>' +
@@ -1964,13 +1971,13 @@ function showNodeDetails(event, d) {
 			'</div>';
 	} else if (d.type === 'backend') {
 		const data = d.data;
-		const displayName = d.hostname || normalizeBackendName(data.name);
+		const displayName = escapeHtml(d.hostname || normalizeBackendName(data.name));
 		const errorClass = d.errorRate > 20 ? 'text-red-400' : d.errorRate > 5 ? 'text-amber-400' : 'text-emerald-400';
 		showFilterButton = true;
 		html = `
 			<div class="${errorClass} font-bold text-lg mb-2">Backend</div>
 			<div class="text-gray-200">${displayName}</div>
-			${d.hostname ? '<div class="text-gray-500 text-xs">' + data.name + '</div>' : ''}
+			${d.hostname ? '<div class="text-gray-500 text-xs">' + escapeHtml(data.name) + '</div>' : ''}
 			<div class="mt-3 pt-3 border-t border-slate-600 grid grid-cols-2 gap-2 text-sm">
 				<div><span class="text-gray-400">Requests:</span> <span class="text-gray-200">${formatNumber(data.total_requests || 0)}</span></div>
 				<div><span class="text-gray-400">Error Rate:</span> <span class="${errorClass}">${(data.error_rate || 0).toFixed(2)}%</span></div>

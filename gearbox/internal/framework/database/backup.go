@@ -5,6 +5,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"time"
 )
 
@@ -33,9 +35,15 @@ func (d *DB) CreateBackup(backupDir string) (*BackupInfo, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
+	// Validate backup path to prevent SQL injection via VACUUM INTO
+	// (VACUUM INTO does not support parameterized queries)
+	if err := validateBackupPath(backupPath); err != nil {
+		return nil, fmt.Errorf("invalid backup path: %w", err)
+	}
+
 	// Execute VACUUM INTO to create a compact backup
 	// This is safer than file copy and creates a clean, defragmented backup
-	_, err := d.db.Exec(fmt.Sprintf("VACUUM INTO '%s'", backupPath))
+	_, err := d.db.Exec(fmt.Sprintf("VACUUM INTO '%s'", backupPath)) //#nosec G201 -- backupPath validated by validateBackupPath
 	if err != nil {
 		return nil, fmt.Errorf("failed to create backup: %w", err)
 	}
@@ -147,6 +155,21 @@ func ListBackups(backupDir string) ([]BackupInfo, error) {
 func DeleteBackup(backupPath string) error {
 	if err := os.Remove(backupPath); err != nil {
 		return fmt.Errorf("failed to delete backup: %w", err)
+	}
+	return nil
+}
+
+// validateBackupPath ensures the backup path is safe to use in a VACUUM INTO statement.
+// Since VACUUM INTO does not support parameterized queries, we must validate the path
+// to prevent SQL injection via crafted filenames or directory names.
+var validBackupPathRe = regexp.MustCompile(`^[a-zA-Z0-9/_.\-]+$`)
+
+func validateBackupPath(path string) error {
+	if strings.Contains(path, "'") {
+		return fmt.Errorf("path must not contain single quotes")
+	}
+	if !validBackupPathRe.MatchString(path) {
+		return fmt.Errorf("path contains invalid characters")
 	}
 	return nil
 }
