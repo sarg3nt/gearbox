@@ -120,8 +120,16 @@ func (h *DashboardHandler) ViewDashboard(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Resolve server ID: use stored value, or fall back to first enabled server
+	serverID := h.boxID
+	if serverID == "" {
+		if boxes, err := h.db.GetEnabledBoxes(); err == nil && len(boxes) > 0 {
+			serverID = boxes[0].BoxID
+		}
+	}
+
 	// Render dashboard
-	content, err := h.renderer.Render(r.Context(), dash, h.boxID, h.userID)
+	content, err := h.renderer.Render(r.Context(), dash, serverID, h.userID)
 	if err != nil {
 		h.logger.Error("failed to render dashboard", "slug", slug, "error", err)
 		http.Error(w, "Failed to render dashboard", http.StatusInternalServerError)

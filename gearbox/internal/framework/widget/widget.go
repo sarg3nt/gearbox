@@ -121,6 +121,11 @@ func (w *WidgetInstance) Render(ctx *WidgetRenderContext) (templ.Component, erro
 		}
 	}
 
+	// If widget config has no box_id set, use the server ID from the render context
+	if boxID, _ := w.Config["box_id"].(string); boxID == "" && ctx.ServerID != "" {
+		w.Config["box_id"] = ctx.ServerID
+	}
+
 	// Render the widget
 	return w.Definition.Renderer(ctx.Context, w.Config, data)
 }

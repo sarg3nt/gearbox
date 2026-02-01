@@ -4,9 +4,10 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/sarg3nt/gearbox/internal/framework/database"
 	"github.com/sarg3nt/gearbox/internal/framework/auth"
+	"github.com/sarg3nt/gearbox/internal/framework/database"
 	"github.com/sarg3nt/gearbox/internal/framework/models"
+	"github.com/sarg3nt/gearbox/internal/framework/templates/layouts"
 	"github.com/sarg3nt/gearbox/internal/framework/templates/pages"
 )
 
@@ -247,6 +248,15 @@ func (h *Handler) MetricsPartialHandler(w http.ResponseWriter, r *http.Request) 
 	component := pages.MetricsPartial(metrics)
 	if err := component.Render(r.Context(), w); err != nil {
 		h.logger.Error("Failed to render metrics partial template", "error", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	}
+}
+
+// SidebarNavPartialHandler returns just the sidebar nav list HTML for HTMX swapping.
+func (h *Handler) SidebarNavPartialHandler(w http.ResponseWriter, r *http.Request) {
+	component := layouts.OrderedIntegrationLinks("")
+	if err := component.Render(r.Context(), w); err != nil {
+		h.logger.Error("Failed to render sidebar nav partial", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 	}
 }

@@ -35,7 +35,8 @@ import (
 	// Import plugins - blank identifier triggers init() registration
 	_ "github.com/sarg3nt/gearbox/internal/plugins/alerts"
 	_ "github.com/sarg3nt/gearbox/internal/plugins/certificates"
-	dashboardPlugin "github.com/sarg3nt/gearbox/internal/plugins/dashboard"
+	_ "github.com/sarg3nt/gearbox/internal/plugins/dashboard"
+	_ "github.com/sarg3nt/gearbox/internal/plugins/haproxy"
 	_ "github.com/sarg3nt/gearbox/internal/plugins/logs"
 	_ "github.com/sarg3nt/gearbox/internal/plugins/metrics"
 	_ "github.com/sarg3nt/gearbox/internal/plugins/services"
@@ -371,11 +372,6 @@ func main() {
 		log.Fatalf("Failed to register core widgets: %v", err)
 	}
 
-	// Register HAProxy-specific widgets
-	if err := dashboardPlugin.RegisterHAProxyWidgets(widgetRegistry); err != nil {
-		log.Fatalf("Failed to register HAProxy widgets: %v", err)
-	}
-
 	dashboardHandler := handler.NewDashboardHandler(
 		dashboardStorage,
 		widgetRegistry,
@@ -631,6 +627,7 @@ func main() {
 		r.Get("/config/firewall/{boxID}", h.FirewallConfigPage)
 
 		// HTMX partial routes (return HTML fragments)
+		r.Get("/htmx/sidebar-nav", h.SidebarNavPartialHandler)
 		r.Get("/htmx/{boxID}/status-summary", h.StatusSummaryPartialHandler)
 		r.Get("/htmx/{boxID}/backend-grid", h.BackendGridPartialHandler)
 		r.Get("/htmx/{boxID}/stats", h.StatsPartialHandler)
