@@ -205,7 +205,7 @@ func (e *Evaluator) evaluateBackendDownRule(rule *models.AlertRule, stats *model
 			// Check if this backend has health monitoring disabled
 			disabled, err := e.db.IsEntityDisabled(rule.BoxID, database.EntityTypeBackend, backend.Name)
 			if err != nil {
-				e.logger.Error("Error checking if backend %s is disabled: %v", backend.Name, err)
+				e.logger.Error("Error checking if backend is disabled", "backend", backend.Name, "error", err)
 			}
 			if disabled {
 				continue // Skip disabled backends
@@ -227,7 +227,7 @@ func (e *Evaluator) evaluateFrontendDownRule(rule *models.AlertRule, stats *mode
 			// Check if this frontend has health monitoring disabled
 			disabled, err := e.db.IsEntityDisabled(rule.BoxID, database.EntityTypeFrontend, frontend.Name)
 			if err != nil {
-				e.logger.Error("Error checking if frontend %s is disabled: %v", frontend.Name, err)
+				e.logger.Error("Error checking if frontend is disabled", "frontend", frontend.Name, "error", err)
 			}
 			if disabled {
 				continue // Skip disabled frontends
@@ -288,7 +288,7 @@ func (e *Evaluator) evaluateServiceDownRule(rule *models.AlertRule, metrics *mod
 			// Check if this service has health monitoring disabled
 			disabled, err := e.db.IsEntityDisabled(rule.BoxID, database.EntityTypeService, name)
 			if err != nil {
-				e.logger.Error("Error checking if service %s is disabled: %v", name, err)
+				e.logger.Error("Error checking if service is disabled", "service", name, "error", err)
 			}
 			if disabled {
 				continue // Skip disabled services
@@ -375,7 +375,7 @@ func (e *Evaluator) isSuppressedByAck(rule *models.AlertRule, affectedEntity str
 	// Get recently acknowledged alerts for this rule and entity
 	recentAckAlert, err := e.db.GetRecentlyAcknowledgedAlertForRule(rule.ID, affectedEntity, config.SuppressMinutes)
 	if err != nil {
-		e.logger.Error("Error checking for recently acknowledged alert: %v", err)
+		e.logger.Error("Error checking for recently acknowledged alert", "error", err)
 		return false
 	}
 
@@ -386,7 +386,7 @@ func (e *Evaluator) triggerAlert(rule *models.AlertRule, value float64, affected
 	// Check for existing active/acknowledged alert for the same rule and entity (deduplication)
 	existingAlert, err := e.db.GetActiveAlertForRuleAndEntity(rule.ID, affectedEntity)
 	if err != nil {
-		e.logger.Error("Error checking for existing alert: %v", err)
+		e.logger.Error("Error checking for existing alert", "error", err)
 	}
 	if existingAlert != nil {
 		// An alert already exists for this incident - don't create a duplicate
@@ -395,7 +395,7 @@ func (e *Evaluator) triggerAlert(rule *models.AlertRule, value float64, affected
 			// Check if value is significantly worse (20% above the acknowledged value)
 			if existingAlert.MetricValue > 0 && value > existingAlert.MetricValue*1.2 {
 				// Condition worsened significantly - create a new alert
-				e.logger.Error("Metric worsened significantly from %.2f to %.2f, creating new alert", existingAlert.MetricValue, value)
+				e.logger.Error("Metric worsened significantly, creating new alert", "previous_value", existingAlert.MetricValue, "current_value", value)
 			} else {
 				return nil
 			}
@@ -430,7 +430,7 @@ func (e *Evaluator) triggerAlert(rule *models.AlertRule, value float64, affected
 	}
 	alert.ID = id
 
-	e.logger.Error("Alert triggered: %s (severity: %s)", alert.Title, alert.Severity)
+	e.logger.Error("Alert triggered", "title", alert.Title, "severity", alert.Severity)
 
 	// Publish event for real-time updates
 	if e.eventHub != nil {
@@ -541,9 +541,9 @@ func (e *Evaluator) ResolveAlertIfConditionCleared(serverID string, mgr *collect
 		// Auto-resolve if condition is no longer met
 		if !conditionMet {
 			if err := e.db.ResolveAlert(alert.ID); err != nil {
-				e.logger.Error("Failed to auto-resolve alert %d: %v", alert.ID, err)
+				e.logger.Error("Failed to auto-resolve alert", "alert_id", alert.ID, "error", err)
 			} else {
-				e.logger.Error("Alert auto-resolved: %s", alert.Title)
+				e.logger.Error("Alert auto-resolved", "title", alert.Title)
 				if e.eventHub != nil {
 					e.eventHub.Publish(events.Event{
 						Type:     "alert.resolved",

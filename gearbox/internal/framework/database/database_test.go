@@ -99,7 +99,7 @@ func TestGetDatabaseStats_Whitelisting(t *testing.T) {
 func TestDisableEntity(t *testing.T) {
 	db := setupTestDB(t)
 	boxID := "test-server-1"
-	userID := int64(1)
+	userID := "user-1"
 
 	err := db.DisableEntity(boxID, EntityTypeBackend, "test-backend", &userID, "Test disable")
 	if err != nil {
@@ -124,15 +124,15 @@ func TestDisableEntity(t *testing.T) {
 		t.Errorf("expected entity type '%s', got %s", EntityTypeBackend, entity.EntityType)
 	}
 
-	if entity.DisabledBy == nil || *entity.DisabledBy != 1 {
-		t.Errorf("expected disabled by 1, got %v", entity.DisabledBy)
+	if entity.DisabledBy == nil || *entity.DisabledBy != "user-1" {
+		t.Errorf("expected disabled by 'user-1', got %v", entity.DisabledBy)
 	}
 }
 
 func TestEnableEntity(t *testing.T) {
 	db := setupTestDB(t)
 	boxID := "test-server-1"
-	userID := int64(1)
+	userID := "user-1"
 
 	// First disable an entity
 	err := db.DisableEntity(boxID, EntityTypeBackend, "test-backend", &userID, "Test disable")
@@ -168,7 +168,7 @@ func TestEnableEntity(t *testing.T) {
 func TestIsEntityDisabled(t *testing.T) {
 	db := setupTestDB(t)
 	boxID := "test-server-1"
-	userID := int64(1)
+	userID := "user-1"
 
 	// Initially not disabled
 	disabled, err := db.IsEntityDisabled(boxID, EntityTypeBackend, "test-backend")

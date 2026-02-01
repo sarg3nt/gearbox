@@ -335,9 +335,7 @@ func (c *UpdatesCollector) parseUnattendedUpgradeOutput(output string) []string 
 			if strings.TrimSpace(line) == "" {
 				break
 			}
-			for _, pkg := range strings.Fields(line) {
-				packages = append(packages, pkg)
-			}
+			packages = append(packages, strings.Fields(line)...)
 		}
 	}
 
@@ -808,11 +806,7 @@ func (c *UpdatesCollector) parsePipxListJSON(output string) ([]PipxPackage, erro
 }
 
 // SearchPyPI searches PyPI for packages (basic implementation).
-func (c *UpdatesCollector) SearchPyPI(query string, limit int) ([]PipxPackage, error) {
-	if limit <= 0 {
-		limit = 20
-	}
-
+func (c *UpdatesCollector) SearchPyPI(query string, _ int) ([]PipxPackage, error) {
 	// Use pip index versions for basic search (limited but works without external API)
 	// For full search, we'd need to query pypi.org/pypi API
 	output, err := c.runCommand("pip", "index", "versions", query)

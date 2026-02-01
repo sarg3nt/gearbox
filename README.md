@@ -1,6 +1,9 @@
 # Gearbox - Universal Monitoring and Management Platform
 
-**Version:** 0.2.0 (Plugin Architecture) | **Last Updated:** 2026-01-31
+**Version:** 0.2.0
+
+> [!WARNING]
+> This project is not ready for public consumption and is under heavy development.
 
 ## Overview
 

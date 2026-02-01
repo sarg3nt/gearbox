@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sarg3nt/gearbox-agent/internal/framework/events"
@@ -166,18 +165,6 @@ func (p *Plugin) GetStreamer() *Streamer {
 // GetCollector returns the log collector for use by other components.
 func (p *Plugin) GetCollector() *Collector {
 	return p.collector
-}
-
-// parseServiceList parses a comma-separated list of service names.
-func parseServiceList(svcParam string) []string {
-	parts := make([]string, 0)
-	for _, s := range strings.Split(svcParam, ",") {
-		s = strings.TrimSpace(s)
-		if s != "" {
-			parts = append(parts, s)
-		}
-	}
-	return parts
 }
 
 // Ensure plugin implements required interfaces.

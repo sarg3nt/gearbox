@@ -596,11 +596,12 @@ func (c *Collector) collectHAProxyCertificates() ([]Certificate, error) {
 		// Determine source based on issuer and cert manager
 		if IsLetsEncrypt(cert.Issuer) {
 			// It's from Let's Encrypt - determine which tool
-			if c.certManager == CertManagerCertbot {
+			switch c.certManager {
+			case CertManagerCertbot:
 				cert.Source = SourceCertbot
-			} else if c.certManager == CertManagerAcmeSH {
+			case CertManagerAcmeSH:
 				cert.Source = SourceAcmeSH
-			} else {
+			default:
 				// Default to certbot for Let's Encrypt certs if manager unknown
 				cert.Source = SourceCertbot
 			}

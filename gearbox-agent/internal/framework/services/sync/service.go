@@ -308,7 +308,9 @@ func (s *Service) setError(err error) {
 	s.mu.Lock()
 	s.lastSyncError = err
 	s.mu.Unlock()
-	s.state.SetError(err)
+	if setErr := s.state.SetError(err); setErr != nil {
+		s.logger.Warn("Failed to persist error state", "error", setErr)
+	}
 	s.logger.Error("Sync error", "error", err)
 
 	// Publish sync failed event

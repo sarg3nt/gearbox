@@ -51,7 +51,7 @@ func (h *Handlers) OSUpdatesPage(w http.ResponseWriter, r *http.Request) {
 	// Build page data
 	data := pages.OSUpdatesPageData{
 		User:     user,
-		ServerID: "", // Will be populated by client-side JS
+		BoxID: "", // Will be populated by client-side JS
 		Servers:  servers,
 		// Other fields will be loaded via HTMX
 		Config:           nil,

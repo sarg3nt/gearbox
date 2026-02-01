@@ -262,7 +262,9 @@ func (s *Streamer) AddListener(sourceName string) {
 	s.mu.Unlock()
 
 	// Start streaming if not already active
-	s.StartSource(sourceName)
+	if err := s.StartSource(sourceName); err != nil {
+		s.logger.Error("failed to start source from listener", "source", sourceName, "error", err)
+	}
 }
 
 // RemoveListener removes a listener for a source.

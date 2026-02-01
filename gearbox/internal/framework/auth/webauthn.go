@@ -44,7 +44,7 @@ type WebAuthnUser struct {
 
 // WebAuthnID returns the user ID as bytes.
 func (u *WebAuthnUser) WebAuthnID() []byte {
-	return []byte(fmt.Sprintf("%d", u.User.ID))
+	return []byte(u.User.ID)
 }
 
 // WebAuthnName returns the user's email as the username.

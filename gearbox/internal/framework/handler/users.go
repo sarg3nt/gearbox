@@ -534,7 +534,7 @@ func (h *Handler) AdminApproveUserPost(w http.ResponseWriter, r *http.Request) {
 
 	// Redirect to permissions page to set up user permissions
 	successMsg := url.QueryEscape(fmt.Sprintf("Account approved for %s. Set up permissions below.", newUser.Email))
-	http.Redirect(w, r, fmt.Sprintf("/settings/permissions/%d?success=%s", newUser.ID, successMsg), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("/settings/permissions/%s?success=%s", newUser.ID, successMsg), http.StatusSeeOther)
 }
 
 // AdminDenyUserPost handles denying an account request.
@@ -747,7 +747,7 @@ func (h *Handler) AdminUpdateUserPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := r.ParseForm(); err != nil {
-		http.Redirect(w, r, fmt.Sprintf("/settings/users/%d?error=Invalid+request", userID), http.StatusSeeOther)
+		http.Redirect(w, r, fmt.Sprintf("/settings/users/%s?error=Invalid+request", userID), http.StatusSeeOther)
 		return
 	}
 
@@ -760,7 +760,7 @@ func (h *Handler) AdminUpdateUserPost(w http.ResponseWriter, r *http.Request) {
 	// Update fields from form
 	newEmail := strings.TrimSpace(r.FormValue("email"))
 	if newEmail == "" {
-		http.Redirect(w, r, fmt.Sprintf("/settings/users/%d?error=Email+is+required", userID), http.StatusSeeOther)
+		http.Redirect(w, r, fmt.Sprintf("/settings/users/%s?error=Email+is+required", userID), http.StatusSeeOther)
 		return
 	}
 
@@ -769,11 +769,11 @@ func (h *Handler) AdminUpdateUserPost(w http.ResponseWriter, r *http.Request) {
 		existingUser, err := h.authManager.GetDB().GetUserByEmail(newEmail)
 		if err != nil {
 			h.logger.Error("Failed to check email uniqueness", "error", err)
-			http.Redirect(w, r, fmt.Sprintf("/settings/users/%d?error=Failed+to+validate+email", userID), http.StatusSeeOther)
+			http.Redirect(w, r, fmt.Sprintf("/settings/users/%s?error=Failed+to+validate+email", userID), http.StatusSeeOther)
 			return
 		}
 		if existingUser != nil && existingUser.ID != targetUser.ID {
-			http.Redirect(w, r, fmt.Sprintf("/settings/users/%d?error=Email+is+already+in+use", userID), http.StatusSeeOther)
+			http.Redirect(w, r, fmt.Sprintf("/settings/users/%s?error=Email+is+already+in+use", userID), http.StatusSeeOther)
 			return
 		}
 	}
@@ -781,14 +781,14 @@ func (h *Handler) AdminUpdateUserPost(w http.ResponseWriter, r *http.Request) {
 	// Validate role
 	role := models.UserRole(r.FormValue("role"))
 	if role != models.RoleAdmin && role != models.RoleReadOnly {
-		http.Redirect(w, r, fmt.Sprintf("/settings/users/%d?error=Invalid+role", userID), http.StatusSeeOther)
+		http.Redirect(w, r, fmt.Sprintf("/settings/users/%s?error=Invalid+role", userID), http.StatusSeeOther)
 		return
 	}
 
 	// Validate status
 	status := models.UserStatus(r.FormValue("status"))
 	if status != models.UserStatusActive && status != models.UserStatusDisabled {
-		http.Redirect(w, r, fmt.Sprintf("/settings/users/%d?error=Invalid+status", userID), http.StatusSeeOther)
+		http.Redirect(w, r, fmt.Sprintf("/settings/users/%s?error=Invalid+status", userID), http.StatusSeeOther)
 		return
 	}
 
@@ -813,7 +813,7 @@ func (h *Handler) AdminUpdateUserPost(w http.ResponseWriter, r *http.Request) {
 	targetUser.Status = status
 
 	if err := h.authManager.GetDB().UpdateUser(targetUser); err != nil {
-		http.Redirect(w, r, fmt.Sprintf("/settings/users/%d?error=%s", userID, url.QueryEscape(err.Error())), http.StatusSeeOther)
+		http.Redirect(w, r, fmt.Sprintf("/settings/users/%s?error=%s", userID, url.QueryEscape(err.Error())), http.StatusSeeOther)
 		return
 	}
 
@@ -822,7 +822,7 @@ func (h *Handler) AdminUpdateUserPost(w http.ResponseWriter, r *http.Request) {
 		h.authManager.LogAudit(r, &admin.ID, "user_updated", fmt.Sprintf("updated user %s: %s", targetUser.Email, strings.Join(changes, ", ")))
 	}
 
-	http.Redirect(w, r, fmt.Sprintf("/settings/users/%d?success=User+updated+successfully", userID), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("/settings/users/%s?success=User+updated+successfully", userID), http.StatusSeeOther)
 }
 
 // AdminForcePasswordResetPost forces a user to reset their password on next login.
@@ -853,18 +853,18 @@ func (h *Handler) AdminForcePasswordResetPost(w http.ResponseWriter, r *http.Req
 
 	// Cannot force password reset on yourself
 	if targetUser.ID == admin.ID {
-		http.Redirect(w, r, fmt.Sprintf("/settings/users/%d?error=Cannot+force+password+reset+on+yourself", userID), http.StatusSeeOther)
+		http.Redirect(w, r, fmt.Sprintf("/settings/users/%s?error=Cannot+force+password+reset+on+yourself", userID), http.StatusSeeOther)
 		return
 	}
 
 	targetUser.MustChangePassword = true
 	if err := h.authManager.GetDB().UpdateUser(targetUser); err != nil {
-		http.Redirect(w, r, fmt.Sprintf("/settings/users/%d?error=%s", userID, url.QueryEscape(err.Error())), http.StatusSeeOther)
+		http.Redirect(w, r, fmt.Sprintf("/settings/users/%s?error=%s", userID, url.QueryEscape(err.Error())), http.StatusSeeOther)
 		return
 	}
 
 	h.authManager.LogAudit(r, &admin.ID, "password_reset_forced", "forced password reset for "+targetUser.Email)
-	http.Redirect(w, r, fmt.Sprintf("/settings/users/%d?success=Password+reset+required+on+next+login", userID), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("/settings/users/%s?success=Password+reset+required+on+next+login", userID), http.StatusSeeOther)
 }
 
 // AdminDeleteUserPost handles deleting a user.
@@ -903,7 +903,7 @@ func (h *Handler) AdminDeleteUserPost(w http.ResponseWriter, r *http.Request) {
 	deletedEmail := targetUser.Email
 
 	if err := h.authManager.GetDB().DeleteUser(userID); err != nil {
-		http.Redirect(w, r, fmt.Sprintf("/settings/users/%d?error=%s", userID, url.QueryEscape(err.Error())), http.StatusSeeOther)
+		http.Redirect(w, r, fmt.Sprintf("/settings/users/%s?error=%s", userID, url.QueryEscape(err.Error())), http.StatusSeeOther)
 		return
 	}
 

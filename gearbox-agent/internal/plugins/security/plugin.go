@@ -585,7 +585,9 @@ func (p *Plugin) handleConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		// Rollback - try to restore from backup
 		if backupPath != "" {
 			if backupContent, readErr := os.ReadFile(backupPath); readErr == nil {
-				os.WriteFile(p.firewallConfig, backupContent, 0644)
+				if restoreErr := os.WriteFile(p.firewallConfig, backupContent, 0644); restoreErr != nil {
+					p.Logger().Error("Failed to restore config from backup", "error", restoreErr)
+				}
 			}
 		}
 		response.Success = false
