@@ -5,7 +5,7 @@ import (
 	"github.com/sarg3nt/gearbox/internal/framework/database"
 )
 
-templ EditorHeader(server *database.ServerDB, config *agent.HAProxyConfigResponse, canEdit bool) {
+templ EditorHeader(server *database.BoxDB, config *agent.HAProxyConfigResponse, canEdit bool) {
 	<!-- Hidden container for page header content -->
 	<div id="page-header-source" class="hidden">
 		<div class="flex items-center">

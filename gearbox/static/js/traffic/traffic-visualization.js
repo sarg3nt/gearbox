@@ -288,10 +288,10 @@ function formatNumber(num) {
 	return num.toString();
 }
 
-function switchServer(serverID) {
-	currentServerID = serverID;
-	if (window.ServerSelector) {
-		window.ServerSelector.setSelectedServer(serverID);
+function switchBox(boxID) {
+	currentBoxID = boxID;
+	if (window.BoxSelector) {
+		window.BoxSelector.setSelectedServer(boxID);
 	}
 	initSSE();
 	refreshTrafficData();
@@ -311,7 +311,7 @@ async function refreshTrafficData(reinitSSE = false) {
 	}
 
 	try {
-		const response = await fetch(`/api/${currentServerID}/traffic?range=${currentTimeRange}`);
+		const response = await fetch(`/api/${currentBoxID}/traffic?range=${currentTimeRange}`);
 		if (!response.ok) {
 			haproxyOnline = false;
 			haproxyError = `HTTP ${response.status}: ${response.statusText}`;
@@ -2260,13 +2260,13 @@ function initSSE() {
 		eventSource.close();
 	}
 
-	if (!currentServerID) {
+	if (!currentBoxID) {
 		return;
 	}
 
 	updateSSEStatus('connecting');
 
-	const sseUrl = `/api/events?server=${currentServerID}`;
+	const sseUrl = `/api/events?server=${currentBoxID}`;
 	eventSource = new EventSource(sseUrl);
 
 	eventSource.addEventListener('connected', function(e) {
@@ -2316,12 +2316,12 @@ document.addEventListener('DOMContentLoaded', function() {
 	const serverSelector = document.getElementById('server-selector');
 	const defaultServerInput = document.getElementById('default-server-id');
 
-	if (serverSelector && window.ServerSelector) {
-		currentServerID = window.ServerSelector.initFromSelect(serverSelector) || serverSelector.value;
+	if (serverSelector && window.BoxSelector) {
+		currentBoxID = window.BoxSelector.initFromSelect(serverSelector) || serverSelector.value;
 	} else if (serverSelector) {
-		currentServerID = serverSelector.value;
+		currentBoxID = serverSelector.value;
 	} else if (defaultServerInput) {
-		currentServerID = defaultServerInput.value;
+		currentBoxID = defaultServerInput.value;
 	}
 
 	// Initialize D3 visualization
@@ -2345,7 +2345,7 @@ document.addEventListener('DOMContentLoaded', function() {
 		}, 250);
 	});
 
-	if (currentServerID) {
+	if (currentBoxID) {
 		initSSE();
 		refreshTrafficData();
 	}
@@ -2354,7 +2354,7 @@ document.addEventListener('DOMContentLoaded', function() {
 window.addEventListener('beforeunload', closeSSE);
 
 document.addEventListener('visibilitychange', function() {
-	if (document.visibilityState === 'visible' && currentServerID) {
+	if (document.visibilityState === 'visible' && currentBoxID) {
 		if (!eventSource || eventSource.readyState === EventSource.CLOSED) {
 			initSSE();
 		}
@@ -2365,7 +2365,7 @@ document.addEventListener('visibilitychange', function() {
 // Event listeners for visualization controls
 const serverSelector = document.getElementById('server-selector');
 if (serverSelector) {
-	serverSelector.addEventListener('change', (e) => switchServer(e.target.value));
+	serverSelector.addEventListener('change', (e) => switchBox(e.target.value));
 }
 
 const timeRangeSelector = document.getElementById('time-range-selector');

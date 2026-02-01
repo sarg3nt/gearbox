@@ -26,14 +26,14 @@ func (h *Handler) HAProxyConfigPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
-	if serverID == "" {
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
 		http.Error(w, "Server ID is required", http.StatusBadRequest)
 		return
 	}
 
 	// Get server from database
-	server, err := h.db.GetServerByServerID(serverID)
+	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		http.Error(w, "Server not found", http.StatusNotFound)
 		return
@@ -62,11 +62,11 @@ func (h *Handler) HAProxyConfigPage(w http.ResponseWriter, r *http.Request) {
 	// Redact sensitive values (e.g., stats auth password) server-side
 	// The original values are stored in the redactor for restoration on save
 	if configResp != nil && h.configRedactor != nil {
-		configResp.Content = h.configRedactor.RedactConfig(serverID, configResp.Content)
+		configResp.Content = h.configRedactor.RedactConfig(boxID, configResp.Content)
 	}
 
 	// Get git config if any
-	gitConfig, _ := h.db.GetServerGitConfig(server.ID, database.ConfigTypeHAProxy)
+	gitConfig, _ := h.db.GetBoxGitConfig(server.ID, database.ConfigTypeHAProxy)
 
 	// Get recent changes
 	changes, _ := h.db.GetConfigChanges(server.ID, database.ConfigTypeHAProxy, 10)
@@ -86,8 +86,8 @@ func (h *Handler) APIHAProxyConfigGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
-	server, err := h.db.GetServerByServerID(serverID)
+	boxID := chi.URLParam(r, "boxID")
+	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		h.jsonError(w, "Server not found", http.StatusNotFound)
 		return
@@ -107,7 +107,7 @@ func (h *Handler) APIHAProxyConfigGet(w http.ResponseWriter, r *http.Request) {
 
 	// Redact sensitive values (e.g., stats auth password) server-side
 	if configResp != nil && h.configRedactor != nil {
-		configResp.Content = h.configRedactor.RedactConfig(serverID, configResp.Content)
+		configResp.Content = h.configRedactor.RedactConfig(boxID, configResp.Content)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -124,8 +124,8 @@ func (h *Handler) APIHAProxyConfigSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
-	server, err := h.db.GetServerByServerID(serverID)
+	boxID := chi.URLParam(r, "boxID")
+	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		h.jsonError(w, "Server not found", http.StatusNotFound)
 		return
@@ -142,7 +142,7 @@ func (h *Handler) APIHAProxyConfigSave(w http.ResponseWriter, r *http.Request) {
 	// If user kept "<redacted>", the original password is restored
 	// If user changed it to a new value, that value is used
 	if h.configRedactor != nil {
-		restored, err := h.configRedactor.RestoreConfig(serverID, req.Content)
+		restored, err := h.configRedactor.RestoreConfig(boxID, req.Content)
 		if err != nil {
 			h.jsonError(w, err.Error(), http.StatusBadRequest)
 			return
@@ -173,7 +173,7 @@ func (h *Handler) APIHAProxyConfigSave(w http.ResponseWriter, r *http.Request) {
 	// Record the change if not a dry run and successful
 	if !req.DryRun && updateResp.Success {
 		change := &database.ConfigChange{
-			HAProxyServerID: server.ID,
+			HAProxyBoxID: server.ID,
 			ConfigType:      database.ConfigTypeHAProxy,
 			ChangeType:      database.ChangeTypeManual,
 			PreviousSHA256:  previousSHA,
@@ -202,8 +202,8 @@ func (h *Handler) APIHAProxyConfigValidate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
-	server, err := h.db.GetServerByServerID(serverID)
+	boxID := chi.URLParam(r, "boxID")
+	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		h.jsonError(w, "Server not found", http.StatusNotFound)
 		return
@@ -218,7 +218,7 @@ func (h *Handler) APIHAProxyConfigValidate(w http.ResponseWriter, r *http.Reques
 
 	// Restore any redacted values before validation
 	if h.configRedactor != nil {
-		restored, err := h.configRedactor.RestoreConfig(serverID, req.Content)
+		restored, err := h.configRedactor.RestoreConfig(boxID, req.Content)
 		if err != nil {
 			h.jsonError(w, err.Error(), http.StatusBadRequest)
 			return
@@ -258,8 +258,8 @@ func (h *Handler) APIHAProxyConfigBackups(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
-	server, err := h.db.GetServerByServerID(serverID)
+	boxID := chi.URLParam(r, "boxID")
+	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		h.jsonError(w, "Server not found", http.StatusNotFound)
 		return
@@ -291,8 +291,8 @@ func (h *Handler) APIHAProxyConfigRestore(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
-	server, err := h.db.GetServerByServerID(serverID)
+	boxID := chi.URLParam(r, "boxID")
+	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		h.jsonError(w, "Server not found", http.StatusNotFound)
 		return
@@ -327,7 +327,7 @@ func (h *Handler) APIHAProxyConfigRestore(w http.ResponseWriter, r *http.Request
 	// Record the change if not a dry run and successful
 	if !req.DryRun && restoreResp.Success {
 		change := &database.ConfigChange{
-			HAProxyServerID: server.ID,
+			HAProxyBoxID: server.ID,
 			ConfigType:      database.ConfigTypeHAProxy,
 			ChangeType:      database.ChangeTypeRestore,
 			PreviousSHA256:  previousSHA,
@@ -355,8 +355,8 @@ func (h *Handler) APIHAProxyConfigHistory(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
-	server, err := h.db.GetServerByServerID(serverID)
+	boxID := chi.URLParam(r, "boxID")
+	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		h.jsonError(w, "Server not found", http.StatusNotFound)
 		return
@@ -374,12 +374,12 @@ func (h *Handler) APIHAProxyConfigHistory(w http.ResponseWriter, r *http.Request
 	})
 }
 
-// ServerGitSettingsPage shows the git settings page for a server.
-func (h *Handler) ServerGitSettingsPage(w http.ResponseWriter, r *http.Request) {
+// BoxGitSettingsPage shows the git settings page for a server.
+func (h *Handler) BoxGitSettingsPage(w http.ResponseWriter, r *http.Request) {
 	user, _ := auth.GetUserFromContext(r.Context())
 
 	// Check permission
-	if !h.authManager.HasPermission(r, models.ComponentSettings, models.PermissionManageServers) {
+	if !h.authManager.HasPermission(r, models.ComponentSettings, models.PermissionManageBoxes) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
@@ -391,29 +391,29 @@ func (h *Handler) ServerGitSettingsPage(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "Invalid server ID", http.StatusBadRequest)
 		return
 	}
-	server, err := h.db.GetServerByID(id)
+	server, err := h.db.GetBoxByID(id)
 	if err != nil || server == nil {
 		http.Error(w, "Server not found", http.StatusNotFound)
 		return
 	}
 
 	// Get git configs for both haproxy and firewall
-	haproxyGitConfig, _ := h.db.GetServerGitConfig(server.ID, database.ConfigTypeHAProxy)
-	firewallGitConfig, _ := h.db.GetServerGitConfig(server.ID, database.ConfigTypeFirewall)
+	haproxyGitConfig, _ := h.db.GetBoxGitConfig(server.ID, database.ConfigTypeHAProxy)
+	firewallGitConfig, _ := h.db.GetBoxGitConfig(server.ID, database.ConfigTypeFirewall)
 
-	component := pages.ServerGitSettingsPage(user, server, haproxyGitConfig, firewallGitConfig, "", "")
+	component := pages.BoxGitSettingsPage(user, server, haproxyGitConfig, firewallGitConfig, "", "")
 	if err := component.Render(r.Context(), w); err != nil {
 		h.logger.Error("Failed to render git settings page", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 	}
 }
 
-// ServerGitSettingsSave saves the git settings for a server.
-func (h *Handler) ServerGitSettingsSave(w http.ResponseWriter, r *http.Request) {
+// BoxGitSettingsSave saves the git settings for a server.
+func (h *Handler) BoxGitSettingsSave(w http.ResponseWriter, r *http.Request) {
 	user, _ := auth.GetUserFromContext(r.Context())
 
 	// Check permission
-	if !h.authManager.HasPermission(r, models.ComponentSettings, models.PermissionManageServers) {
+	if !h.authManager.HasPermission(r, models.ComponentSettings, models.PermissionManageBoxes) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
@@ -425,7 +425,7 @@ func (h *Handler) ServerGitSettingsSave(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "Invalid server ID", http.StatusBadRequest)
 		return
 	}
-	server, err := h.db.GetServerByID(id)
+	server, err := h.db.GetBoxByID(id)
 	if err != nil || server == nil {
 		http.Error(w, "Server not found", http.StatusNotFound)
 		return
@@ -445,8 +445,8 @@ func (h *Handler) ServerGitSettingsSave(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Save HAProxy git config
-	haproxyConfig := &database.ServerGitConfig{
-		HAProxyServerID:     server.ID,
+	haproxyConfig := &database.BoxGitConfig{
+		HAProxyBoxID:     server.ID,
 		ConfigType:          database.ConfigTypeHAProxy,
 		GitRepoURL:          r.FormValue("haproxy_git_repo"),
 		GitBranch:           r.FormValue("haproxy_git_branch"),
@@ -460,24 +460,24 @@ func (h *Handler) ServerGitSettingsSave(w http.ResponseWriter, r *http.Request) 
 		haproxyConfig.GitPATEncrypted, _ = encryptor.EncryptString(pat)
 	} else {
 		// Keep existing PAT if not provided
-		existing, _ := h.db.GetServerGitConfig(server.ID, database.ConfigTypeHAProxy)
+		existing, _ := h.db.GetBoxGitConfig(server.ID, database.ConfigTypeHAProxy)
 		if existing != nil {
 			haproxyConfig.GitPATEncrypted = existing.GitPATEncrypted
 		}
 	}
 
 	if haproxyConfig.GitRepoURL != "" {
-		if err := h.db.SaveServerGitConfig(haproxyConfig); err != nil {
+		if err := h.db.SaveBoxGitConfig(haproxyConfig); err != nil {
 			h.logger.Error("Failed to save HAProxy git config", "error", err)
 		}
 	} else {
 		// Clear config if repo URL is empty
-		h.db.DeleteServerGitConfig(server.ID, database.ConfigTypeHAProxy)
+		h.db.DeleteBoxGitConfig(server.ID, database.ConfigTypeHAProxy)
 	}
 
 	// Save Firewall git config
-	firewallConfig := &database.ServerGitConfig{
-		HAProxyServerID:     server.ID,
+	firewallConfig := &database.BoxGitConfig{
+		HAProxyBoxID:     server.ID,
 		ConfigType:          database.ConfigTypeFirewall,
 		GitRepoURL:          r.FormValue("firewall_git_repo"),
 		GitBranch:           r.FormValue("firewall_git_branch"),
@@ -490,25 +490,25 @@ func (h *Handler) ServerGitSettingsSave(w http.ResponseWriter, r *http.Request) 
 	if pat := r.FormValue("firewall_git_pat"); pat != "" {
 		firewallConfig.GitPATEncrypted, _ = encryptor.EncryptString(pat)
 	} else {
-		existing, _ := h.db.GetServerGitConfig(server.ID, database.ConfigTypeFirewall)
+		existing, _ := h.db.GetBoxGitConfig(server.ID, database.ConfigTypeFirewall)
 		if existing != nil {
 			firewallConfig.GitPATEncrypted = existing.GitPATEncrypted
 		}
 	}
 
 	if firewallConfig.GitRepoURL != "" {
-		if err := h.db.SaveServerGitConfig(firewallConfig); err != nil {
+		if err := h.db.SaveBoxGitConfig(firewallConfig); err != nil {
 			h.logger.Error("Failed to save firewall git config", "error", err)
 		}
 	} else {
-		h.db.DeleteServerGitConfig(server.ID, database.ConfigTypeFirewall)
+		h.db.DeleteBoxGitConfig(server.ID, database.ConfigTypeFirewall)
 	}
 
 	// Log audit
 	h.logAudit(r, user.ID, "git_settings_update", fmt.Sprintf("Updated git settings for server %s", server.Name))
 
 	// Redirect back to settings
-	http.Redirect(w, r, "/settings/servers", http.StatusSeeOther)
+	http.Redirect(w, r, "/settings/boxes", http.StatusSeeOther)
 }
 
 // FirewallConfigPage shows the firewall configuration editor page.
@@ -521,14 +521,14 @@ func (h *Handler) FirewallConfigPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
-	if serverID == "" {
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
 		http.Error(w, "Server ID is required", http.StatusBadRequest)
 		return
 	}
 
 	// Get server from database
-	server, err := h.db.GetServerByServerID(serverID)
+	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		http.Error(w, "Server not found", http.StatusNotFound)
 		return
@@ -555,7 +555,7 @@ func (h *Handler) FirewallConfigPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get git config if any
-	gitConfig, _ := h.db.GetServerGitConfig(server.ID, database.ConfigTypeFirewall)
+	gitConfig, _ := h.db.GetBoxGitConfig(server.ID, database.ConfigTypeFirewall)
 
 	// Get recent changes
 	changes, _ := h.db.GetConfigChanges(server.ID, database.ConfigTypeFirewall, 10)
@@ -575,8 +575,8 @@ func (h *Handler) APIFirewallConfigGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
-	server, err := h.db.GetServerByServerID(serverID)
+	boxID := chi.URLParam(r, "boxID")
+	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		h.jsonError(w, "Server not found", http.StatusNotFound)
 		return
@@ -608,8 +608,8 @@ func (h *Handler) APIFirewallConfigSave(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
-	server, err := h.db.GetServerByServerID(serverID)
+	boxID := chi.URLParam(r, "boxID")
+	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		h.jsonError(w, "Server not found", http.StatusNotFound)
 		return
@@ -645,7 +645,7 @@ func (h *Handler) APIFirewallConfigSave(w http.ResponseWriter, r *http.Request) 
 	// Record the change if not a dry run and successful
 	if !req.DryRun && updateResp.Success {
 		change := &database.ConfigChange{
-			HAProxyServerID: server.ID,
+			HAProxyBoxID: server.ID,
 			ConfigType:      database.ConfigTypeFirewall,
 			ChangeType:      database.ChangeTypeManual,
 			PreviousSHA256:  previousSHA,
@@ -674,8 +674,8 @@ func (h *Handler) APIFirewallConfigValidate(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
-	server, err := h.db.GetServerByServerID(serverID)
+	boxID := chi.URLParam(r, "boxID")
+	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		h.jsonError(w, "Server not found", http.StatusNotFound)
 		return
@@ -715,8 +715,8 @@ func (h *Handler) APIFirewallConfigBackups(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
-	server, err := h.db.GetServerByServerID(serverID)
+	boxID := chi.URLParam(r, "boxID")
+	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		h.jsonError(w, "Server not found", http.StatusNotFound)
 		return
@@ -748,8 +748,8 @@ func (h *Handler) APIFirewallConfigRestore(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
-	server, err := h.db.GetServerByServerID(serverID)
+	boxID := chi.URLParam(r, "boxID")
+	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		h.jsonError(w, "Server not found", http.StatusNotFound)
 		return
@@ -784,7 +784,7 @@ func (h *Handler) APIFirewallConfigRestore(w http.ResponseWriter, r *http.Reques
 	// Record the change if not a dry run and successful
 	if !req.DryRun && restoreResp.Success {
 		change := &database.ConfigChange{
-			HAProxyServerID: server.ID,
+			HAProxyBoxID: server.ID,
 			ConfigType:      database.ConfigTypeFirewall,
 			ChangeType:      database.ChangeTypeRestore,
 			PreviousSHA256:  previousSHA,
@@ -806,7 +806,7 @@ func (h *Handler) APIFirewallConfigRestore(w http.ResponseWriter, r *http.Reques
 
 // Helper methods
 
-func (h *Handler) getAgentClient(server *database.ServerDB) (*agent.Client, error) {
+func (h *Handler) getAgentClient(server *database.BoxDB) (*agent.Client, error) {
 	encryptor, err := h.getEncryptor()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get encryptor: %w", err)

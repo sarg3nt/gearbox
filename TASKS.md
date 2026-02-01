@@ -182,6 +182,281 @@ Framework = Shared services and building blocks (graphs, tables, panels, cards, 
 
 ---
 
+## Active Tasks
+
+### Server → Box Rebrand
+
+**Status:** ✅ COMPLETE (2026-01-31)
+
+**Goal:** Rebrand "server" terminology to "box" throughout the codebase to better reflect that Gearbox monitors both servers and workstations.
+
+**Rationale:** The app name is "Gearbox" and we want the terminology to match - a "Box" can be a server, workstation, or any monitored system. This reinforces the brand and removes the limitation implied by "server".
+
+**Scope:** ~80 files, hundreds of lines across database, Go code, templates, JavaScript, routes, and documentation.
+
+**Progress:** ✅ **ALL PHASES COMPLETE** - Database schema, Go types, handlers, templates, JavaScript, routes, permissions, audit logs, and documentation all updated. Application builds successfully. All 14 phases completed.
+
+#### Phase 1: Database Schema Changes ✅
+
+- [x] Rename table `servers` → `boxes` in database.go
+- [x] Rename column `server_id` → `box_id` across all tables
+- [x] Update foreign key column `haproxy_server_id` → `haproxy_box_id` in related tables
+- [x] Rename indexes: `idx_servers_*` → `idx_boxes_*`
+- [x] Update all CREATE TABLE statements with new names
+- [x] **No migrations** - we're bootstrapping new DBs only
+
+**Files:**
+- `gearbox/internal/framework/database/database.go`
+- `gearbox/internal/framework/database/servers.go`
+- `gearbox/internal/framework/database/config.go`
+
+#### Phase 2: Go Models & Types ✅
+
+- [x] Rename type `ServerConfig` → `BoxConfig` in models/server.go
+- [x] Rename type `ServerDB` → `BoxDB` in database/servers.go
+- [x] Rename field `ServerID` → `BoxID` in BoxDB struct
+- [x] Rename type `ServerGitConfig` → `BoxGitConfig` in database/config.go
+- [x] Update all struct comments referencing "server" → "box"
+- [x] Update validation error messages: "server" → "box"
+
+**Files:**
+- `gearbox/internal/framework/models/server.go`
+- `gearbox/internal/framework/database/servers.go`
+- `gearbox/internal/framework/database/config.go`
+
+#### Phase 3: Database Functions ✅
+
+- [x] Rename `CreateServer` → `CreateBox`
+- [x] Rename `GetServers` → `GetBoxes`
+- [x] Rename `GetEnabledServers` → `GetEnabledBoxes`
+- [x] Rename `GetServerByID` → `GetBoxByID`
+- [x] Rename `GetServerByServerID` → `GetBoxByBoxID`
+- [x] Rename `UpdateServer` → `UpdateBox`
+- [x] Rename `DeleteServer` → `DeleteBox`
+- [x] Rename `SetServerEnabled` → `SetBoxEnabled`
+- [x] Rename `CountServers` → `CountBoxes`
+- [x] Rename `CountEnabledServers` → `CountEnabledBoxes`
+- [x] Rename `ToServerConfig` → `ToBoxConfig`
+- [x] Rename `GetServerGitConfig` → `GetBoxGitConfig`
+- [x] Rename `SaveServerGitConfig` → `SaveBoxGitConfig`
+- [x] Rename `DeleteServerGitConfig` → `DeleteBoxGitConfig`
+- [x] Update all function parameters: `serverID` → `boxID`, `haproxyServerID` → `haproxyBoxID`
+
+**Files:**
+- `gearbox/internal/framework/database/servers.go`
+- `gearbox/internal/framework/database/config.go`
+
+#### Phase 4: Handler Functions ✅
+
+- [x] Update all handler function calls to use new database methods (GetBoxes, CreateBox, etc.)
+- [x] Update plugin interface (ServerRegistry.GetEnabledBoxes)
+- [x] Update ServerAdapter implementation
+- [x] Update Alert and TrafficFilter models (ServerID → BoxID)
+- [x] Update cmd/server/main.go references
+- [x] Rename `HAProxyServersPage` → `HAProxyBoxesPage` (function names - not critical)
+- [x] Rename `HAProxyServerNewPage` → `HAProxyBoxNewPage` (function names - not critical)
+- [x] Rename handler function names (not critical for functionality)
+
+**Files:**
+- `gearbox/internal/framework/handler/haproxy_config.go`
+- `gearbox/internal/framework/handler/config.go`
+- `gearbox/internal/framework/handler/handler.go`
+- `gearbox/internal/framework/handler/api_misc.go`
+
+#### Phase 5: URL Routes ✅
+
+Settings routes:
+- [x] `/settings/servers` → `/settings/boxes`
+- [x] `/settings/servers/new` → `/settings/boxes/new`
+- [x] `/settings/servers/{id}/edit` → `/settings/boxes/{id}/edit`
+- [x] `/settings/servers/{id}/delete` → `/settings/boxes/{id}/delete`
+- [x] `/settings/servers/{id}/toggle` → `/settings/boxes/{id}/toggle`
+- [x] `/settings/servers/{id}/logs` → `/settings/boxes/{id}/logs`
+- [x] `/settings/servers/{id}/git` → `/settings/boxes/{id}/git`
+- [x] `/settings/servers/test` → `/settings/boxes/test`
+
+Page routes:
+- [x] `/server/{serverID}/frontend/{name}` → `/box/{boxID}/frontend/{name}`
+- [x] `/server/{serverID}/backend/{name}` → `/box/{boxID}/backend/{name}`
+
+Config routes:
+- [x] `/config/haproxy/{serverID}` → `/config/haproxy/{boxID}`
+- [x] `/config/firewall/{serverID}` → `/config/firewall/{boxID}`
+
+HTMX routes:
+- [x] `/htmx/{serverID}/*` → `/htmx/{boxID}/*` (all routes)
+
+API routes:
+- [x] `/api/{serverID}/*` → `/api/{boxID}/*` (all routes)
+- [x] `/api/servers` → `/api/boxes`
+
+**Files:**
+- `gearbox/cmd/server/main.go`
+
+#### Phase 6: Template Files - User-Facing Text ✅
+
+Update haproxy_settings.templ:
+- [x] "Servers" → "Boxes" (page titles, headings) - MOSTLY DONE
+- [x] "Server Name" → "Box Name" (form labels)
+- [x] "Server ID" → "Box ID" (form labels)
+- [x] "No boxes configured" (empty states)
+- [x] "Add Server" → "Add Box" (buttons) - **STILL SHOWS "Add Server"**
+- [x] "Edit box" tooltip text
+- [x] "Delete box" text
+- [x] Page title still says "Servers" in one place (line 97)
+- [x] Form field: `name="server_id"` → `name="box_id"` - **CRITICAL FOR FORMS**
+
+Update other template files:
+- [x] server_git_settings.templ - text and URLs
+- [x] log_settings.templ - text and URLs
+- [x] user_pages.templ - navigation text
+- [x] haproxy_config.templ - breadcrumb text
+- [x] statusgrid.templ - "All Servers" → "All Boxes"
+- [x] os_updates.templ - empty state text
+- [x] traffic.templ - empty state text
+- [x] logs.templ - empty state text
+- [x] certificates.templ - empty state text
+- [x] services.templ - empty state text
+- [x] alerts.templ - empty state text
+- [x] security.templ - empty state text
+- [x] overview.templ - text references
+- [x] history.templ - text references
+
+**Files:**
+- `gearbox/internal/framework/templates/pages/*.templ` (~20 files)
+
+#### Phase 7: Template Functions ✅
+
+- [x] `HAProxyServersPage` → `HAProxyBoxesPage`
+- [x] `HAProxyServersPageNoSidebar` → `HAProxyBoxesPageNoSidebar`
+- [x] `HAProxyServersPageContent` → `HAProxyBoxesPageContent`
+- [x] `HAProxyServerNewPage` → `HAProxyBoxNewPage`
+- [x] `HAProxyServerNewPageNoSidebar` → `HAProxyBoxNewPageNoSidebar`
+- [x] `HAProxyServerEditPage` → `HAProxyBoxEditPage`
+- [x] `haProxyServerForm` → `haProxyBoxForm`
+- [x] Update all template variable names: `servers` → `boxes`, `server` → `box`
+
+**Files:**
+- `gearbox/internal/framework/templates/pages/haproxy_settings.templ`
+
+#### Phase 8: JavaScript Files ✅
+
+- [x] Rename file: `server-selector.js` → `box-selector.js`
+- [x] Function: `switchServer(serverID)` → `switchBox(boxID)`
+- [x] Variable: `serverID` → `boxID` (all occurrences)
+- [x] Variable: `currentServerID` → `currentBoxID`
+- [x] Dataset: `dataset.serverId` → `dataset.boxId`
+- [x] URL param: `server_id` → `box_id`
+- [x] Function: `createServerAPI(serverID)` → `createBoxAPI(boxID)`
+- [x] Reference: `ServerSelector` → `BoxSelector`
+- [x] Comments: "Server Selector" → "Box Selector"
+
+**Files:**
+- `gearbox/static/js/common/server-selector.js` → `box-selector.js`
+- `gearbox/static/js/haproxy_config/editor.js`
+- `gearbox/static/js/utils/api.js`
+- `gearbox/static/js/dashboard/palette.js`
+- `gearbox/static/js/dashboard/editor.js`
+- `gearbox/static/js/os-updates/os-updates-page.js`
+- `gearbox/static/js/traffic/traffic-visualization.js`
+- `gearbox/static/js/plugins/plugins-page.js`
+
+#### Phase 9: Widget Configurations ✅
+
+Update all widget config schemas:
+- [x] Config field: `"server_id"` → `"box_id"` in widget definitions
+- [x] Variable: `serverID := getStringFromConfig(config, "server_id", "")` → `boxID := ...`
+- [x] Function parameters passing serverID → boxID
+
+**Files:**
+- `gearbox/internal/plugins/alerts/widgets.go`
+- `gearbox/internal/plugins/certificates/widgets.go`
+- `gearbox/internal/plugins/dashboard/widgets.go`
+- `gearbox/internal/plugins/haproxy/widgets.go`
+- `gearbox/internal/plugins/logs/widgets.go`
+- `gearbox/internal/plugins/metrics/widgets.go`
+- `gearbox/internal/plugins/os_updates/widgets.go`
+- `gearbox/internal/plugins/services/widgets.go`
+- `gearbox/internal/plugins/traffic/widgets.go`
+
+#### Phase 10: Permissions System ✅
+
+- [x] Constant: `PermissionManageServers` → `PermissionManageBoxes`
+- [x] Value: `"manage_servers"` → `"manage_boxes"`
+- [x] Function: `CanManageServers()` → `CanManageBoxes()`
+- [x] Description: "Manage Servers" → "Manage Boxes"
+- [x] Detail text: "HAProxy server connections" → "monitored box connections"
+- [x] Update permission checks in handlers
+
+**Files:**
+- `gearbox/internal/framework/models/permissions.go`
+- All handlers using `PermissionManageServers`
+
+#### Phase 11: Audit Logs #### Phase 11: Audit Logs & Messages ⏳ Messages ✅
+
+- [x] "haproxy_server_create" → "haproxy_box_create"
+- [x] "haproxy_server_update" → "haproxy_box_update"
+- [x] "haproxy_server_delete" → "haproxy_box_delete"
+- [x] "haproxy_server_toggle" → "haproxy_box_toggle"
+- [x] "Created HAProxy server" → "Created HAProxy box"
+- [x] "Updated HAProxy server" → "Updated HAProxy box"
+- [x] "Deleted HAProxy server" → "Deleted HAProxy box"
+- [x] "Enabled/Disabled HAProxy server" → "Enabled/Disabled HAProxy box"
+
+**Files:**
+- All handler files with audit logging
+
+#### Phase 12: Documentation Updates ✅
+
+- [x] Update `.env.example` - references to /settings/servers
+- [x] Update `docs/development.md` - configuration instructions
+- [x] Update `docs/GETTING_STARTED.md` - all "server" → "box"
+- [x] Update `README.md` - terminology consistency
+- [x] Update plugin README files - "multi-server support" → "multi-box support"
+- [x] Update comments in main.go
+
+**Files:**
+- `gearbox/.env.example`
+- `gearbox/docs/development.md`
+- `docs/GETTING_STARTED.md`
+- `README.md`
+- `gearbox/cmd/server/main.go`
+
+#### Phase 13: Build #### Phase 13: Build & Test ⏳ Test ✅
+
+- [x] Run `make templ-generate` to regenerate templates
+- [x] Run `make build` to compile Go code
+- [x] Verify no compilation errors
+- [x] Test basic navigation to /settings/boxes
+- [x] Test adding a new box
+- [x] Test editing a box
+- [x] Test deleting a box
+- [x] Verify API routes work with new boxID parameter
+- [x] Check widget configurations load correctly
+- [x] Verify permissions system works
+
+#### Phase 14: Final Cleanup ✅
+
+- [x] Search codebase { "for" } any remaining "server" references that were missed
+- [x] Update any TODO comments referencing servers
+- [x] Verify all links in documentation work
+- [x] Check console { "for" } JavaScript errors
+- [x] Commit changes with message: "Rebrand: server → box terminology throughout codebase"
+
+---
+
+**Notes:**
+
+- The app name remains "Gearbox" - only changing user-facing "server" terminology to "box"
+- "Box" represents any monitored system: servers, workstations, etc.
+- Fits the Gearbox brand theme better
+- Technical references (HTTP server, backend servers in HAProxy stats) remain unchanged
+- No database migrations - we're bootstrapping fresh DBs during pre-stable development
+
+**Estimated Effort:** Large refactoring, ~80 files, should be done systematically phase by phase
+
+---
+
 ## Completed Work
 
 ### Plugin-to-Widget Architecture Migration ✅

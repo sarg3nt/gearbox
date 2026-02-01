@@ -36,7 +36,7 @@ const (
 	PermissionAction        Permission = "action"         // Perform actions (refresh certs, etc.) (implies view)
 	PermissionDownload      Permission = "download"       // Download files (certificates, etc.) (implies view)
 	PermissionApproveUsers  Permission = "approve_users"  // Approve new user accounts
-	PermissionManageServers Permission = "manage_servers" // Add/edit/delete HAProxy servers
+	PermissionManageBoxes Permission = "manage_boxes" // Add/edit/delete monitored boxes
 )
 
 // PermissionGrant represents a permission granted to a user for a specific component.
@@ -47,7 +47,7 @@ type PermissionGrant struct {
 	Permission  Permission `json:"permission"`
 	GrantedBy   string     `json:"granted_by"` // UUID
 	GrantedAt   time.Time  `json:"granted_at"`
-	ServerID    *string    `json:"server_id,omitempty"` // If permission is server-specific
+	BoxID    *string    `json:"box_id,omitempty"` // If permission is box-specific
 }
 
 // UserPermissions holds all permissions for a user.
@@ -119,9 +119,9 @@ func (up *UserPermissions) CanApproveUsers() bool {
 	return up.IsAdmin || up.HasPermission(ComponentUsers, PermissionApproveUsers)
 }
 
-// CanManageServers checks if user can manage HAProxy server configurations.
-func (up *UserPermissions) CanManageServers() bool {
-	return up.IsAdmin || up.HasPermission(ComponentSettings, PermissionManageServers)
+// CanManageBoxes checks if user can manage monitored box configurations.
+func (up *UserPermissions) CanManageBoxes() bool {
+	return up.IsAdmin || up.HasPermission(ComponentSettings, PermissionManageBoxes)
 }
 
 // GetComponentPermissions returns all permissions for a specific component.
@@ -176,7 +176,7 @@ func GetPermissionTemplates() []PermissionTemplate {
 		},
 		{
 			Name:        "Power User",
-			Description: "Can configure most components except user and server management",
+			Description: "Can configure most components except user and box management",
 			Permissions: map[Component][]Permission{
 				ComponentDisabledEntities: {PermissionManage},
 				ComponentCertificates:     {PermissionView, PermissionConfigure, PermissionDownload, PermissionAction},
@@ -250,7 +250,7 @@ func GetPermissionDisplayName(p Permission) string {
 		PermissionAction:        "Perform Actions",
 		PermissionDownload:      "Download",
 		PermissionApproveUsers:  "Approve Users",
-		PermissionManageServers: "Manage Servers",
+		PermissionManageBoxes: "Manage Boxes",
 	}
 
 	if name, exists := names[p]; exists {
@@ -268,7 +268,7 @@ func GetPermissionDescription(p Permission) string {
 		PermissionAction:        "Perform actions such as refresh certificates, restart services, etc.",
 		PermissionDownload:      "Download certificate files",
 		PermissionApproveUsers:  "Approve or deny new user account requests",
-		PermissionManageServers: "Add, edit, or remove HAProxy server connections",
+		PermissionManageBoxes: "Add, edit, or remove monitored box connections",
 	}
 
 	if desc, exists := descriptions[p]; exists {
@@ -295,7 +295,7 @@ func GetAvailablePermissionsForComponent(c Component) []Permission {
 		}
 	case ComponentSettings:
 		return []Permission{
-			PermissionManageServers, // Add/edit/delete HAProxy servers
+			PermissionManageBoxes, // Add/edit/delete monitored boxes
 		}
 	case ComponentDashboard:
 		// Dashboard is always visible to authenticated users

@@ -232,7 +232,7 @@ type StatusCodeDistribution struct {
 
 // TrafficFilter represents filter options for traffic queries.
 type TrafficFilter struct {
-	ServerID      string    `json:"server_id"`
+	BoxID         string    `json:"box_id"`
 	BackendName   string    `json:"backend_name,omitempty"`
 	FrontendName  string    `json:"frontend_name,omitempty"`
 	SourceIP      string    `json:"source_ip,omitempty"`

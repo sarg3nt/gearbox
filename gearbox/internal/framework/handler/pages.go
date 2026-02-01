@@ -23,23 +23,23 @@ import (
 // FrontendDetailPage serves frontend detail page.
 func (h *Handler) FrontendDetailPage(w http.ResponseWriter, r *http.Request) {
 	frontendName := chi.URLParam(r, "name")
-	serverID := chi.URLParam(r, "serverID")
+	boxID := chi.URLParam(r, "boxID")
 	user, _ := auth.GetUserFromContext(r.Context())
 
-	if serverID == "" {
+	if boxID == "" {
 		http.Error(w, "Server ID required", http.StatusBadRequest)
 		return
 	}
 
 	// Get server configuration
-	serverConfig, exists := h.getServerConfig(serverID)
+	serverConfig, exists := h.getServerConfig(boxID)
 	if !exists {
 		http.Error(w, "Server not found", http.StatusNotFound)
 		return
 	}
 
 	// Get collector for this server
-	collector, exists := h.getCollector(serverID)
+	collector, exists := h.getCollector(boxID)
 	if !exists {
 		http.Error(w, "Server collector not found", http.StatusNotFound)
 		return
@@ -50,7 +50,7 @@ func (h *Handler) FrontendDetailPage(w http.ResponseWriter, r *http.Request) {
 	metadata, _, _ := collector.GetCache().GetMetadata()
 
 	// Render frontend detail template
-	component := pages.FrontendDetail(user, frontendName, stats, metadata, serverID, serverConfig.Name)
+	component := pages.FrontendDetail(user, frontendName, stats, metadata, boxID, serverConfig.Name)
 	if err := component.Render(r.Context(), w); err != nil {
 		h.logger.Error("Failed to render frontend detail template", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -60,23 +60,23 @@ func (h *Handler) FrontendDetailPage(w http.ResponseWriter, r *http.Request) {
 // BackendDetailPage serves backend detail page.
 func (h *Handler) BackendDetailPage(w http.ResponseWriter, r *http.Request) {
 	backendName := chi.URLParam(r, "name")
-	serverID := chi.URLParam(r, "serverID")
+	boxID := chi.URLParam(r, "boxID")
 	user, _ := auth.GetUserFromContext(r.Context())
 
-	if serverID == "" {
+	if boxID == "" {
 		http.Error(w, "Server ID required", http.StatusBadRequest)
 		return
 	}
 
 	// Get server configuration
-	serverConfig, exists := h.getServerConfig(serverID)
+	serverConfig, exists := h.getServerConfig(boxID)
 	if !exists {
 		http.Error(w, "Server not found", http.StatusNotFound)
 		return
 	}
 
 	// Get collector for this server
-	collector, exists := h.getCollector(serverID)
+	collector, exists := h.getCollector(boxID)
 	if !exists {
 		http.Error(w, "Server collector not found", http.StatusNotFound)
 		return
@@ -88,7 +88,7 @@ func (h *Handler) BackendDetailPage(w http.ResponseWriter, r *http.Request) {
 
 	// Get disabled entity status for this backend
 	var disabledEntity *database.DisabledEntity
-	entity, err := h.db.GetDisabledEntity(serverID, database.EntityTypeBackend, backendName)
+	entity, err := h.db.GetDisabledEntity(boxID, database.EntityTypeBackend, backendName)
 	if err != nil {
 		h.logger.Error("Failed to get disabled entity status", "error", err)
 	} else {
@@ -96,7 +96,7 @@ func (h *Handler) BackendDetailPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Render backend detail template
-	component := pages.BackendDetail(user, backendName, stats, metadata, serverID, serverConfig.Name, disabledEntity)
+	component := pages.BackendDetail(user, backendName, stats, metadata, boxID, serverConfig.Name, disabledEntity)
 	if err := component.Render(r.Context(), w); err != nil {
 		h.logger.Error("Failed to render backend detail template", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -105,13 +105,13 @@ func (h *Handler) BackendDetailPage(w http.ResponseWriter, r *http.Request) {
 
 // StatsPartialHandler serves the stats partial for HTMX requests.
 func (h *Handler) StatsPartialHandler(w http.ResponseWriter, r *http.Request) {
-	serverID := chi.URLParam(r, "serverID")
-	if serverID == "" {
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
 		http.Error(w, "Server ID required", http.StatusBadRequest)
 		return
 	}
 
-	collector, exists := h.getCollector(serverID)
+	collector, exists := h.getCollector(boxID)
 	if !exists {
 		http.Error(w, "Server not found", http.StatusNotFound)
 		return
@@ -127,7 +127,7 @@ func (h *Handler) StatsPartialHandler(w http.ResponseWriter, r *http.Request) {
 	metadata, _, _ := collector.GetCache().GetMetadata()
 
 	// Get disabled entities for this server
-	disabledEntities, err := h.db.GetDisabledEntities(serverID)
+	disabledEntities, err := h.db.GetDisabledEntities(boxID)
 	if err != nil {
 		h.logger.Error("Failed to get disabled entities", "error", err)
 		// Continue with empty disabled list rather than failing
@@ -138,7 +138,7 @@ func (h *Handler) StatsPartialHandler(w http.ResponseWriter, r *http.Request) {
 	canManageDisabled := h.authManager.HasPermission(r, models.ComponentDisabledEntities, models.PermissionManage)
 
 	// Render stats partial template
-	component := pages.StatsPartial(stats, serverID, metadata, disabledEntities, canManageDisabled)
+	component := pages.StatsPartial(stats, boxID, metadata, disabledEntities, canManageDisabled)
 	if err := component.Render(r.Context(), w); err != nil {
 		h.logger.Error("Failed to render stats partial template", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -147,13 +147,13 @@ func (h *Handler) StatsPartialHandler(w http.ResponseWriter, r *http.Request) {
 
 // StatusSummaryPartialHandler serves just the status summary doughnuts for HTMX requests.
 func (h *Handler) StatusSummaryPartialHandler(w http.ResponseWriter, r *http.Request) {
-	serverID := chi.URLParam(r, "serverID")
-	if serverID == "" {
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
 		http.Error(w, "Server ID required", http.StatusBadRequest)
 		return
 	}
 
-	collector, exists := h.getCollector(serverID)
+	collector, exists := h.getCollector(boxID)
 	if !exists {
 		http.Error(w, "Server not found", http.StatusNotFound)
 		return
@@ -168,7 +168,7 @@ func (h *Handler) StatusSummaryPartialHandler(w http.ResponseWriter, r *http.Req
 	metadata, _, _ := collector.GetCache().GetMetadata()
 
 	// Get disabled entities for this server
-	disabledEntities, err := h.db.GetDisabledEntities(serverID)
+	disabledEntities, err := h.db.GetDisabledEntities(boxID)
 	if err != nil {
 		h.logger.Error("Failed to get disabled entities", "error", err)
 		disabledEntities = nil
@@ -184,13 +184,13 @@ func (h *Handler) StatusSummaryPartialHandler(w http.ResponseWriter, r *http.Req
 
 // BackendGridPartialHandler serves just the backend grid (without status summary) for HTMX requests.
 func (h *Handler) BackendGridPartialHandler(w http.ResponseWriter, r *http.Request) {
-	serverID := chi.URLParam(r, "serverID")
-	if serverID == "" {
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
 		http.Error(w, "Server ID required", http.StatusBadRequest)
 		return
 	}
 
-	collector, exists := h.getCollector(serverID)
+	collector, exists := h.getCollector(boxID)
 	if !exists {
 		http.Error(w, "Server not found", http.StatusNotFound)
 		return
@@ -206,7 +206,7 @@ func (h *Handler) BackendGridPartialHandler(w http.ResponseWriter, r *http.Reque
 	metadata, _, _ := collector.GetCache().GetMetadata()
 
 	// Get disabled entities for this server
-	disabledEntities, err := h.db.GetDisabledEntities(serverID)
+	disabledEntities, err := h.db.GetDisabledEntities(boxID)
 	if err != nil {
 		h.logger.Error("Failed to get disabled entities", "error", err)
 		disabledEntities = nil
@@ -216,7 +216,7 @@ func (h *Handler) BackendGridPartialHandler(w http.ResponseWriter, r *http.Reque
 	canManageDisabled := h.authManager.HasPermission(r, models.ComponentDisabledEntities, models.PermissionManage)
 
 	// Render backend grid partial template (without status summary)
-	component := pages.BackendGridPartial(stats, serverID, metadata, disabledEntities, canManageDisabled)
+	component := pages.BackendGridPartial(stats, boxID, metadata, disabledEntities, canManageDisabled)
 	if err := component.Render(r.Context(), w); err != nil {
 		h.logger.Error("Failed to render backend grid partial template", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -225,13 +225,13 @@ func (h *Handler) BackendGridPartialHandler(w http.ResponseWriter, r *http.Reque
 
 // MetricsPartialHandler serves the metrics partial for HTMX requests.
 func (h *Handler) MetricsPartialHandler(w http.ResponseWriter, r *http.Request) {
-	serverID := chi.URLParam(r, "serverID")
-	if serverID == "" {
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
 		http.Error(w, "Server ID required", http.StatusBadRequest)
 		return
 	}
 
-	collector, exists := h.getCollector(serverID)
+	collector, exists := h.getCollector(boxID)
 	if !exists {
 		http.Error(w, "Server not found", http.StatusNotFound)
 		return

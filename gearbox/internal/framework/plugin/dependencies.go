@@ -209,9 +209,9 @@ type ServerConfig struct {
 // ServerRegistry provides access to server configurations.
 // Plugins use this instead of direct database access for server information.
 type ServerRegistry interface {
-	// GetEnabledServers returns all servers that are currently enabled.
+	// GetEnabledBoxes returns all boxes that are currently enabled.
 	// Returns simplified ServerConfig for plugin use.
-	GetEnabledServers() []ServerConfig
+	GetEnabledBoxes() []ServerConfig
 
 	// GetServer returns a specific server by ID.
 	GetServer(id string) (*ServerConfig, bool)
@@ -231,7 +231,7 @@ type FullServerRegistry interface {
 }
 
 // FullServerConfig represents a complete server configuration.
-// This mirrors models.ServerConfig for use in plugins and templates.
+// This mirrors models.BoxConfig for use in plugins and templates.
 type FullServerConfig struct {
 	ID       string
 	Name     string

@@ -68,7 +68,7 @@ func cpuUsageGraphDefinition() *widget.WidgetDefinition {
 		Icon:        "cpu",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
-				"server_id": {
+				"box_id": {
 					Type:        "string",
 					Description: "Server ID to monitor (optional, uses current server if not specified)",
 				},
@@ -86,10 +86,10 @@ func cpuUsageGraphDefinition() *widget.WidgetDefinition {
 			Required: []string{},
 		},
 		Renderer: func(ctx context.Context, config map[string]any, data any) (templ.Component, error) {
-			serverID := getStringFromConfig(config, "server_id", "")
+			boxID := getStringFromConfig(config, "box_id", "")
 			refreshSeconds := getIntFromConfig(config, "refresh_seconds", 5)
 			showTitle := getBoolFromConfig(config, "show_title", true)
-			return CPUUsageGraphWidget(serverID, refreshSeconds, showTitle), nil
+			return CPUUsageGraphWidget(boxID, refreshSeconds, showTitle), nil
 		},
 	}
 }
@@ -106,7 +106,7 @@ func memoryUsageGraphDefinition() *widget.WidgetDefinition {
 		Icon:        "database",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
-				"server_id": {
+				"box_id": {
 					Type:        "string",
 					Description: "Server ID to monitor (optional, uses current server if not specified)",
 				},
@@ -124,10 +124,10 @@ func memoryUsageGraphDefinition() *widget.WidgetDefinition {
 			Required: []string{},
 		},
 		Renderer: func(ctx context.Context, config map[string]any, data any) (templ.Component, error) {
-			serverID := getStringFromConfig(config, "server_id", "")
+			boxID := getStringFromConfig(config, "box_id", "")
 			refreshSeconds := getIntFromConfig(config, "refresh_seconds", 5)
 			showTitle := getBoolFromConfig(config, "show_title", true)
-			return MemoryUsageGraphWidget(serverID, refreshSeconds, showTitle), nil
+			return MemoryUsageGraphWidget(boxID, refreshSeconds, showTitle), nil
 		},
 	}
 }
@@ -144,7 +144,7 @@ func diskUsageGraphDefinition() *widget.WidgetDefinition {
 		Icon:        "hard-drive",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
-				"server_id": {
+				"box_id": {
 					Type:        "string",
 					Description: "Server ID to monitor (optional, uses current server if not specified)",
 				},
@@ -162,10 +162,10 @@ func diskUsageGraphDefinition() *widget.WidgetDefinition {
 			Required: []string{},
 		},
 		Renderer: func(ctx context.Context, config map[string]any, data any) (templ.Component, error) {
-			serverID := getStringFromConfig(config, "server_id", "")
+			boxID := getStringFromConfig(config, "box_id", "")
 			refreshSeconds := getIntFromConfig(config, "refresh_seconds", 30)
 			showTitle := getBoolFromConfig(config, "show_title", true)
-			return DiskUsageGraphWidget(serverID, refreshSeconds, showTitle), nil
+			return DiskUsageGraphWidget(boxID, refreshSeconds, showTitle), nil
 		},
 	}
 }
@@ -182,7 +182,7 @@ func diskIOGraphDefinition() *widget.WidgetDefinition {
 		Icon:        "activity",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
-				"server_id": {
+				"box_id": {
 					Type:        "string",
 					Description: "Server ID to monitor (optional, uses current server if not specified)",
 				},
@@ -200,10 +200,10 @@ func diskIOGraphDefinition() *widget.WidgetDefinition {
 			Required: []string{},
 		},
 		Renderer: func(ctx context.Context, config map[string]any, data any) (templ.Component, error) {
-			serverID := getStringFromConfig(config, "server_id", "")
+			boxID := getStringFromConfig(config, "box_id", "")
 			refreshSeconds := getIntFromConfig(config, "refresh_seconds", 5)
 			showTitle := getBoolFromConfig(config, "show_title", true)
-			return DiskIOGraphWidget(serverID, refreshSeconds, showTitle), nil
+			return DiskIOGraphWidget(boxID, refreshSeconds, showTitle), nil
 		},
 	}
 }
@@ -220,7 +220,7 @@ func networkTrafficGraphDefinition() *widget.WidgetDefinition {
 		Icon:        "wifi",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
-				"server_id": {
+				"box_id": {
 					Type:        "string",
 					Description: "Server ID to monitor (optional, uses current server if not specified)",
 				},
@@ -238,10 +238,10 @@ func networkTrafficGraphDefinition() *widget.WidgetDefinition {
 			Required: []string{},
 		},
 		Renderer: func(ctx context.Context, config map[string]any, data any) (templ.Component, error) {
-			serverID := getStringFromConfig(config, "server_id", "")
+			boxID := getStringFromConfig(config, "box_id", "")
 			refreshSeconds := getIntFromConfig(config, "refresh_seconds", 5)
 			showTitle := getBoolFromConfig(config, "show_title", true)
-			return NetworkTrafficGraphWidget(serverID, refreshSeconds, showTitle), nil
+			return NetworkTrafficGraphWidget(boxID, refreshSeconds, showTitle), nil
 		},
 	}
 }
@@ -258,7 +258,7 @@ func loadAverageGraphDefinition() *widget.WidgetDefinition {
 		Icon:        "trending-up",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
-				"server_id": {
+				"box_id": {
 					Type:        "string",
 					Description: "Server ID to monitor (optional, uses current server if not specified)",
 				},
@@ -276,10 +276,10 @@ func loadAverageGraphDefinition() *widget.WidgetDefinition {
 			Required: []string{},
 		},
 		Renderer: func(ctx context.Context, config map[string]any, data any) (templ.Component, error) {
-			serverID := getStringFromConfig(config, "server_id", "")
+			boxID := getStringFromConfig(config, "box_id", "")
 			refreshSeconds := getIntFromConfig(config, "refresh_seconds", 5)
 			showTitle := getBoolFromConfig(config, "show_title", true)
-			return LoadAverageGraphWidget(serverID, refreshSeconds, showTitle), nil
+			return LoadAverageGraphWidget(boxID, refreshSeconds, showTitle), nil
 		},
 	}
 }
@@ -296,7 +296,7 @@ func uptimeDisplayDefinition() *widget.WidgetDefinition {
 		Icon:        "clock",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
-				"server_id": {
+				"box_id": {
 					Type:        "string",
 					Description: "Server ID to monitor (optional, uses current server if not specified)",
 				},
@@ -314,10 +314,10 @@ func uptimeDisplayDefinition() *widget.WidgetDefinition {
 			Required: []string{},
 		},
 		Renderer: func(ctx context.Context, config map[string]any, data any) (templ.Component, error) {
-			serverID := getStringFromConfig(config, "server_id", "")
+			boxID := getStringFromConfig(config, "box_id", "")
 			refreshSeconds := getIntFromConfig(config, "refresh_seconds", 60)
 			showTitle := getBoolFromConfig(config, "show_title", true)
-			return UptimeDisplayWidget(serverID, refreshSeconds, showTitle), nil
+			return UptimeDisplayWidget(boxID, refreshSeconds, showTitle), nil
 		},
 	}
 }

@@ -1,5 +1,5 @@
 		// Read server ID and config SHA from hidden inputs (Templ doesn't interpolate inside script tags)
-		const serverID = document.getElementById('server-id-source')?.value || '';
+		const boxID = document.getElementById('server-id-source')?.value || '';
 		let currentSHA = document.getElementById('config-sha-source')?.value || '';
 		let fullscreenState = 0;
 		let autoGenSections = []; // Store auto-generated sections
@@ -1239,7 +1239,7 @@ May your configs be valid and your uptime eternal. 🙏`
 		function downloadConfig() {
 			const content = getFullConfig();
 			const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-			const filename = `haproxy-${serverID}-${timestamp}.cfg`;
+			const filename = `haproxy-${boxID}-${timestamp}.cfg`;
 
 			const blob = new Blob([content], { type: 'text/plain' });
 			const url = URL.createObjectURL(blob);
@@ -1271,7 +1271,7 @@ May your configs be valid and your uptime eternal. 🙏`
 			const content = getFullConfig();
 
 			try {
-				const response = await fetch(`/api/${serverID}/haproxy/config/validate`, {
+				const response = await fetch(`/api/${boxID}/haproxy/config/validate`, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ content: content, dry_run: true })
@@ -1351,7 +1351,7 @@ May your configs be valid and your uptime eternal. 🙏`
 
 		async function doSaveConfig(content, reason) {
 			try {
-				const apiUrl = `/api/${serverID}/haproxy/config`;
+				const apiUrl = `/api/${boxID}/haproxy/config`;
 				const response = await fetch(apiUrl, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
@@ -1393,7 +1393,7 @@ May your configs be valid and your uptime eternal. 🙏`
 			modal.classList.remove('hidden');
 
 			try {
-				const response = await fetch(`/api/${serverID}/haproxy/config/backups`);
+				const response = await fetch(`/api/${boxID}/haproxy/config/backups`);
 				const data = await response.json();
 
 				if (data.backups && data.backups.length > 0) {
@@ -1433,7 +1433,7 @@ May your configs be valid and your uptime eternal. 🙏`
 			}
 
 			try {
-				const response = await fetch(`/api/${serverID}/haproxy/config/restore`, {
+				const response = await fetch(`/api/${boxID}/haproxy/config/restore`, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ backup_id: backupID })

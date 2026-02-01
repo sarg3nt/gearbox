@@ -74,12 +74,12 @@ func (h *Handler) LoginPost(w http.ResponseWriter, r *http.Request) {
 
 	// If admin user and no HAProxy servers configured, redirect to server setup
 	if user.Role == models.RoleAdmin {
-		count, err := h.db.CountEnabledServers()
+		count, err := h.db.CountEnabledBoxes()
 		if err != nil {
 			h.logger.Error("Failed to count HAProxy servers", "error", err)
 		} else if count == 0 {
 			h.logger.Info("admin user logged in but no HAProxy servers configured, redirecting to setup", "email", email)
-			http.Redirect(w, r, "/settings/servers/new", http.StatusSeeOther)
+			http.Redirect(w, r, "/settings/boxes/new", http.StatusSeeOther)
 			return
 		}
 	}

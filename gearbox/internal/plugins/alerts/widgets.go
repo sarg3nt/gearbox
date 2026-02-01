@@ -55,7 +55,7 @@ func activeAlertsCardDefinition() *widget.WidgetDefinition {
 		Icon:        "alert-triangle",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
-				"server_id": {
+				"box_id": {
 					Type:        "string",
 					Description: "Server ID to monitor (optional, uses current server if not specified)",
 				},
@@ -63,8 +63,8 @@ func activeAlertsCardDefinition() *widget.WidgetDefinition {
 			Required: []string{},
 		},
 		Renderer: func(ctx context.Context, config map[string]any, data any) (templ.Component, error) {
-			serverID := getStringFromConfig(config, "server_id", "")
-			return ActiveAlertsCardWidget(serverID), nil
+			boxID := getStringFromConfig(config, "box_id", "")
+			return ActiveAlertsCardWidget(boxID), nil
 		},
 	}
 }
@@ -81,7 +81,7 @@ func acknowledgedAlertsCardDefinition() *widget.WidgetDefinition {
 		Icon:        "check-circle",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
-				"server_id": {
+				"box_id": {
 					Type:        "string",
 					Description: "Server ID to monitor (optional, uses current server if not specified)",
 				},
@@ -89,8 +89,8 @@ func acknowledgedAlertsCardDefinition() *widget.WidgetDefinition {
 			Required: []string{},
 		},
 		Renderer: func(ctx context.Context, config map[string]any, data any) (templ.Component, error) {
-			serverID := getStringFromConfig(config, "server_id", "")
-			return AcknowledgedAlertsCardWidget(serverID), nil
+			boxID := getStringFromConfig(config, "box_id", "")
+			return AcknowledgedAlertsCardWidget(boxID), nil
 		},
 	}
 }
@@ -107,7 +107,7 @@ func resolvedAlertsCardDefinition() *widget.WidgetDefinition {
 		Icon:        "check-square",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
-				"server_id": {
+				"box_id": {
 					Type:        "string",
 					Description: "Server ID to monitor (optional, uses current server if not specified)",
 				},
@@ -115,8 +115,8 @@ func resolvedAlertsCardDefinition() *widget.WidgetDefinition {
 			Required: []string{},
 		},
 		Renderer: func(ctx context.Context, config map[string]any, data any) (templ.Component, error) {
-			serverID := getStringFromConfig(config, "server_id", "")
-			return ResolvedAlertsCardWidget(serverID), nil
+			boxID := getStringFromConfig(config, "box_id", "")
+			return ResolvedAlertsCardWidget(boxID), nil
 		},
 	}
 }
@@ -133,7 +133,7 @@ func alertRulesCardDefinition() *widget.WidgetDefinition {
 		Icon:        "sliders",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
-				"server_id": {
+				"box_id": {
 					Type:        "string",
 					Description: "Server ID to monitor (optional, uses current server if not specified)",
 				},
@@ -141,8 +141,8 @@ func alertRulesCardDefinition() *widget.WidgetDefinition {
 			Required: []string{},
 		},
 		Renderer: func(ctx context.Context, config map[string]any, data any) (templ.Component, error) {
-			serverID := getStringFromConfig(config, "server_id", "")
-			return AlertRulesCardWidget(serverID), nil
+			boxID := getStringFromConfig(config, "box_id", "")
+			return AlertRulesCardWidget(boxID), nil
 		},
 	}
 }
@@ -159,7 +159,7 @@ func alertsGridDefinition() *widget.WidgetDefinition {
 		Icon:        "list",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
-				"server_id": {
+				"box_id": {
 					Type:        "string",
 					Description: "Server ID to monitor (optional, uses current server if not specified)",
 				},
@@ -178,10 +178,10 @@ func alertsGridDefinition() *widget.WidgetDefinition {
 			Required: []string{},
 		},
 		Renderer: func(ctx context.Context, config map[string]any, data any) (templ.Component, error) {
-			serverID := getStringFromConfig(config, "server_id", "")
+			boxID := getStringFromConfig(config, "box_id", "")
 			showFilters := getBoolFromConfig(config, "show_filters", false)
 			defaultStatus := getStringFromConfig(config, "default_status", "active")
-			return AlertsGridWidget(serverID, showFilters, defaultStatus), nil
+			return AlertsGridWidget(boxID, showFilters, defaultStatus), nil
 		},
 		TopBarControlsProvider: func(ctx *widget.WidgetRenderContext, config map[string]any) []widget.TopBarControl {
 			// Only provide top bar controls if in-widget filters are disabled

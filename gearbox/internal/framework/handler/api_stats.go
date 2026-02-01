@@ -11,13 +11,13 @@ import (
 
 // APIStatsHandler returns HAProxy stats as JSON.
 func (h *Handler) APIStatsHandler(w http.ResponseWriter, r *http.Request) {
-	serverID := chi.URLParam(r, "serverID")
-	if serverID == "" {
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
 		http.Error(w, "Server ID required", http.StatusBadRequest)
 		return
 	}
 
-	collector, exists := h.getCollector(serverID)
+	collector, exists := h.getCollector(boxID)
 	if !exists {
 		http.Error(w, "Server not found", http.StatusNotFound)
 		return
@@ -40,13 +40,13 @@ func (h *Handler) APIStatsHandler(w http.ResponseWriter, r *http.Request) {
 
 // APIMetadataHandler returns metadata as JSON.
 func (h *Handler) APIMetadataHandler(w http.ResponseWriter, r *http.Request) {
-	serverID := chi.URLParam(r, "serverID")
-	if serverID == "" {
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
 		http.Error(w, "Server ID required", http.StatusBadRequest)
 		return
 	}
 
-	collector, exists := h.getCollector(serverID)
+	collector, exists := h.getCollector(boxID)
 	if !exists {
 		http.Error(w, "Server not found", http.StatusNotFound)
 		return
@@ -75,13 +75,13 @@ func (h *Handler) APISystemMetricsHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
-	if serverID == "" {
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
 		http.Error(w, "Server ID required", http.StatusBadRequest)
 		return
 	}
 
-	collector, exists := h.getCollector(serverID)
+	collector, exists := h.getCollector(boxID)
 	if !exists {
 		http.Error(w, "Server not found", http.StatusNotFound)
 		return
@@ -104,8 +104,8 @@ func (h *Handler) APISystemMetricsHandler(w http.ResponseWriter, r *http.Request
 
 // APIStatsHistoryHandler returns historical stats data.
 func (h *Handler) APIStatsHistoryHandler(w http.ResponseWriter, r *http.Request) {
-	serverID := chi.URLParam(r, "serverID")
-	if serverID == "" {
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
 		http.Error(w, "Server ID required", http.StatusBadRequest)
 		return
 	}
@@ -127,7 +127,7 @@ func (h *Handler) APIStatsHistoryHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	since := time.Now().Add(-time.Duration(hours) * time.Hour)
-	history, err := h.db.GetStatsHistory(serverID, since, limit)
+	history, err := h.db.GetStatsHistory(boxID, since, limit)
 	if err != nil {
 		h.logger.Error("Failed to get stats history", "error", err)
 		http.Error(w, "Failed to get history", http.StatusInternalServerError)
@@ -135,7 +135,7 @@ func (h *Handler) APIStatsHistoryHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	h.writeJSON(w, map[string]interface{}{
-		"server_id": serverID,
+		"server_id": boxID,
 		"hours":     hours,
 		"count":     len(history),
 		"data":      history,
@@ -150,10 +150,10 @@ func (h *Handler) APIBackendHistoryHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
+	boxID := chi.URLParam(r, "boxID")
 	backendName := chi.URLParam(r, "backendName")
 
-	if serverID == "" || backendName == "" {
+	if boxID == "" || backendName == "" {
 		http.Error(w, "Server ID and backend name required", http.StatusBadRequest)
 		return
 	}
@@ -175,7 +175,7 @@ func (h *Handler) APIBackendHistoryHandler(w http.ResponseWriter, r *http.Reques
 	}
 
 	since := time.Now().Add(-time.Duration(hours) * time.Hour)
-	history, err := h.db.GetBackendHistory(serverID, backendName, since, limit)
+	history, err := h.db.GetBackendHistory(boxID, backendName, since, limit)
 	if err != nil {
 		h.logger.Error("Failed to get backend history", "error", err)
 		http.Error(w, "Failed to get history", http.StatusInternalServerError)
@@ -183,7 +183,7 @@ func (h *Handler) APIBackendHistoryHandler(w http.ResponseWriter, r *http.Reques
 	}
 
 	h.writeJSON(w, map[string]interface{}{
-		"server_id":    serverID,
+		"server_id":    boxID,
 		"backend_name": backendName,
 		"hours":        hours,
 		"count":        len(history),
@@ -199,8 +199,8 @@ func (h *Handler) APISystemMetricsHistoryHandler(w http.ResponseWriter, r *http.
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
-	if serverID == "" {
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
 		http.Error(w, "Server ID required", http.StatusBadRequest)
 		return
 	}
@@ -222,7 +222,7 @@ func (h *Handler) APISystemMetricsHistoryHandler(w http.ResponseWriter, r *http.
 	}
 
 	since := time.Now().Add(-time.Duration(hours) * time.Hour)
-	history, err := h.db.GetSystemMetricsHistory(serverID, since, limit)
+	history, err := h.db.GetSystemMetricsHistory(boxID, since, limit)
 	if err != nil {
 		h.logger.Error("Failed to get system metrics history", "error", err)
 		http.Error(w, "Failed to get history", http.StatusInternalServerError)
@@ -230,7 +230,7 @@ func (h *Handler) APISystemMetricsHistoryHandler(w http.ResponseWriter, r *http.
 	}
 
 	h.writeJSON(w, map[string]interface{}{
-		"server_id": serverID,
+		"server_id": boxID,
 		"hours":     hours,
 		"count":     len(history),
 		"data":      history,

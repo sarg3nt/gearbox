@@ -271,7 +271,7 @@ func (d *DB) GetTrafficSources(filter *models.TrafficFilter) ([]models.TrafficSo
 		FROM traffic_flows
 		WHERE server_id = ? AND source_ip != '_aggregate' AND source_ip != '_unknown'
 	`
-	args := []interface{}{filter.ServerID}
+	args := []interface{}{filter.BoxID}
 
 	if filter.BackendName != "" {
 		query += " AND backend_name = ?"
@@ -389,7 +389,7 @@ func (d *DB) GetTrafficByBackend(filter *models.TrafficFilter) ([]models.Traffic
 		FROM traffic_flows
 		WHERE server_id = ?
 	`
-	args := []interface{}{filter.ServerID}
+	args := []interface{}{filter.BoxID}
 
 	if !filter.StartTime.IsZero() {
 		query += " AND bucket_time >= ?"
@@ -452,7 +452,7 @@ func (d *DB) GetTrafficByCountry(filter *models.TrafficFilter) ([]models.Traffic
 		FROM traffic_flows
 		WHERE server_id = ?
 	`
-	args := []interface{}{filter.ServerID}
+	args := []interface{}{filter.BoxID}
 
 	if !filter.StartTime.IsZero() {
 		query += " AND bucket_time >= ?"
@@ -526,7 +526,7 @@ func (d *DB) GetHourlyTraffic(filter *models.TrafficFilter) ([]models.HourlyTraf
 		FROM traffic_flows
 		WHERE server_id = ?
 	`
-	args := []interface{}{filter.ServerID}
+	args := []interface{}{filter.BoxID}
 
 	if !filter.StartTime.IsZero() {
 		query += " AND bucket_time >= ?"
@@ -811,7 +811,7 @@ func (d *DB) GetRecentTrafficFlows(filter *models.TrafficFilter) ([]models.Traff
 		FROM traffic_flows
 		WHERE server_id = ?
 	`
-	args := []interface{}{filter.ServerID}
+	args := []interface{}{filter.BoxID}
 
 	if filter.BackendName != "" {
 		query += " AND backend_name = ?"

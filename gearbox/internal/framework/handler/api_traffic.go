@@ -22,13 +22,13 @@ func (h *Handler) APITrafficAnalysisHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
-	if serverID == "" {
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
 		http.Error(w, "Server ID required", http.StatusBadRequest)
 		return
 	}
 
-	serverConfig, exists := h.getServerConfig(serverID)
+	serverConfig, exists := h.getServerConfig(boxID)
 	if !exists || !serverConfig.UsesAgentAPI() {
 		http.Error(w, "Agent API not configured", http.StatusServiceUnavailable)
 		return
@@ -59,7 +59,7 @@ func (h *Handler) APITrafficAnalysisHandler(w http.ResponseWriter, r *http.Reque
 
 	// Persist live traffic data to database for historical viewing
 	// This runs in background to not slow down the API response
-	go h.persistTrafficData(serverID, trafficData)
+	go h.persistTrafficData(boxID, trafficData)
 
 	// Try to get historical data from database
 	var historicalSources []models.TrafficSourceStats
@@ -85,7 +85,7 @@ func (h *Handler) APITrafficAnalysisHandler(w http.ResponseWriter, r *http.Reque
 	}
 
 	filter := &models.TrafficFilter{
-		ServerID:  serverID,
+		BoxID:  boxID,
 		StartTime: since,
 		EndTime:   time.Now(),
 		Limit:     25,
@@ -123,7 +123,7 @@ func (h *Handler) APITrafficAnalysisHandler(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Get traffic integration config for bandwidth settings
-	trafficConfig, err := h.db.GetTrafficConfig(serverID)
+	trafficConfig, err := h.db.GetTrafficConfig(boxID)
 	if err != nil {
 		h.logger.Error("Failed to get traffic config", "error", err)
 		// Use defaults
@@ -135,7 +135,7 @@ func (h *Handler) APITrafficAnalysisHandler(w http.ResponseWriter, r *http.Reque
 
 	// Build response
 	response := map[string]interface{}{
-		"server_id":         serverID,
+		"server_id":         boxID,
 		"collected_at":      time.Now(),
 		"time_range":        timeRange,
 		"live_data":         trafficData,
@@ -165,8 +165,8 @@ func (h *Handler) APITrafficSourcesHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
-	if serverID == "" {
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
 		http.Error(w, "Server ID required", http.StatusBadRequest)
 		return
 	}
@@ -196,7 +196,7 @@ func (h *Handler) APITrafficSourcesHandler(w http.ResponseWriter, r *http.Reques
 	}
 
 	filter := &models.TrafficFilter{
-		ServerID:  serverID,
+		BoxID:  boxID,
 		StartTime: since,
 		EndTime:   time.Now(),
 		Limit:     limit,
@@ -212,7 +212,7 @@ func (h *Handler) APITrafficSourcesHandler(w http.ResponseWriter, r *http.Reques
 	}
 
 	response := map[string]interface{}{
-		"server_id": serverID,
+		"server_id": boxID,
 		"sources":   sources,
 		"count":     len(sources),
 	}
@@ -228,13 +228,13 @@ func (h *Handler) APITrafficNetworkHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
-	if serverID == "" {
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
 		http.Error(w, "Server ID required", http.StatusBadRequest)
 		return
 	}
 
-	serverConfig, exists := h.getServerConfig(serverID)
+	serverConfig, exists := h.getServerConfig(boxID)
 	if !exists || !serverConfig.UsesAgentAPI() {
 		http.Error(w, "Agent API not configured", http.StatusServiceUnavailable)
 		return
@@ -256,7 +256,7 @@ func (h *Handler) APITrafficNetworkHandler(w http.ResponseWriter, r *http.Reques
 	nodes, edges := buildNetworkVisualizationFromLiveData(trafficData)
 
 	response := map[string]interface{}{
-		"server_id":    serverID,
+		"server_id":    boxID,
 		"collected_at": time.Now(),
 		"nodes":        nodes,
 		"edges":        edges,
@@ -483,7 +483,7 @@ func (h *Handler) enrichTrafficSourcesWithGeoIP(trafficData *agent.TrafficRespon
 // persistTrafficData saves live traffic data to the database for historical viewing.
 // This runs in background so it doesn't slow down API responses.
 // HAProxy provides cumulative counters, so we calculate deltas to get per-period values.
-func (h *Handler) persistTrafficData(serverID string, trafficData *agent.TrafficResponse) {
+func (h *Handler) persistTrafficData(boxID string, trafficData *agent.TrafficResponse) {
 	if trafficData == nil {
 		return
 	}
@@ -527,7 +527,7 @@ func (h *Handler) persistTrafficData(serverID string, trafficData *agent.Traffic
 		}
 
 		// Calculate delta from previous snapshot
-		key := serverID + ":" + source.IPAddress + ":" + backendName
+		key := boxID + ":" + source.IPAddress + ":" + backendName
 		currentRequests := source.Requests + source.HTTPRequestRate
 		currentBytesIn := source.BytesIn
 		currentBytesOut := source.BytesOut
@@ -564,7 +564,7 @@ func (h *Handler) persistTrafficData(serverID string, trafficData *agent.Traffic
 		// Only save if there's actual activity
 		if deltaRequests > 0 || deltaBytesIn > 0 || deltaBytesOut > 0 {
 			flow := models.TrafficFlow{
-				ServerID:        serverID,
+				ServerID:        boxID,
 				SourceIP:        source.IPAddress,
 				Country:         source.Country,
 				CountryCode:     source.CountryCode,
@@ -598,7 +598,7 @@ func (h *Handler) persistTrafficData(serverID string, trafficData *agent.Traffic
 
 	// Save backend traffic statistics as aggregate records with delta calculation
 	for _, bt := range trafficData.BackendTraffic {
-		key := serverID + ":" + bt.Name
+		key := boxID + ":" + bt.Name
 
 		// Calculate deltas from previous values
 		var deltaRequests, deltaBytesIn, deltaBytesOut int64
@@ -659,7 +659,7 @@ func (h *Handler) persistTrafficData(serverID string, trafficData *agent.Traffic
 		// Only save if there's actual activity
 		if deltaRequests > 0 || deltaBytesIn > 0 || deltaBytesOut > 0 {
 			flow := models.TrafficFlow{
-				ServerID:        serverID,
+				ServerID:        boxID,
 				SourceIP:        "_aggregate", // Special marker for aggregate data
 				Country:         "Aggregate",
 				CountryCode:     "AG",

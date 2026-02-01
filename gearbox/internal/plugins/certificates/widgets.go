@@ -62,7 +62,7 @@ func certExpirySummaryDefinition() *widget.WidgetDefinition {
 		Icon:        "shield",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
-				"server_id": {
+				"box_id": {
 					Type:        "string",
 					Description: "Server ID to monitor (optional, uses current server if not specified)",
 				},
@@ -75,9 +75,9 @@ func certExpirySummaryDefinition() *widget.WidgetDefinition {
 			Required: []string{},
 		},
 		Renderer: func(ctx context.Context, config map[string]any, data any) (templ.Component, error) {
-			serverID := getStringFromConfig(config, "server_id", "")
+			boxID := getStringFromConfig(config, "box_id", "")
 			refreshSeconds := getIntFromConfig(config, "refresh_seconds", 300)
-			return CertExpirySummaryWidget(serverID, refreshSeconds), nil
+			return CertExpirySummaryWidget(boxID, refreshSeconds), nil
 		},
 	}
 }
@@ -93,7 +93,7 @@ func certificatesListDefinition() *widget.WidgetDefinition {
 		Icon:        "list",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
-				"server_id": {
+				"box_id": {
 					Type:        "string",
 					Description: "Server ID to monitor (optional, uses current server if not specified)",
 				},
@@ -111,10 +111,10 @@ func certificatesListDefinition() *widget.WidgetDefinition {
 			Required: []string{},
 		},
 		Renderer: func(ctx context.Context, config map[string]any, data any) (templ.Component, error) {
-			serverID := getStringFromConfig(config, "server_id", "")
+			boxID := getStringFromConfig(config, "box_id", "")
 			refreshSeconds := getIntFromConfig(config, "refresh_seconds", 300)
 			showFilters := getBoolFromConfig(config, "show_filters", false)
-			return CertificatesListWidget(serverID, refreshSeconds, showFilters), nil
+			return CertificatesListWidget(boxID, refreshSeconds, showFilters), nil
 		},
 		TopBarControlsProvider: func(ctx *widget.WidgetRenderContext, config map[string]any) []widget.TopBarControl {
 			showFilters := getBoolFromConfig(config, "show_filters", false)
@@ -137,7 +137,7 @@ func expiringCertsAlertDefinition() *widget.WidgetDefinition {
 		Icon:        "alert-circle",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
-				"server_id": {
+				"box_id": {
 					Type:        "string",
 					Description: "Server ID to monitor (optional, uses current server if not specified)",
 				},
@@ -160,11 +160,11 @@ func expiringCertsAlertDefinition() *widget.WidgetDefinition {
 			Required: []string{},
 		},
 		Renderer: func(ctx context.Context, config map[string]any, data any) (templ.Component, error) {
-			serverID := getStringFromConfig(config, "server_id", "")
+			boxID := getStringFromConfig(config, "box_id", "")
 			refreshSeconds := getIntFromConfig(config, "refresh_seconds", 300)
 			daysThreshold := getIntFromConfig(config, "days_threshold", 30)
 			hideWhenEmpty := getBoolFromConfig(config, "hide_when_empty", false)
-			return ExpiringCertsAlertWidget(serverID, refreshSeconds, daysThreshold, hideWhenEmpty), nil
+			return ExpiringCertsAlertWidget(boxID, refreshSeconds, daysThreshold, hideWhenEmpty), nil
 		},
 	}
 }

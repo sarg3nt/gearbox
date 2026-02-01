@@ -110,7 +110,7 @@ func (d *DB) initSchema() error {
 	-- Stats history table for storing periodic snapshots
 	CREATE TABLE IF NOT EXISTS stats_history (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		server_id TEXT NOT NULL,
+		box_id TEXT NOT NULL,
 		collected_at DATETIME NOT NULL,
 		total_frontends INTEGER NOT NULL DEFAULT 0,
 		total_backends INTEGER NOT NULL DEFAULT 0,
@@ -125,13 +125,13 @@ func (d *DB) initSchema() error {
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 
-	CREATE INDEX IF NOT EXISTS idx_stats_history_server_time
-		ON stats_history(server_id, collected_at);
+	CREATE INDEX IF NOT EXISTS idx_stats_history_box_time
+		ON stats_history(box_id, collected_at);
 
 	-- Backend history for individual backend metrics
 	CREATE TABLE IF NOT EXISTS backend_history (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		server_id TEXT NOT NULL,
+		box_id TEXT NOT NULL,
 		backend_name TEXT NOT NULL,
 		collected_at DATETIME NOT NULL,
 		status TEXT NOT NULL,
@@ -147,13 +147,13 @@ func (d *DB) initSchema() error {
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 
-	CREATE INDEX IF NOT EXISTS idx_backend_history_server_backend_time
-		ON backend_history(server_id, backend_name, collected_at);
+	CREATE INDEX IF NOT EXISTS idx_backend_history_box_backend_time
+		ON backend_history(box_id, backend_name, collected_at);
 
 	-- System metrics history
 	CREATE TABLE IF NOT EXISTS system_metrics_history (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		server_id TEXT NOT NULL,
+		box_id TEXT NOT NULL,
 		collected_at DATETIME NOT NULL,
 		load_average_1 REAL NOT NULL DEFAULT 0,
 		load_average_5 REAL NOT NULL DEFAULT 0,
@@ -165,13 +165,13 @@ func (d *DB) initSchema() error {
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 
-	CREATE INDEX IF NOT EXISTS idx_system_metrics_history_server_time
-		ON system_metrics_history(server_id, collected_at);
+	CREATE INDEX IF NOT EXISTS idx_system_metrics_history_box_time
+		ON system_metrics_history(box_id, collected_at);
 
 	-- Incidents/events table for tracking notable events
 	CREATE TABLE IF NOT EXISTS incidents (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		server_id TEXT NOT NULL,
+		box_id TEXT NOT NULL,
 		backend_name TEXT,
 		incident_type TEXT NOT NULL,
 		severity TEXT NOT NULL,
@@ -181,15 +181,15 @@ func (d *DB) initSchema() error {
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 
-	CREATE INDEX IF NOT EXISTS idx_incidents_server_time
-		ON incidents(server_id, started_at);
+	CREATE INDEX IF NOT EXISTS idx_incidents_box_time
+		ON incidents(box_id, started_at);
 	CREATE INDEX IF NOT EXISTS idx_incidents_unresolved
-		ON incidents(server_id, resolved_at) WHERE resolved_at IS NULL;
+		ON incidents(box_id, resolved_at) WHERE resolved_at IS NULL;
 
 	-- Alerts configuration table
 	CREATE TABLE IF NOT EXISTS alert_configs (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		server_id TEXT NOT NULL,
+		box_id TEXT NOT NULL,
 		backend_name TEXT,
 		alert_type TEXT NOT NULL,
 		threshold REAL NOT NULL,
@@ -199,7 +199,7 @@ func (d *DB) initSchema() error {
 	);
 
 	CREATE UNIQUE INDEX IF NOT EXISTS idx_alert_configs_unique
-		ON alert_configs(server_id, COALESCE(backend_name, ''), alert_type);
+		ON alert_configs(box_id, COALESCE(backend_name, ''), alert_type);
 
 	-- User preferences/settings
 	CREATE TABLE IF NOT EXISTS user_preferences (
@@ -210,10 +210,10 @@ func (d *DB) initSchema() error {
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 
-	-- Server configurations (Agent API - supports any monitored server)
-	CREATE TABLE IF NOT EXISTS servers (
+	-- Box configurations (Agent API - supports any monitored box)
+	CREATE TABLE IF NOT EXISTS boxes (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		server_id TEXT NOT NULL UNIQUE,
+		box_id TEXT NOT NULL UNIQUE,
 		name TEXT NOT NULL,
 		location TEXT NOT NULL DEFAULT '',
 		notes TEXT NOT NULL DEFAULT '',
@@ -227,39 +227,39 @@ func (d *DB) initSchema() error {
 		FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
 	);
 
-	CREATE INDEX IF NOT EXISTS idx_servers_enabled
-		ON servers(enabled);
+	CREATE INDEX IF NOT EXISTS idx_boxes_enabled
+		ON boxes(enabled);
 
 
-	-- Log source settings: enabled log sources per server
+	-- Log source settings: enabled log sources per box
 	CREATE TABLE IF NOT EXISTS log_source_settings (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		server_id INTEGER NOT NULL,
+		box_id INTEGER NOT NULL,
 		log_name TEXT NOT NULL,
 		display_name TEXT NOT NULL,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-		FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE,
-		UNIQUE(server_id, log_name)
+		FOREIGN KEY (box_id) REFERENCES boxes(id) ON DELETE CASCADE,
+		UNIQUE(box_id, log_name)
 	);
 
-	CREATE INDEX IF NOT EXISTS idx_log_source_settings_server
-		ON log_source_settings(server_id);
+	CREATE INDEX IF NOT EXISTS idx_log_source_settings_box
+		ON log_source_settings(box_id);
 
 	-- Disabled entities: track disabled backends, frontends, and services
 	CREATE TABLE IF NOT EXISTS disabled_entities (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		server_id TEXT NOT NULL,
+		box_id TEXT NOT NULL,
 		entity_type TEXT NOT NULL,
 		entity_name TEXT NOT NULL,
 		disabled_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		disabled_by TEXT, -- UUID
 		notes TEXT,
 		FOREIGN KEY (disabled_by) REFERENCES users(id) ON DELETE SET NULL,
-		UNIQUE(server_id, entity_type, entity_name)
+		UNIQUE(box_id, entity_type, entity_name)
 	);
 
-	CREATE INDEX IF NOT EXISTS idx_disabled_entities_server_type
-		ON disabled_entities(server_id, entity_type);
+	CREATE INDEX IF NOT EXISTS idx_disabled_entities_box_type
+		ON disabled_entities(box_id, entity_type);
 	`
 
 	_, err := d.db.Exec(schema)
@@ -269,7 +269,7 @@ func (d *DB) initSchema() error {
 // StatsSnapshot represents aggregated stats at a point in time.
 type StatsSnapshot struct {
 	ID              int64     `json:"id"`
-	ServerID        string    `json:"server_id"`
+	BoxID           string    `json:"box_id"`
 	CollectedAt     time.Time `json:"collected_at"`
 	TotalFrontends  int       `json:"total_frontends"`
 	TotalBackends   int       `json:"total_backends"`
@@ -286,7 +286,7 @@ type StatsSnapshot struct {
 // BackendSnapshot represents backend metrics at a point in time.
 type BackendSnapshot struct {
 	ID              int64     `json:"id"`
-	ServerID        string    `json:"server_id"`
+	BoxID           string    `json:"box_id"`
 	BackendName     string    `json:"backend_name"`
 	CollectedAt     time.Time `json:"collected_at"`
 	Status          string    `json:"status"`
@@ -304,7 +304,7 @@ type BackendSnapshot struct {
 // SystemMetricsSnapshot represents system metrics at a point in time.
 type SystemMetricsSnapshot struct {
 	ID                 int64     `json:"id"`
-	ServerID           string    `json:"server_id"`
+	BoxID              string    `json:"box_id"`
 	CollectedAt        time.Time `json:"collected_at"`
 	LoadAverage1       float64   `json:"load_average_1"`
 	LoadAverage5       float64   `json:"load_average_5"`
@@ -318,7 +318,7 @@ type SystemMetricsSnapshot struct {
 // Incident represents a notable event or issue.
 type Incident struct {
 	ID           int64      `json:"id"`
-	ServerID     string     `json:"server_id"`
+	BoxID        string     `json:"box_id"`
 	BackendName  *string    `json:"backend_name,omitempty"`
 	IncidentType string     `json:"incident_type"`
 	Severity     string     `json:"severity"`
@@ -328,7 +328,7 @@ type Incident struct {
 }
 
 // SaveStatsSnapshot saves a stats snapshot to the database.
-func (d *DB) SaveStatsSnapshot(serverID string, stats *models.HAProxyStats) error {
+func (d *DB) SaveStatsSnapshot(boxID string, stats *models.HAProxyStats) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -365,11 +365,11 @@ func (d *DB) SaveStatsSnapshot(serverID string, stats *models.HAProxyStats) erro
 
 	_, err := d.db.Exec(`
 		INSERT INTO stats_history (
-			server_id, collected_at, total_frontends, total_backends,
+			box_id, collected_at, total_frontends, total_backends,
 			total_servers, healthy_servers, total_sessions, total_requests,
 			total_bytes_in, total_bytes_out, avg_response_time, total_5xx_errors
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		serverID, stats.ParsedAt, len(stats.Frontends), len(stats.Backends),
+		boxID, stats.ParsedAt, len(stats.Frontends), len(stats.Backends),
 		totalServers, healthyServers, totalSessions, totalRequests,
 		totalBytesIn, totalBytesOut, avgResponseTime, total5xx,
 	)
@@ -377,7 +377,7 @@ func (d *DB) SaveStatsSnapshot(serverID string, stats *models.HAProxyStats) erro
 }
 
 // SaveBackendSnapshots saves individual backend metrics.
-func (d *DB) SaveBackendSnapshots(serverID string, stats *models.HAProxyStats) error {
+func (d *DB) SaveBackendSnapshots(boxID string, stats *models.HAProxyStats) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -389,7 +389,7 @@ func (d *DB) SaveBackendSnapshots(serverID string, stats *models.HAProxyStats) e
 
 	stmt, err := tx.Prepare(`
 		INSERT INTO backend_history (
-			server_id, backend_name, collected_at, status, health_percent,
+			box_id, backend_name, collected_at, status, health_percent,
 			active_servers, total_servers, current_sessions, response_time,
 			queue_current, bytes_in, bytes_out, response_5xx
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
@@ -400,7 +400,7 @@ func (d *DB) SaveBackendSnapshots(serverID string, stats *models.HAProxyStats) e
 
 	for _, backend := range stats.Backends {
 		_, err := stmt.Exec(
-			serverID, backend.Name, stats.ParsedAt, backend.Status, backend.HealthPercent,
+			boxID, backend.Name, stats.ParsedAt, backend.Status, backend.HealthPercent,
 			backend.ActiveServers, backend.TotalServers, backend.CurrentSessions, backend.ResponseTime,
 			backend.QueueCurrent, backend.BytesIn, backend.BytesOut, backend.Response5xx,
 		)
@@ -413,35 +413,35 @@ func (d *DB) SaveBackendSnapshots(serverID string, stats *models.HAProxyStats) e
 }
 
 // SaveSystemMetricsSnapshot saves system metrics to the database.
-func (d *DB) SaveSystemMetricsSnapshot(serverID string, metrics *models.SystemMetrics) error {
+func (d *DB) SaveSystemMetricsSnapshot(boxID string, metrics *models.SystemMetrics) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	_, err := d.db.Exec(`
 		INSERT INTO system_metrics_history (
-			server_id, collected_at, load_average_1, load_average_5, load_average_15,
+			box_id, collected_at, load_average_1, load_average_5, load_average_15,
 			memory_usage_percent, disk_usage_percent, network_rx_bytes, network_tx_bytes
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		serverID, metrics.CollectedAt, metrics.LoadAverage1, metrics.LoadAverage5, metrics.LoadAverage15,
+		boxID, metrics.CollectedAt, metrics.LoadAverage1, metrics.LoadAverage5, metrics.LoadAverage15,
 		metrics.MemoryUsagePercent, metrics.DiskUsagePercent, metrics.NetworkRxBytes, metrics.NetworkTxBytes,
 	)
 	return err
 }
 
 // GetStatsHistory retrieves stats history for a time range.
-func (d *DB) GetStatsHistory(serverID string, since time.Time, limit int) ([]StatsSnapshot, error) {
+func (d *DB) GetStatsHistory(boxID string, since time.Time, limit int) ([]StatsSnapshot, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
 	rows, err := d.db.Query(`
-		SELECT id, server_id, collected_at, total_frontends, total_backends,
+		SELECT id, box_id, collected_at, total_frontends, total_backends,
 			total_servers, healthy_servers, total_sessions, total_requests,
 			total_bytes_in, total_bytes_out, avg_response_time, total_5xx_errors
 		FROM stats_history
-		WHERE server_id = ? AND collected_at >= ?
+		WHERE box_id = ? AND collected_at >= ?
 		ORDER BY collected_at DESC
 		LIMIT ?`,
-		serverID, since, limit,
+		boxID, since, limit,
 	)
 	if err != nil {
 		return nil, err
@@ -452,7 +452,7 @@ func (d *DB) GetStatsHistory(serverID string, since time.Time, limit int) ([]Sta
 	for rows.Next() {
 		var s StatsSnapshot
 		err := rows.Scan(
-			&s.ID, &s.ServerID, &s.CollectedAt, &s.TotalFrontends, &s.TotalBackends,
+			&s.ID, &s.BoxID, &s.CollectedAt, &s.TotalFrontends, &s.TotalBackends,
 			&s.TotalServers, &s.HealthyServers, &s.TotalSessions, &s.TotalRequests,
 			&s.TotalBytesIn, &s.TotalBytesOut, &s.AvgResponseTime, &s.Total5xxErrors,
 		)
@@ -471,19 +471,19 @@ func (d *DB) GetStatsHistory(serverID string, since time.Time, limit int) ([]Sta
 }
 
 // GetBackendHistory retrieves backend history for a specific backend.
-func (d *DB) GetBackendHistory(serverID, backendName string, since time.Time, limit int) ([]BackendSnapshot, error) {
+func (d *DB) GetBackendHistory(boxID, backendName string, since time.Time, limit int) ([]BackendSnapshot, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
 	rows, err := d.db.Query(`
-		SELECT id, server_id, backend_name, collected_at, status, health_percent,
+		SELECT id, box_id, backend_name, collected_at, status, health_percent,
 			active_servers, total_servers, current_sessions, response_time,
 			queue_current, bytes_in, bytes_out, response_5xx
 		FROM backend_history
-		WHERE server_id = ? AND backend_name = ? AND collected_at >= ?
+		WHERE box_id = ? AND backend_name = ? AND collected_at >= ?
 		ORDER BY collected_at DESC
 		LIMIT ?`,
-		serverID, backendName, since, limit,
+		boxID, backendName, since, limit,
 	)
 	if err != nil {
 		return nil, err
@@ -494,7 +494,7 @@ func (d *DB) GetBackendHistory(serverID, backendName string, since time.Time, li
 	for rows.Next() {
 		var s BackendSnapshot
 		err := rows.Scan(
-			&s.ID, &s.ServerID, &s.BackendName, &s.CollectedAt, &s.Status, &s.HealthPercent,
+			&s.ID, &s.BoxID, &s.BackendName, &s.CollectedAt, &s.Status, &s.HealthPercent,
 			&s.ActiveServers, &s.TotalServers, &s.CurrentSessions, &s.ResponseTime,
 			&s.QueueCurrent, &s.BytesIn, &s.BytesOut, &s.Response5xx,
 		)
@@ -513,18 +513,18 @@ func (d *DB) GetBackendHistory(serverID, backendName string, since time.Time, li
 }
 
 // GetSystemMetricsHistory retrieves system metrics history.
-func (d *DB) GetSystemMetricsHistory(serverID string, since time.Time, limit int) ([]SystemMetricsSnapshot, error) {
+func (d *DB) GetSystemMetricsHistory(boxID string, since time.Time, limit int) ([]SystemMetricsSnapshot, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
 	rows, err := d.db.Query(`
-		SELECT id, server_id, collected_at, load_average_1, load_average_5, load_average_15,
+		SELECT id, box_id, collected_at, load_average_1, load_average_5, load_average_15,
 			memory_usage_percent, disk_usage_percent, network_rx_bytes, network_tx_bytes
 		FROM system_metrics_history
-		WHERE server_id = ? AND collected_at >= ?
+		WHERE box_id = ? AND collected_at >= ?
 		ORDER BY collected_at DESC
 		LIMIT ?`,
-		serverID, since, limit,
+		boxID, since, limit,
 	)
 	if err != nil {
 		return nil, err
@@ -535,7 +535,7 @@ func (d *DB) GetSystemMetricsHistory(serverID string, since time.Time, limit int
 	for rows.Next() {
 		var s SystemMetricsSnapshot
 		err := rows.Scan(
-			&s.ID, &s.ServerID, &s.CollectedAt, &s.LoadAverage1, &s.LoadAverage5, &s.LoadAverage15,
+			&s.ID, &s.BoxID, &s.CollectedAt, &s.LoadAverage1, &s.LoadAverage5, &s.LoadAverage15,
 			&s.MemoryUsagePercent, &s.DiskUsagePercent, &s.NetworkRxBytes, &s.NetworkTxBytes,
 		)
 		if err != nil {
@@ -553,14 +553,14 @@ func (d *DB) GetSystemMetricsHistory(serverID string, since time.Time, limit int
 }
 
 // CreateIncident creates a new incident record.
-func (d *DB) CreateIncident(serverID string, backendName *string, incidentType, severity, message string) (int64, error) {
+func (d *DB) CreateIncident(boxID string, backendName *string, incidentType, severity, message string) (int64, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	result, err := d.db.Exec(`
-		INSERT INTO incidents (server_id, backend_name, incident_type, severity, message, started_at)
+		INSERT INTO incidents (box_id, backend_name, incident_type, severity, message, started_at)
 		VALUES (?, ?, ?, ?, ?, ?)`,
-		serverID, backendName, incidentType, severity, message, time.Now(),
+		boxID, backendName, incidentType, severity, message, time.Now(),
 	)
 	if err != nil {
 		return 0, err
@@ -578,16 +578,16 @@ func (d *DB) ResolveIncident(id int64) error {
 }
 
 // GetActiveIncidents retrieves unresolved incidents.
-func (d *DB) GetActiveIncidents(serverID string) ([]Incident, error) {
+func (d *DB) GetActiveIncidents(boxID string) ([]Incident, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
 	rows, err := d.db.Query(`
-		SELECT id, server_id, backend_name, incident_type, severity, message, started_at, resolved_at
+		SELECT id, box_id, backend_name, incident_type, severity, message, started_at, resolved_at
 		FROM incidents
-		WHERE server_id = ? AND resolved_at IS NULL
+		WHERE box_id = ? AND resolved_at IS NULL
 		ORDER BY started_at DESC`,
-		serverID,
+		boxID,
 	)
 	if err != nil {
 		return nil, err
@@ -597,7 +597,7 @@ func (d *DB) GetActiveIncidents(serverID string) ([]Incident, error) {
 	var incidents []Incident
 	for rows.Next() {
 		var i Incident
-		err := rows.Scan(&i.ID, &i.ServerID, &i.BackendName, &i.IncidentType, &i.Severity, &i.Message, &i.StartedAt, &i.ResolvedAt)
+		err := rows.Scan(&i.ID, &i.BoxID, &i.BackendName, &i.IncidentType, &i.Severity, &i.Message, &i.StartedAt, &i.ResolvedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -607,17 +607,17 @@ func (d *DB) GetActiveIncidents(serverID string) ([]Incident, error) {
 }
 
 // GetRecentIncidents retrieves recent incidents (both resolved and unresolved).
-func (d *DB) GetRecentIncidents(serverID string, limit int) ([]Incident, error) {
+func (d *DB) GetRecentIncidents(boxID string, limit int) ([]Incident, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
 	rows, err := d.db.Query(`
-		SELECT id, server_id, backend_name, incident_type, severity, message, started_at, resolved_at
+		SELECT id, box_id, backend_name, incident_type, severity, message, started_at, resolved_at
 		FROM incidents
-		WHERE server_id = ?
+		WHERE box_id = ?
 		ORDER BY started_at DESC
 		LIMIT ?`,
-		serverID, limit,
+		boxID, limit,
 	)
 	if err != nil {
 		return nil, err
@@ -627,7 +627,7 @@ func (d *DB) GetRecentIncidents(serverID string, limit int) ([]Incident, error) 
 	var incidents []Incident
 	for rows.Next() {
 		var i Incident
-		err := rows.Scan(&i.ID, &i.ServerID, &i.BackendName, &i.IncidentType, &i.Severity, &i.Message, &i.StartedAt, &i.ResolvedAt)
+		err := rows.Scan(&i.ID, &i.BoxID, &i.BackendName, &i.IncidentType, &i.Severity, &i.Message, &i.StartedAt, &i.ResolvedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -709,8 +709,8 @@ type MetricsStorageStats struct {
 	EstimatedSizeBytes int64     `json:"estimated_size_bytes"`
 }
 
-// GetMetricsStorageStats returns statistics about metrics data storage for a server.
-func (d *DB) GetMetricsStorageStats(serverID string) (*MetricsStorageStats, error) {
+// GetMetricsStorageStats returns statistics about metrics data storage for a box.
+func (d *DB) GetMetricsStorageStats(boxID string) (*MetricsStorageStats, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
@@ -719,19 +719,19 @@ func (d *DB) GetMetricsStorageStats(serverID string) (*MetricsStorageStats, erro
 	// Get counts for each table
 	var statsCount, backendCount, metricsCount int64
 
-	err := d.db.QueryRow("SELECT COUNT(*) FROM stats_history WHERE server_id = ?", serverID).Scan(&statsCount)
+	err := d.db.QueryRow("SELECT COUNT(*) FROM stats_history WHERE box_id = ?", boxID).Scan(&statsCount)
 	if err != nil {
 		return nil, fmt.Errorf("failed to count stats_history: %w", err)
 	}
 	stats.StatsRecords = statsCount
 
-	err = d.db.QueryRow("SELECT COUNT(*) FROM backend_history WHERE server_id = ?", serverID).Scan(&backendCount)
+	err = d.db.QueryRow("SELECT COUNT(*) FROM backend_history WHERE box_id = ?", boxID).Scan(&backendCount)
 	if err != nil {
 		return nil, fmt.Errorf("failed to count backend_history: %w", err)
 	}
 	stats.BackendRecords = backendCount
 
-	err = d.db.QueryRow("SELECT COUNT(*) FROM system_metrics_history WHERE server_id = ?", serverID).Scan(&metricsCount)
+	err = d.db.QueryRow("SELECT COUNT(*) FROM system_metrics_history WHERE box_id = ?", boxID).Scan(&metricsCount)
 	if err != nil {
 		return nil, fmt.Errorf("failed to count system_metrics_history: %w", err)
 	}
@@ -745,13 +745,13 @@ func (d *DB) GetMetricsStorageStats(serverID string) (*MetricsStorageStats, erro
 	// Find oldest record across all tables
 	err = d.db.QueryRow(`
 		SELECT MIN(collected_at) FROM (
-			SELECT MIN(collected_at) as collected_at FROM stats_history WHERE server_id = ?
+			SELECT MIN(collected_at) as collected_at FROM stats_history WHERE box_id = ?
 			UNION ALL
-			SELECT MIN(collected_at) FROM backend_history WHERE server_id = ?
+			SELECT MIN(collected_at) FROM backend_history WHERE box_id = ?
 			UNION ALL
-			SELECT MIN(collected_at) FROM system_metrics_history WHERE server_id = ?
+			SELECT MIN(collected_at) FROM system_metrics_history WHERE box_id = ?
 		)
-	`, serverID, serverID, serverID).Scan(&oldestStr)
+	`, boxID, boxID, boxID).Scan(&oldestStr)
 	if err != nil && err != sql.ErrNoRows {
 		return nil, fmt.Errorf("failed to get oldest record: %w", err)
 	}
@@ -762,13 +762,13 @@ func (d *DB) GetMetricsStorageStats(serverID string) (*MetricsStorageStats, erro
 	// Find newest record across all tables
 	err = d.db.QueryRow(`
 		SELECT MAX(collected_at) FROM (
-			SELECT MAX(collected_at) as collected_at FROM stats_history WHERE server_id = ?
+			SELECT MAX(collected_at) as collected_at FROM stats_history WHERE box_id = ?
 			UNION ALL
-			SELECT MAX(collected_at) FROM backend_history WHERE server_id = ?
+			SELECT MAX(collected_at) FROM backend_history WHERE box_id = ?
 			UNION ALL
-			SELECT MAX(collected_at) FROM system_metrics_history WHERE server_id = ?
+			SELECT MAX(collected_at) FROM system_metrics_history WHERE box_id = ?
 		)
-	`, serverID, serverID, serverID).Scan(&newestStr)
+	`, boxID, boxID, boxID).Scan(&newestStr)
 	if err != nil && err != sql.ErrNoRows {
 		return nil, fmt.Errorf("failed to get newest record: %w", err)
 	}
@@ -783,19 +783,19 @@ func (d *DB) GetMetricsStorageStats(serverID string) (*MetricsStorageStats, erro
 	return stats, nil
 }
 
-// ClearMetricsData removes all metrics data for a server.
-func (d *DB) ClearMetricsData(serverID string) error {
+// ClearMetricsData removes all metrics data for a box.
+func (d *DB) ClearMetricsData(boxID string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	queries := []string{
-		`DELETE FROM stats_history WHERE server_id = ?`,
-		`DELETE FROM backend_history WHERE server_id = ?`,
-		`DELETE FROM system_metrics_history WHERE server_id = ?`,
+		`DELETE FROM stats_history WHERE box_id = ?`,
+		`DELETE FROM backend_history WHERE box_id = ?`,
+		`DELETE FROM system_metrics_history WHERE box_id = ?`,
 	}
 
 	for _, query := range queries {
-		if _, err := d.db.Exec(query, serverID); err != nil {
+		if _, err := d.db.Exec(query, boxID); err != nil {
 			return fmt.Errorf("failed to clear metrics data: %w", err)
 		}
 	}
@@ -808,8 +808,8 @@ func (d *DB) ClearMetricsData(serverID string) error {
 	return nil
 }
 
-// CleanupMetricsByAge removes metrics data older than the specified duration for a server.
-func (d *DB) CleanupMetricsByAge(serverID string, retention time.Duration) (int64, error) {
+// CleanupMetricsByAge removes metrics data older than the specified duration for a box.
+func (d *DB) CleanupMetricsByAge(boxID string, retention time.Duration) (int64, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -817,13 +817,13 @@ func (d *DB) CleanupMetricsByAge(serverID string, retention time.Duration) (int6
 	var totalDeleted int64
 
 	queries := []string{
-		`DELETE FROM stats_history WHERE server_id = ? AND collected_at < ?`,
-		`DELETE FROM backend_history WHERE server_id = ? AND collected_at < ?`,
-		`DELETE FROM system_metrics_history WHERE server_id = ? AND collected_at < ?`,
+		`DELETE FROM stats_history WHERE box_id = ? AND collected_at < ?`,
+		`DELETE FROM backend_history WHERE box_id = ? AND collected_at < ?`,
+		`DELETE FROM system_metrics_history WHERE box_id = ? AND collected_at < ?`,
 	}
 
 	for _, query := range queries {
-		result, err := d.db.Exec(query, serverID, cutoff)
+		result, err := d.db.Exec(query, boxID, cutoff)
 		if err != nil {
 			return totalDeleted, fmt.Errorf("failed to cleanup metrics: %w", err)
 		}
@@ -835,15 +835,15 @@ func (d *DB) CleanupMetricsByAge(serverID string, retention time.Duration) (int6
 }
 
 // CleanupMetricsBySize removes oldest metrics data to keep estimated size under the specified limit.
-func (d *DB) CleanupMetricsBySize(serverID string, maxSizeMB int) (int64, error) {
+func (d *DB) CleanupMetricsBySize(boxID string, maxSizeMB int) (int64, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	// Get current stats
 	var statsCount, backendCount, metricsCount int64
-	d.db.QueryRow("SELECT COUNT(*) FROM stats_history WHERE server_id = ?", serverID).Scan(&statsCount)
-	d.db.QueryRow("SELECT COUNT(*) FROM backend_history WHERE server_id = ?", serverID).Scan(&backendCount)
-	d.db.QueryRow("SELECT COUNT(*) FROM system_metrics_history WHERE server_id = ?", serverID).Scan(&metricsCount)
+	d.db.QueryRow("SELECT COUNT(*) FROM stats_history WHERE box_id = ?", boxID).Scan(&statsCount)
+	d.db.QueryRow("SELECT COUNT(*) FROM backend_history WHERE box_id = ?", boxID).Scan(&backendCount)
+	d.db.QueryRow("SELECT COUNT(*) FROM system_metrics_history WHERE box_id = ?", boxID).Scan(&metricsCount)
 
 	// Estimate current size
 	currentSizeBytes := statsCount*150 + backendCount*200 + metricsCount*100
@@ -869,10 +869,10 @@ func (d *DB) CleanupMetricsBySize(serverID string, maxSizeMB int) (int64, error)
 		deleteCount := int64(float64(bytesToDelete) * float64(statsCount) / float64(currentSizeBytes) / 150)
 		if deleteCount > 0 {
 			result, err := d.db.Exec(`
-				DELETE FROM stats_history WHERE server_id = ? AND id IN (
-					SELECT id FROM stats_history WHERE server_id = ? ORDER BY collected_at ASC LIMIT ?
+				DELETE FROM stats_history WHERE box_id = ? AND id IN (
+					SELECT id FROM stats_history WHERE box_id = ? ORDER BY collected_at ASC LIMIT ?
 				)
-			`, serverID, serverID, deleteCount)
+			`, boxID, boxID, deleteCount)
 			if err == nil {
 				deleted, _ := result.RowsAffected()
 				totalDeleted += deleted
@@ -885,10 +885,10 @@ func (d *DB) CleanupMetricsBySize(serverID string, maxSizeMB int) (int64, error)
 		deleteCount := int64(float64(bytesToDelete) * float64(backendCount) / float64(currentSizeBytes) / 200)
 		if deleteCount > 0 {
 			result, err := d.db.Exec(`
-				DELETE FROM backend_history WHERE server_id = ? AND id IN (
-					SELECT id FROM backend_history WHERE server_id = ? ORDER BY collected_at ASC LIMIT ?
+				DELETE FROM backend_history WHERE box_id = ? AND id IN (
+					SELECT id FROM backend_history WHERE box_id = ? ORDER BY collected_at ASC LIMIT ?
 				)
-			`, serverID, serverID, deleteCount)
+			`, boxID, boxID, deleteCount)
 			if err == nil {
 				deleted, _ := result.RowsAffected()
 				totalDeleted += deleted
@@ -901,10 +901,10 @@ func (d *DB) CleanupMetricsBySize(serverID string, maxSizeMB int) (int64, error)
 		deleteCount := int64(float64(bytesToDelete) * float64(metricsCount) / float64(currentSizeBytes) / 100)
 		if deleteCount > 0 {
 			result, err := d.db.Exec(`
-				DELETE FROM system_metrics_history WHERE server_id = ? AND id IN (
-					SELECT id FROM system_metrics_history WHERE server_id = ? ORDER BY collected_at ASC LIMIT ?
+				DELETE FROM system_metrics_history WHERE box_id = ? AND id IN (
+					SELECT id FROM system_metrics_history WHERE box_id = ? ORDER BY collected_at ASC LIMIT ?
 				)
-			`, serverID, serverID, deleteCount)
+			`, boxID, boxID, deleteCount)
 			if err == nil {
 				deleted, _ := result.RowsAffected()
 				totalDeleted += deleted
@@ -939,7 +939,7 @@ const (
 // DisabledEntity represents a disabled entity record.
 type DisabledEntity struct {
 	ID         int64      `json:"id"`
-	ServerID   string     `json:"server_id"`
+	BoxID      string     `json:"box_id"`
 	EntityType EntityType `json:"entity_type"`
 	EntityName string     `json:"entity_name"`
 	DisabledAt time.Time  `json:"disabled_at"`
@@ -948,41 +948,41 @@ type DisabledEntity struct {
 }
 
 // DisableEntity marks an entity as disabled.
-func (d *DB) DisableEntity(serverID string, entityType EntityType, entityName string, userID *string, notes string) error {
+func (d *DB) DisableEntity(boxID string, entityType EntityType, entityName string, userID *string, notes string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	_, err := d.db.Exec(`
-		INSERT OR REPLACE INTO disabled_entities (server_id, entity_type, entity_name, disabled_at, disabled_by, notes)
+		INSERT OR REPLACE INTO disabled_entities (box_id, entity_type, entity_name, disabled_at, disabled_by, notes)
 		VALUES (?, ?, ?, ?, ?, ?)`,
-		serverID, entityType, entityName, time.Now(), userID, notes,
+		boxID, entityType, entityName, time.Now(), userID, notes,
 	)
 	return err
 }
 
 // EnableEntity removes the disabled status from an entity.
-func (d *DB) EnableEntity(serverID string, entityType EntityType, entityName string) error {
+func (d *DB) EnableEntity(boxID string, entityType EntityType, entityName string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	_, err := d.db.Exec(`
 		DELETE FROM disabled_entities
-		WHERE server_id = ? AND entity_type = ? AND entity_name = ?`,
-		serverID, entityType, entityName,
+		WHERE box_id = ? AND entity_type = ? AND entity_name = ?`,
+		boxID, entityType, entityName,
 	)
 	return err
 }
 
 // IsEntityDisabled checks if an entity is disabled.
-func (d *DB) IsEntityDisabled(serverID string, entityType EntityType, entityName string) (bool, error) {
+func (d *DB) IsEntityDisabled(boxID string, entityType EntityType, entityName string) (bool, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
 	var count int
 	err := d.db.QueryRow(`
 		SELECT COUNT(*) FROM disabled_entities
-		WHERE server_id = ? AND entity_type = ? AND entity_name = ?`,
-		serverID, entityType, entityName,
+		WHERE box_id = ? AND entity_type = ? AND entity_name = ?`,
+		boxID, entityType, entityName,
 	).Scan(&count)
 	if err != nil {
 		return false, err
@@ -990,17 +990,17 @@ func (d *DB) IsEntityDisabled(serverID string, entityType EntityType, entityName
 	return count > 0, nil
 }
 
-// GetDisabledEntities retrieves all disabled entities for a server.
-func (d *DB) GetDisabledEntities(serverID string) ([]DisabledEntity, error) {
+// GetDisabledEntities retrieves all disabled entities for a box.
+func (d *DB) GetDisabledEntities(boxID string) ([]DisabledEntity, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
 	rows, err := d.db.Query(`
-		SELECT id, server_id, entity_type, entity_name, disabled_at, disabled_by, notes
+		SELECT id, box_id, entity_type, entity_name, disabled_at, disabled_by, notes
 		FROM disabled_entities
-		WHERE server_id = ?
+		WHERE box_id = ?
 		ORDER BY disabled_at DESC`,
-		serverID,
+		boxID,
 	)
 	if err != nil {
 		return nil, err
@@ -1011,7 +1011,7 @@ func (d *DB) GetDisabledEntities(serverID string) ([]DisabledEntity, error) {
 	for rows.Next() {
 		var e DisabledEntity
 		var notes sql.NullString
-		err := rows.Scan(&e.ID, &e.ServerID, &e.EntityType, &e.EntityName, &e.DisabledAt, &e.DisabledBy, &notes)
+		err := rows.Scan(&e.ID, &e.BoxID, &e.EntityType, &e.EntityName, &e.DisabledAt, &e.DisabledBy, &notes)
 		if err != nil {
 			return nil, err
 		}
@@ -1024,18 +1024,18 @@ func (d *DB) GetDisabledEntities(serverID string) ([]DisabledEntity, error) {
 }
 
 // GetDisabledEntity retrieves a specific disabled entity if it exists.
-func (d *DB) GetDisabledEntity(serverID string, entityType EntityType, entityName string) (*DisabledEntity, error) {
+func (d *DB) GetDisabledEntity(boxID string, entityType EntityType, entityName string) (*DisabledEntity, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
 	var e DisabledEntity
 	var notes sql.NullString
 	err := d.db.QueryRow(`
-		SELECT id, server_id, entity_type, entity_name, disabled_at, disabled_by, notes
+		SELECT id, box_id, entity_type, entity_name, disabled_at, disabled_by, notes
 		FROM disabled_entities
-		WHERE server_id = ? AND entity_type = ? AND entity_name = ?`,
-		serverID, entityType, entityName,
-	).Scan(&e.ID, &e.ServerID, &e.EntityType, &e.EntityName, &e.DisabledAt, &e.DisabledBy, &notes)
+		WHERE box_id = ? AND entity_type = ? AND entity_name = ?`,
+		boxID, entityType, entityName,
+	).Scan(&e.ID, &e.BoxID, &e.EntityType, &e.EntityName, &e.DisabledAt, &e.DisabledBy, &notes)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -1048,15 +1048,15 @@ func (d *DB) GetDisabledEntity(serverID string, entityType EntityType, entityNam
 	return &e, nil
 }
 
-// GetDisabledEntitiesByType retrieves disabled entities of a specific type for a server.
-func (d *DB) GetDisabledEntitiesByType(serverID string, entityType EntityType) (map[string]bool, error) {
+// GetDisabledEntitiesByType retrieves disabled entities of a specific type for a box.
+func (d *DB) GetDisabledEntitiesByType(boxID string, entityType EntityType) (map[string]bool, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
 	rows, err := d.db.Query(`
 		SELECT entity_name FROM disabled_entities
-		WHERE server_id = ? AND entity_type = ?`,
-		serverID, entityType,
+		WHERE box_id = ? AND entity_type = ?`,
+		boxID, entityType,
 	)
 	if err != nil {
 		return nil, err

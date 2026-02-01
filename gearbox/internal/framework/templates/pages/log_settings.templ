@@ -24,7 +24,7 @@ func (l LogSourceInfo) IsServiceLog() bool {
 }
 
 // LogSettingsPage renders the log source settings page.
-templ LogSettingsPage(user *models.User, server *database.ServerDB, sources []LogSourceInfo, errorMsg string, successMsg string) {
+templ LogSettingsPage(user *models.User, server *database.BoxDB, sources []LogSourceInfo, errorMsg string, successMsg string) {
 	@layouts.Base("Logs Settings", user, "/settings") {
 		<div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 			<div class="mb-6">
@@ -36,7 +36,7 @@ templ LogSettingsPage(user *models.User, server *database.ServerDB, sources []Lo
 						</p>
 					</div>
 					<a
-						href="/settings/servers"
+						href="/settings/boxes"
 						class="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
 					>
 						&larr; Back to Servers
@@ -52,7 +52,7 @@ templ LogSettingsPage(user *models.User, server *database.ServerDB, sources []Lo
 				@ui.ToastOnLoad(successMsg, "success")
 			}
 
-			<form method="POST" action={ templ.SafeURL(fmt.Sprintf("/settings/servers/%d/logs", server.ID)) }>
+			<form method="POST" action={ templ.SafeURL(fmt.Sprintf("/settings/boxes/%d/logs", server.ID)) }>
 				<div class="bg-white dark:bg-slate-800 rounded-lg shadow overflow-hidden">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 						<h2 class="text-lg font-medium text-gray-900 dark:text-white">Available Log Sources</h2>

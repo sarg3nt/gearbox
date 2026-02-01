@@ -4,7 +4,7 @@ import "github.com/sarg3nt/gearbox/internal/framework/models"
 import "github.com/sarg3nt/gearbox/internal/framework/templates/layouts"
 import "github.com/sarg3nt/gearbox/internal/framework/templates/components"
 
-templ History(user *models.User, servers []models.ServerConfig) {
+templ History(user *models.User, servers []models.BoxConfig) {
 	@layouts.Base("Metrics", user, "/history") {
 		<!-- Hidden container for page header content - will be moved to main header via JS -->
 		<div id="page-header-source" class="hidden">

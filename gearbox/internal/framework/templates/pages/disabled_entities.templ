@@ -8,7 +8,7 @@ import (
 )
 
 // DisabledEntitiesPage renders the admin page for managing disabled entities across all servers.
-templ DisabledEntitiesPage(user *models.User, entities []database.DisabledEntity, servers []models.ServerConfig, userNames map[string]string) {
+templ DisabledEntitiesPage(user *models.User, entities []database.DisabledEntity, servers []models.BoxConfig, userNames map[string]string) {
 	@layouts.Base("Disabled Entities", user, "/settings") {
 		<!-- Hidden container for page header content - will be moved to main header via JS -->
 		<div id="page-header-source" class="hidden">
@@ -130,7 +130,7 @@ templ DisabledEntitiesPage(user *models.User, entities []database.DisabledEntity
 							for _, entity := range entities {
 								<tr
 									class="entity-row"
-									data-server-id={ entity.ServerID }
+									data-server-id={ entity.BoxID }
 									data-entity-type={ string(entity.EntityType) }
 									data-entity-name={ entity.EntityName }
 								>
@@ -138,7 +138,7 @@ templ DisabledEntitiesPage(user *models.User, entities []database.DisabledEntity
 										<input
 											type="checkbox"
 											class="entity-checkbox rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
-											data-server-id={ entity.ServerID }
+											data-server-id={ entity.BoxID }
 											data-entity-type={ string(entity.EntityType) }
 											data-entity-name={ entity.EntityName }
 											onchange="updateBulkActionsBar()"
@@ -165,7 +165,7 @@ templ DisabledEntitiesPage(user *models.User, entities []database.DisabledEntity
 									<td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
 										<button
 											type="button"
-											onclick={ templ.ComponentScript{Call: fmt.Sprintf("enableEntity('%s', '%s', '%s')", entity.ServerID, string(entity.EntityType), entity.EntityName)} }
+											onclick={ templ.ComponentScript{Call: fmt.Sprintf("enableEntity('%s', '%s', '%s')", entity.BoxID, string(entity.EntityType), entity.EntityName)} }
 											class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
 										>
 											<svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -384,7 +384,7 @@ templ DisabledEntitiesPage(user *models.User, entities []database.DisabledEntity
 }
 
 // Helper function to get server name from server ID
-func getServerName(serverID string, servers []models.ServerConfig) string {
+func getServerName(serverID string, servers []models.BoxConfig) string {
 	for _, server := range servers {
 		if server.ID == serverID {
 			return server.Name

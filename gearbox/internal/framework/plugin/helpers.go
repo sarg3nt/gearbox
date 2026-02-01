@@ -264,7 +264,7 @@ func RequirePermission(auth AuthChecker, w http.ResponseWriter, r *http.Request,
 // Returns nil if redirected (response already written).
 // Use this when a page requires at least one configured server.
 func GetServersOrRedirect(servers ServerRegistry, w http.ResponseWriter, r *http.Request) []ServerConfig {
-	enabledServers := servers.GetEnabledServers()
+	enabledServers := servers.GetEnabledBoxes()
 	if len(enabledServers) == 0 {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return nil

@@ -34,8 +34,8 @@ function toggleRetentionOptions(enabled) {
 }
 
 function loadStorageStats() {
-	const serverID = new URLSearchParams(window.location.search).get('server');
-	fetch('/api/' + encodeURIComponent(serverID) + '/metrics/storage-stats')
+	const boxID = new URLSearchParams(window.location.search).get('server');
+	fetch('/api/' + encodeURIComponent(boxID) + '/metrics/storage-stats')
 		.then(response => response.json())
 		.then(data => {
 			const container = document.getElementById('storage-stats');
@@ -94,8 +94,8 @@ async function confirmClearMetrics() {
 	});
 	if (!confirmed) return;
 
-	const serverID = new URLSearchParams(window.location.search).get('server');
-	fetch('/api/' + encodeURIComponent(serverID) + '/metrics/clear', {
+	const boxID = new URLSearchParams(window.location.search).get('server');
+	fetch('/api/' + encodeURIComponent(boxID) + '/metrics/clear', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' }
 	})

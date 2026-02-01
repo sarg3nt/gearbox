@@ -64,7 +64,7 @@ func trafficSummaryCardDefinition() *widget.WidgetDefinition {
 		Icon:        "chart-bar",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
-				"server_id": {
+				"box_id": {
 					Type:        "string",
 					Description: "Server ID to monitor (optional, uses current server if not specified)",
 				},
@@ -77,9 +77,9 @@ func trafficSummaryCardDefinition() *widget.WidgetDefinition {
 			Required: []string{},
 		},
 		Renderer: func(ctx context.Context, config map[string]any, data any) (templ.Component, error) {
-			serverID := getStringFromConfig(config, "server_id", "")
+			boxID := getStringFromConfig(config, "box_id", "")
 			refreshSeconds := getIntFromConfig(config, "refresh_seconds", 10)
-			return TrafficSummaryCardWidget(serverID, refreshSeconds), nil
+			return TrafficSummaryCardWidget(boxID, refreshSeconds), nil
 		},
 	}
 }
@@ -96,7 +96,7 @@ func trafficFlowVisualizationDefinition() *widget.WidgetDefinition {
 		Icon:        "share",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
-				"server_id": {
+				"box_id": {
 					Type:        "string",
 					Description: "Server ID to monitor (optional, uses current server if not specified)",
 				},
@@ -114,10 +114,10 @@ func trafficFlowVisualizationDefinition() *widget.WidgetDefinition {
 			Required: []string{},
 		},
 		Renderer: func(ctx context.Context, config map[string]any, data any) (templ.Component, error) {
-			serverID := getStringFromConfig(config, "server_id", "")
+			boxID := getStringFromConfig(config, "box_id", "")
 			height := getIntFromConfig(config, "height", 550)
 			showControls := getBoolFromConfig(config, "show_controls", true)
-			return TrafficFlowVisualizationWidget(serverID, height, showControls), nil
+			return TrafficFlowVisualizationWidget(boxID, height, showControls), nil
 		},
 	}
 }
@@ -134,7 +134,7 @@ func topSourcesTableDefinition() *widget.WidgetDefinition {
 		Icon:        "users",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
-				"server_id": {
+				"box_id": {
 					Type:        "string",
 					Description: "Server ID to monitor (optional, uses current server if not specified)",
 				},
@@ -152,10 +152,10 @@ func topSourcesTableDefinition() *widget.WidgetDefinition {
 			Required: []string{},
 		},
 		Renderer: func(ctx context.Context, config map[string]any, data any) (templ.Component, error) {
-			serverID := getStringFromConfig(config, "server_id", "")
+			boxID := getStringFromConfig(config, "box_id", "")
 			refreshSeconds := getIntFromConfig(config, "refresh_seconds", 30)
 			maxRows := getIntFromConfig(config, "max_rows", 10)
-			return TopSourcesTableWidget(serverID, refreshSeconds, maxRows), nil
+			return TopSourcesTableWidget(boxID, refreshSeconds, maxRows), nil
 		},
 	}
 }
@@ -172,7 +172,7 @@ func backendTrafficTableDefinition() *widget.WidgetDefinition {
 		Icon:        "server",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
-				"server_id": {
+				"box_id": {
 					Type:        "string",
 					Description: "Server ID to monitor (optional, uses current server if not specified)",
 				},
@@ -185,9 +185,9 @@ func backendTrafficTableDefinition() *widget.WidgetDefinition {
 			Required: []string{},
 		},
 		Renderer: func(ctx context.Context, config map[string]any, data any) (templ.Component, error) {
-			serverID := getStringFromConfig(config, "server_id", "")
+			boxID := getStringFromConfig(config, "box_id", "")
 			refreshSeconds := getIntFromConfig(config, "refresh_seconds", 30)
-			return BackendTrafficTableWidget(serverID, refreshSeconds), nil
+			return BackendTrafficTableWidget(boxID, refreshSeconds), nil
 		},
 	}
 }

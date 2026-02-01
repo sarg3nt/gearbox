@@ -23,10 +23,10 @@ const (
 	ChangeTypeRestore  ChangeType = "restore"
 )
 
-// ServerGitConfig stores git configuration for a HAProxy server.
-type ServerGitConfig struct {
+// BoxGitConfig stores git configuration for a monitored box.
+type BoxGitConfig struct {
 	ID                  int64      `json:"id"`
-	HAProxyServerID     int64      `json:"haproxy_server_id"`
+	HAProxyBoxID        int64      `json:"haproxy_box_id"`
 	ConfigType          ConfigType `json:"config_type"`
 	GitRepoURL          string     `json:"git_repo_url"`
 	GitBranch           string     `json:"git_branch"`
@@ -44,27 +44,27 @@ type ServerGitConfig struct {
 
 // ConfigChange represents a configuration change audit record.
 type ConfigChange struct {
-	ID              int64      `json:"id"`
-	HAProxyServerID int64      `json:"haproxy_server_id"`
-	ConfigType      ConfigType `json:"config_type"`
-	ChangeType      ChangeType `json:"change_type"`
-	PreviousSHA256  string     `json:"previous_sha256,omitempty"`
-	NewSHA256       string     `json:"new_sha256,omitempty"`
-	ChangedBy       *string    `json:"changed_by,omitempty"` // UUID
-	ChangedByName   string     `json:"changed_by_name,omitempty"` // Populated on read
-	ChangeReason    string     `json:"change_reason,omitempty"`
-	GitCommitSHA    string     `json:"git_commit_sha,omitempty"`
-	BackupPath      string     `json:"backup_path,omitempty"`
-	CreatedAt       time.Time  `json:"created_at"`
+	ID           int64      `json:"id"`
+	HAProxyBoxID int64      `json:"haproxy_box_id"`
+	ConfigType   ConfigType `json:"config_type"`
+	ChangeType   ChangeType `json:"change_type"`
+	PreviousSHA256 string     `json:"previous_sha256,omitempty"`
+	NewSHA256      string     `json:"new_sha256,omitempty"`
+	ChangedBy      *string    `json:"changed_by,omitempty"` // UUID
+	ChangedByName  string     `json:"changed_by_name,omitempty"` // Populated on read
+	ChangeReason   string     `json:"change_reason,omitempty"`
+	GitCommitSHA   string     `json:"git_commit_sha,omitempty"`
+	BackupPath     string     `json:"backup_path,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
 }
 
 // initConfigSchema creates the configuration management tables.
 func (d *DB) initConfigSchema() error {
 	schema := `
-	-- Git configuration per HAProxy server
-	CREATE TABLE IF NOT EXISTS server_git_config (
+	-- Git configuration per monitored box
+	CREATE TABLE IF NOT EXISTS box_git_config (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		haproxy_server_id INTEGER NOT NULL,
+		haproxy_box_id INTEGER NOT NULL,
 		config_type TEXT NOT NULL,
 		git_repo_url TEXT,
 		git_branch TEXT NOT NULL DEFAULT 'main',
@@ -78,17 +78,17 @@ func (d *DB) initConfigSchema() error {
 		last_sync_error TEXT,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-		FOREIGN KEY (haproxy_server_id) REFERENCES haproxy_servers(id) ON DELETE CASCADE,
-		UNIQUE(haproxy_server_id, config_type)
+		FOREIGN KEY (haproxy_box_id) REFERENCES boxes(id) ON DELETE CASCADE,
+		UNIQUE(haproxy_box_id, config_type)
 	);
 
-	CREATE INDEX IF NOT EXISTS idx_server_git_config_server
-		ON server_git_config(haproxy_server_id);
+	CREATE INDEX IF NOT EXISTS idx_box_git_config_box
+		ON box_git_config(haproxy_box_id);
 
 	-- Config change history (audit trail)
 	CREATE TABLE IF NOT EXISTS config_changes (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		haproxy_server_id INTEGER NOT NULL,
+		haproxy_box_id INTEGER NOT NULL,
 		config_type TEXT NOT NULL,
 		change_type TEXT NOT NULL,
 		previous_sha256 TEXT,
@@ -98,38 +98,38 @@ func (d *DB) initConfigSchema() error {
 		git_commit_sha TEXT,
 		backup_path TEXT,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-		FOREIGN KEY (haproxy_server_id) REFERENCES haproxy_servers(id) ON DELETE CASCADE,
+		FOREIGN KEY (haproxy_box_id) REFERENCES boxes(id) ON DELETE CASCADE,
 		FOREIGN KEY (changed_by) REFERENCES users(id) ON DELETE SET NULL
 	);
 
-	CREATE INDEX IF NOT EXISTS idx_config_changes_server_type
-		ON config_changes(haproxy_server_id, config_type, created_at);
+	CREATE INDEX IF NOT EXISTS idx_config_changes_box_type
+		ON config_changes(haproxy_box_id, config_type, created_at);
 	`
 
 	_, err := d.db.Exec(schema)
 	return err
 }
 
-// GetServerGitConfig retrieves the git configuration for a server and config type.
-func (d *DB) GetServerGitConfig(haproxyServerID int64, configType ConfigType) (*ServerGitConfig, error) {
+// GetBoxGitConfig retrieves the git configuration for a box and config type.
+func (d *DB) GetBoxGitConfig(haproxyBoxID int64, configType ConfigType) (*BoxGitConfig, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	var cfg ServerGitConfig
+	var cfg BoxGitConfig
 	var lastSyncAt sql.NullString
 	var lastSyncCommit, lastSyncStatus, lastSyncError sql.NullString
 	var gitRepoURL, gitFilePath sql.NullString
 
 	err := d.db.QueryRow(`
-		SELECT id, haproxy_server_id, config_type, git_repo_url, git_branch, git_file_path,
+		SELECT id, haproxy_box_id, config_type, git_repo_url, git_branch, git_file_path,
 			git_pat_encrypted, auto_apply_enabled, sync_interval_minutes,
 			last_sync_at, last_sync_commit, last_sync_status, last_sync_error,
 			created_at, updated_at
-		FROM server_git_config
-		WHERE haproxy_server_id = ? AND config_type = ?`,
-		haproxyServerID, configType,
+		FROM box_git_config
+		WHERE haproxy_box_id = ? AND config_type = ?`,
+		haproxyBoxID, configType,
 	).Scan(
-		&cfg.ID, &cfg.HAProxyServerID, &cfg.ConfigType, &gitRepoURL, &cfg.GitBranch, &gitFilePath,
+		&cfg.ID, &cfg.HAProxyBoxID, &cfg.ConfigType, &gitRepoURL, &cfg.GitBranch, &gitFilePath,
 		&cfg.GitPATEncrypted, &cfg.AutoApplyEnabled, &cfg.SyncIntervalMinutes,
 		&lastSyncAt, &lastSyncCommit, &lastSyncStatus, &lastSyncError,
 		&cfg.CreatedAt, &cfg.UpdatedAt,
@@ -139,7 +139,7 @@ func (d *DB) GetServerGitConfig(haproxyServerID int64, configType ConfigType) (*
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to get server git config: %w", err)
+		return nil, fmt.Errorf("failed to get box git config: %w", err)
 	}
 
 	if gitRepoURL.Valid {
@@ -165,17 +165,17 @@ func (d *DB) GetServerGitConfig(haproxyServerID int64, configType ConfigType) (*
 	return &cfg, nil
 }
 
-// SaveServerGitConfig saves or updates the git configuration for a server.
-func (d *DB) SaveServerGitConfig(cfg *ServerGitConfig) error {
+// SaveBoxGitConfig saves or updates the git configuration for a box.
+func (d *DB) SaveBoxGitConfig(cfg *BoxGitConfig) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	_, err := d.db.Exec(`
-		INSERT INTO server_git_config (
-			haproxy_server_id, config_type, git_repo_url, git_branch, git_file_path,
+		INSERT INTO box_git_config (
+			haproxy_box_id, config_type, git_repo_url, git_branch, git_file_path,
 			git_pat_encrypted, auto_apply_enabled, sync_interval_minutes, updated_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(haproxy_server_id, config_type) DO UPDATE SET
+		ON CONFLICT(haproxy_box_id, config_type) DO UPDATE SET
 			git_repo_url = excluded.git_repo_url,
 			git_branch = excluded.git_branch,
 			git_file_path = excluded.git_file_path,
@@ -183,69 +183,69 @@ func (d *DB) SaveServerGitConfig(cfg *ServerGitConfig) error {
 			auto_apply_enabled = excluded.auto_apply_enabled,
 			sync_interval_minutes = excluded.sync_interval_minutes,
 			updated_at = excluded.updated_at`,
-		cfg.HAProxyServerID, cfg.ConfigType, cfg.GitRepoURL, cfg.GitBranch, cfg.GitFilePath,
+		cfg.HAProxyBoxID, cfg.ConfigType, cfg.GitRepoURL, cfg.GitBranch, cfg.GitFilePath,
 		cfg.GitPATEncrypted, cfg.AutoApplyEnabled, cfg.SyncIntervalMinutes, time.Now(),
 	)
 	return err
 }
 
 // UpdateGitSyncStatus updates the last sync status for a git configuration.
-func (d *DB) UpdateGitSyncStatus(haproxyServerID int64, configType ConfigType, status, commitSHA, errorMsg string) error {
+func (d *DB) UpdateGitSyncStatus(haproxyBoxID int64, configType ConfigType, status, commitSHA, errorMsg string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	_, err := d.db.Exec(`
-		UPDATE server_git_config
+		UPDATE box_git_config
 		SET last_sync_at = ?, last_sync_status = ?, last_sync_commit = ?, last_sync_error = ?, updated_at = ?
-		WHERE haproxy_server_id = ? AND config_type = ?`,
+		WHERE haproxy_box_id = ? AND config_type = ?`,
 		time.Now(), status, commitSHA, errorMsg, time.Now(),
-		haproxyServerID, configType,
+		haproxyBoxID, configType,
 	)
 	return err
 }
 
-// DeleteServerGitConfig deletes the git configuration for a server and config type.
-func (d *DB) DeleteServerGitConfig(haproxyServerID int64, configType ConfigType) error {
+// DeleteBoxGitConfig deletes the git configuration for a box and config type.
+func (d *DB) DeleteBoxGitConfig(haproxyBoxID int64, configType ConfigType) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	_, err := d.db.Exec(`
-		DELETE FROM server_git_config
-		WHERE haproxy_server_id = ? AND config_type = ?`,
-		haproxyServerID, configType,
+		DELETE FROM box_git_config
+		WHERE haproxy_box_id = ? AND config_type = ?`,
+		haproxyBoxID, configType,
 	)
 	return err
 }
 
-// GetAllGitConfigsForServer retrieves all git configurations for a server.
-func (d *DB) GetAllGitConfigsForServer(haproxyServerID int64) ([]ServerGitConfig, error) {
+// GetAllGitConfigsForBox retrieves all git configurations for a box.
+func (d *DB) GetAllGitConfigsForBox(haproxyBoxID int64) ([]BoxGitConfig, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
 	rows, err := d.db.Query(`
-		SELECT id, haproxy_server_id, config_type, git_repo_url, git_branch, git_file_path,
+		SELECT id, haproxy_box_id, config_type, git_repo_url, git_branch, git_file_path,
 			git_pat_encrypted, auto_apply_enabled, sync_interval_minutes,
 			last_sync_at, last_sync_commit, last_sync_status, last_sync_error,
 			created_at, updated_at
-		FROM server_git_config
-		WHERE haproxy_server_id = ?
+		FROM box_git_config
+		WHERE haproxy_box_id = ?
 		ORDER BY config_type`,
-		haproxyServerID,
+		haproxyBoxID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get git configs: %w", err)
 	}
 	defer rows.Close()
 
-	var configs []ServerGitConfig
+	var configs []BoxGitConfig
 	for rows.Next() {
-		var cfg ServerGitConfig
+		var cfg BoxGitConfig
 		var lastSyncAt sql.NullString
 		var lastSyncCommit, lastSyncStatus, lastSyncError sql.NullString
 		var gitRepoURL, gitFilePath sql.NullString
 
 		err := rows.Scan(
-			&cfg.ID, &cfg.HAProxyServerID, &cfg.ConfigType, &gitRepoURL, &cfg.GitBranch, &gitFilePath,
+			&cfg.ID, &cfg.HAProxyBoxID, &cfg.ConfigType, &gitRepoURL, &cfg.GitBranch, &gitFilePath,
 			&cfg.GitPATEncrypted, &cfg.AutoApplyEnabled, &cfg.SyncIntervalMinutes,
 			&lastSyncAt, &lastSyncCommit, &lastSyncStatus, &lastSyncError,
 			&cfg.CreatedAt, &cfg.UpdatedAt,
@@ -287,33 +287,33 @@ func (d *DB) RecordConfigChange(change *ConfigChange) error {
 
 	_, err := d.db.Exec(`
 		INSERT INTO config_changes (
-			haproxy_server_id, config_type, change_type,
+			haproxy_box_id, config_type, change_type,
 			previous_sha256, new_sha256, changed_by, change_reason,
 			git_commit_sha, backup_path, created_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		change.HAProxyServerID, change.ConfigType, change.ChangeType,
+		change.HAProxyBoxID, change.ConfigType, change.ChangeType,
 		change.PreviousSHA256, change.NewSHA256, change.ChangedBy, change.ChangeReason,
 		change.GitCommitSHA, change.BackupPath, time.Now(),
 	)
 	return err
 }
 
-// GetConfigChanges retrieves configuration change history for a server.
-func (d *DB) GetConfigChanges(haproxyServerID int64, configType ConfigType, limit int) ([]ConfigChange, error) {
+// GetConfigChanges retrieves configuration change history for a box.
+func (d *DB) GetConfigChanges(haproxyBoxID int64, configType ConfigType, limit int) ([]ConfigChange, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
 	rows, err := d.db.Query(`
-		SELECT cc.id, cc.haproxy_server_id, cc.config_type, cc.change_type,
+		SELECT cc.id, cc.haproxy_box_id, cc.config_type, cc.change_type,
 			cc.previous_sha256, cc.new_sha256, cc.changed_by, cc.change_reason,
 			cc.git_commit_sha, cc.backup_path, cc.created_at,
 			COALESCE(u.username, '')
 		FROM config_changes cc
 		LEFT JOIN users u ON cc.changed_by = u.id
-		WHERE cc.haproxy_server_id = ? AND cc.config_type = ?
+		WHERE cc.haproxy_box_id = ? AND cc.config_type = ?
 		ORDER BY cc.created_at DESC
 		LIMIT ?`,
-		haproxyServerID, configType, limit,
+		haproxyBoxID, configType, limit,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get config changes: %w", err)
@@ -326,7 +326,7 @@ func (d *DB) GetConfigChanges(haproxyServerID int64, configType ConfigType, limi
 		var prevSHA, newSHA, reason, gitCommit, backupPath sql.NullString
 
 		err := rows.Scan(
-			&c.ID, &c.HAProxyServerID, &c.ConfigType, &c.ChangeType,
+			&c.ID, &c.HAProxyBoxID, &c.ConfigType, &c.ChangeType,
 			&prevSHA, &newSHA, &c.ChangedBy, &reason,
 			&gitCommit, &backupPath, &c.CreatedAt, &c.ChangedByName,
 		)
@@ -356,13 +356,13 @@ func (d *DB) GetConfigChanges(haproxyServerID int64, configType ConfigType, limi
 	return changes, nil
 }
 
-// GetRecentConfigChanges retrieves all recent configuration changes across all servers.
+// GetRecentConfigChanges retrieves all recent configuration changes across all boxes.
 func (d *DB) GetRecentConfigChanges(limit int) ([]ConfigChange, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
 	rows, err := d.db.Query(`
-		SELECT cc.id, cc.haproxy_server_id, cc.config_type, cc.change_type,
+		SELECT cc.id, cc.haproxy_box_id, cc.config_type, cc.change_type,
 			cc.previous_sha256, cc.new_sha256, cc.changed_by, cc.change_reason,
 			cc.git_commit_sha, cc.backup_path, cc.created_at,
 			COALESCE(u.username, '')
@@ -383,7 +383,7 @@ func (d *DB) GetRecentConfigChanges(limit int) ([]ConfigChange, error) {
 		var prevSHA, newSHA, reason, gitCommit, backupPath sql.NullString
 
 		err := rows.Scan(
-			&c.ID, &c.HAProxyServerID, &c.ConfigType, &c.ChangeType,
+			&c.ID, &c.HAProxyBoxID, &c.ConfigType, &c.ChangeType,
 			&prevSHA, &newSHA, &c.ChangedBy, &reason,
 			&gitCommit, &backupPath, &c.CreatedAt, &c.ChangedByName,
 		)

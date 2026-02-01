@@ -6,7 +6,7 @@ import (
 	"github.com/sarg3nt/gearbox/internal/framework/templates/pages/traffic"
 )
 
-templ TrafficPage(user *models.User, servers []models.ServerConfig) {
+templ TrafficPage(user *models.User, servers []models.BoxConfig) {
 	@layouts.Base("Traffic Analysis", user, "/traffic") {
 		@traffic.PageHeader(servers)
 		<!-- Store server ID for JavaScript -->

@@ -5,7 +5,7 @@ import (
 	"github.com/sarg3nt/gearbox/internal/framework/templates/layouts"
 )
 
-templ AlertsPage(user *models.User, servers []models.ServerConfig, perms *models.UserPermissions) {
+templ AlertsPage(user *models.User, servers []models.BoxConfig, perms *models.UserPermissions) {
 	@layouts.Base("Alerts", user, "/alerts") {
 		<!-- Hidden container for page header content -->
 		<div id="page-header-source" class="hidden">

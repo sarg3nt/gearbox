@@ -203,7 +203,7 @@ func (e *Evaluator) evaluateBackendDownRule(rule *models.AlertRule, stats *model
 	for _, backend := range stats.Backends {
 		if backend.Status == "DOWN" {
 			// Check if this backend has health monitoring disabled
-			disabled, err := e.db.IsEntityDisabled(rule.ServerID, database.EntityTypeBackend, backend.Name)
+			disabled, err := e.db.IsEntityDisabled(rule.BoxID, database.EntityTypeBackend, backend.Name)
 			if err != nil {
 				e.logger.Error("Error checking if backend %s is disabled: %v", backend.Name, err)
 			}
@@ -225,7 +225,7 @@ func (e *Evaluator) evaluateFrontendDownRule(rule *models.AlertRule, stats *mode
 	for _, frontend := range stats.Frontends {
 		if frontend.Status == "STOP" || frontend.Status == "DOWN" {
 			// Check if this frontend has health monitoring disabled
-			disabled, err := e.db.IsEntityDisabled(rule.ServerID, database.EntityTypeFrontend, frontend.Name)
+			disabled, err := e.db.IsEntityDisabled(rule.BoxID, database.EntityTypeFrontend, frontend.Name)
 			if err != nil {
 				e.logger.Error("Error checking if frontend %s is disabled: %v", frontend.Name, err)
 			}
@@ -286,7 +286,7 @@ func (e *Evaluator) evaluateServiceDownRule(rule *models.AlertRule, metrics *mod
 		// A service is considered "down" if it's not active
 		if !status.Active || status.Status == "failed" || status.Status == "inactive" {
 			// Check if this service has health monitoring disabled
-			disabled, err := e.db.IsEntityDisabled(rule.ServerID, database.EntityTypeService, name)
+			disabled, err := e.db.IsEntityDisabled(rule.BoxID, database.EntityTypeService, name)
 			if err != nil {
 				e.logger.Error("Error checking if service %s is disabled: %v", name, err)
 			}
@@ -362,7 +362,7 @@ func (e *Evaluator) isInCooldown(rule *models.AlertRule) bool {
 // a recently acknowledged alert (based on the alerts integration config).
 func (e *Evaluator) isSuppressedByAck(rule *models.AlertRule, affectedEntity string) bool {
 	// Get alerts integration config for this server
-	config, err := e.db.GetAlertsConfig(rule.ServerID)
+	config, err := e.db.GetAlertsConfig(rule.BoxID)
 	if err != nil || config == nil {
 		return false
 	}
@@ -411,7 +411,7 @@ func (e *Evaluator) triggerAlert(rule *models.AlertRule, value float64, affected
 
 	alert := &models.Alert{
 		RuleID:         rule.ID,
-		ServerID:       rule.ServerID,
+		BoxID:          rule.BoxID,
 		Type:           rule.Type,
 		Severity:       rule.Severity,
 		Status:         models.AlertStatusActive,
@@ -436,7 +436,7 @@ func (e *Evaluator) triggerAlert(rule *models.AlertRule, value float64, affected
 	if e.eventHub != nil {
 		e.eventHub.Publish(events.Event{
 			Type:     "alert.triggered",
-			ServerID: rule.ServerID,
+			ServerID: rule.BoxID,
 			Data: map[string]any{
 				"alert_id":        alert.ID,
 				"title":           alert.Title,

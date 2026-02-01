@@ -8,10 +8,10 @@ import (
 	"github.com/sarg3nt/gearbox/internal/framework/models"
 )
 
-// ServerDB represents a monitored server configuration in the database.
-type ServerDB struct {
+// BoxDB represents a monitored box configuration in the database.
+type BoxDB struct {
 	ID              int64
-	ServerID        string
+	BoxID           string
 	Name            string
 	Location        string
 	Notes           string
@@ -24,229 +24,229 @@ type ServerDB struct {
 	CreatedBy       *string // UUID
 }
 
-// UsesAgentAPI returns true if this server has valid Agent API configuration.
-// All servers use Agent API - this validates the configuration is complete.
-func (s *ServerDB) UsesAgentAPI() bool {
-	return s.AgentURL != "" && len(s.APIKeyEncrypted) > 0
+// UsesAgentAPI returns true if this box has valid Agent API configuration.
+// All boxes use Agent API - this validates the configuration is complete.
+func (b *BoxDB) UsesAgentAPI() bool {
+	return b.AgentURL != "" && len(b.APIKeyEncrypted) > 0
 }
 
-// CreateServer inserts a new server configuration into the database.
-func (d *DB) CreateServer(server *ServerDB) error {
+// CreateBox inserts a new box configuration into the database.
+func (d *DB) CreateBox(box *BoxDB) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	query := `
-		INSERT INTO servers (
-			server_id, name, location, notes, agent_url, api_key_encrypted,
+		INSERT INTO boxes (
+			box_id, name, location, notes, agent_url, api_key_encrypted,
 			enabled, auto_discovery, created_by, updated_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 	`
 
 	result, err := d.db.Exec(query,
-		server.ServerID,
-		server.Name,
-		server.Location,
-		server.Notes,
-		server.AgentURL,
-		server.APIKeyEncrypted,
-		server.Enabled,
-		server.AutoDiscovery,
-		server.CreatedBy,
+		box.BoxID,
+		box.Name,
+		box.Location,
+		box.Notes,
+		box.AgentURL,
+		box.APIKeyEncrypted,
+		box.Enabled,
+		box.AutoDiscovery,
+		box.CreatedBy,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to insert server: %w", err)
+		return fmt.Errorf("failed to insert box: %w", err)
 	}
 
-	serverID, err := result.LastInsertId()
+	boxID, err := result.LastInsertId()
 	if err != nil {
 		return fmt.Errorf("failed to get last insert ID: %w", err)
 	}
-	server.ID = serverID
+	box.ID = boxID
 
 	return nil
 }
 
-// GetServers retrieves all server configurations from the database.
-func (d *DB) GetServers() ([]*ServerDB, error) {
+// GetBoxes retrieves all box configurations from the database.
+func (d *DB) GetBoxes() ([]*BoxDB, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
 	query := `
-		SELECT id, server_id, name, location, notes, agent_url, api_key_encrypted,
+		SELECT id, box_id, name, location, notes, agent_url, api_key_encrypted,
 			enabled, auto_discovery, created_at, updated_at, created_by
-		FROM servers
+		FROM boxes
 		ORDER BY name ASC
 	`
 
 	rows, err := d.db.Query(query)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query servers: %w", err)
+		return nil, fmt.Errorf("failed to query boxes: %w", err)
 	}
 	defer rows.Close()
 
-	var servers []*ServerDB
+	var boxes []*BoxDB
 	for rows.Next() {
-		server := &ServerDB{}
+		box := &BoxDB{}
 		err := rows.Scan(
-			&server.ID,
-			&server.ServerID,
-			&server.Name,
-			&server.Location,
-			&server.Notes,
-			&server.AgentURL,
-			&server.APIKeyEncrypted,
-			&server.Enabled,
-			&server.AutoDiscovery,
-			&server.CreatedAt,
-			&server.UpdatedAt,
-			&server.CreatedBy,
+			&box.ID,
+			&box.BoxID,
+			&box.Name,
+			&box.Location,
+			&box.Notes,
+			&box.AgentURL,
+			&box.APIKeyEncrypted,
+			&box.Enabled,
+			&box.AutoDiscovery,
+			&box.CreatedAt,
+			&box.UpdatedAt,
+			&box.CreatedBy,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan server: %w", err)
+			return nil, fmt.Errorf("failed to scan box: %w", err)
 		}
 
-		servers = append(servers, server)
+		boxes = append(boxes, box)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating servers: %w", err)
+		return nil, fmt.Errorf("error iterating boxes: %w", err)
 	}
 
-	return servers, nil
+	return boxes, nil
 }
 
-// GetEnabledServers retrieves only enabled server configurations.
-func (d *DB) GetEnabledServers() ([]*ServerDB, error) {
+// GetEnabledBoxes retrieves only enabled box configurations.
+func (d *DB) GetEnabledBoxes() ([]*BoxDB, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
 	query := `
-		SELECT id, server_id, name, location, notes, agent_url, api_key_encrypted,
+		SELECT id, box_id, name, location, notes, agent_url, api_key_encrypted,
 			enabled, auto_discovery, created_at, updated_at, created_by
-		FROM servers
+		FROM boxes
 		WHERE enabled = 1
 		ORDER BY name ASC
 	`
 
 	rows, err := d.db.Query(query)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query enabled servers: %w", err)
+		return nil, fmt.Errorf("failed to query enabled boxes: %w", err)
 	}
 	defer rows.Close()
 
-	var servers []*ServerDB
+	var boxes []*BoxDB
 	for rows.Next() {
-		server := &ServerDB{}
+		box := &BoxDB{}
 		err := rows.Scan(
-			&server.ID,
-			&server.ServerID,
-			&server.Name,
-			&server.Location,
-			&server.Notes,
-			&server.AgentURL,
-			&server.APIKeyEncrypted,
-			&server.Enabled,
-			&server.AutoDiscovery,
-			&server.CreatedAt,
-			&server.UpdatedAt,
-			&server.CreatedBy,
+			&box.ID,
+			&box.BoxID,
+			&box.Name,
+			&box.Location,
+			&box.Notes,
+			&box.AgentURL,
+			&box.APIKeyEncrypted,
+			&box.Enabled,
+			&box.AutoDiscovery,
+			&box.CreatedAt,
+			&box.UpdatedAt,
+			&box.CreatedBy,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan server: %w", err)
+			return nil, fmt.Errorf("failed to scan box: %w", err)
 		}
 
-		servers = append(servers, server)
+		boxes = append(boxes, box)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating enabled servers: %w", err)
+		return nil, fmt.Errorf("error iterating enabled boxes: %w", err)
 	}
 
-	return servers, nil
+	return boxes, nil
 }
 
-// GetServerByID retrieves a server by its database ID.
-func (d *DB) GetServerByID(id int64) (*ServerDB, error) {
+// GetBoxByID retrieves a box by its database ID.
+func (d *DB) GetBoxByID(id int64) (*BoxDB, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
 	query := `
-		SELECT id, server_id, name, location, notes, agent_url, api_key_encrypted,
+		SELECT id, box_id, name, location, notes, agent_url, api_key_encrypted,
 			enabled, auto_discovery, created_at, updated_at, created_by
-		FROM servers
+		FROM boxes
 		WHERE id = ?
 	`
 
-	server := &ServerDB{}
+	box := &BoxDB{}
 	err := d.db.QueryRow(query, id).Scan(
-		&server.ID,
-		&server.ServerID,
-		&server.Name,
-		&server.Location,
-		&server.Notes,
-		&server.AgentURL,
-		&server.APIKeyEncrypted,
-		&server.Enabled,
-		&server.AutoDiscovery,
-		&server.CreatedAt,
-		&server.UpdatedAt,
-		&server.CreatedBy,
+		&box.ID,
+		&box.BoxID,
+		&box.Name,
+		&box.Location,
+		&box.Notes,
+		&box.AgentURL,
+		&box.APIKeyEncrypted,
+		&box.Enabled,
+		&box.AutoDiscovery,
+		&box.CreatedAt,
+		&box.UpdatedAt,
+		&box.CreatedBy,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to get server: %w", err)
+		return nil, fmt.Errorf("failed to get box: %w", err)
 	}
 
-	return server, nil
+	return box, nil
 }
 
-// GetServerByServerID retrieves a server by its server_id field.
-func (d *DB) GetServerByServerID(serverID string) (*ServerDB, error) {
+// GetBoxByBoxID retrieves a box by its box_id field.
+func (d *DB) GetBoxByBoxID(boxID string) (*BoxDB, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
 	query := `
-		SELECT id, server_id, name, location, notes, agent_url, api_key_encrypted,
+		SELECT id, box_id, name, location, notes, agent_url, api_key_encrypted,
 			enabled, auto_discovery, created_at, updated_at, created_by
-		FROM servers
-		WHERE server_id = ?
+		FROM boxes
+		WHERE box_id = ?
 	`
 
-	server := &ServerDB{}
-	err := d.db.QueryRow(query, serverID).Scan(
-		&server.ID,
-		&server.ServerID,
-		&server.Name,
-		&server.Location,
-		&server.Notes,
-		&server.AgentURL,
-		&server.APIKeyEncrypted,
-		&server.Enabled,
-		&server.AutoDiscovery,
-		&server.CreatedAt,
-		&server.UpdatedAt,
-		&server.CreatedBy,
+	box := &BoxDB{}
+	err := d.db.QueryRow(query, boxID).Scan(
+		&box.ID,
+		&box.BoxID,
+		&box.Name,
+		&box.Location,
+		&box.Notes,
+		&box.AgentURL,
+		&box.APIKeyEncrypted,
+		&box.Enabled,
+		&box.AutoDiscovery,
+		&box.CreatedAt,
+		&box.UpdatedAt,
+		&box.CreatedBy,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to get server: %w", err)
+		return nil, fmt.Errorf("failed to get box: %w", err)
 	}
 
-	return server, nil
+	return box, nil
 }
 
-// UpdateServer updates an existing server configuration.
-func (d *DB) UpdateServer(server *ServerDB) error {
+// UpdateBox updates an existing box configuration.
+func (d *DB) UpdateBox(box *BoxDB) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	query := `
-		UPDATE servers SET
-			server_id = ?,
+		UPDATE boxes SET
+			box_id = ?,
 			name = ?,
 			location = ?,
 			notes = ?,
@@ -259,18 +259,18 @@ func (d *DB) UpdateServer(server *ServerDB) error {
 	`
 
 	result, err := d.db.Exec(query,
-		server.ServerID,
-		server.Name,
-		server.Location,
-		server.Notes,
-		server.AgentURL,
-		server.APIKeyEncrypted,
-		server.Enabled,
-		server.AutoDiscovery,
-		server.ID,
+		box.BoxID,
+		box.Name,
+		box.Location,
+		box.Notes,
+		box.AgentURL,
+		box.APIKeyEncrypted,
+		box.Enabled,
+		box.AutoDiscovery,
+		box.ID,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to update server: %w", err)
+		return fmt.Errorf("failed to update box: %w", err)
 	}
 
 	rows, err := result.RowsAffected()
@@ -278,21 +278,21 @@ func (d *DB) UpdateServer(server *ServerDB) error {
 		return fmt.Errorf("failed to get rows affected: %w", err)
 	}
 	if rows == 0 {
-		return fmt.Errorf("server not found")
+		return fmt.Errorf("box not found")
 	}
 
 	return nil
 }
 
-// DeleteServer deletes a server configuration from the database.
-func (d *DB) DeleteServer(id int64) error {
+// DeleteBox deletes a box configuration from the database.
+func (d *DB) DeleteBox(id int64) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	query := `DELETE FROM servers WHERE id = ?`
+	query := `DELETE FROM boxes WHERE id = ?`
 	result, err := d.db.Exec(query, id)
 	if err != nil {
-		return fmt.Errorf("failed to delete server: %w", err)
+		return fmt.Errorf("failed to delete box: %w", err)
 	}
 
 	rows, err := result.RowsAffected()
@@ -300,26 +300,26 @@ func (d *DB) DeleteServer(id int64) error {
 		return fmt.Errorf("failed to get rows affected: %w", err)
 	}
 	if rows == 0 {
-		return fmt.Errorf("server not found")
+		return fmt.Errorf("box not found")
 	}
 
 	return nil
 }
 
-// SetServerEnabled enables or disables a server.
-func (d *DB) SetServerEnabled(id int64, enabled bool) error {
+// SetBoxEnabled enables or disables a box.
+func (d *DB) SetBoxEnabled(id int64, enabled bool) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	query := `
-		UPDATE servers
+		UPDATE boxes
 		SET enabled = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?
 	`
 
 	result, err := d.db.Exec(query, enabled, id)
 	if err != nil {
-		return fmt.Errorf("failed to update server enabled status: %w", err)
+		return fmt.Errorf("failed to update box enabled status: %w", err)
 	}
 
 	rows, err := result.RowsAffected()
@@ -327,45 +327,45 @@ func (d *DB) SetServerEnabled(id int64, enabled bool) error {
 		return fmt.Errorf("failed to get rows affected: %w", err)
 	}
 	if rows == 0 {
-		return fmt.Errorf("server not found")
+		return fmt.Errorf("box not found")
 	}
 
 	return nil
 }
 
-// CountServers returns the total count of servers.
-func (d *DB) CountServers() (int, error) {
+// CountBoxes returns the total count of boxes.
+func (d *DB) CountBoxes() (int, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
 	var count int
-	err := d.db.QueryRow("SELECT COUNT(*) FROM servers").Scan(&count)
+	err := d.db.QueryRow("SELECT COUNT(*) FROM boxes").Scan(&count)
 	if err != nil {
-		return 0, fmt.Errorf("failed to count servers: %w", err)
+		return 0, fmt.Errorf("failed to count boxes: %w", err)
 	}
 	return count, nil
 }
 
-// CountEnabledServers returns the count of enabled servers.
-func (d *DB) CountEnabledServers() (int, error) {
+// CountEnabledBoxes returns the count of enabled boxes.
+func (d *DB) CountEnabledBoxes() (int, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
 	var count int
-	err := d.db.QueryRow("SELECT COUNT(*) FROM servers WHERE enabled = 1").Scan(&count)
+	err := d.db.QueryRow("SELECT COUNT(*) FROM boxes WHERE enabled = 1").Scan(&count)
 	if err != nil {
-		return 0, fmt.Errorf("failed to count enabled servers: %w", err)
+		return 0, fmt.Errorf("failed to count enabled boxes: %w", err)
 	}
 	return count, nil
 }
 
-// ToServerConfig converts a ServerDB to a models.ServerConfig.
+// ToBoxConfig converts a BoxDB to a models.BoxConfig.
 // This requires decryption of the API key, which should be done by the caller.
-func (s *ServerDB) ToServerConfig(apiKey string) models.ServerConfig {
-	return models.ServerConfig{
-		ID:       s.ServerID,
-		Name:     s.Name,
-		AgentURL: s.AgentURL,
+func (b *BoxDB) ToBoxConfig(apiKey string) models.BoxConfig {
+	return models.BoxConfig{
+		ID:       b.BoxID,
+		Name:     b.Name,
+		AgentURL: b.AgentURL,
 		APIKey:   apiKey,
 	}
 }

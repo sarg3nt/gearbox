@@ -36,22 +36,22 @@ func (h *Handler) PluginsPage(w http.ResponseWriter, r *http.Request) {
 	servers := h.getEnabledServers()
 
 	// Get server ID from query param, default to first server
-	serverID := r.URL.Query().Get("server")
-	if serverID == "" && len(servers) > 0 {
-		serverID = servers[0].ID
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" && len(servers) > 0 {
+		boxID = servers[0].ID
 	}
 
-	if serverID == "" {
+	if boxID == "" {
 		http.Error(w, "No servers configured", http.StatusBadRequest)
 		return
 	}
 
 	// Ensure default plugins exist for this server
-	if err := h.db.EnsureServerPlugins(serverID); err != nil {
+	if err := h.db.EnsureServerPlugins(boxID); err != nil {
 		h.logger.Error("Failed to ensure server plugins", "error", err)
 	}
 
-	plugins, err := h.db.GetPlugins(serverID)
+	plugins, err := h.db.GetPlugins(boxID)
 	if err != nil {
 		h.logger.Error("Failed to get plugins", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -62,7 +62,7 @@ func (h *Handler) PluginsPage(w http.ResponseWriter, r *http.Request) {
 	successMsg := r.URL.Query().Get("success")
 	errorMsg := r.URL.Query().Get("error")
 
-	component := pages.PluginsPage(user, servers, serverID, plugins, successMsg, errorMsg)
+	component := pages.PluginsPage(user, servers, boxID, plugins, successMsg, errorMsg)
 	if err := component.Render(r.Context(), w); err != nil {
 		h.logger.Error("Failed to render plugins template", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -111,16 +111,16 @@ func (h *Handler) PluginDetailPage(w http.ResponseWriter, r *http.Request) {
 	servers := h.getEnabledServers()
 
 	// Get server ID from query param
-	serverID := r.URL.Query().Get("server")
-	if serverID == "" && len(servers) > 0 {
-		serverID = servers[0].ID
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" && len(servers) > 0 {
+		boxID = servers[0].ID
 	}
 
-	if serverID == "" {
+	if boxID == "" {
 		http.Error(w, "No servers configured", http.StatusBadRequest)
 		return
 	}
-	plugin, err := h.db.GetPlugin(serverID, pluginName)
+	plugin, err := h.db.GetPlugin(boxID, pluginName)
 	if err != nil {
 		h.logger.Error("failed to get plugin", "plugin", pluginName, "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -135,13 +135,13 @@ func (h *Handler) PluginDetailPage(w http.ResponseWriter, r *http.Request) {
 	// Get available services from agent for services plugin
 	var availableServices []string
 	if pluginName == database.PluginServices {
-		availableServices = h.getInstalledServices(serverID)
+		availableServices = h.getInstalledServices(boxID)
 	}
 
 	// Get available log sources from agent for logs plugin
 	var availableLogSources []pages.LogSourceInfo
 	if pluginName == database.PluginLogs {
-		availableLogSources = h.getAvailableLogSources(serverID)
+		availableLogSources = h.getAvailableLogSources(boxID)
 	}
 
 	successMsg := r.URL.Query().Get("success")
@@ -149,11 +149,11 @@ func (h *Handler) PluginDetailPage(w http.ResponseWriter, r *http.Request) {
 
 	// Get server name for display
 	var serverName string
-	if serverConfig, exists := h.getServerConfig(serverID); exists {
+	if serverConfig, exists := h.getServerConfig(boxID); exists {
 		serverName = serverConfig.Name
 	}
 
-	component := pages.PluginDetailPage(user, serverID, serverName, plugin, availableServices, availableLogSources, successMsg, errorMsg)
+	component := pages.PluginDetailPage(user, boxID, serverName, plugin, availableServices, availableLogSources, successMsg, errorMsg)
 	if err := component.Render(r.Context(), w); err != nil {
 		h.logger.Error("Failed to render plugin detail template", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -190,16 +190,16 @@ func (h *Handler) PluginTogglePost(w http.ResponseWriter, r *http.Request) {
 	servers := h.getEnabledServers()
 
 	// Get server ID from query param
-	serverID := r.URL.Query().Get("server")
-	if serverID == "" && len(servers) > 0 {
-		serverID = servers[0].ID
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" && len(servers) > 0 {
+		boxID = servers[0].ID
 	}
 
 	pluginName := chi.URLParam(r, "name")
-	redirectBase := "/settings/plugins?server=" + url.QueryEscape(serverID)
+	redirectBase := "/settings/plugins?server=" + url.QueryEscape(boxID)
 
 	// Get current plugin
-	plugin, err := h.db.GetPlugin(serverID, pluginName)
+	plugin, err := h.db.GetPlugin(boxID, pluginName)
 	if err != nil {
 		h.logger.Error("failed to get plugin", "plugin", pluginName, "error", err)
 		if isAJAXRequest(r) {
@@ -225,7 +225,7 @@ func (h *Handler) PluginTogglePost(w http.ResponseWriter, r *http.Request) {
 
 	// Toggle the enabled state
 	newEnabled := !plugin.Enabled
-	if err := h.db.SetPluginEnabled(serverID, pluginName, newEnabled, &user.ID); err != nil {
+	if err := h.db.SetPluginEnabled(boxID, pluginName, newEnabled, &user.ID); err != nil {
 		h.logger.Error("failed to toggle plugin", "plugin", pluginName, "error", err)
 		if isAJAXRequest(r) {
 			w.Header().Set("Content-Type", "application/json")
@@ -292,11 +292,11 @@ func (h *Handler) PluginUpdatePost(w http.ResponseWriter, r *http.Request) {
 	servers := h.getEnabledServers()
 
 	// Get server ID from query param
-	serverID := r.URL.Query().Get("server")
-	if serverID == "" && len(servers) > 0 {
-		serverID = servers[0].ID
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" && len(servers) > 0 {
+		boxID = servers[0].ID
 	}
-	redirectBase := "/settings/plugins/" + pluginName + "?server=" + url.QueryEscape(serverID)
+	redirectBase := "/settings/plugins/" + pluginName + "?server=" + url.QueryEscape(boxID)
 
 	if err := r.ParseForm(); err != nil {
 		http.Redirect(w, r, redirectBase+"&error="+url.QueryEscape("Invalid form data"), http.StatusSeeOther)
@@ -304,9 +304,9 @@ func (h *Handler) PluginUpdatePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get current plugin
-	plugin, err := h.db.GetPlugin(serverID, pluginName)
+	plugin, err := h.db.GetPlugin(boxID, pluginName)
 	if err != nil || plugin == nil {
-		http.Redirect(w, r, "/settings/plugins?server="+url.QueryEscape(serverID)+"&error="+url.QueryEscape("Integration not found"), http.StatusSeeOther)
+		http.Redirect(w, r, "/settings/plugins?server="+url.QueryEscape(boxID)+"&error="+url.QueryEscape("Integration not found"), http.StatusSeeOther)
 		return
 	}
 
@@ -317,7 +317,7 @@ func (h *Handler) PluginUpdatePost(w http.ResponseWriter, r *http.Request) {
 		newConfig, err = h.parseServicesConfig(r)
 	case database.PluginLogs:
 		// Logs have a special handler that saves to log_sources table
-		err = h.saveLogSourcesConfig(serverID, r)
+		err = h.saveLogSourcesConfig(boxID, r)
 		if err != nil {
 			http.Redirect(w, r, redirectBase+"&error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 			return
@@ -346,7 +346,7 @@ func (h *Handler) PluginUpdatePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update the plugin
-	if err := h.db.SetPluginConfig(serverID, pluginName, newConfig, &user.ID); err != nil {
+	if err := h.db.SetPluginConfig(boxID, pluginName, newConfig, &user.ID); err != nil {
 		h.logger.Error("failed to update plugin", "plugin", pluginName, "error", err)
 		http.Redirect(w, r, redirectBase+"&error="+url.QueryEscape("Failed to save configuration"), http.StatusSeeOther)
 		return
@@ -636,7 +636,7 @@ func (h *Handler) parseOSUpdatesConfig(r *http.Request) (json.RawMessage, error)
 }
 
 // saveLogSourcesConfig saves log source selections to the database.
-func (h *Handler) saveLogSourcesConfig(serverID string, r *http.Request) error {
+func (h *Handler) saveLogSourcesConfig(boxID string, r *http.Request) error {
 	logSources := r.Form["log_sources"]
 
 	// Build the list of log source settings
@@ -649,16 +649,16 @@ func (h *Handler) saveLogSourcesConfig(serverID string, r *http.Request) error {
 	}
 
 	// Save to database
-	return h.db.SetEnabledLogSourcesByServerID(serverID, settings)
+	return h.db.SetEnabledLogSourcesByServerID(boxID, settings)
 }
 
 // getAvailableLogSources fetches the list of available log sources from the agent
 // and combines it with the current enabled settings from the database.
-func (h *Handler) getAvailableLogSources(serverID string) []pages.LogSourceInfo {
+func (h *Handler) getAvailableLogSources(boxID string) []pages.LogSourceInfo {
 	// Get server config for agent connection
-	serverConfig, exists := h.getServerConfig(serverID)
+	serverConfig, exists := h.getServerConfig(boxID)
 	if !exists || !serverConfig.UsesAgentAPI() {
-		h.logger.Info("agent API not configured for server", "server_id", serverID)
+		h.logger.Info("agent API not configured for server", "server_id", boxID)
 		return nil
 	}
 
@@ -666,14 +666,14 @@ func (h *Handler) getAvailableLogSources(serverID string) []pages.LogSourceInfo 
 	agentClient := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey)
 	sourcesResp, err := agentClient.GetLogSources()
 	if err != nil {
-		h.logger.Error("failed to get log sources from agent for server", "server_id", serverID, "error", err)
+		h.logger.Error("failed to get log sources from agent for server", "server_id", boxID, "error", err)
 		return nil
 	}
 
 	// Get enabled log sources from database
-	enabledSources, err := h.db.GetEnabledLogSourcesByServerID(serverID)
+	enabledSources, err := h.db.GetEnabledLogSourcesByServerID(boxID)
 	if err != nil {
-		h.logger.Error("failed to get enabled log sources for server", "server_id", serverID, "error", err)
+		h.logger.Error("failed to get enabled log sources for server", "server_id", boxID, "error", err)
 	}
 
 	// Build the combined list
@@ -683,11 +683,11 @@ func (h *Handler) getAvailableLogSources(serverID string) []pages.LogSourceInfo 
 // getInstalledServices fetches the list of installed services from the agent,
 // filtered to only include services from the curated suggestions list.
 // Returns the intersection of available services on the target and the curated list.
-func (h *Handler) getInstalledServices(serverID string) []string {
+func (h *Handler) getInstalledServices(boxID string) []string {
 	// Get server config for agent connection
-	serverConfig, exists := h.getServerConfig(serverID)
+	serverConfig, exists := h.getServerConfig(boxID)
 	if !exists || !serverConfig.UsesAgentAPI() {
-		h.logger.Info("agent API not configured for server, falling back to curated list", "server_id", serverID)
+		h.logger.Info("agent API not configured for server, falling back to curated list", "server_id", boxID)
 		return h.getCuratedServicesList()
 	}
 
@@ -695,7 +695,7 @@ func (h *Handler) getInstalledServices(serverID string) []string {
 	agentClient := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey)
 	availableResp, err := agentClient.GetAvailableServices()
 	if err != nil {
-		h.logger.Error("failed to get available services from agent for server", "server_id", serverID, "error", err)
+		h.logger.Error("failed to get available services from agent for server", "server_id", boxID, "error", err)
 		return h.getCuratedServicesList()
 	}
 
@@ -784,19 +784,19 @@ func (h *Handler) APIPluginsHandler(w http.ResponseWriter, r *http.Request) {
 	// Get enabled servers from database (dynamic, includes newly created servers)
 	servers := h.getEnabledServers()
 
-	serverID := r.URL.Query().Get("server")
-	if serverID == "" && len(servers) > 0 {
-		serverID = servers[0].ID
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" && len(servers) > 0 {
+		boxID = servers[0].ID
 	}
 
-	if serverID == "" {
+	if boxID == "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{"error": "No server specified"})
 		return
 	}
 
-	plugins, err := h.db.GetPlugins(serverID)
+	plugins, err := h.db.GetPlugins(boxID)
 	if err != nil {
 		h.logger.Error("Failed to get plugins", "error", err)
 		w.Header().Set("Content-Type", "application/json")
@@ -814,19 +814,19 @@ func (h *Handler) APIPluginStatusHandler(w http.ResponseWriter, r *http.Request)
 	// Get enabled servers from database (dynamic, includes newly created servers)
 	servers := h.getEnabledServers()
 
-	serverID := r.URL.Query().Get("server")
-	if serverID == "" && len(servers) > 0 {
-		serverID = servers[0].ID
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" && len(servers) > 0 {
+		boxID = servers[0].ID
 	}
 
-	if serverID == "" {
+	if boxID == "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{"error": "No server specified"})
 		return
 	}
 
-	status, err := h.db.GetEnabledPlugins(serverID)
+	status, err := h.db.GetEnabledPlugins(boxID)
 	if err != nil {
 		h.logger.Error("Failed to get plugin status", "error", err)
 		w.Header().Set("Content-Type", "application/json")
@@ -841,15 +841,15 @@ func (h *Handler) APIPluginStatusHandler(w http.ResponseWriter, r *http.Request)
 
 // APIMetricsStorageStatsHandler returns storage statistics for metrics data.
 func (h *Handler) APIMetricsStorageStatsHandler(w http.ResponseWriter, r *http.Request) {
-	serverID := chi.URLParam(r, "serverID")
-	if serverID == "" {
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{"error": "No server specified"})
 		return
 	}
 
-	stats, err := h.db.GetMetricsStorageStats(serverID)
+	stats, err := h.db.GetMetricsStorageStats(boxID)
 	if err != nil {
 		h.logger.Error("Failed to get metrics storage stats", "error", err)
 		w.Header().Set("Content-Type", "application/json")
@@ -883,12 +883,12 @@ func (h *Handler) APIUpdatePluginSortOrder(w http.ResponseWriter, r *http.Reques
 	// Get enabled servers from database (dynamic, includes newly created servers)
 	servers := h.getEnabledServers()
 
-	serverID := r.URL.Query().Get("server")
-	if serverID == "" && len(servers) > 0 {
-		serverID = servers[0].ID
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" && len(servers) > 0 {
+		boxID = servers[0].ID
 	}
 
-	if serverID == "" {
+	if boxID == "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{"error": "No server specified"})
@@ -904,7 +904,7 @@ func (h *Handler) APIUpdatePluginSortOrder(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if err := h.db.UpdatePluginSortOrders(serverID, orders, &user.ID); err != nil {
+	if err := h.db.UpdatePluginSortOrders(boxID, orders, &user.ID); err != nil {
 		h.logger.Error("Failed to update plugin sort orders", "error", err)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -936,15 +936,15 @@ func (h *Handler) APIClearMetricsDataHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
-	if serverID == "" {
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{"error": "No server specified"})
 		return
 	}
 
-	if err := h.db.ClearMetricsData(serverID); err != nil {
+	if err := h.db.ClearMetricsData(boxID); err != nil {
 		h.logger.Error("Failed to clear metrics data", "error", err)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -952,7 +952,7 @@ func (h *Handler) APIClearMetricsDataHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	h.logAudit(r, user.ID, "metrics_cleared", "Cleared all metrics data for server "+serverID)
+	h.logAudit(r, user.ID, "metrics_cleared", "Cleared all metrics data for server "+boxID)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"success": "Metrics data cleared"})

@@ -18,10 +18,10 @@ func (d *DB) initPermissionsSchema() error {
 		permission TEXT NOT NULL,
 		granted_by INTEGER NOT NULL,
 		granted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-		server_id TEXT DEFAULT '',
+		box_id TEXT DEFAULT '',
 		FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
 		FOREIGN KEY (granted_by) REFERENCES users(id) ON DELETE CASCADE,
-		UNIQUE(user_id, component, permission, server_id)
+		UNIQUE(user_id, component, permission, box_id)
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_permission_grants_user
@@ -35,39 +35,39 @@ func (d *DB) initPermissionsSchema() error {
 }
 
 // GrantPermission grants a permission to a user for a component.
-func (d *DB) GrantPermission(userID int64, component models.Component, permission models.Permission, grantedBy int64, serverID *string) error {
+func (d *DB) GrantPermission(userID int64, component models.Component, permission models.Permission, grantedBy int64, boxID *string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	// Convert nil serverID to empty string for consistency with schema
-	serverIDStr := ""
-	if serverID != nil {
-		serverIDStr = *serverID
+	// Convert nil boxID to empty string for consistency with schema
+	boxIDStr := ""
+	if boxID != nil {
+		boxIDStr = *boxID
 	}
 
 	_, err := d.db.Exec(`
-		INSERT OR REPLACE INTO permission_grants (user_id, component, permission, granted_by, server_id)
+		INSERT OR REPLACE INTO permission_grants (user_id, component, permission, granted_by, box_id)
 		VALUES (?, ?, ?, ?, ?)`,
-		userID, component, permission, grantedBy, serverIDStr,
+		userID, component, permission, grantedBy, boxIDStr,
 	)
 	return err
 }
 
 // RevokePermission removes a permission from a user for a component.
-func (d *DB) RevokePermission(userID int64, component models.Component, permission models.Permission, serverID *string) error {
+func (d *DB) RevokePermission(userID int64, component models.Component, permission models.Permission, boxID *string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	// Convert nil serverID to empty string for consistency with schema
-	serverIDStr := ""
-	if serverID != nil {
-		serverIDStr = *serverID
+	// Convert nil boxID to empty string for consistency with schema
+	boxIDStr := ""
+	if boxID != nil {
+		boxIDStr = *boxID
 	}
 
 	_, err := d.db.Exec(`
 		DELETE FROM permission_grants
-		WHERE user_id = ? AND component = ? AND permission = ? AND server_id = ?`,
-		userID, component, permission, serverIDStr,
+		WHERE user_id = ? AND component = ? AND permission = ? AND box_id = ?`,
+		userID, component, permission, boxIDStr,
 	)
 	return err
 }
@@ -134,7 +134,7 @@ func (d *DB) GetUserPermissionGrants(userID int64) ([]models.PermissionGrant, er
 	defer d.mu.RUnlock()
 
 	rows, err := d.db.Query(`
-		SELECT id, user_id, component, permission, granted_by, granted_at, server_id
+		SELECT id, user_id, component, permission, granted_by, granted_at, box_id
 		FROM permission_grants
 		WHERE user_id = ?
 		ORDER BY component, permission`,
@@ -148,15 +148,15 @@ func (d *DB) GetUserPermissionGrants(userID int64) ([]models.PermissionGrant, er
 	var grants []models.PermissionGrant
 	for rows.Next() {
 		var g models.PermissionGrant
-		var serverID sql.NullString
+		var boxID sql.NullString
 
-		err := rows.Scan(&g.ID, &g.UserID, &g.Component, &g.Permission, &g.GrantedBy, &g.GrantedAt, &serverID)
+		err := rows.Scan(&g.ID, &g.UserID, &g.Component, &g.Permission, &g.GrantedBy, &g.GrantedAt, &boxID)
 		if err != nil {
 			return nil, err
 		}
 
-		if serverID.Valid {
-			g.ServerID = &serverID.String
+		if boxID.Valid {
+			g.BoxID = &boxID.String
 		}
 
 		grants = append(grants, g)

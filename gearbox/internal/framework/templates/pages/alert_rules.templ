@@ -7,7 +7,7 @@ import (
 )
 
 // AlertRulesPage renders the alert rules configuration page.
-templ AlertRulesPage(user *models.User, serverID string, serverName string, servers []models.ServerConfig, successMsg, errorMsg string) {
+templ AlertRulesPage(user *models.User, serverID string, serverName string, servers []models.BoxConfig, successMsg, errorMsg string) {
 	@layouts.Base("Alert Rules", user, "/settings") {
 		<!-- Hidden container for page header content - will be moved to main header via JS -->
 		<div id="page-header-source" class="hidden">

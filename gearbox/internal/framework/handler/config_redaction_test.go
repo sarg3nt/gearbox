@@ -7,7 +7,7 @@ import (
 
 func TestRedactConfig_StatsAuth(t *testing.T) {
 	r := NewConfigRedactor()
-	serverID := "test-server"
+	boxID := "test-server"
 
 	input := `
 listen stats
@@ -18,7 +18,7 @@ listen stats
     stats refresh 10s
 `
 
-	result := r.RedactConfig(serverID, input)
+	result := r.RedactConfig(boxID, input)
 
 	// Password should be redacted
 	if strings.Contains(result, "supersecretpassword") {
@@ -31,7 +31,7 @@ listen stats
 	}
 
 	// Verify restoration
-	restored, err := r.RestoreConfig(serverID, result)
+	restored, err := r.RestoreConfig(boxID, result)
 	if err != nil {
 		t.Fatalf("RestoreConfig failed: %v", err)
 	}
@@ -42,7 +42,7 @@ listen stats
 
 func TestRedactConfig_MultipleStatsAuth(t *testing.T) {
 	r := NewConfigRedactor()
-	serverID := "test-server"
+	boxID := "test-server"
 
 	input := `
 listen stats
@@ -51,7 +51,7 @@ listen stats
     stats auth operator:password3
 `
 
-	result := r.RedactConfig(serverID, input)
+	result := r.RedactConfig(boxID, input)
 
 	// All passwords should be redacted
 	if strings.Contains(result, "password1") || strings.Contains(result, "password2") || strings.Contains(result, "password3") {
@@ -66,7 +66,7 @@ listen stats
 	}
 
 	// Verify full restoration
-	restored, err := r.RestoreConfig(serverID, result)
+	restored, err := r.RestoreConfig(boxID, result)
 	if err != nil {
 		t.Fatalf("RestoreConfig failed: %v", err)
 	}
@@ -77,7 +77,7 @@ listen stats
 
 func TestRedactConfig_UserPassword(t *testing.T) {
 	r := NewConfigRedactor()
-	serverID := "test-server"
+	boxID := "test-server"
 
 	input := `
 userlist myusers
@@ -85,7 +85,7 @@ userlist myusers
     user viewer insecure-password viewerpass groups viewers
 `
 
-	result := r.RedactConfig(serverID, input)
+	result := r.RedactConfig(boxID, input)
 
 	if strings.Contains(result, "mysecretpwd") {
 		t.Error("User password was not redacted")
@@ -95,7 +95,7 @@ userlist myusers
 	}
 
 	// Verify restoration
-	restored, err := r.RestoreConfig(serverID, result)
+	restored, err := r.RestoreConfig(boxID, result)
 	if err != nil {
 		t.Fatalf("RestoreConfig failed: %v", err)
 	}
@@ -106,7 +106,7 @@ userlist myusers
 
 func TestRedactConfig_HTTPAuthHeader(t *testing.T) {
 	r := NewConfigRedactor()
-	serverID := "test-server"
+	boxID := "test-server"
 
 	input := `
 frontend http_front
@@ -114,7 +114,7 @@ frontend http_front
     http-request add-header X-Api-Key sk-1234567890abcdef
 `
 
-	result := r.RedactConfig(serverID, input)
+	result := r.RedactConfig(boxID, input)
 
 	if strings.Contains(result, "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9") {
 		t.Error("Authorization header value was not redacted")
@@ -124,7 +124,7 @@ frontend http_front
 	}
 
 	// Verify restoration
-	restored, err := r.RestoreConfig(serverID, result)
+	restored, err := r.RestoreConfig(boxID, result)
 	if err != nil {
 		t.Fatalf("RestoreConfig failed: %v", err)
 	}
@@ -135,21 +135,21 @@ frontend http_front
 
 func TestRedactConfig_AWSAccessKey(t *testing.T) {
 	r := NewConfigRedactor()
-	serverID := "test-server"
+	boxID := "test-server"
 
 	input := `
 # AWS credentials for something
 # AKIAIOSFODNN7EXAMPLE
 `
 
-	result := r.RedactConfig(serverID, input)
+	result := r.RedactConfig(boxID, input)
 
 	if strings.Contains(result, "AKIAIOSFODNN7EXAMPLE") {
 		t.Error("AWS Access Key was not redacted")
 	}
 
 	// Verify restoration
-	restored, err := r.RestoreConfig(serverID, result)
+	restored, err := r.RestoreConfig(boxID, result)
 	if err != nil {
 		t.Fatalf("RestoreConfig failed: %v", err)
 	}
@@ -160,20 +160,20 @@ func TestRedactConfig_AWSAccessKey(t *testing.T) {
 
 func TestRedactConfig_GitHubPAT(t *testing.T) {
 	r := NewConfigRedactor()
-	serverID := "test-server"
+	boxID := "test-server"
 
 	input := `
 # GitHub token: ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 `
 
-	result := r.RedactConfig(serverID, input)
+	result := r.RedactConfig(boxID, input)
 
 	if strings.Contains(result, "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx") {
 		t.Error("GitHub PAT was not redacted")
 	}
 
 	// Verify restoration
-	restored, err := r.RestoreConfig(serverID, result)
+	restored, err := r.RestoreConfig(boxID, result)
 	if err != nil {
 		t.Fatalf("RestoreConfig failed: %v", err)
 	}
@@ -184,7 +184,7 @@ func TestRedactConfig_GitHubPAT(t *testing.T) {
 
 func TestRedactConfig_GenericPasswordAssignment(t *testing.T) {
 	r := NewConfigRedactor()
-	serverID := "test-server"
+	boxID := "test-server"
 
 	input := `
 # Configuration
@@ -193,7 +193,7 @@ func TestRedactConfig_GenericPasswordAssignment(t *testing.T) {
 # token = mytoken456
 `
 
-	result := r.RedactConfig(serverID, input)
+	result := r.RedactConfig(boxID, input)
 
 	if strings.Contains(result, "mysecret123") {
 		t.Error("password= value was not redacted")
@@ -206,7 +206,7 @@ func TestRedactConfig_GenericPasswordAssignment(t *testing.T) {
 	}
 
 	// Verify restoration
-	restored, err := r.RestoreConfig(serverID, result)
+	restored, err := r.RestoreConfig(boxID, result)
 	if err != nil {
 		t.Fatalf("RestoreConfig failed: %v", err)
 	}
@@ -217,14 +217,14 @@ func TestRedactConfig_GenericPasswordAssignment(t *testing.T) {
 
 func TestRedactConfig_DatabaseConnectionString(t *testing.T) {
 	r := NewConfigRedactor()
-	serverID := "test-server"
+	boxID := "test-server"
 
 	input := `
 # Database: mysql://user:mydbpassword@localhost:3306/db
 # Redis: redis://default:redispass@cache.example.com:6379
 `
 
-	result := r.RedactConfig(serverID, input)
+	result := r.RedactConfig(boxID, input)
 
 	if strings.Contains(result, "mydbpassword") {
 		t.Error("MySQL password was not redacted")
@@ -234,7 +234,7 @@ func TestRedactConfig_DatabaseConnectionString(t *testing.T) {
 	}
 
 	// Verify restoration
-	restored, err := r.RestoreConfig(serverID, result)
+	restored, err := r.RestoreConfig(boxID, result)
 	if err != nil {
 		t.Fatalf("RestoreConfig failed: %v", err)
 	}
@@ -245,20 +245,20 @@ func TestRedactConfig_DatabaseConnectionString(t *testing.T) {
 
 func TestRedactConfig_HTTPBasicAuthURL(t *testing.T) {
 	r := NewConfigRedactor()
-	serverID := "test-server"
+	boxID := "test-server"
 
 	input := `
 # Backend: https://apiuser:apipassword123@api.example.com/v1
 `
 
-	result := r.RedactConfig(serverID, input)
+	result := r.RedactConfig(boxID, input)
 
 	if strings.Contains(result, "apipassword123") {
 		t.Error("HTTP Basic Auth password in URL was not redacted")
 	}
 
 	// Verify restoration
-	restored, err := r.RestoreConfig(serverID, result)
+	restored, err := r.RestoreConfig(boxID, result)
 	if err != nil {
 		t.Fatalf("RestoreConfig failed: %v", err)
 	}
@@ -269,7 +269,7 @@ func TestRedactConfig_HTTPBasicAuthURL(t *testing.T) {
 
 func TestRedactConfig_PrivateKeyInline(t *testing.T) {
 	r := NewConfigRedactor()
-	serverID := "test-server"
+	boxID := "test-server"
 
 	input := `
 -----BEGIN RSA PRIVATE KEY-----
@@ -278,7 +278,7 @@ base64encodedkeydata1234567890abcdefghijklmnop
 -----END RSA PRIVATE KEY-----
 `
 
-	result := r.RedactConfig(serverID, input)
+	result := r.RedactConfig(boxID, input)
 
 	// The key content should be redacted, but headers preserved
 	if strings.Contains(result, "MIIEpAIBAAKCAQEA0Z3VS5JJcds3xfn") {
@@ -292,7 +292,7 @@ base64encodedkeydata1234567890abcdefghijklmnop
 	}
 
 	// Verify restoration
-	restored, err := r.RestoreConfig(serverID, result)
+	restored, err := r.RestoreConfig(boxID, result)
 	if err != nil {
 		t.Fatalf("RestoreConfig failed: %v", err)
 	}
@@ -303,7 +303,7 @@ base64encodedkeydata1234567890abcdefghijklmnop
 
 func TestRedactConfig_UserChangedValue(t *testing.T) {
 	r := NewConfigRedactor()
-	serverID := "test-server"
+	boxID := "test-server"
 
 	input := `
 listen stats
@@ -311,13 +311,13 @@ listen stats
 `
 
 	// First, redact the config
-	redacted := r.RedactConfig(serverID, input)
+	redacted := r.RedactConfig(boxID, input)
 
 	// Simulate user changing the password (replacing the marker)
 	modified := strings.Replace(redacted, "<redacted:stats_auth:0>", "newpassword", 1)
 
 	// Restore should keep the new password (marker is gone, so nothing to restore)
-	restored, err := r.RestoreConfig(serverID, modified)
+	restored, err := r.RestoreConfig(boxID, modified)
 	if err != nil {
 		t.Fatalf("RestoreConfig failed: %v", err)
 	}
@@ -332,7 +332,7 @@ listen stats
 
 func TestRedactConfig_PartialUserChange(t *testing.T) {
 	r := NewConfigRedactor()
-	serverID := "test-server"
+	boxID := "test-server"
 
 	input := `
 listen stats
@@ -341,13 +341,13 @@ listen stats
 `
 
 	// Redact
-	redacted := r.RedactConfig(serverID, input)
+	redacted := r.RedactConfig(boxID, input)
 
 	// User changes only the first password, leaves second as marker
 	modified := strings.Replace(redacted, "<redacted:stats_auth:0>", "newadminpass", 1)
 
 	// Restore
-	restored, err := r.RestoreConfig(serverID, modified)
+	restored, err := r.RestoreConfig(boxID, modified)
 	if err != nil {
 		t.Fatalf("RestoreConfig failed: %v", err)
 	}
@@ -364,7 +364,7 @@ listen stats
 
 func TestRedactConfig_NoSensitiveData(t *testing.T) {
 	r := NewConfigRedactor()
-	serverID := "test-server"
+	boxID := "test-server"
 
 	input := `
 global
@@ -386,7 +386,7 @@ backend servers
     server srv1 10.0.0.1:8080 check
 `
 
-	result := r.RedactConfig(serverID, input)
+	result := r.RedactConfig(boxID, input)
 
 	// Should be unchanged
 	if result != input {
@@ -396,7 +396,7 @@ backend servers
 
 func TestGetRedactedCount(t *testing.T) {
 	r := NewConfigRedactor()
-	serverID := "test-server"
+	boxID := "test-server"
 
 	input := `
 listen stats
@@ -405,9 +405,9 @@ listen stats
 # password=secret123
 `
 
-	r.RedactConfig(serverID, input)
+	r.RedactConfig(boxID, input)
 
-	count := r.GetRedactedCount(serverID)
+	count := r.GetRedactedCount(boxID)
 	if count != 3 {
 		t.Errorf("Expected 3 redacted values, got %d", count)
 	}
@@ -415,7 +415,7 @@ listen stats
 
 func TestGetRedactedPatterns(t *testing.T) {
 	r := NewConfigRedactor()
-	serverID := "test-server"
+	boxID := "test-server"
 
 	input := `
 listen stats
@@ -423,9 +423,9 @@ listen stats
 # password=secret123
 `
 
-	r.RedactConfig(serverID, input)
+	r.RedactConfig(boxID, input)
 
-	patterns := r.GetRedactedPatterns(serverID)
+	patterns := r.GetRedactedPatterns(boxID)
 	if len(patterns) != 2 {
 		t.Errorf("Expected 2 pattern types, got %d: %v", len(patterns), patterns)
 	}
@@ -451,18 +451,18 @@ listen stats
 
 func TestClearServerCache(t *testing.T) {
 	r := NewConfigRedactor()
-	serverID := "test-server"
+	boxID := "test-server"
 
 	input := `stats auth admin:password`
-	r.RedactConfig(serverID, input)
+	r.RedactConfig(boxID, input)
 
-	if r.GetRedactedCount(serverID) == 0 {
+	if r.GetRedactedCount(boxID) == 0 {
 		t.Error("Should have redacted values before clear")
 	}
 
-	r.ClearServerCache(serverID)
+	r.ClearServerCache(boxID)
 
-	if r.GetRedactedCount(serverID) != 0 {
+	if r.GetRedactedCount(boxID) != 0 {
 		t.Error("Should have no redacted values after clear")
 	}
 }
@@ -505,20 +505,20 @@ func TestRedactConfig_MultipleServers(t *testing.T) {
 
 func TestRedactConfig_JWTToken(t *testing.T) {
 	r := NewConfigRedactor()
-	serverID := "test-server"
+	boxID := "test-server"
 
 	// A valid JWT structure (header.payload.signature)
 	jwt := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"
 	input := `# Token: ` + jwt
 
-	result := r.RedactConfig(serverID, input)
+	result := r.RedactConfig(boxID, input)
 
 	if strings.Contains(result, jwt) {
 		t.Error("JWT token was not redacted")
 	}
 
 	// Verify restoration
-	restored, err := r.RestoreConfig(serverID, result)
+	restored, err := r.RestoreConfig(boxID, result)
 	if err != nil {
 		t.Fatalf("RestoreConfig failed: %v", err)
 	}
@@ -529,18 +529,18 @@ func TestRedactConfig_JWTToken(t *testing.T) {
 
 func TestRedactConfig_SlackToken(t *testing.T) {
 	r := NewConfigRedactor()
-	serverID := "test-server"
+	boxID := "test-server"
 
 	input := `# Slack: xoxb-1234567890-1234567890123-abcdefghijABCDEFGHIJ`
 
-	result := r.RedactConfig(serverID, input)
+	result := r.RedactConfig(boxID, input)
 
 	if strings.Contains(result, "xoxb-1234567890-1234567890123") {
 		t.Error("Slack token was not redacted")
 	}
 
 	// Verify restoration
-	restored, err := r.RestoreConfig(serverID, result)
+	restored, err := r.RestoreConfig(boxID, result)
 	if err != nil {
 		t.Fatalf("RestoreConfig failed: %v", err)
 	}
@@ -551,7 +551,7 @@ func TestRedactConfig_SlackToken(t *testing.T) {
 
 func TestRedactConfig_AlreadyRedacted(t *testing.T) {
 	r := NewConfigRedactor()
-	serverID := "test-server"
+	boxID := "test-server"
 
 	// Input already has redacted marker
 	input := `
@@ -559,7 +559,7 @@ listen stats
     stats auth admin:<redacted:stats_auth:0>
 `
 
-	result := r.RedactConfig(serverID, input)
+	result := r.RedactConfig(boxID, input)
 
 	// Should not double-redact
 	if result != input {
@@ -567,14 +567,14 @@ listen stats
 	}
 
 	// Count should be 0 since nothing was actually redacted
-	if r.GetRedactedCount(serverID) != 0 {
+	if r.GetRedactedCount(boxID) != 0 {
 		t.Error("Should not store already-redacted values")
 	}
 }
 
 func TestRedactConfig_MarkerIntegrity(t *testing.T) {
 	r := NewConfigRedactor()
-	serverID := "test-server"
+	boxID := "test-server"
 
 	// Multiple different types of secrets
 	input := `
@@ -584,7 +584,7 @@ listen stats
 # api_key=myapikey123
 `
 
-	result := r.RedactConfig(serverID, input)
+	result := r.RedactConfig(boxID, input)
 
 	// Each type should have its own marker
 	if !strings.Contains(result, "<redacted:stats_auth:0>") {
@@ -598,7 +598,7 @@ listen stats
 	}
 
 	// Full restoration
-	restored, err := r.RestoreConfig(serverID, result)
+	restored, err := r.RestoreConfig(boxID, result)
 	if err != nil {
 		t.Fatalf("RestoreConfig failed: %v", err)
 	}
@@ -615,26 +615,26 @@ func TestRedactConfig_ConcurrentAccess(t *testing.T) {
 
 	for i := 0; i < 10; i++ {
 		go func(serverNum int) {
-			serverID := "server-" + string(rune('A'+serverNum))
+			boxID := "server-" + string(rune('A'+serverNum))
 			input := "stats auth admin:password" + string(rune('0'+serverNum))
 
 			// Redact
-			redacted := r.RedactConfig(serverID, input)
+			redacted := r.RedactConfig(boxID, input)
 
 			// Verify it was redacted
 			if strings.Contains(redacted, "password") {
-				t.Errorf("Server %s password not redacted", serverID)
+				t.Errorf("Server %s password not redacted", boxID)
 			}
 
 			// Restore
-			restored, err := r.RestoreConfig(serverID, redacted)
+			restored, err := r.RestoreConfig(boxID, redacted)
 			if err != nil {
-				t.Errorf("Server %s RestoreConfig failed: %v", serverID, err)
+				t.Errorf("Server %s RestoreConfig failed: %v", boxID, err)
 			}
 
 			// Verify restoration
 			if restored != input {
-				t.Errorf("Server %s restoration failed", serverID)
+				t.Errorf("Server %s restoration failed", boxID)
 			}
 
 			done <- true
@@ -649,7 +649,7 @@ func TestRedactConfig_ConcurrentAccess(t *testing.T) {
 
 func TestRestoreConfig_UnrestorableMarkers(t *testing.T) {
 	r := NewConfigRedactor()
-	serverID := "test-server"
+	boxID := "test-server"
 
 	// Create content with markers but don't store original values
 	// This simulates a session expiry or server restart
@@ -659,7 +659,7 @@ listen stats
 `
 
 	// Try to restore - should fail because we never called RedactConfig
-	_, err := r.RestoreConfig(serverID, content)
+	_, err := r.RestoreConfig(boxID, content)
 	if err == nil {
 		t.Error("Expected error when restoring markers without stored values")
 	}
@@ -671,7 +671,7 @@ listen stats
 
 func TestHasUnrestorableMarkers(t *testing.T) {
 	r := NewConfigRedactor()
-	serverID := "test-server"
+	boxID := "test-server"
 
 	// Content with markers but no stored values
 	content := `
@@ -680,7 +680,7 @@ listen stats
     stats auth viewer:<redacted:stats_auth:1>
 `
 
-	hasUnrestorable, count := r.HasUnrestorableMarkers(serverID, content)
+	hasUnrestorable, count := r.HasUnrestorableMarkers(boxID, content)
 	if !hasUnrestorable {
 		t.Error("Should detect unrestorable markers")
 	}
@@ -690,11 +690,11 @@ listen stats
 
 	// Now redact some real content
 	input := `stats auth admin:realpassword`
-	r.RedactConfig(serverID, input)
+	r.RedactConfig(boxID, input)
 
 	// Check content with valid marker
 	validContent := `stats auth admin:<redacted:stats_auth:0>`
-	hasUnrestorable, count = r.HasUnrestorableMarkers(serverID, validContent)
+	hasUnrestorable, count = r.HasUnrestorableMarkers(boxID, validContent)
 	if hasUnrestorable {
 		t.Error("Should not detect unrestorable markers for valid content")
 	}

@@ -9,11 +9,11 @@ import (
 )
 
 // HAProxyConfigPage renders the HAProxy configuration editor page.
-templ HAProxyConfigPage(user *models.User, server *database.ServerDB, config *agent.HAProxyConfigResponse, gitConfig *database.ServerGitConfig, changes []database.ConfigChange, canEdit bool) {
+templ HAProxyConfigPage(user *models.User, server *database.BoxDB, config *agent.HAProxyConfigResponse, gitConfig *database.BoxGitConfig, changes []database.ConfigChange, canEdit bool) {
 	@layouts.Base("HAProxy Configuration", user, "/config") {
 		@haproxy_config.EditorHeader(server, config, canEdit)
 		<!-- Hidden inputs to pass data to JavaScript -->
-		<input type="hidden" id="server-id-source" value={ server.ServerID }/>
+		<input type="hidden" id="server-id-source" value={ server.BoxID }/>
 		<input type="hidden" id="config-sha-source" value={ config.SHA256 }/>
 		<textarea id="config-content-source" class="hidden">{ config.Content }</textarea>
 		@haproxy_config.EditorPanel(canEdit)
@@ -24,7 +24,7 @@ templ HAProxyConfigPage(user *models.User, server *database.ServerDB, config *ag
 	}
 }
 
-templ HAProxyConfigPageWithError(user *models.User, server *database.ServerDB, errorMsg string, canEdit bool) {
+templ HAProxyConfigPageWithError(user *models.User, server *database.BoxDB, errorMsg string, canEdit bool) {
 	@layouts.Base("HAProxy Configuration", user, "/config") {
 		<div id="page-header-source" class="hidden">
 			<div class="flex items-center">
@@ -45,7 +45,7 @@ templ HAProxyConfigPageWithError(user *models.User, server *database.ServerDB, e
 				</div>
 			</div>
 			<div class="mt-4">
-				<a href="/settings/servers" class="text-blue-600 dark:text-blue-400 hover:underline">
+				<a href="/settings/boxes" class="text-blue-600 dark:text-blue-400 hover:underline">
 					← Back to HAProxy Servers
 				</a>
 			</div>

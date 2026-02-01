@@ -4,7 +4,7 @@ import "github.com/sarg3nt/gearbox/internal/framework/models"
 import "github.com/sarg3nt/gearbox/internal/framework/templates/layouts"
 import "github.com/sarg3nt/gearbox/internal/framework/templates/components"
 
-templ Logs(user *models.User, servers []models.ServerConfig) {
+templ Logs(user *models.User, servers []models.BoxConfig) {
 	@layouts.Base("Logs", user, "/logs") {
 		<!-- Include ansi_up library for log colorization -->
 		<script type="module" src="/static/js/vendor/ansi_up_wrapper.js"></script>

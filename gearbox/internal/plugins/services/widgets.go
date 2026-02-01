@@ -63,7 +63,7 @@ func servicesOverviewCardDefinition() *widget.WidgetDefinition {
 		Icon:        "activity",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
-				"server_id": {
+				"box_id": {
 					Type:        "string",
 					Description: "Server ID to monitor (optional, uses current server if not specified)",
 				},
@@ -76,9 +76,9 @@ func servicesOverviewCardDefinition() *widget.WidgetDefinition {
 			Required: []string{},
 		},
 		Renderer: func(ctx context.Context, config map[string]any, data any) (templ.Component, error) {
-			serverID := getStringFromConfig(config, "server_id", "")
+			boxID := getStringFromConfig(config, "box_id", "")
 			refreshSeconds := getIntFromConfig(config, "refresh_seconds", 30)
-			return ServicesOverviewCardWidget(serverID, refreshSeconds), nil
+			return ServicesOverviewCardWidget(boxID, refreshSeconds), nil
 		},
 	}
 }
@@ -95,7 +95,7 @@ func servicesListDefinition() *widget.WidgetDefinition {
 		Icon:        "list",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
-				"server_id": {
+				"box_id": {
 					Type:        "string",
 					Description: "Server ID to monitor (optional, uses current server if not specified)",
 				},
@@ -113,10 +113,10 @@ func servicesListDefinition() *widget.WidgetDefinition {
 			Required: []string{},
 		},
 		Renderer: func(ctx context.Context, config map[string]any, data any) (templ.Component, error) {
-			serverID := getStringFromConfig(config, "server_id", "")
+			boxID := getStringFromConfig(config, "box_id", "")
 			refreshSeconds := getIntFromConfig(config, "refresh_seconds", 30)
 			showFilters := getBoolFromConfig(config, "show_filters", false)
-			return ServicesListWidget(serverID, refreshSeconds, showFilters), nil
+			return ServicesListWidget(boxID, refreshSeconds, showFilters), nil
 		},
 		TopBarControlsProvider: func(ctx *widget.WidgetRenderContext, config map[string]any) []widget.TopBarControl {
 			// Only provide top bar controls if in-widget filters are disabled
@@ -141,7 +141,7 @@ func failedServicesAlertDefinition() *widget.WidgetDefinition {
 		Icon:        "alert-triangle",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
-				"server_id": {
+				"box_id": {
 					Type:        "string",
 					Description: "Server ID to monitor (optional, uses current server if not specified)",
 				},
@@ -159,10 +159,10 @@ func failedServicesAlertDefinition() *widget.WidgetDefinition {
 			Required: []string{},
 		},
 		Renderer: func(ctx context.Context, config map[string]any, data any) (templ.Component, error) {
-			serverID := getStringFromConfig(config, "server_id", "")
+			boxID := getStringFromConfig(config, "box_id", "")
 			refreshSeconds := getIntFromConfig(config, "refresh_seconds", 30)
 			hideWhenEmpty := getBoolFromConfig(config, "hide_when_empty", false)
-			return FailedServicesAlertWidget(serverID, refreshSeconds, hideWhenEmpty), nil
+			return FailedServicesAlertWidget(boxID, refreshSeconds, hideWhenEmpty), nil
 		},
 	}
 }

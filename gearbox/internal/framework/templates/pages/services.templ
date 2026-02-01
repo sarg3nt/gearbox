@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-templ Services(user *models.User, servers []models.ServerConfig) {
+templ Services(user *models.User, servers []models.BoxConfig) {
 	@layouts.Base("Services", user, "/services") {
 		<!-- Hidden element to track admin status -->
 		<div id="user-admin-status" data-is-admin={ isAdminString(user) } class="hidden"></div>

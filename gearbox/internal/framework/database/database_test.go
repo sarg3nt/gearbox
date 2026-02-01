@@ -98,16 +98,16 @@ func TestGetDatabaseStats_Whitelisting(t *testing.T) {
 
 func TestDisableEntity(t *testing.T) {
 	db := setupTestDB(t)
-	serverID := "test-server-1"
+	boxID := "test-server-1"
 	userID := int64(1)
 
-	err := db.DisableEntity(serverID, EntityTypeBackend, "test-backend", &userID, "Test disable")
+	err := db.DisableEntity(boxID, EntityTypeBackend, "test-backend", &userID, "Test disable")
 	if err != nil {
 		t.Fatalf("failed to disable entity: %v", err)
 	}
 
 	// Verify entity was disabled
-	entity, err := db.GetDisabledEntity(serverID, EntityTypeBackend, "test-backend")
+	entity, err := db.GetDisabledEntity(boxID, EntityTypeBackend, "test-backend")
 	if err != nil {
 		t.Fatalf("failed to get disabled entity: %v", err)
 	}
@@ -131,17 +131,17 @@ func TestDisableEntity(t *testing.T) {
 
 func TestEnableEntity(t *testing.T) {
 	db := setupTestDB(t)
-	serverID := "test-server-1"
+	boxID := "test-server-1"
 	userID := int64(1)
 
 	// First disable an entity
-	err := db.DisableEntity(serverID, EntityTypeBackend, "test-backend", &userID, "Test disable")
+	err := db.DisableEntity(boxID, EntityTypeBackend, "test-backend", &userID, "Test disable")
 	if err != nil {
 		t.Fatalf("failed to disable entity: %v", err)
 	}
 
 	// Verify it's disabled
-	entity, err := db.GetDisabledEntity(serverID, EntityTypeBackend, "test-backend")
+	entity, err := db.GetDisabledEntity(boxID, EntityTypeBackend, "test-backend")
 	if err != nil {
 		t.Fatalf("failed to get disabled entity: %v", err)
 	}
@@ -150,13 +150,13 @@ func TestEnableEntity(t *testing.T) {
 	}
 
 	// Enable it
-	err = db.EnableEntity(serverID, EntityTypeBackend, "test-backend")
+	err = db.EnableEntity(boxID, EntityTypeBackend, "test-backend")
 	if err != nil {
 		t.Fatalf("failed to enable entity: %v", err)
 	}
 
 	// Verify it's no longer disabled
-	entity, err = db.GetDisabledEntity(serverID, EntityTypeBackend, "test-backend")
+	entity, err = db.GetDisabledEntity(boxID, EntityTypeBackend, "test-backend")
 	if err != nil {
 		t.Fatalf("failed to get disabled entity: %v", err)
 	}
@@ -167,11 +167,11 @@ func TestEnableEntity(t *testing.T) {
 
 func TestIsEntityDisabled(t *testing.T) {
 	db := setupTestDB(t)
-	serverID := "test-server-1"
+	boxID := "test-server-1"
 	userID := int64(1)
 
 	// Initially not disabled
-	disabled, err := db.IsEntityDisabled(serverID, EntityTypeBackend, "test-backend")
+	disabled, err := db.IsEntityDisabled(boxID, EntityTypeBackend, "test-backend")
 	if err != nil {
 		t.Fatalf("failed to check if entity disabled: %v", err)
 	}
@@ -180,13 +180,13 @@ func TestIsEntityDisabled(t *testing.T) {
 	}
 
 	// Disable it
-	err = db.DisableEntity(serverID, EntityTypeBackend, "test-backend", &userID, "Test")
+	err = db.DisableEntity(boxID, EntityTypeBackend, "test-backend", &userID, "Test")
 	if err != nil {
 		t.Fatalf("failed to disable entity: %v", err)
 	}
 
 	// Check it's disabled
-	disabled, err = db.IsEntityDisabled(serverID, EntityTypeBackend, "test-backend")
+	disabled, err = db.IsEntityDisabled(boxID, EntityTypeBackend, "test-backend")
 	if err != nil {
 		t.Fatalf("failed to check if entity disabled: %v", err)
 	}

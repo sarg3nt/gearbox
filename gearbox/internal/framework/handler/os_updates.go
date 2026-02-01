@@ -22,12 +22,12 @@ func (h *Handler) OSUpdatesPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check integration is enabled
-	serverID := r.URL.Query().Get("server")
-	if serverID == "" {
-		serverID = h.getDefaultServerID()
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" {
+		boxID = h.getDefaultServerID()
 	}
 
-	enabled, _ := h.db.IsPluginEnabled(serverID, database.PluginOSUpdates)
+	enabled, _ := h.db.IsPluginEnabled(boxID, database.PluginOSUpdates)
 	if !enabled {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
@@ -40,15 +40,15 @@ func (h *Handler) OSUpdatesPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get server from database
-	server, err := h.db.GetServerByServerID(serverID)
+	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
-		h.logger.Error("failed to get server", "server_id", serverID, "error", err)
+		h.logger.Error("failed to get server", "server_id", boxID, "error", err)
 		http.Error(w, "Server not found", http.StatusNotFound)
 		return
 	}
 
 	// Get integration config
-	config, err := h.db.GetOSUpdatesConfig(serverID)
+	config, err := h.db.GetOSUpdatesConfig(boxID)
 	if err != nil {
 		h.logger.Error("Failed to get OS updates config", "error", err)
 		config = &database.OSUpdatesConfig{
@@ -60,7 +60,7 @@ func (h *Handler) OSUpdatesPage(w http.ResponseWriter, r *http.Request) {
 	// Get agent client
 	client, err := h.getAgentClient(server)
 	if err != nil {
-		h.logger.Error("failed to get agent client", "server_id", serverID, "error", err)
+		h.logger.Error("failed to get agent client", "server_id", boxID, "error", err)
 		http.Error(w, "Failed to connect to agent", http.StatusServiceUnavailable)
 		return
 	}
@@ -105,7 +105,7 @@ func (h *Handler) OSUpdatesPage(w http.ResponseWriter, r *http.Request) {
 	// Prepare view model
 	data := pages.OSUpdatesPageData{
 		User:             user,
-		ServerID:         serverID,
+		BoxID:            boxID,
 		Servers:          h.getEnabledServers(),
 		Config:           config,
 		UpdateStatus:     updateStatus,
@@ -127,12 +127,12 @@ func (h *Handler) OSUpdatesPage(w http.ResponseWriter, r *http.Request) {
 
 // APIUpdateStatusHandler handles GET /api/os-updates/status.
 func (h *Handler) APIUpdateStatusHandler(w http.ResponseWriter, r *http.Request) {
-	serverID := r.URL.Query().Get("server")
-	if serverID == "" {
-		serverID = h.getDefaultServerID()
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" {
+		boxID = h.getDefaultServerID()
 	}
 
-	server, err := h.db.GetServerByServerID(serverID)
+	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		h.jsonError(w, "Server not found", http.StatusNotFound)
 		return
@@ -155,12 +155,12 @@ func (h *Handler) APIUpdateStatusHandler(w http.ResponseWriter, r *http.Request)
 
 // APIListPackagesHandler handles GET /api/os-updates/packages.
 func (h *Handler) APIListPackagesHandler(w http.ResponseWriter, r *http.Request) {
-	serverID := r.URL.Query().Get("server")
-	if serverID == "" {
-		serverID = h.getDefaultServerID()
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" {
+		boxID = h.getDefaultServerID()
 	}
 
-	server, err := h.db.GetServerByServerID(serverID)
+	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		h.jsonError(w, "Server not found", http.StatusNotFound)
 		return
@@ -188,14 +188,14 @@ func (h *Handler) APITriggerUpdateCheckHandler(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	serverID := r.URL.Query().Get("server")
-	if serverID == "" {
-		serverID = h.getDefaultServerID()
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" {
+		boxID = h.getDefaultServerID()
 	}
 
 	user, _ := auth.GetUserFromContext(r.Context())
 
-	server, err := h.db.GetServerByServerID(serverID)
+	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		h.jsonError(w, "Server not found", http.StatusNotFound)
 		return
@@ -225,9 +225,9 @@ func (h *Handler) APIInstallUpdatesHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	serverID := r.URL.Query().Get("server")
-	if serverID == "" {
-		serverID = h.getDefaultServerID()
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" {
+		boxID = h.getDefaultServerID()
 	}
 
 	streaming := r.URL.Query().Get("stream") == "true"
@@ -240,12 +240,12 @@ func (h *Handler) APIInstallUpdatesHandler(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Get config to check if snapshot should be created
-	config, _ := h.db.GetOSUpdatesConfig(serverID)
+	config, _ := h.db.GetOSUpdatesConfig(boxID)
 	if config != nil && config.CreateSnapshotBefore {
 		req.CreateSnapshot = true
 	}
 
-	server, err := h.db.GetServerByServerID(serverID)
+	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		h.jsonError(w, "Server not found", http.StatusNotFound)
 		return
@@ -301,9 +301,9 @@ func (h *Handler) APIInstallUpdatesHandler(w http.ResponseWriter, r *http.Reques
 
 // APIUpdateHistoryHandler handles GET /api/os-updates/history.
 func (h *Handler) APIUpdateHistoryHandler(w http.ResponseWriter, r *http.Request) {
-	serverID := r.URL.Query().Get("server")
-	if serverID == "" {
-		serverID = h.getDefaultServerID()
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" {
+		boxID = h.getDefaultServerID()
 	}
 
 	limit := 50
@@ -313,7 +313,7 @@ func (h *Handler) APIUpdateHistoryHandler(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	server, err := h.db.GetServerByServerID(serverID)
+	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		h.jsonError(w, "Server not found", http.StatusNotFound)
 		return
@@ -341,9 +341,9 @@ func (h *Handler) APIScheduleRebootHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	serverID := r.URL.Query().Get("server")
-	if serverID == "" {
-		serverID = h.getDefaultServerID()
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" {
+		boxID = h.getDefaultServerID()
 	}
 
 	user, _ := auth.GetUserFromContext(r.Context())
@@ -356,7 +356,7 @@ func (h *Handler) APIScheduleRebootHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	server, err := h.db.GetServerByServerID(serverID)
+	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		h.jsonError(w, "Server not found", http.StatusNotFound)
 		return
@@ -392,14 +392,14 @@ func (h *Handler) APICancelRebootHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	serverID := r.URL.Query().Get("server")
-	if serverID == "" {
-		serverID = h.getDefaultServerID()
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" {
+		boxID = h.getDefaultServerID()
 	}
 
 	user, _ := auth.GetUserFromContext(r.Context())
 
-	server, err := h.db.GetServerByServerID(serverID)
+	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		h.jsonError(w, "Server not found", http.StatusNotFound)
 		return
@@ -423,12 +423,12 @@ func (h *Handler) APICancelRebootHandler(w http.ResponseWriter, r *http.Request)
 
 // APIListSnapshotsHandler handles GET /api/os-updates/snapshots.
 func (h *Handler) APIListSnapshotsHandler(w http.ResponseWriter, r *http.Request) {
-	serverID := r.URL.Query().Get("server")
-	if serverID == "" {
-		serverID = h.getDefaultServerID()
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" {
+		boxID = h.getDefaultServerID()
 	}
 
-	server, err := h.db.GetServerByServerID(serverID)
+	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		h.jsonError(w, "Server not found", http.StatusNotFound)
 		return
@@ -456,9 +456,9 @@ func (h *Handler) APICreateSnapshotHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	serverID := r.URL.Query().Get("server")
-	if serverID == "" {
-		serverID = h.getDefaultServerID()
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" {
+		boxID = h.getDefaultServerID()
 	}
 
 	user, _ := auth.GetUserFromContext(r.Context())
@@ -473,7 +473,7 @@ func (h *Handler) APICreateSnapshotHandler(w http.ResponseWriter, r *http.Reques
 		req.Reason = "manual"
 	}
 
-	server, err := h.db.GetServerByServerID(serverID)
+	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		h.jsonError(w, "Server not found", http.StatusNotFound)
 		return
@@ -502,9 +502,9 @@ func (h *Handler) APIRestoreSnapshotHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	serverID := r.URL.Query().Get("server")
-	if serverID == "" {
-		serverID = h.getDefaultServerID()
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" {
+		boxID = h.getDefaultServerID()
 	}
 
 	user, _ := auth.GetUserFromContext(r.Context())
@@ -522,7 +522,7 @@ func (h *Handler) APIRestoreSnapshotHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	server, err := h.db.GetServerByServerID(serverID)
+	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		h.jsonError(w, "Server not found", http.StatusNotFound)
 		return
@@ -551,9 +551,9 @@ func (h *Handler) APIDeleteSnapshotHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	serverID := r.URL.Query().Get("server")
-	if serverID == "" {
-		serverID = h.getDefaultServerID()
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" {
+		boxID = h.getDefaultServerID()
 	}
 
 	snapshotID := r.PathValue("id")
@@ -564,7 +564,7 @@ func (h *Handler) APIDeleteSnapshotHandler(w http.ResponseWriter, r *http.Reques
 
 	user, _ := auth.GetUserFromContext(r.Context())
 
-	server, err := h.db.GetServerByServerID(serverID)
+	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		h.jsonError(w, "Server not found", http.StatusNotFound)
 		return
@@ -588,9 +588,9 @@ func (h *Handler) APIDeleteSnapshotHandler(w http.ResponseWriter, r *http.Reques
 
 // APISearchPackagesHandler handles GET /api/os-updates/packages/search.
 func (h *Handler) APISearchPackagesHandler(w http.ResponseWriter, r *http.Request) {
-	serverID := r.URL.Query().Get("server")
-	if serverID == "" {
-		serverID = h.getDefaultServerID()
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" {
+		boxID = h.getDefaultServerID()
 	}
 
 	query := r.URL.Query().Get("q")
@@ -606,7 +606,7 @@ func (h *Handler) APISearchPackagesHandler(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	server, err := h.db.GetServerByServerID(serverID)
+	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		h.jsonError(w, "Server not found", http.StatusNotFound)
 		return
@@ -634,9 +634,9 @@ func (h *Handler) APIInstallPackageHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	serverID := r.URL.Query().Get("server")
-	if serverID == "" {
-		serverID = h.getDefaultServerID()
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" {
+		boxID = h.getDefaultServerID()
 	}
 
 	user, _ := auth.GetUserFromContext(r.Context())
@@ -654,7 +654,7 @@ func (h *Handler) APIInstallPackageHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	server, err := h.db.GetServerByServerID(serverID)
+	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		h.jsonError(w, "Server not found", http.StatusNotFound)
 		return
@@ -683,9 +683,9 @@ func (h *Handler) APIRemovePackageHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	serverID := r.URL.Query().Get("server")
-	if serverID == "" {
-		serverID = h.getDefaultServerID()
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" {
+		boxID = h.getDefaultServerID()
 	}
 
 	user, _ := auth.GetUserFromContext(r.Context())
@@ -704,7 +704,7 @@ func (h *Handler) APIRemovePackageHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	server, err := h.db.GetServerByServerID(serverID)
+	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		h.jsonError(w, "Server not found", http.StatusNotFound)
 		return
@@ -732,12 +732,12 @@ func (h *Handler) APIRemovePackageHandler(w http.ResponseWriter, r *http.Request
 
 // APIPipxStatusHandler handles GET /api/os-updates/pipx.
 func (h *Handler) APIPipxStatusHandler(w http.ResponseWriter, r *http.Request) {
-	serverID := r.URL.Query().Get("server")
-	if serverID == "" {
-		serverID = h.getDefaultServerID()
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" {
+		boxID = h.getDefaultServerID()
 	}
 
-	server, err := h.db.GetServerByServerID(serverID)
+	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		h.jsonError(w, "Server not found", http.StatusNotFound)
 		return
@@ -765,9 +765,9 @@ func (h *Handler) APIPipxInstallHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	serverID := r.URL.Query().Get("server")
-	if serverID == "" {
-		serverID = h.getDefaultServerID()
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" {
+		boxID = h.getDefaultServerID()
 	}
 
 	user, _ := auth.GetUserFromContext(r.Context())
@@ -785,7 +785,7 @@ func (h *Handler) APIPipxInstallHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	server, err := h.db.GetServerByServerID(serverID)
+	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		h.jsonError(w, "Server not found", http.StatusNotFound)
 		return
@@ -814,9 +814,9 @@ func (h *Handler) APIPipxUninstallHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	serverID := r.URL.Query().Get("server")
-	if serverID == "" {
-		serverID = h.getDefaultServerID()
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" {
+		boxID = h.getDefaultServerID()
 	}
 
 	user, _ := auth.GetUserFromContext(r.Context())
@@ -834,7 +834,7 @@ func (h *Handler) APIPipxUninstallHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	server, err := h.db.GetServerByServerID(serverID)
+	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		h.jsonError(w, "Server not found", http.StatusNotFound)
 		return
@@ -863,9 +863,9 @@ func (h *Handler) APIPipxUpgradeHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	serverID := r.URL.Query().Get("server")
-	if serverID == "" {
-		serverID = h.getDefaultServerID()
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" {
+		boxID = h.getDefaultServerID()
 	}
 
 	user, _ := auth.GetUserFromContext(r.Context())
@@ -878,7 +878,7 @@ func (h *Handler) APIPipxUpgradeHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	server, err := h.db.GetServerByServerID(serverID)
+	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		h.jsonError(w, "Server not found", http.StatusNotFound)
 		return
@@ -910,12 +910,12 @@ func (h *Handler) APIPipxUpgradeHandler(w http.ResponseWriter, r *http.Request) 
 
 // APIUnattendedConfigHandler handles GET /api/os-updates/unattended.
 func (h *Handler) APIUnattendedConfigHandler(w http.ResponseWriter, r *http.Request) {
-	serverID := r.URL.Query().Get("server")
-	if serverID == "" {
-		serverID = h.getDefaultServerID()
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" {
+		boxID = h.getDefaultServerID()
 	}
 
-	server, err := h.db.GetServerByServerID(serverID)
+	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		h.jsonError(w, "Server not found", http.StatusNotFound)
 		return
@@ -943,9 +943,9 @@ func (h *Handler) APIConfigureUnattendedHandler(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	serverID := r.URL.Query().Get("server")
-	if serverID == "" {
-		serverID = h.getDefaultServerID()
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" {
+		boxID = h.getDefaultServerID()
 	}
 
 	user, _ := auth.GetUserFromContext(r.Context())
@@ -959,7 +959,7 @@ func (h *Handler) APIConfigureUnattendedHandler(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	server, err := h.db.GetServerByServerID(serverID)
+	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		h.jsonError(w, "Server not found", http.StatusNotFound)
 		return

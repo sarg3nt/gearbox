@@ -6,14 +6,14 @@
 // State
 let allWidgets = [];
 let filteredWidgets = [];
-let currentServerID = '';
+let currentBoxID = '';
 
 /**
  * Initialize the widget palette
- * @param {string} serverID - The server ID to load widgets for
+ * @param {string} boxID - The server ID to load widgets for
  */
-async function initializeWidgetPalette(serverID) {
-    currentServerID = serverID || '';
+async function initializeWidgetPalette(boxID) {
+    currentBoxID = boxID || '';
     await loadWidgets();
     setupPaletteEventListeners();
 }
@@ -25,10 +25,10 @@ async function loadWidgets() {
     const paletteList = document.getElementById('widget-palette-list');
 
     try {
-        // Build API URL with server_id parameter
+        // Build API URL with box_id parameter
         const params = new URLSearchParams();
-        if (currentServerID) {
-            params.set('server_id', currentServerID);
+        if (currentBoxID) {
+            params.set('box_id', currentBoxID);
         }
 
         const response = await fetch(`/api/dashboards/widgets?${params.toString()}`);
@@ -421,8 +421,8 @@ function toggleWidgetPalette() {
         if (!panel.classList.contains('hidden') && allWidgets.length === 0) {
             // Get server ID from dashboard context or use default
             const dashboardElement = document.getElementById('dashboard-grid-editor');
-            const serverID = dashboardElement ? dashboardElement.dataset.serverId : '';
-            initializeWidgetPalette(serverID);
+            const boxID = dashboardElement ? dashboardElement.dataset.boxId : '';
+            initializeWidgetPalette(boxID);
         }
     }
 }

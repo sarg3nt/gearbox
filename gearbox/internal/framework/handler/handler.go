@@ -21,8 +21,8 @@ import (
 type Handler struct {
 	authManager      *auth.Manager
 	webAuthnMgr      *auth.WebAuthnManager
-	collectors       map[string]*collector.Manager // serverID -> collector
-	servers          []models.ServerConfig
+	collectors       map[string]*collector.Manager // boxID -> collector
+	servers          []models.BoxConfig
 	logger           *slog.Logger
 	db               *database.DB
 	emailService     *email.Service
@@ -39,8 +39,8 @@ type Handler struct {
 	// Traffic delta tracking state
 	// HAProxy provides cumulative counters, we need to calculate deltas
 	trafficDeltaMu      sync.RWMutex
-	prevSourceData      map[string]*trafficSourceSnapshot  // key: "serverID:ip:backend"
-	prevBackendData     map[string]*trafficBackendSnapshot // key: "serverID:backend"
+	prevSourceData      map[string]*trafficSourceSnapshot  // key: "boxID:ip:backend"
+	prevBackendData     map[string]*trafficBackendSnapshot // key: "boxID:backend"
 }
 
 // trafficSourceSnapshot stores previous values for delta calculation
@@ -67,7 +67,7 @@ type trafficBackendSnapshot struct {
 func NewHandler(
 	authManager *auth.Manager,
 	collectors map[string]*collector.Manager,
-	servers []models.ServerConfig,
+	servers []models.BoxConfig,
 	logger *slog.Logger,
 	db *database.DB,
 	emailService *email.Service,
@@ -127,21 +127,21 @@ func (h *Handler) getWebAuthnManager() *auth.WebAuthnManager {
 
 // getCollector retrieves a collector for a specific server from the registry.
 // This ensures we always get the current state (respecting enable/disable).
-func (h *Handler) getCollector(serverID string) (*collector.Manager, bool) {
+func (h *Handler) getCollector(boxID string) (*collector.Manager, bool) {
 	if h.registry != nil {
-		return h.registry.GetCollector(serverID)
+		return h.registry.GetCollector(boxID)
 	}
 	// Fallback to static map if registry not available
-	collector, exists := h.collectors[serverID]
+	collector, exists := h.collectors[boxID]
 	return collector, exists
 }
 
 // getServerConfig retrieves server config by ID.
 // First checks the static list, then falls back to database lookup for newly created servers.
-func (h *Handler) getServerConfig(serverID string) (*models.ServerConfig, bool) {
+func (h *Handler) getServerConfig(boxID string) (*models.BoxConfig, bool) {
 	// Check static list first (for backwards compatibility)
 	for i := range h.servers {
-		if h.servers[i].ID == serverID {
+		if h.servers[i].ID == boxID {
 			return &h.servers[i], true
 		}
 	}
@@ -149,7 +149,7 @@ func (h *Handler) getServerConfig(serverID string) (*models.ServerConfig, bool) 
 	// Fall back to database lookup for dynamically created servers
 	servers := h.getEnabledServers()
 	for i := range servers {
-		if servers[i].ID == serverID {
+		if servers[i].ID == boxID {
 			return &servers[i], true
 		}
 	}
@@ -158,8 +158,8 @@ func (h *Handler) getServerConfig(serverID string) (*models.ServerConfig, bool) 
 
 // getEnabledServers returns the list of currently enabled servers from the database.
 // This ensures pages always reflect the current enable/disable state.
-func (h *Handler) getEnabledServers() []models.ServerConfig {
-	dbServers, err := h.db.GetEnabledServers()
+func (h *Handler) getEnabledServers() []models.BoxConfig {
+	dbServers, err := h.db.GetEnabledBoxes()
 	if err != nil {
 		h.logger.Error("failed to get enabled servers", "error", err)
 		return h.servers // Fallback to static list on error
@@ -171,10 +171,10 @@ func (h *Handler) getEnabledServers() []models.ServerConfig {
 		return h.servers // Fallback to static list on error
 	}
 
-	var servers []models.ServerConfig
+	var servers []models.BoxConfig
 	for _, dbServer := range dbServers {
 		apiKey, _ := encryptor.DecryptString(dbServer.APIKeyEncrypted)
-		serverConfig := dbServer.ToServerConfig(apiKey)
+		serverConfig := dbServer.ToBoxConfig(apiKey)
 		if serverConfig.UsesAgentAPI() {
 			servers = append(servers, serverConfig)
 		}
@@ -203,10 +203,10 @@ func (h *Handler) InjectIntegrationStatus(next http.Handler) http.Handler {
 			ctx = auth.SetUserPermissions(ctx, perms)
 		}
 
-		serverID := h.getDefaultServerID()
-		if serverID != "" {
+		boxID := h.getDefaultServerID()
+		if boxID != "" {
 			// Get integrations with their enabled status and sort order
-			integrations, err := h.db.GetPlugins(serverID)
+			integrations, err := h.db.GetPlugins(boxID)
 			if err != nil {
 				h.logger.Error("failed to get integrations for sidebar", "error", err)
 				// Continue without status - sidebar will show all items (fail open)

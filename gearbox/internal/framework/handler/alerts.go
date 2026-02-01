@@ -52,8 +52,8 @@ func (h *Handler) APIAlertsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
-	if serverID == "" {
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
 		http.Error(w, "Server ID required", http.StatusBadRequest)
 		return
 	}
@@ -72,13 +72,13 @@ func (h *Handler) APIAlertsHandler(w http.ResponseWriter, r *http.Request) {
 
 	switch status {
 	case "active":
-		alerts, err = h.db.GetActiveAlerts(serverID)
+		alerts, err = h.db.GetActiveAlerts(boxID)
 	case "acknowledged":
-		alerts, err = h.db.GetAlertsByStatusPublic(serverID, "acknowledged")
+		alerts, err = h.db.GetAlertsByStatusPublic(boxID, "acknowledged")
 	case "resolved":
-		alerts, err = h.db.GetAlertsByStatusPublic(serverID, "resolved")
+		alerts, err = h.db.GetAlertsByStatusPublic(boxID, "resolved")
 	default:
-		alerts, err = h.db.GetRecentAlerts(serverID, limit)
+		alerts, err = h.db.GetRecentAlerts(boxID, limit)
 	}
 
 	if err != nil {
@@ -99,13 +99,13 @@ func (h *Handler) APIAlertSummaryHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
-	if serverID == "" {
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
 		http.Error(w, "Server ID required", http.StatusBadRequest)
 		return
 	}
 
-	summary, err := h.db.GetAlertSummary(serverID)
+	summary, err := h.db.GetAlertSummary(boxID)
 	if err != nil {
 		apperrors.WriteHTTPError(w, h.logger, apperrors.Internal("get alert summary", err))
 		return
@@ -121,13 +121,13 @@ func (h *Handler) APIAlertRulesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
-	if serverID == "" {
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
 		http.Error(w, "Server ID required", http.StatusBadRequest)
 		return
 	}
 
-	rules, err := h.db.GetAlertRules(serverID)
+	rules, err := h.db.GetAlertRules(boxID)
 	if err != nil {
 		apperrors.WriteHTTPError(w, h.logger, apperrors.Internal("get alert rules", err))
 		return
@@ -146,8 +146,8 @@ func (h *Handler) APICreateAlertRuleHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
-	if serverID == "" {
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
 		http.Error(w, "Server ID required", http.StatusBadRequest)
 		return
 	}
@@ -158,7 +158,7 @@ func (h *Handler) APICreateAlertRuleHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	rule.ServerID = serverID
+	rule.BoxID = boxID
 	rule.CreatedAt = time.Now()
 	rule.UpdatedAt = time.Now()
 
@@ -407,7 +407,7 @@ func (h *Handler) APIAcknowledgeAlertWithNoteHandler(w http.ResponseWriter, r *h
 	if h.eventHub != nil {
 		alert, _ := h.db.GetAlert(alertID)
 		if alert != nil {
-			h.eventHub.PublishAlertAcknowledged(alert.ServerID, alertID, alert.Title)
+			h.eventHub.PublishAlertAcknowledged(alert.BoxID, alertID, alert.Title)
 			// Update global count
 			total, critical, _ := h.db.GetGlobalActiveAlertCount()
 			h.eventHub.PublishAlertCountUpdated(total, critical)
@@ -453,10 +453,10 @@ func (h *Handler) APIResolveAlertWithNoteHandler(w http.ResponseWriter, r *http.
 	}
 
 	// Get alert before resolving for event publishing
-	var serverID, title string
+	var boxID, title string
 	alert, _ := h.db.GetAlert(alertID)
 	if alert != nil {
-		serverID = alert.ServerID
+		boxID = alert.BoxID
 		title = alert.Title
 	}
 
@@ -466,8 +466,8 @@ func (h *Handler) APIResolveAlertWithNoteHandler(w http.ResponseWriter, r *http.
 	}
 
 	// Publish event if event hub is available
-	if h.eventHub != nil && serverID != "" {
-		h.eventHub.PublishAlertResolved(serverID, alertID, title)
+	if h.eventHub != nil && boxID != "" {
+		h.eventHub.PublishAlertResolved(boxID, alertID, title)
 		// Update global count
 		total, critical, _ := h.db.GetGlobalActiveAlertCount()
 		h.eventHub.PublishAlertCountUpdated(total, critical)
@@ -564,13 +564,13 @@ func (h *Handler) APIAlertRetentionConfigHandler(w http.ResponseWriter, r *http.
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
-	if serverID == "" {
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
 		http.Error(w, "Server ID required", http.StatusBadRequest)
 		return
 	}
 
-	config, err := h.db.GetAlertRetentionConfig(serverID)
+	config, err := h.db.GetAlertRetentionConfig(boxID)
 	if err != nil {
 		apperrors.WriteHTTPError(w, h.logger, apperrors.Internal("get retention config", err))
 		return
@@ -586,8 +586,8 @@ func (h *Handler) APIUpdateAlertRetentionConfigHandler(w http.ResponseWriter, r 
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
-	if serverID == "" {
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
 		http.Error(w, "Server ID required", http.StatusBadRequest)
 		return
 	}
@@ -617,7 +617,7 @@ func (h *Handler) APIUpdateAlertRetentionConfigHandler(w http.ResponseWriter, r 
 	}
 
 	retConfig := &database.AlertRetentionConfig{
-		ServerID:         serverID,
+		ServerID:         boxID,
 		RetentionDays:    config.RetentionDays,
 		AutoResolveHours: config.AutoResolveHours,
 	}
@@ -651,19 +651,19 @@ func (h *Handler) AlertRulesPage(w http.ResponseWriter, r *http.Request) {
 	servers := h.getEnabledServers()
 
 	// Get server ID from query param, default to first server
-	serverID := r.URL.Query().Get("server")
-	if serverID == "" && len(servers) > 0 {
-		serverID = servers[0].ID
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" && len(servers) > 0 {
+		boxID = servers[0].ID
 	}
 
-	if serverID == "" {
+	if boxID == "" {
 		http.Error(w, "No servers configured", http.StatusBadRequest)
 		return
 	}
 
 	// Get server name for display
 	var serverName string
-	if serverConfig, exists := h.getServerConfig(serverID); exists {
+	if serverConfig, exists := h.getServerConfig(boxID); exists {
 		serverName = serverConfig.Name
 	}
 
@@ -671,7 +671,7 @@ func (h *Handler) AlertRulesPage(w http.ResponseWriter, r *http.Request) {
 	successMsg := r.URL.Query().Get("success")
 	errorMsg := r.URL.Query().Get("error")
 
-	component := pages.AlertRulesPage(user, serverID, serverName, servers, successMsg, errorMsg)
+	component := pages.AlertRulesPage(user, boxID, serverName, servers, successMsg, errorMsg)
 	if err := component.Render(r.Context(), w); err != nil {
 		h.logger.Error("Failed to render alert rules template", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)

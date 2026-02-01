@@ -121,7 +121,7 @@ templ FrontendDetail(user *models.User, frontendName string, stats *models.HAPro
 								<div class="flex flex-wrap gap-2">
 									for _, backendName := range fm.Backends {
 										<a
-											href={ templ.SafeURL(fmt.Sprintf("/server/%s/backend/%s", serverID, backendName)) }
+											href={ templ.SafeURL(fmt.Sprintf("/box/%s/backend/%s", serverID, backendName)) }
 											class="inline-flex items-center px-3 py-2 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 transition"
 										>
 											<svg class="w-4 h-4 mr-2 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -343,7 +343,7 @@ templ BackendDetail(user *models.User, backendName string, stats *models.HAProxy
 											<div class="flex justify-between items-center">
 												<span class="text-gray-600 dark:text-gray-400">Traffic From:</span>
 												<a
-													href={ templ.SafeURL(fmt.Sprintf("/server/%s/frontend/%s", serverID, frontendName)) }
+													href={ templ.SafeURL(fmt.Sprintf("/box/%s/frontend/%s", serverID, frontendName)) }
 													class="inline-flex items-center px-2 py-1 bg-blue-100 dark:bg-blue-900 hover:bg-blue-200 dark:hover:bg-blue-800 rounded text-xs font-medium text-blue-700 dark:text-blue-300 transition"
 												>
 													<svg class="w-3 h-3 mr-1 text-blue-500 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">

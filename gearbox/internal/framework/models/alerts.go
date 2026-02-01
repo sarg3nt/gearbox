@@ -38,7 +38,7 @@ const (
 // AlertRule defines a rule that triggers alerts
 type AlertRule struct {
 	ID              int64         `json:"id"`
-	ServerID        string        `json:"server_id"`
+	BoxID           string        `json:"box_id"`
 	Name            string        `json:"name"`
 	Description     string        `json:"description"`
 	Type            AlertType     `json:"type"`
@@ -62,7 +62,7 @@ type AlertRule struct {
 type Alert struct {
 	ID                  int64         `json:"id"`
 	RuleID              int64         `json:"rule_id"`
-	ServerID            string        `json:"server_id"`
+	BoxID               string        `json:"box_id"`
 	Type                AlertType     `json:"type"`
 	Severity            AlertSeverity `json:"severity"`
 	Status              AlertStatus   `json:"status"`
@@ -110,7 +110,7 @@ type AlertSummary struct {
 func DefaultAlertRules(serverID string) []AlertRule {
 	return []AlertRule{
 		{
-			ServerID:        serverID,
+			BoxID:        serverID,
 			Name:            "High CPU Usage",
 			Description:     "CPU usage exceeds threshold",
 			Type:            AlertTypeMetric,
@@ -124,7 +124,7 @@ func DefaultAlertRules(serverID string) []AlertRule {
 			NotifyUI:        true,
 		},
 		{
-			ServerID:        serverID,
+			BoxID:        serverID,
 			Name:            "Critical CPU Usage",
 			Description:     "CPU usage critically high",
 			Type:            AlertTypeMetric,
@@ -139,7 +139,7 @@ func DefaultAlertRules(serverID string) []AlertRule {
 			NotifyEmail:     true,
 		},
 		{
-			ServerID:        serverID,
+			BoxID:        serverID,
 			Name:            "High Memory Usage",
 			Description:     "Memory usage exceeds threshold",
 			Type:            AlertTypeMetric,
@@ -153,7 +153,7 @@ func DefaultAlertRules(serverID string) []AlertRule {
 			NotifyUI:        true,
 		},
 		{
-			ServerID:        serverID,
+			BoxID:        serverID,
 			Name:            "Critical Memory Usage",
 			Description:     "Memory usage critically high",
 			Type:            AlertTypeMetric,
@@ -168,7 +168,7 @@ func DefaultAlertRules(serverID string) []AlertRule {
 			NotifyEmail:     true,
 		},
 		{
-			ServerID:        serverID,
+			BoxID:        serverID,
 			Name:            "High Disk Usage",
 			Description:     "Disk usage exceeds threshold",
 			Type:            AlertTypeMetric,
@@ -182,7 +182,7 @@ func DefaultAlertRules(serverID string) []AlertRule {
 			NotifyUI:        true,
 		},
 		{
-			ServerID:        serverID,
+			BoxID:        serverID,
 			Name:            "Backend Down",
 			Description:     "A backend has gone offline",
 			Type:            AlertTypeBackendDown,
@@ -194,7 +194,7 @@ func DefaultAlertRules(serverID string) []AlertRule {
 			NotifyEmail:     true,
 		},
 		{
-			ServerID:        serverID,
+			BoxID:        serverID,
 			Name:            "Frontend Down",
 			Description:     "A frontend has gone offline",
 			Type:            AlertTypeFrontendDown,
@@ -206,7 +206,7 @@ func DefaultAlertRules(serverID string) []AlertRule {
 			NotifyEmail:     true,
 		},
 		{
-			ServerID:        serverID,
+			BoxID:        serverID,
 			Name:            "High Error Rate",
 			Description:     "Error rate exceeds threshold",
 			Type:            AlertTypeTraffic,
@@ -220,7 +220,7 @@ func DefaultAlertRules(serverID string) []AlertRule {
 			NotifyUI:        true,
 		},
 		{
-			ServerID:        serverID,
+			BoxID:        serverID,
 			Name:            "Certificate Expiring",
 			Description:     "SSL certificate expiring soon",
 			Type:            AlertTypeCertificate,
@@ -235,7 +235,7 @@ func DefaultAlertRules(serverID string) []AlertRule {
 			NotifyEmail:     true,
 		},
 		{
-			ServerID:        serverID,
+			BoxID:        serverID,
 			Name:            "Security Threat Detected",
 			Description:     "High threat score IP detected",
 			Type:            AlertTypeSecurity,
@@ -249,7 +249,7 @@ func DefaultAlertRules(serverID string) []AlertRule {
 			NotifyUI:        true,
 		},
 		{
-			ServerID:        serverID,
+			BoxID:        serverID,
 			Name:            "Service Down",
 			Description:     "A monitored service has stopped",
 			Type:            AlertTypeServiceDown,
@@ -261,7 +261,7 @@ func DefaultAlertRules(serverID string) []AlertRule {
 			NotifyEmail:     true,
 		},
 		{
-			ServerID:        serverID,
+			BoxID:        serverID,
 			Name:            "Certificate Expired",
 			Description:     "SSL certificate has expired",
 			Type:            AlertTypeCertificate,
@@ -276,7 +276,7 @@ func DefaultAlertRules(serverID string) []AlertRule {
 			NotifyEmail:     true,
 		},
 		{
-			ServerID:        serverID,
+			BoxID:        serverID,
 			Name:            "Security Updates Available",
 			Description:     "Security updates are pending installation",
 			Type:            AlertTypeOSUpdate,
@@ -291,7 +291,7 @@ func DefaultAlertRules(serverID string) []AlertRule {
 			NotifyEmail:     true,
 		},
 		{
-			ServerID:        serverID,
+			BoxID:        serverID,
 			Name:            "Reboot Required",
 			Description:     "System requires a reboot to complete updates",
 			Type:            AlertTypeOSUpdate,
@@ -305,7 +305,7 @@ func DefaultAlertRules(serverID string) []AlertRule {
 			NotifyUI:        true,
 		},
 		{
-			ServerID:        serverID,
+			BoxID:        serverID,
 			Name:            "Many Updates Pending",
 			Description:     "Large number of package updates available",
 			Type:            AlertTypeOSUpdate,

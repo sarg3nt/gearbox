@@ -9,7 +9,7 @@ import (
 )
 
 // FirewallConfigPage renders the firewall configuration editor page.
-templ FirewallConfigPage(user *models.User, server *database.ServerDB, config *agent.FirewallConfigResponse, gitConfig *database.ServerGitConfig, changes []database.ConfigChange, canEdit bool) {
+templ FirewallConfigPage(user *models.User, server *database.BoxDB, config *agent.FirewallConfigResponse, gitConfig *database.BoxGitConfig, changes []database.ConfigChange, canEdit bool) {
 	@layouts.Base("Firewall Configuration", user, "/config") {
 		<!-- Hidden container for page header content -->
 		<div id="page-header-source" class="hidden">
@@ -181,7 +181,7 @@ templ FirewallConfigPage(user *models.User, server *database.ServerDB, config *a
 		</div>
 
 		<script>
-		const serverID = "{ server.ServerID }";
+		const serverID = "{ server.BoxID }";
 		let currentSHA = "{ config.SHA256 }";
 
 		function setupPageHeader() {
@@ -376,7 +376,7 @@ templ FirewallConfigPage(user *models.User, server *database.ServerDB, config *a
 }
 
 // FirewallConfigPageWithError renders the config page with an error message.
-templ FirewallConfigPageWithError(user *models.User, server *database.ServerDB, errorMsg string, canEdit bool) {
+templ FirewallConfigPageWithError(user *models.User, server *database.BoxDB, errorMsg string, canEdit bool) {
 	@layouts.Base("Firewall Configuration", user, "/config") {
 		<div id="page-header-source" class="hidden">
 			<div class="flex items-center">

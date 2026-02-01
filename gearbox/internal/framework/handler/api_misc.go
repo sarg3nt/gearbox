@@ -14,8 +14,8 @@ import (
 	"github.com/sarg3nt/gearbox/internal/framework/events"
 )
 
-// APIServersHandler returns list of configured servers.
-func (h *Handler) APIServersHandler(w http.ResponseWriter, r *http.Request) {
+// APIBoxesHandler returns list of configured servers.
+func (h *Handler) APIBoxesHandler(w http.ResponseWriter, r *http.Request) {
 	enabledServers := h.getEnabledServers()
 	servers := make([]map[string]interface{}, 0, len(enabledServers))
 
@@ -66,8 +66,8 @@ func (h *Handler) APISessionInfoHandler(w http.ResponseWriter, r *http.Request) 
 
 // APIIncidentsHandler returns recent incidents.
 func (h *Handler) APIIncidentsHandler(w http.ResponseWriter, r *http.Request) {
-	serverID := chi.URLParam(r, "serverID")
-	if serverID == "" {
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
 		http.Error(w, "Server ID required", http.StatusBadRequest)
 		return
 	}
@@ -87,9 +87,9 @@ func (h *Handler) APIIncidentsHandler(w http.ResponseWriter, r *http.Request) {
 	var err error
 
 	if activeOnly {
-		incidents, err = h.db.GetActiveIncidents(serverID)
+		incidents, err = h.db.GetActiveIncidents(boxID)
 	} else {
-		incidents, err = h.db.GetRecentIncidents(serverID, limit)
+		incidents, err = h.db.GetRecentIncidents(boxID, limit)
 	}
 
 	if err != nil {
@@ -99,7 +99,7 @@ func (h *Handler) APIIncidentsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeJSON(w, map[string]interface{}{
-		"server_id":   serverID,
+		"server_id":   boxID,
 		"active_only": activeOnly,
 		"incidents":   incidents,
 	})
@@ -128,7 +128,7 @@ func (h *Handler) APIEventsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Optional server filter
-	serverID := r.URL.Query().Get("server")
+	boxID := r.URL.Query().Get("server")
 
 	// Set SSE headers
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -138,7 +138,7 @@ func (h *Handler) APIEventsHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Create subscriber
 	subscriberID := uuid.New().String()
-	sub := h.eventHub.Subscribe(subscriberID, serverID)
+	sub := h.eventHub.Subscribe(subscriberID, boxID)
 	defer h.eventHub.Unsubscribe(sub)
 
 	// Flush initial response
@@ -211,8 +211,8 @@ func (h *Handler) APIDisableEntityHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
-	if serverID == "" {
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
 		http.Error(w, "Server ID required", http.StatusBadRequest)
 		return
 	}
@@ -241,7 +241,7 @@ func (h *Handler) APIDisableEntityHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	// Disable the entity
-	if err := h.db.DisableEntity(serverID, database.EntityType(req.EntityType), req.EntityName, userID, req.Notes); err != nil {
+	if err := h.db.DisableEntity(boxID, database.EntityType(req.EntityType), req.EntityName, userID, req.Notes); err != nil {
 		h.logger.Error("Failed to disable entity", "error", err)
 		http.Error(w, "Failed to disable entity", http.StatusInternalServerError)
 		return
@@ -249,7 +249,7 @@ func (h *Handler) APIDisableEntityHandler(w http.ResponseWriter, r *http.Request
 
 	h.writeJSON(w, map[string]interface{}{
 		"status":      "ok",
-		"server_id":   serverID,
+		"server_id":   boxID,
 		"entity_type": req.EntityType,
 		"entity_name": req.EntityName,
 	})
@@ -263,8 +263,8 @@ func (h *Handler) APIEnableEntityHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
-	if serverID == "" {
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
 		http.Error(w, "Server ID required", http.StatusBadRequest)
 		return
 	}
@@ -286,7 +286,7 @@ func (h *Handler) APIEnableEntityHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Enable the entity
-	if err := h.db.EnableEntity(serverID, database.EntityType(req.EntityType), req.EntityName); err != nil {
+	if err := h.db.EnableEntity(boxID, database.EntityType(req.EntityType), req.EntityName); err != nil {
 		h.logger.Error("Failed to enable entity", "error", err)
 		http.Error(w, "Failed to enable entity", http.StatusInternalServerError)
 		return
@@ -294,7 +294,7 @@ func (h *Handler) APIEnableEntityHandler(w http.ResponseWriter, r *http.Request)
 
 	h.writeJSON(w, map[string]interface{}{
 		"status":      "ok",
-		"server_id":   serverID,
+		"server_id":   boxID,
 		"entity_type": req.EntityType,
 		"entity_name": req.EntityName,
 	})
@@ -302,13 +302,13 @@ func (h *Handler) APIEnableEntityHandler(w http.ResponseWriter, r *http.Request)
 
 // APIDisabledEntitiesHandler returns all disabled entities for a server.
 func (h *Handler) APIDisabledEntitiesHandler(w http.ResponseWriter, r *http.Request) {
-	serverID := chi.URLParam(r, "serverID")
-	if serverID == "" {
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
 		http.Error(w, "Server ID required", http.StatusBadRequest)
 		return
 	}
 
-	entities, err := h.db.GetDisabledEntities(serverID)
+	entities, err := h.db.GetDisabledEntities(boxID)
 	if err != nil {
 		h.logger.Error("Failed to get disabled entities", "error", err)
 		http.Error(w, "Failed to get disabled entities", http.StatusInternalServerError)
@@ -316,7 +316,7 @@ func (h *Handler) APIDisabledEntitiesHandler(w http.ResponseWriter, r *http.Requ
 	}
 
 	h.writeJSON(w, map[string]interface{}{
-		"server_id": serverID,
+		"server_id": boxID,
 		"entities":  entities,
 		"count":     len(entities),
 	})

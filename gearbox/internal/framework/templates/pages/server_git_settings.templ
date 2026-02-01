@@ -7,7 +7,7 @@ import (
 )
 
 // ServerGitSettingsPage renders the git settings page for a server.
-templ ServerGitSettingsPage(user *models.User, server *database.ServerDB, haproxyGit *database.ServerGitConfig, firewallGit *database.ServerGitConfig, successMsg, errorMsg string) {
+templ BoxGitSettingsPage(user *models.User, server *database.BoxDB, haproxyGit *database.BoxGitConfig, firewallGit *database.BoxGitConfig, successMsg, errorMsg string) {
 	@layouts.Base("Git Settings", user, "/settings") {
 		<!-- Hidden container for page header content -->
 		<div id="page-header-source" class="hidden">
@@ -16,7 +16,7 @@ templ ServerGitSettingsPage(user *models.User, server *database.ServerDB, haprox
 				<span class="ml-3 text-sm text-gray-500 dark:text-gray-400">{ server.Name }</span>
 			</div>
 			<div class="flex-1"></div>
-			<a href="/settings/servers" class="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center">
+			<a href="/settings/boxes" class="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center">
 				<svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
 				</svg>
@@ -42,7 +42,7 @@ templ ServerGitSettingsPage(user *models.User, server *database.ServerDB, haprox
 				</div>
 			</div>
 
-			<form method="POST" action={ templ.SafeURL("/settings/servers/" + server.ServerID + "/git") } class="space-y-8" autocomplete="off">
+			<form method="POST" action={ templ.SafeURL("/settings/boxes/" + server.BoxID + "/git") } class="space-y-8" autocomplete="off">
 				<!-- HAProxy Config Section -->
 				<div class="bg-white dark:bg-slate-800 rounded-lg shadow p-6">
 					<h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
@@ -261,7 +261,7 @@ templ ServerGitSettingsPage(user *models.User, server *database.ServerDB, haprox
 				<!-- Submit Button -->
 				<div class="flex justify-end gap-4">
 					<a
-						href="/settings/servers"
+						href="/settings/boxes"
 						class="px-6 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700"
 					>
 						Cancel
@@ -293,14 +293,14 @@ templ ServerGitSettingsPage(user *models.User, server *database.ServerDB, haprox
 }
 
 // Helper functions
-func getGitRepoURL(config *database.ServerGitConfig) string {
+func getGitRepoURL(config *database.BoxGitConfig) string {
 	if config == nil {
 		return ""
 	}
 	return config.GitRepoURL
 }
 
-func getGitBranch(config *database.ServerGitConfig) string {
+func getGitBranch(config *database.BoxGitConfig) string {
 	if config == nil {
 		return "main"
 	}
@@ -310,14 +310,14 @@ func getGitBranch(config *database.ServerGitConfig) string {
 	return config.GitBranch
 }
 
-func getGitFilePath(config *database.ServerGitConfig) string {
+func getGitFilePath(config *database.BoxGitConfig) string {
 	if config == nil {
 		return ""
 	}
 	return config.GitFilePath
 }
 
-func getPatPlaceholder(config *database.ServerGitConfig) string {
+func getPatPlaceholder(config *database.BoxGitConfig) string {
 	if config != nil && len(config.GitPATEncrypted) > 0 {
 		return "(configured - leave empty to keep)"
 	}

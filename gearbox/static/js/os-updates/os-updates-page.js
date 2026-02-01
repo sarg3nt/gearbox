@@ -1,4 +1,4 @@
-let currentServerID = '';
+let currentBoxID = '';
 let selectedPackages = new Set();
 let currentOperationID = null;
 let terminalLineCount = 0;
@@ -25,7 +25,7 @@ document.addEventListener('DOMContentLoaded', function() {
 	setupPageHeader();
 	const serverInput = document.getElementById('current-server-id');
 	if (serverInput) {
-		currentServerID = serverInput.value;
+		currentBoxID = serverInput.value;
 	}
 
 	// Bind snapshot button events
@@ -50,7 +50,7 @@ document.addEventListener('DOMContentLoaded', function() {
 	});
 
 	// Initialize SSE connection for real-time apt events
-	// Delay slightly to ensure currentServerID is set
+	// Delay slightly to ensure currentBoxID is set
 	setTimeout(initSSE, 100);
 });
 
@@ -70,7 +70,7 @@ window.unregisterEventHandler = function(eventType, handler) {
 
 function initSSE() {
 	// Don't initialize without a server ID
-	if (!currentServerID) {
+	if (!currentBoxID) {
 		console.warn('SSE: No server ID available, skipping initialization');
 		return;
 	}
@@ -79,7 +79,7 @@ function initSSE() {
 		sseConnection.close();
 	}
 
-	const sseUrl = `/api/events?server=${currentServerID}`;
+	const sseUrl = `/api/events?server=${currentBoxID}`;
 	sseConnection = new EventSource(sseUrl);
 
 	sseConnection.onopen = function() {
@@ -118,8 +118,8 @@ function initSSE() {
 	};
 }
 
-function switchServer(serverID) {
-	window.location.href = '/os-updates?server=' + serverID;
+function switchBox(boxID) {
+	window.location.href = '/os-updates?server=' + boxID;
 }
 
 async function refreshPageData() {
@@ -135,7 +135,7 @@ async function checkForUpdates() {
 
 	try {
 		// This call runs apt update on the server and waits for it to complete
-		const response = await fetch('/api/os-updates/check?server=' + currentServerID, { method: 'POST' });
+		const response = await fetch('/api/os-updates/check?server=' + currentBoxID, { method: 'POST' });
 		if (!response.ok) throw new Error('Failed to check for updates');
 
 		const data = await response.json();
@@ -160,7 +160,7 @@ function installAllUpdates() {
 		confirmText: 'Install Updates',
 		onConfirm: async () => {
 			try {
-				const response = await fetch('/api/os-updates/install?server=' + currentServerID + '&stream=true', {
+				const response = await fetch('/api/os-updates/install?server=' + currentBoxID + '&stream=true', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({})
@@ -191,7 +191,7 @@ function installSecurityUpdates() {
 		confirmText: 'Install Security Updates',
 		onConfirm: async () => {
 			try {
-				const response = await fetch('/api/os-updates/install?server=' + currentServerID + '&stream=true', {
+				const response = await fetch('/api/os-updates/install?server=' + currentBoxID + '&stream=true', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ security_only: true })
@@ -228,7 +228,7 @@ function installSelectedPackages() {
 		confirmText: 'Install',
 		onConfirm: async () => {
 			try {
-				const response = await fetch('/api/os-updates/install?server=' + currentServerID + '&stream=true', {
+				const response = await fetch('/api/os-updates/install?server=' + currentBoxID + '&stream=true', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ packages: packages })
@@ -304,7 +304,7 @@ function filterPackages(query) {
 
 async function createSnapshot(reason) {
 	try {
-		const response = await fetch('/api/os-updates/snapshots?server=' + currentServerID, {
+		const response = await fetch('/api/os-updates/snapshots?server=' + currentBoxID, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ reason: reason })
@@ -325,7 +325,7 @@ function restoreSnapshot(snapshotID) {
 		confirmText: 'Restore',
 		onConfirm: async () => {
 			try {
-				const response = await fetch('/api/os-updates/snapshots/restore?server=' + currentServerID, {
+				const response = await fetch('/api/os-updates/snapshots/restore?server=' + currentBoxID, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ snapshot_id: snapshotID })
@@ -348,7 +348,7 @@ function deleteSnapshot(snapshotID) {
 		confirmText: 'Delete',
 		onConfirm: async () => {
 			try {
-				const response = await fetch('/api/os-updates/snapshots/' + snapshotID + '?server=' + currentServerID, {
+				const response = await fetch('/api/os-updates/snapshots/' + snapshotID + '?server=' + currentBoxID, {
 					method: 'DELETE'
 				});
 				if (!response.ok) throw new Error('Failed to delete snapshot');
@@ -401,7 +401,7 @@ async function confirmReboot() {
 
 async function doReboot(when) {
 	try {
-		const response = await fetch('/api/os-updates/reboot?server=' + currentServerID, {
+		const response = await fetch('/api/os-updates/reboot?server=' + currentBoxID, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ when: when })
@@ -435,7 +435,7 @@ async function confirmPipxInstall() {
 	hidePipxInstallModal();
 
 	try {
-		const response = await fetch('/api/os-updates/pipx/install?server=' + currentServerID, {
+		const response = await fetch('/api/os-updates/pipx/install?server=' + currentBoxID, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ name: name })
@@ -450,7 +450,7 @@ async function confirmPipxInstall() {
 
 async function upgradePipxPackage(name) {
 	try {
-		const response = await fetch('/api/os-updates/pipx/upgrade?server=' + currentServerID, {
+		const response = await fetch('/api/os-updates/pipx/upgrade?server=' + currentBoxID, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ name: name })
@@ -465,7 +465,7 @@ async function upgradePipxPackage(name) {
 
 async function upgradeAllPipx() {
 	try {
-		const response = await fetch('/api/os-updates/pipx/upgrade?server=' + currentServerID, {
+		const response = await fetch('/api/os-updates/pipx/upgrade?server=' + currentBoxID, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({})
@@ -486,7 +486,7 @@ function uninstallPipxPackage(name) {
 		confirmText: 'Uninstall',
 		onConfirm: async () => {
 			try {
-				const response = await fetch('/api/os-updates/pipx/uninstall?server=' + currentServerID, {
+				const response = await fetch('/api/os-updates/pipx/uninstall?server=' + currentBoxID, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ name: name })

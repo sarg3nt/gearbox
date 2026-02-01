@@ -63,7 +63,7 @@ func updateSummaryCardDefinition() *widget.WidgetDefinition {
 		Icon:        "information-circle",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
-				"server_id": {
+				"box_id": {
 					Type:        "string",
 					Description: "Server ID to monitor (optional, uses current server if not specified)",
 				},
@@ -76,9 +76,9 @@ func updateSummaryCardDefinition() *widget.WidgetDefinition {
 			Required: []string{},
 		},
 		Renderer: func(ctx context.Context, config map[string]any, data any) (templ.Component, error) {
-			serverID := getStringFromConfig(config, "server_id", "")
+			boxID := getStringFromConfig(config, "box_id", "")
 			refreshSeconds := getIntFromConfig(config, "refresh_seconds", 300)
-			return UpdateSummaryCardWidget(serverID, refreshSeconds), nil
+			return UpdateSummaryCardWidget(boxID, refreshSeconds), nil
 		},
 	}
 }
@@ -95,7 +95,7 @@ func availableUpdatesListDefinition() *widget.WidgetDefinition {
 		Icon:        "clipboard-list",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
-				"server_id": {
+				"box_id": {
 					Type:        "string",
 					Description: "Server ID to monitor (optional, uses current server if not specified)",
 				},
@@ -113,10 +113,10 @@ func availableUpdatesListDefinition() *widget.WidgetDefinition {
 			Required: []string{},
 		},
 		Renderer: func(ctx context.Context, config map[string]any, data any) (templ.Component, error) {
-			serverID := getStringFromConfig(config, "server_id", "")
+			boxID := getStringFromConfig(config, "box_id", "")
 			refreshSeconds := getIntFromConfig(config, "refresh_seconds", 300)
 			showControls := getBoolFromConfig(config, "show_controls", true)
-			return AvailableUpdatesListWidget(serverID, refreshSeconds, showControls), nil
+			return AvailableUpdatesListWidget(boxID, refreshSeconds, showControls), nil
 		},
 	}
 }
@@ -133,7 +133,7 @@ func updateHistoryDefinition() *widget.WidgetDefinition {
 		Icon:        "clock",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
-				"server_id": {
+				"box_id": {
 					Type:        "string",
 					Description: "Server ID to monitor (optional, uses current server if not specified)",
 				},
@@ -146,9 +146,9 @@ func updateHistoryDefinition() *widget.WidgetDefinition {
 			Required: []string{},
 		},
 		Renderer: func(ctx context.Context, config map[string]any, data any) (templ.Component, error) {
-			serverID := getStringFromConfig(config, "server_id", "")
+			boxID := getStringFromConfig(config, "box_id", "")
 			maxEntries := getIntFromConfig(config, "max_entries", 50)
-			return UpdateHistoryWidget(serverID, maxEntries), nil
+			return UpdateHistoryWidget(boxID, maxEntries), nil
 		},
 	}
 }

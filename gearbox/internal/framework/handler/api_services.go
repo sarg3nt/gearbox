@@ -21,19 +21,19 @@ func (h *Handler) APIServicesConfigHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
-	if serverID == "" {
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
 		http.Error(w, "Server ID required", http.StatusBadRequest)
 		return
 	}
 
 	// Ensure default integrations exist for this server
-	if err := h.db.EnsureServerPlugins(serverID); err != nil {
+	if err := h.db.EnsureServerPlugins(boxID); err != nil {
 		h.logger.Error("Failed to ensure server integrations", "error", err)
 	}
 
 	// Get services config for this server
-	config, err := h.db.GetServicesConfig(serverID)
+	config, err := h.db.GetServicesConfig(boxID)
 	if err != nil {
 		h.logger.Error("Failed to get services config", "error", err)
 		config = &database.ServicesConfig{
@@ -52,14 +52,14 @@ func (h *Handler) APIServicesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
-	if serverID == "" {
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
 		http.Error(w, "Server ID required", http.StatusBadRequest)
 		return
 	}
 
 	// Get server config
-	serverConfig, exists := h.getServerConfig(serverID)
+	serverConfig, exists := h.getServerConfig(boxID)
 	if !exists || !serverConfig.UsesAgentAPI() {
 		http.Error(w, "Agent API not configured", http.StatusServiceUnavailable)
 		return
@@ -98,14 +98,14 @@ func (h *Handler) APIServiceControlHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
-	if serverID == "" {
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
 		http.Error(w, "Server ID required", http.StatusBadRequest)
 		return
 	}
 
 	// Get server config
-	serverConfig, exists := h.getServerConfig(serverID)
+	serverConfig, exists := h.getServerConfig(boxID)
 	if !exists || !serverConfig.UsesAgentAPI() {
 		http.Error(w, "Agent API not configured", http.StatusServiceUnavailable)
 		return

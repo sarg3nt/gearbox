@@ -48,20 +48,20 @@ func Load() (*models.AppConfig, error) {
 		log.Println("WARNING: HAPROXY_SERVERS env var is deprecated. Servers will be migrated to database on first run.")
 		log.Println("         After migration, you can remove HAPROXY_SERVERS from your environment.")
 
-		if err := json.Unmarshal([]byte(serversJSON), &cfg.Servers); err != nil {
+		if err := json.Unmarshal([]byte(serversJSON), &cfg.Boxes); err != nil {
 			return nil, fmt.Errorf("failed to parse HAPROXY_SERVERS: %w", err)
 		}
 	} else {
 		// No ENV var - servers will be loaded from database
-		cfg.Servers = []models.ServerConfig{}
+		cfg.Boxes = []models.BoxConfig{}
 	}
 
 	// Validate each server and resolve env var references
-	for i := range cfg.Servers {
-		if err := resolveServerEnvVars(&cfg.Servers[i]); err != nil {
-			return nil, fmt.Errorf("failed to resolve env vars for server %s: %w", cfg.Servers[i].ID, err)
+	for i := range cfg.Boxes {
+		if err := resolveServerEnvVars(&cfg.Boxes[i]); err != nil {
+			return nil, fmt.Errorf("failed to resolve env vars for server %s: %w", cfg.Boxes[i].ID, err)
 		}
-		if err := cfg.Servers[i].Validate(); err != nil {
+		if err := cfg.Boxes[i].Validate(); err != nil {
 			return nil, err
 		}
 	}
@@ -240,8 +240,8 @@ func LogConfigDebug(cfg *models.AppConfig, logger *slog.Logger) {
 	logger.Info("========================================")
 	logger.Info("DEBUG: Parsed Configuration")
 	logger.Info("========================================")
-	logger.Info("servers configured", "count", len(cfg.Servers))
-	for _, s := range cfg.Servers {
+	logger.Info("servers configured", "count", len(cfg.Boxes))
+	for _, s := range cfg.Boxes {
 		logger.Info("server", "id", s.ID, "name", s.Name)
 	}
 	logger.Info("config", "admin_password", maskSecret(cfg.AdminPassword))
@@ -308,6 +308,6 @@ func maskSecret(value string) string {
 
 // resolveServerEnvVars is a legacy function kept for backward compatibility.
 // Servers are now configured via the database with Agent API credentials.
-func resolveServerEnvVars(_ *models.ServerConfig) error {
+func resolveServerEnvVars(_ *models.BoxConfig) error {
 	return nil
 }

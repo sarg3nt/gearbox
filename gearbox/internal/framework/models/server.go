@@ -1,7 +1,7 @@
 package models
 
-// ServerConfig represents the configuration for a single HAProxy server to monitor.
-type ServerConfig struct {
+// BoxConfig represents the configuration for a single monitored box (server or workstation).
+type BoxConfig struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 
@@ -10,23 +10,23 @@ type ServerConfig struct {
 	APIKey   string `json:"api_key,omitempty"`   // Bearer token for Agent API
 }
 
-// UsesAgentAPI returns true if this server is configured to use the Agent API.
-func (s *ServerConfig) UsesAgentAPI() bool {
-	return s.AgentURL != "" && s.APIKey != ""
+// UsesAgentAPI returns true if this box is configured to use the Agent API.
+func (b *BoxConfig) UsesAgentAPI() bool {
+	return b.AgentURL != "" && b.APIKey != ""
 }
 
-// Validate checks if the server configuration is valid.
-func (s *ServerConfig) Validate() error {
-	if s.ID == "" {
-		return ErrInvalidConfig("server id is required")
+// Validate checks if the box configuration is valid.
+func (b *BoxConfig) Validate() error {
+	if b.ID == "" {
+		return ErrInvalidConfig("box id is required")
 	}
-	if s.Name == "" {
-		return ErrInvalidConfig("server name is required")
+	if b.Name == "" {
+		return ErrInvalidConfig("box name is required")
 	}
 
-	// Server must have Agent API configured
-	if !s.UsesAgentAPI() {
-		return ErrInvalidConfig("server must have agent_url and api_key configured for server " + s.ID)
+	// Box must have Agent API configured
+	if !b.UsesAgentAPI() {
+		return ErrInvalidConfig("box must have agent_url and api_key configured for box " + b.ID)
 	}
 
 	return nil
@@ -34,7 +34,7 @@ func (s *ServerConfig) Validate() error {
 
 // AppConfig represents the overall application configuration.
 type AppConfig struct {
-	Servers                 []ServerConfig
+	Boxes                   []BoxConfig
 	AdminPassword           string // Initial admin password (optional, will be generated if not set)
 	SessionSecret           string
 	SessionTimeoutMinutes   int

@@ -213,7 +213,7 @@ The app connects to HAProxy servers via the Agent API. For local development:
 
 ### Using Real Servers
 
-Configure servers in the UI at `/settings/servers`:
+Configure servers in the UI at `/settings/boxes`:
 
 - **Agent URL:** `https://light-hugger:8405` (or your HAProxy server)
 - **API Key:** The Bearer token from your gearbox-agent

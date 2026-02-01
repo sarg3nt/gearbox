@@ -50,13 +50,13 @@ func (h *Handler) APISecuritySummaryHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
-	if serverID == "" {
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
 		http.Error(w, "Server ID required", http.StatusBadRequest)
 		return
 	}
 
-	collector, exists := h.getCollector(serverID)
+	collector, exists := h.getCollector(boxID)
 	if !exists {
 		http.Error(w, "Server not found", http.StatusNotFound)
 		return
@@ -79,13 +79,13 @@ func (h *Handler) APIFail2BanStatsHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
-	if serverID == "" {
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
 		http.Error(w, "Server ID required", http.StatusBadRequest)
 		return
 	}
 
-	collector, exists := h.getCollector(serverID)
+	collector, exists := h.getCollector(boxID)
 	if !exists {
 		http.Error(w, "Server not found", http.StatusNotFound)
 		return
@@ -108,20 +108,20 @@ func (h *Handler) APIBlockedIPsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
-	if serverID == "" {
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
 		http.Error(w, "Server ID required", http.StatusBadRequest)
 		return
 	}
 
 	// Get blocked IPs from database (local records)
-	blockedIPs, err := h.db.GetBlockedIPs(serverID)
+	blockedIPs, err := h.db.GetBlockedIPs(boxID)
 	if err != nil {
 		h.logger.Error("Failed to get blocked IPs from database", "error", err)
 	}
 
 	// Also get live blocked IPs from agent's nftables
-	collector, exists := h.getCollector(serverID)
+	collector, exists := h.getCollector(boxID)
 	if exists {
 		liveBlocked, err := collector.GetBlockedIPs()
 		if err != nil {
@@ -138,7 +138,7 @@ func (h *Handler) APIBlockedIPsHandler(w http.ResponseWriter, r *http.Request) {
 			for _, liveIP := range liveBlocked {
 				if _, exists := blockedMap[liveIP.IP]; !exists {
 					blockedMap[liveIP.IP] = models.BlockedIP{
-						ServerID:    serverID,
+						ServerID:    boxID,
 						IPAddress:   liveIP.IP,
 						Reason:      "Unknown (found in nftables)",
 						AutoBlocked: true,
@@ -167,8 +167,8 @@ func (h *Handler) APIBlockIPHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
-	if serverID == "" {
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
 		http.Error(w, "Server ID required", http.StatusBadRequest)
 		return
 	}
@@ -185,7 +185,7 @@ func (h *Handler) APIBlockIPHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get the collector to call the agent
-	collector, exists := h.getCollector(serverID)
+	collector, exists := h.getCollector(boxID)
 	if !exists {
 		http.Error(w, "Server not found", http.StatusNotFound)
 		return
@@ -200,7 +200,7 @@ func (h *Handler) APIBlockIPHandler(w http.ResponseWriter, r *http.Request) {
 	// Record in database
 	user, _ := auth.GetUserFromContext(r.Context())
 	blockedIP := models.BlockedIP{
-		ServerID:    serverID,
+		ServerID:    boxID,
 		IPAddress:   req.IPAddress,
 		Reason:      req.Reason,
 		Notes:       req.Notes,
@@ -230,16 +230,16 @@ func (h *Handler) APIUnblockIPHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
+	boxID := chi.URLParam(r, "boxID")
 	ip := chi.URLParam(r, "ip")
 
-	if serverID == "" || ip == "" {
+	if boxID == "" || ip == "" {
 		http.Error(w, "Server ID and IP address required", http.StatusBadRequest)
 		return
 	}
 
 	// Get the collector to call the agent
-	collector, exists := h.getCollector(serverID)
+	collector, exists := h.getCollector(boxID)
 	if !exists {
 		http.Error(w, "Server not found", http.StatusNotFound)
 		return
@@ -258,7 +258,7 @@ func (h *Handler) APIUnblockIPHandler(w http.ResponseWriter, r *http.Request) {
 		userID = &user.ID
 	}
 
-	if err := h.db.UnblockIP(serverID, ip, userID); err != nil {
+	if err := h.db.UnblockIP(boxID, ip, userID); err != nil {
 		h.logger.Error("Failed to record IP unblock in database", "error", err)
 		// Don't fail the request since the IP is unblocked at the firewall level
 	}

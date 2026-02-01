@@ -68,7 +68,7 @@ func main() {
 		"build_date", BuildDate)
 	logger.Info("configuration loaded",
 		"log_level", cfg.LogLevel,
-		"server_count", len(cfg.Servers))
+		"server_count", len(cfg.Boxes))
 
 	// Log debug configuration if in debug mode
 	config.LogConfigDebug(cfg, logger)
@@ -175,7 +175,7 @@ func main() {
 	historyInterval := time.Duration(cfg.HistoryIntervalSeconds) * time.Second
 	retentionDuration := time.Duration(cfg.DatabaseRetentionHours) * time.Hour
 	go func() {
-		// Run cleanup every hour to apply per-server retention policies
+		// Run cleanup every hour to apply per-box retention policies
 		ticker := time.NewTicker(1 * time.Hour)
 		defer ticker.Stop()
 		for range ticker.C {
@@ -186,18 +186,18 @@ func main() {
 				logger.Info("database cleanup completed")
 			}
 
-			// Per-server cleanup based on metrics integration config
-			dbServers, err := db.GetEnabledServers()
+			// Per-box cleanup based on metrics integration config
+			dbServers, err := db.GetEnabledBoxes()
 			if err != nil {
 				logger.Error("failed to get servers for metrics cleanup", "error", err)
 				continue
 			}
 
 			for _, dbServer := range dbServers {
-				metricsConfig, err := db.GetMetricsConfig(dbServer.ServerID)
+				metricsConfig, err := db.GetMetricsConfig(dbServer.BoxID)
 				if err != nil {
 					logger.Error("failed to get metrics config",
-						"server_id", dbServer.ServerID,
+						"server_id", dbServer.BoxID,
 						"error", err)
 					continue
 				}
@@ -210,26 +210,26 @@ func main() {
 				switch metricsConfig.RetentionType {
 				case database.MetricsRetentionByDays:
 					retention := time.Duration(metricsConfig.RetentionDays) * 24 * time.Hour
-					deleted, err := db.CleanupMetricsByAge(dbServer.ServerID, retention)
+					deleted, err := db.CleanupMetricsByAge(dbServer.BoxID, retention)
 					if err != nil {
 						logger.Error("failed to cleanup metrics by age",
-							"server_id", dbServer.ServerID,
+							"server_id", dbServer.BoxID,
 							"error", err)
 					} else if deleted > 0 {
 						logger.Info("cleaned up old metrics records",
 							"deleted_count", deleted,
-							"server_id", dbServer.ServerID)
+							"server_id", dbServer.BoxID)
 					}
 				case database.MetricsRetentionBySize:
-					deleted, err := db.CleanupMetricsBySize(dbServer.ServerID, metricsConfig.RetentionSizeMB)
+					deleted, err := db.CleanupMetricsBySize(dbServer.BoxID, metricsConfig.RetentionSizeMB)
 					if err != nil {
 						logger.Error("failed to cleanup metrics by size",
-							"server_id", dbServer.ServerID,
+							"server_id", dbServer.BoxID,
 							"error", err)
 					} else if deleted > 0 {
 						logger.Info("cleaned up metrics records by size",
 							"deleted_count", deleted,
-							"server_id", dbServer.ServerID)
+							"server_id", dbServer.BoxID)
 					}
 				}
 			}
@@ -247,30 +247,30 @@ func main() {
 	metricsTTL := metricsRefreshInterval * 2
 	logsTTL := 60 * time.Second
 
-	// Load servers from database
-	dbServers, err := db.GetEnabledServers()
+	// Load boxes from database
+	dbServers, err := db.GetEnabledBoxes()
 	if err != nil {
 		log.Fatalf("Failed to load servers from database: %v", err)
 	}
 
-	// Convert database servers to models.ServerConfig with decrypted credentials
-	var servers []models.ServerConfig
+	// Convert database boxes to models.BoxConfig with decrypted credentials
+	var servers []models.BoxConfig
 	for _, dbServer := range dbServers {
 		// Decrypt Agent API key
 		apiKey, err := encryptor.DecryptString(dbServer.APIKeyEncrypted)
 		if err != nil {
 			logger.Error("failed to decrypt API key (skipping server)",
-				"server_id", dbServer.ServerID,
+				"server_id", dbServer.BoxID,
 				"error", err)
 			continue
 		}
 
-		serverConfig := dbServer.ToServerConfig(apiKey)
+		serverConfig := dbServer.ToBoxConfig(apiKey)
 
-		// Validate the server has a valid Agent API configuration
+		// Validate the box has a valid Agent API configuration
 		if !serverConfig.UsesAgentAPI() {
 			logger.Warn("server has no valid Agent API configuration, skipping",
-				"server_id", dbServer.ServerID)
+				"server_id", dbServer.BoxID)
 			continue
 		}
 
@@ -280,9 +280,9 @@ func main() {
 	logger.Info("loaded enabled servers from database",
 		"server_count", len(servers))
 
-	// If no servers configured, warn but continue (admin can configure via UI)
+	// If no boxes configured, warn but continue (admin can configure via UI)
 	if len(servers) == 0 {
-		logger.Warn("no servers configured, admin users can add servers via /settings/servers")
+		logger.Warn("no boxes configured, admin users can add servers via /settings/boxes")
 	}
 
 	// Initialize collector registry
@@ -298,7 +298,7 @@ func main() {
 	}
 	registry := collector.NewRegistry(logger, db, registryConfig)
 
-	// Add collectors for each server
+	// Add collectors for each box
 	for _, server := range servers {
 		if err := registry.AddCollector(server); err != nil {
 			logger.Warn("failed to add collector for server",
@@ -327,7 +327,7 @@ func main() {
 	wsManager := collector.NewWebSocketManager(eventHub, registry, logger)
 	logger.Info("WebSocket manager initialized")
 
-	// Start WebSocket connections for Agent-based servers
+	// Start WebSocket connections for Agent-based boxes
 	agentServerCount := 0
 	for _, server := range servers {
 		if server.UsesAgentAPI() {
@@ -341,7 +341,7 @@ func main() {
 		}
 	}
 	if agentServerCount > 0 {
-		logger.Info("started WebSocket connections for Agent-based servers",
+		logger.Info("started WebSocket connections for Agent-based boxes",
 			"server_count", agentServerCount)
 	}
 
@@ -574,19 +574,19 @@ func main() {
 			r.Post("/smtp", h.AdminSMTPSettingsPost)
 			r.Post("/smtp/test", h.AdminSMTPTestPost)
 
-			// Server management (requires PermissionManageServers - checked in handlers)
-			r.Get("/servers", h.HAProxyServersPage)
-			r.Get("/servers/new", h.HAProxyServerNewPage)
-			r.Post("/servers/new", h.HAProxyServerCreatePost)
-			r.Get("/servers/{id}/edit", h.HAProxyServerEditPage)
-			r.Post("/servers/{id}/edit", h.HAProxyServerUpdatePost)
-			r.Post("/servers/{id}/delete", h.HAProxyServerDeletePost)
-			r.Post("/servers/{id}/toggle", h.HAProxyServerTogglePost)
-			r.Post("/servers/test", h.HAProxyServerTestConnectionPost)
-			r.Get("/servers/{id}/logs", h.HAProxyServerLogSettingsPage)
-			r.Post("/servers/{id}/logs", h.HAProxyServerLogSettingsPost)
-			r.Get("/servers/{id}/git", h.ServerGitSettingsPage)
-			r.Post("/servers/{id}/git", h.ServerGitSettingsSave)
+			// Box management (requires PermissionManageBoxes - checked in handlers)
+			r.Get("/boxes", h.HAProxyBoxesPage)
+			r.Get("/boxes/new", h.HAProxyBoxNewPage)
+			r.Post("/boxes/new", h.HAProxyBoxCreatePost)
+			r.Get("/boxes/{id}/edit", h.HAProxyBoxEditPage)
+			r.Post("/boxes/{id}/edit", h.HAProxyBoxUpdatePost)
+			r.Post("/boxes/{id}/delete", h.HAProxyBoxDeletePost)
+			r.Post("/boxes/{id}/toggle", h.HAProxyBoxTogglePost)
+			r.Post("/boxes/test", h.HAProxyBoxTestConnectionPost)
+			r.Get("/boxes/{id}/logs", h.HAProxyBoxLogSettingsPage)
+			r.Post("/boxes/{id}/logs", h.HAProxyBoxLogSettingsPost)
+			r.Get("/boxes/{id}/git", h.BoxGitSettingsPage)
+			r.Post("/boxes/{id}/git", h.BoxGitSettingsSave)
 
 			// Disabled entities management (requires ComponentBackends/PermissionManage - checked in handler)
 			r.Get("/admin/disabled-entities", h.AdminDisabledEntitiesPage)
@@ -613,24 +613,24 @@ func main() {
 
 		// Page routes (non-plugin)
 		r.Get("/os-updates", h.OSUpdatesPage)
-		r.Get("/server/{serverID}/frontend/{name}", h.FrontendDetailPage)
-		r.Get("/server/{serverID}/backend/{name}", h.BackendDetailPage)
+		r.Get("/box/{serverID}/frontend/{name}", h.FrontendDetailPage)
+		r.Get("/box/{serverID}/backend/{name}", h.BackendDetailPage)
 
 		// Config editor pages
-		r.Get("/config/haproxy/{serverID}", h.HAProxyConfigPage)
-		r.Get("/config/firewall/{serverID}", h.FirewallConfigPage)
+		r.Get("/config/haproxy/{boxID}", h.HAProxyConfigPage)
+		r.Get("/config/firewall/{boxID}", h.FirewallConfigPage)
 
 		// HTMX partial routes (return HTML fragments)
-		r.Get("/htmx/{serverID}/status-summary", h.StatusSummaryPartialHandler)
-		r.Get("/htmx/{serverID}/backend-grid", h.BackendGridPartialHandler)
-		r.Get("/htmx/{serverID}/stats", h.StatsPartialHandler)
-		r.Get("/htmx/{serverID}/metrics", h.MetricsPartialHandler)
+		r.Get("/htmx/{boxID}/status-summary", h.StatusSummaryPartialHandler)
+		r.Get("/htmx/{boxID}/backend-grid", h.BackendGridPartialHandler)
+		r.Get("/htmx/{boxID}/stats", h.StatsPartialHandler)
+		r.Get("/htmx/{boxID}/metrics", h.MetricsPartialHandler)
 
 		// API routes (return JSON) - excluding SSE which is handled above
 		r.Route("/api", func(r chi.Router) {
 			r.Post("/keepalive", h.APIKeepaliveHandler)
 			r.Get("/session-info", h.APISessionInfoHandler)
-			r.Get("/servers", h.APIServersHandler)
+			r.Get("/servers", h.APIBoxesHandler)
 			r.Get("/database/stats", h.APIDatabaseStatsHandler)
 			r.Get("/user", h.APICurrentUser)
 			r.Get("/user/permissions", h.APIGetCurrentUserPermissions)

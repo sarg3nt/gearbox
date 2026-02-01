@@ -18,13 +18,13 @@ func (h *Handler) APICertificatesHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
-	if serverID == "" {
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
 		http.Error(w, "Server ID required", http.StatusBadRequest)
 		return
 	}
 
-	collector, exists := h.getCollector(serverID)
+	collector, exists := h.getCollector(boxID)
 	if !exists {
 		http.Error(w, "Server not found", http.StatusNotFound)
 		return
@@ -38,7 +38,7 @@ func (h *Handler) APICertificatesHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Fallback: fetch directly from agent
-	serverConfig, exists := h.getServerConfig(serverID)
+	serverConfig, exists := h.getServerConfig(boxID)
 	if !exists || !serverConfig.UsesAgentAPI() {
 		http.Error(w, "Agent API not configured", http.StatusServiceUnavailable)
 		return
@@ -62,15 +62,15 @@ func (h *Handler) APICertificateRefreshHandler(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
+	boxID := chi.URLParam(r, "boxID")
 	domain := chi.URLParam(r, "domain")
 
-	if serverID == "" || domain == "" {
+	if boxID == "" || domain == "" {
 		http.Error(w, "Server ID and domain required", http.StatusBadRequest)
 		return
 	}
 
-	serverConfig, exists := h.getServerConfig(serverID)
+	serverConfig, exists := h.getServerConfig(boxID)
 	if !exists {
 		http.Error(w, "Server not found", http.StatusNotFound)
 		return
@@ -99,15 +99,15 @@ func (h *Handler) APICertificateDownloadHandler(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
+	boxID := chi.URLParam(r, "boxID")
 	domain := chi.URLParam(r, "domain")
 
-	if serverID == "" || domain == "" {
+	if boxID == "" || domain == "" {
 		http.Error(w, "Server ID and domain required", http.StatusBadRequest)
 		return
 	}
 
-	serverConfig, exists := h.getServerConfig(serverID)
+	serverConfig, exists := h.getServerConfig(boxID)
 	if !exists {
 		http.Error(w, "Server not found", http.StatusNotFound)
 		return

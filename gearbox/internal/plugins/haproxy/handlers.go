@@ -33,7 +33,7 @@ func (h *Handlers) OverviewPage(w http.ResponseWriter, r *http.Request) {
 
 	// If no servers configured, redirect to servers settings page
 	if len(servers) == 0 {
-		http.Redirect(w, r, "/settings/servers", http.StatusSeeOther)
+		http.Redirect(w, r, "/settings/boxes", http.StatusSeeOther)
 		return
 	}
 

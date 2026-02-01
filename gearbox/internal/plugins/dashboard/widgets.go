@@ -40,7 +40,7 @@ func statusSummaryDoughnutsDefinition() *widget.WidgetDefinition {
 		Icon:        "activity",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
-				"server_id": {
+				"box_id": {
 					Type:        "string",
 					Description: "Server ID to monitor (optional, uses current server if not specified)",
 				},
@@ -49,9 +49,9 @@ func statusSummaryDoughnutsDefinition() *widget.WidgetDefinition {
 		},
 		Renderer: func(ctx context.Context, config map[string]any, data any) (templ.Component, error) {
 			// Get server ID from config or use first available server
-			serverID := getStringFromConfig(config, "server_id", "")
+			boxID := getStringFromConfig(config, "box_id", "")
 			// For now, use HTMX to load the content dynamically
-			return HAProxyStatusSummaryWidgetHTMX(serverID), nil
+			return HAProxyStatusSummaryWidgetHTMX(boxID), nil
 		},
 	}
 }
@@ -76,7 +76,7 @@ func backendStatusGridDefinition() *widget.WidgetDefinition {
 		Icon:        "grid",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
-				"server_id": {
+				"box_id": {
 					Type:        "string",
 					Description: "Server ID to monitor (optional, uses current server if not specified)",
 				},
@@ -94,8 +94,8 @@ func backendStatusGridDefinition() *widget.WidgetDefinition {
 			Required: []string{},
 		},
 		Renderer: func(ctx context.Context, config map[string]any, data any) (templ.Component, error) {
-			serverID := getStringFromConfig(config, "server_id", "")
-			return HAProxyBackendGridWidgetHTMX(serverID), nil
+			boxID := getStringFromConfig(config, "box_id", "")
+			return HAProxyBackendGridWidgetHTMX(boxID), nil
 		},
 	}
 }
@@ -112,7 +112,7 @@ func systemMetricsWidgetDefinition() *widget.WidgetDefinition {
 		Icon:        "cpu",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
-				"server_id": {
+				"box_id": {
 					Type:        "string",
 					Description: "Server ID to monitor (optional, uses current server if not specified)",
 				},
@@ -125,8 +125,8 @@ func systemMetricsWidgetDefinition() *widget.WidgetDefinition {
 			Required: []string{},
 		},
 		Renderer: func(ctx context.Context, config map[string]any, data any) (templ.Component, error) {
-			serverID := getStringFromConfig(config, "server_id", "")
-			return SystemMetricsWidgetHTMX(serverID), nil
+			boxID := getStringFromConfig(config, "box_id", "")
+			return SystemMetricsWidgetHTMX(boxID), nil
 		},
 	}
 }
@@ -143,7 +143,7 @@ func serviceStatusWidgetDefinition() *widget.WidgetDefinition {
 		Icon:        "shield",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
-				"server_id": {
+				"box_id": {
 					Type:        "string",
 					Description: "Server ID to monitor (optional, uses current server if not specified)",
 				},
@@ -151,9 +151,9 @@ func serviceStatusWidgetDefinition() *widget.WidgetDefinition {
 			Required: []string{},
 		},
 		Renderer: func(ctx context.Context, config map[string]any, data any) (templ.Component, error) {
-			serverID := getStringFromConfig(config, "server_id", "")
+			boxID := getStringFromConfig(config, "box_id", "")
 			// Service status is included in the metrics widget, so just show metrics
-			return SystemMetricsWidgetHTMX(serverID), nil
+			return SystemMetricsWidgetHTMX(boxID), nil
 		},
 	}
 }
@@ -170,7 +170,7 @@ func certificateWarningsWidgetDefinition() *widget.WidgetDefinition {
 		Icon:        "alert-triangle",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
-				"server_id": {
+				"box_id": {
 					Type:        "string",
 					Description: "Server ID to monitor (optional, uses current server if not specified)",
 				},

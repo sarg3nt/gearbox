@@ -50,7 +50,7 @@ func NewWebSocketManager(hub *events.Hub, registry *Registry, logger *slog.Logge
 }
 
 // Connect establishes a WebSocket connection to an HAProxy Agent.
-func (m *WebSocketManager) Connect(serverConfig models.ServerConfig) error {
+func (m *WebSocketManager) Connect(serverConfig models.BoxConfig) error {
 	if !serverConfig.UsesAgentAPI() {
 		m.logger.Debug("server does not use Agent API, skipping WebSocket",
 			"server_id", serverConfig.ID)
@@ -358,7 +358,7 @@ func (m *WebSocketManager) Disconnect(serverID string) {
 }
 
 // Reconnect closes and reopens a WebSocket connection.
-func (m *WebSocketManager) Reconnect(serverConfig models.ServerConfig) error {
+func (m *WebSocketManager) Reconnect(serverConfig models.BoxConfig) error {
 	m.Disconnect(serverConfig.ID)
 	return m.Connect(serverConfig)
 }

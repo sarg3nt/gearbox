@@ -10,7 +10,7 @@ import (
 )
 
 // PluginsPage renders the plugins settings page.
-templ PluginsPage(user *models.User, servers []models.ServerConfig, currentServerID string, integrations []database.Plugin, successMsg, errorMsg string) {
+templ PluginsPage(user *models.User, servers []models.BoxConfig, currentServerID string, integrations []database.Plugin, successMsg, errorMsg string) {
 	@layouts.Base("Plugins", user, "/settings") {
 		<!-- Hidden container for page header content - will be moved to main header via JS -->
 		<div id="page-header-source" class="hidden">

@@ -22,7 +22,7 @@ type DashboardHandler struct {
 	dataSourceRegistry *widget.DataSourceRegistry
 	db                 *database.DB
 	logger             *slog.Logger
-	serverID           string
+	boxID           string
 	userID             string
 }
 
@@ -33,7 +33,7 @@ func NewDashboardHandler(
 	dataSourceRegistry *widget.DataSourceRegistry,
 	db *database.DB,
 	logger *slog.Logger,
-	serverID string,
+	boxID string,
 	userID string,
 ) *DashboardHandler {
 	if logger == nil {
@@ -49,7 +49,7 @@ func NewDashboardHandler(
 		dataSourceRegistry: dataSourceRegistry,
 		db:                 db,
 		logger:             logger,
-		serverID:           serverID,
+		boxID:           boxID,
 		userID:             userID,
 	}
 }
@@ -121,7 +121,7 @@ func (h *DashboardHandler) ViewDashboard(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Render dashboard
-	content, err := h.renderer.Render(r.Context(), dash, h.serverID, h.userID)
+	content, err := h.renderer.Render(r.Context(), dash, h.boxID, h.userID)
 	if err != nil {
 		h.logger.Error("failed to render dashboard", "slug", slug, "error", err)
 		http.Error(w, "Failed to render dashboard", http.StatusInternalServerError)
@@ -159,7 +159,7 @@ func (h *DashboardHandler) EditDashboardPage(w http.ResponseWriter, r *http.Requ
 	}
 
 	// Render dashboard content (same as view mode)
-	content, err := h.renderer.Render(r.Context(), dash, h.serverID, h.userID)
+	content, err := h.renderer.Render(r.Context(), dash, h.boxID, h.userID)
 	if err != nil {
 		h.logger.Error("failed to render dashboard", "slug", slug, "error", err)
 		http.Error(w, "Failed to render dashboard", http.StatusInternalServerError)
@@ -319,9 +319,9 @@ func (h *DashboardHandler) UpdateDashboard(w http.ResponseWriter, r *http.Reques
 // Returns available widgets from enabled plugins for the selected server
 func (h *DashboardHandler) GetWidgetPalette(w http.ResponseWriter, r *http.Request) {
 	// Get server ID from query parameter
-	serverID := r.URL.Query().Get("server_id")
-	if serverID == "" {
-		serverID = h.serverID // Use default if not specified
+	boxID := r.URL.Query().Get("server_id")
+	if boxID == "" {
+		boxID = h.boxID // Use default if not specified
 	}
 
 	// Get optional filter parameters
@@ -330,9 +330,9 @@ func (h *DashboardHandler) GetWidgetPalette(w http.ResponseWriter, r *http.Reque
 	searchTerm := r.URL.Query().Get("search")
 
 	// Get enabled plugins for this server
-	enabledPlugins, err := h.db.GetEnabledPlugins(serverID)
+	enabledPlugins, err := h.db.GetEnabledPlugins(boxID)
 	if err != nil {
-		h.logger.Error("failed to get enabled plugins", "server_id", serverID, "error", err)
+		h.logger.Error("failed to get enabled plugins", "server_id", boxID, "error", err)
 		http.Error(w, "Failed to get enabled plugins", http.StatusInternalServerError)
 		return
 	}

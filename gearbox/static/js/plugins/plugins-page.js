@@ -1,9 +1,9 @@
-	function switchServer(serverID) {
-// Update global ServerSelector for tab isolation before navigating
-if (window.ServerSelector) {
-	window.ServerSelector.setSelectedServer(serverID);
+	function switchBox(boxID) {
+// Update global BoxSelector for tab isolation before navigating
+if (window.BoxSelector) {
+	window.BoxSelector.setSelectedServer(boxID);
 }
-window.location.href = '/settings/plugins?server=' + encodeURIComponent(serverID);
+window.location.href = '/settings/plugins?server=' + encodeURIComponent(boxID);
 	}
 
 	// Move page header content to main header
@@ -94,7 +94,7 @@ items.forEach(item => {
 	function _legacySavePluginOrder() {
 const list = document.getElementById('plugins-list');
 const items = list.querySelectorAll('.plugin-card');
-const serverID = document.getElementById('current-server-id').value;
+const boxID = document.getElementById('current-server-id').value;
 
 const orders = {};
 const orderedNames = [];
@@ -104,7 +104,7 @@ items.forEach((item, index) => {
 	orderedNames.push(name);
 });
 
-fetch('/api/integrations/sort-order?server=' + encodeURIComponent(serverID), {
+fetch('/api/integrations/sort-order?server=' + encodeURIComponent(boxID), {
 	method: 'POST',
 	headers: { 'Content-Type': 'application/json' },
 	body: JSON.stringify(orders)
@@ -188,21 +188,21 @@ setupPageHeader();
 initDragAndDrop();
 // Initialize global server selector from current selection
 const serverSelector = document.getElementById('server-selector');
-if (serverSelector && window.ServerSelector) {
-	window.ServerSelector.initFromSelect(serverSelector);
+if (serverSelector && window.BoxSelector) {
+	window.BoxSelector.initFromSelect(serverSelector);
 }
 	});
 
 	// Toggle integration via AJAX - allows multiple toasts without page reload
 	function togglePlugin(pluginName, displayName, button) {
-const serverID = document.getElementById('current-server-id').value;
+const boxID = document.getElementById('current-server-id').value;
 const currentEnabled = button.dataset.enabled === 'true';
 const newEnabled = !currentEnabled;
 
 // Optimistically update the UI
 updateToggleUI(button, newEnabled);
 
-fetch('/settings/plugins/' + encodeURIComponent(pluginName) + '/toggle?server=' + encodeURIComponent(serverID), {
+fetch('/settings/plugins/' + encodeURIComponent(pluginName) + '/toggle?server=' + encodeURIComponent(boxID), {
 	method: 'POST',
 	headers: {
 		'X-Requested-With': 'XMLHttpRequest'

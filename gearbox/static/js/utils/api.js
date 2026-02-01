@@ -121,13 +121,13 @@ async function del(endpoint, options = {}) {
 
 /**
  * Create API client with specific server context
- * @param {string} serverID - Server ID for API requests
+ * @param {string} boxID - Server ID for API requests
  * @returns {Object} API client with server-specific methods
  */
-function createServerAPI(serverID) {
+function createBoxAPI(boxID) {
     const addServerParam = (endpoint) => {
         const separator = endpoint.includes('?') ? '&' : '?';
-        return `${endpoint}${separator}server_id=${serverID}`;
+        return `${endpoint}${separator}box_id=${boxID}`;
     };
 
     return {
@@ -145,6 +145,6 @@ if (typeof module !== 'undefined' && module.exports) {
         post,
         put,
         del: del,
-        createServerAPI
+        createBoxAPI
     };
 }

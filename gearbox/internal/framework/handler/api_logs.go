@@ -17,15 +17,15 @@ func (h *Handler) APILogsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	serverID := chi.URLParam(r, "serverID")
+	boxID := chi.URLParam(r, "boxID")
 	logName := chi.URLParam(r, "logName")
 
-	if serverID == "" || logName == "" {
+	if boxID == "" || logName == "" {
 		http.Error(w, "Server ID and log name required", http.StatusBadRequest)
 		return
 	}
 
-	collector, exists := h.getCollector(serverID)
+	collector, exists := h.getCollector(boxID)
 	if !exists {
 		http.Error(w, "Server not found", http.StatusNotFound)
 		return
@@ -50,14 +50,14 @@ func (h *Handler) APILogsHandler(w http.ResponseWriter, r *http.Request) {
 // APILogSourcesHandler returns the enabled log sources for a server.
 // If no explicit settings exist, it fetches available sources from the agent.
 func (h *Handler) APILogSourcesHandler(w http.ResponseWriter, r *http.Request) {
-	serverID := chi.URLParam(r, "serverID")
-	if serverID == "" {
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
 		http.Error(w, "Server ID required", http.StatusBadRequest)
 		return
 	}
 
 	// Get enabled log sources from database
-	sources, err := h.db.GetEnabledLogSourcesByServerID(serverID)
+	sources, err := h.db.GetEnabledLogSourcesByServerID(boxID)
 	if err != nil {
 		h.logger.Error("Failed to get log sources", "error", err)
 		http.Error(w, "Failed to get log sources", http.StatusInternalServerError)
@@ -67,7 +67,7 @@ func (h *Handler) APILogSourcesHandler(w http.ResponseWriter, r *http.Request) {
 	// If no explicit settings, return default sources (haproxy, system)
 	if len(sources) == 0 {
 		h.writeJSON(w, map[string]interface{}{
-			"server_id": serverID,
+			"server_id": boxID,
 			"sources": []map[string]string{
 				{"name": "haproxy", "display_name": "HAProxy"},
 				{"name": "system", "display_name": "System"},
@@ -87,7 +87,7 @@ func (h *Handler) APILogSourcesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeJSON(w, map[string]interface{}{
-		"server_id":    serverID,
+		"server_id":    boxID,
 		"sources":      sourcesResp,
 		"has_settings": true,
 	})

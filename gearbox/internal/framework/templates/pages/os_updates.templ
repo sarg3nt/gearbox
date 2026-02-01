@@ -11,8 +11,8 @@ import (
 // OSUpdatesPageData contains all data needed for the OS updates page.
 type OSUpdatesPageData struct {
 	User             *models.User
-	ServerID         string
-	Servers          []models.ServerConfig
+	BoxID            string
+	Servers          []models.BoxConfig
 	Config           *database.OSUpdatesConfig
 	UpdateStatus     *agent.UpdateStatusResponse
 	Packages         []agent.Package
@@ -41,7 +41,7 @@ templ OSUpdatesPage(data OSUpdatesPageData) {
 								onchange="switchServer(this.value)"
 							>
 								for _, server := range data.Servers {
-									<option value={ server.ID } selected?={ server.ID == data.ServerID }>{ server.Name }</option>
+									<option value={ server.ID } selected?={ server.ID == data.BoxID }>{ server.Name }</option>
 								}
 							</select>
 							<svg class="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -83,7 +83,7 @@ templ OSUpdatesPage(data OSUpdatesPageData) {
 		</div>
 
 		<!-- Store server ID for JavaScript -->
-		<input type="hidden" id="current-server-id" value={ data.ServerID }/>
+		<input type="hidden" id="current-server-id" value={ data.BoxID }/>
 		<input type="hidden" id="can-action" value={ boolToString(data.CanAction) }/>
 		<input type="hidden" id="can-configure" value={ boolToString(data.CanConfigure) }/>
 

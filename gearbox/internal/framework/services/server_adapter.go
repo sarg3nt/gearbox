@@ -14,12 +14,12 @@ import (
 type ServerAdapter struct {
 	db        *database.DB
 	encryptor *crypto.Encryptor
-	fallback  []models.ServerConfig
+	fallback  []models.BoxConfig
 	logger    *slog.Logger
 }
 
 // NewServerAdapter creates a new ServerAdapter.
-func NewServerAdapter(db *database.DB, encryptor *crypto.Encryptor, fallback []models.ServerConfig, logger *slog.Logger) *ServerAdapter {
+func NewServerAdapter(db *database.DB, encryptor *crypto.Encryptor, fallback []models.BoxConfig, logger *slog.Logger) *ServerAdapter {
 	return &ServerAdapter{
 		db:        db,
 		encryptor: encryptor,
@@ -28,18 +28,18 @@ func NewServerAdapter(db *database.DB, encryptor *crypto.Encryptor, fallback []m
 	}
 }
 
-// GetEnabledServers returns all servers that are currently enabled.
-func (a *ServerAdapter) GetEnabledServers() []plugin.ServerConfig {
-	dbServers, err := a.db.GetEnabledServers()
+// GetEnabledBoxes returns all boxes that are currently enabled.
+func (a *ServerAdapter) GetEnabledBoxes() []plugin.ServerConfig {
+	dbServers, err := a.db.GetEnabledBoxes()
 	if err != nil {
-		a.logger.Error("failed to get enabled servers from database", "error", err)
+		a.logger.Error("failed to get enabled boxes from database", "error", err)
 		return a.fallbackServers()
 	}
 
 	var servers []plugin.ServerConfig
 	for _, dbServer := range dbServers {
 		apiKey, _ := a.encryptor.DecryptString(dbServer.APIKeyEncrypted)
-		serverConfig := dbServer.ToServerConfig(apiKey)
+		serverConfig := dbServer.ToBoxConfig(apiKey)
 		if serverConfig.UsesAgentAPI() {
 			servers = append(servers, plugin.ServerConfig{
 				ID:       serverConfig.ID,
@@ -53,7 +53,7 @@ func (a *ServerAdapter) GetEnabledServers() []plugin.ServerConfig {
 
 // GetServer returns a specific server by ID.
 func (a *ServerAdapter) GetServer(id string) (*plugin.ServerConfig, bool) {
-	servers := a.GetEnabledServers()
+	servers := a.GetEnabledBoxes()
 	for _, srv := range servers {
 		if srv.ID == id {
 			return &srv, true
@@ -85,19 +85,19 @@ func (a *ServerAdapter) fallbackServers() []plugin.ServerConfig {
 	return servers
 }
 
-// GetEnabledServersAsModels returns servers as models.ServerConfig.
-// This is a helper for plugins that need to use templates expecting models.ServerConfig.
-func (a *ServerAdapter) GetEnabledServersAsModels() []models.ServerConfig {
-	dbServers, err := a.db.GetEnabledServers()
+// GetEnabledServersAsModels returns servers as models.BoxConfig.
+// This is a helper for plugins that need to use templates expecting models.BoxConfig.
+func (a *ServerAdapter) GetEnabledServersAsModels() []models.BoxConfig {
+	dbServers, err := a.db.GetEnabledBoxes()
 	if err != nil {
 		a.logger.Error("failed to get enabled servers from database", "error", err)
 		return a.fallback
 	}
 
-	var servers []models.ServerConfig
+	var servers []models.BoxConfig
 	for _, dbServer := range dbServers {
 		apiKey, _ := a.encryptor.DecryptString(dbServer.APIKeyEncrypted)
-		serverConfig := dbServer.ToServerConfig(apiKey)
+		serverConfig := dbServer.ToBoxConfig(apiKey)
 		if serverConfig.UsesAgentAPI() {
 			servers = append(servers, serverConfig)
 		}

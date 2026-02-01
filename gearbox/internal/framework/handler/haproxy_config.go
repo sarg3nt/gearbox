@@ -16,60 +16,60 @@ import (
 	"github.com/sarg3nt/gearbox/internal/framework/templates/pages"
 )
 
-// HAProxyServersPage lists all HAProxy server configurations.
-func (h *Handler) HAProxyServersPage(w http.ResponseWriter, r *http.Request) {
+// HAProxyBoxesPage lists all HAProxy server configurations.
+func (h *Handler) HAProxyBoxesPage(w http.ResponseWriter, r *http.Request) {
 	user, _ := auth.GetUserFromContext(r.Context())
 
 	// Only admins can access
-	if !h.authManager.HasPermission(r, models.ComponentSettings, models.PermissionManageServers) {
+	if !h.authManager.HasPermission(r, models.ComponentSettings, models.PermissionManageBoxes) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 
-	servers, err := h.db.GetServers()
+	servers, err := h.db.GetBoxes()
 	if err != nil {
 		h.logger.Error("Failed to get HAProxy servers", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	component := pages.HAProxyServersPage(user, servers)
+	component := pages.HAProxyBoxesPage(user, servers)
 	if err := component.Render(r.Context(), w); err != nil {
 		h.logger.Error("Failed to render HAProxy servers page", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 	}
 }
 
-// HAProxyServerNewPage shows the form for creating a new server.
-func (h *Handler) HAProxyServerNewPage(w http.ResponseWriter, r *http.Request) {
+// HAProxyBoxNewPage shows the form for creating a new server.
+func (h *Handler) HAProxyBoxNewPage(w http.ResponseWriter, r *http.Request) {
 	user, _ := auth.GetUserFromContext(r.Context())
 
 	// Only admins can access
-	if !h.authManager.HasPermission(r, models.ComponentSettings, models.PermissionManageServers) {
+	if !h.authManager.HasPermission(r, models.ComponentSettings, models.PermissionManageBoxes) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 
 	// Fetch existing servers to determine if we should show sidebar
-	servers, err := h.db.GetServers()
+	servers, err := h.db.GetBoxes()
 	if err != nil {
 		h.logger.Error("Failed to fetch servers", "error", err)
-		servers = []*database.ServerDB{} // Default to empty to show no-sidebar layout
+		servers = []*database.BoxDB{} // Default to empty to show no-sidebar layout
 	}
 
-	component := pages.HAProxyServerNewPage(user, servers, "")
+	component := pages.HAProxyBoxNewPage(user, servers, "")
 	if err := component.Render(r.Context(), w); err != nil {
 		h.logger.Error("Failed to render new server page", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 	}
 }
 
-// HAProxyServerCreatePost handles creating a new HAProxy server.
-func (h *Handler) HAProxyServerCreatePost(w http.ResponseWriter, r *http.Request) {
+// HAProxyBoxCreatePost handles creating a new HAProxy server.
+func (h *Handler) HAProxyBoxCreatePost(w http.ResponseWriter, r *http.Request) {
 	user, _ := auth.GetUserFromContext(r.Context())
 
 	// Only admins can create
-	if !h.authManager.HasPermission(r, models.ComponentSettings, models.PermissionManageServers) {
+	if !h.authManager.HasPermission(r, models.ComponentSettings, models.PermissionManageBoxes) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
@@ -87,8 +87,8 @@ func (h *Handler) HAProxyServerCreatePost(w http.ResponseWriter, r *http.Request
 	}
 
 	// Parse form into server struct
-	server := &database.ServerDB{
-		ServerID:  strings.TrimSpace(r.FormValue("server_id")),
+	server := &database.BoxDB{
+		BoxID:     strings.TrimSpace(r.FormValue("box_id")),
 		Name:      strings.TrimSpace(r.FormValue("name")),
 		Location:  strings.TrimSpace(r.FormValue("location")),
 		Notes:     strings.TrimSpace(r.FormValue("notes")),
@@ -98,7 +98,7 @@ func (h *Handler) HAProxyServerCreatePost(w http.ResponseWriter, r *http.Request
 	}
 
 	// Validate required fields
-	if server.ServerID == "" || server.Name == "" || server.AgentURL == "" {
+	if server.BoxID == "" || server.Name == "" || server.AgentURL == "" {
 		h.renderServerFormWithError(w, r, user, server, false, "Required fields missing")
 		return
 	}
@@ -116,36 +116,36 @@ func (h *Handler) HAProxyServerCreatePost(w http.ResponseWriter, r *http.Request
 	}
 
 	// Create server in database
-	if err := h.db.CreateServer(server); err != nil {
+	if err := h.db.CreateBox(server); err != nil {
 		h.logger.Error("Failed to create HAProxy server", "error", err)
 		h.renderServerFormWithError(w, r, user, server, false, fmt.Sprintf("Failed to create server: %v", err))
 		return
 	}
 
 	// Log audit
-	h.logAudit(r, user.ID, "haproxy_server_create", fmt.Sprintf("Created HAProxy server: %s (%s)", server.Name, server.ServerID))
+	h.logAudit(r, user.ID, "haproxy_box_create", fmt.Sprintf("Created HAProxy box: %s (%s)", server.Name, server.BoxID))
 
 	// Start collector if enabled
 	if server.Enabled && h.registry != nil {
 		// Decrypt API key for collector
 		apiKeyDecrypted, _ := encryptor.DecryptString(server.APIKeyEncrypted)
 
-		serverConfig := server.ToServerConfig(apiKeyDecrypted)
+		serverConfig := server.ToBoxConfig(apiKeyDecrypted)
 		if err := h.registry.AddCollector(serverConfig); err != nil {
-			h.logger.Error("failed to start collector for server", "server_id", server.ServerID, "error", err)
+			h.logger.Error("failed to start collector for server", "server_id", server.BoxID, "error", err)
 		}
 	}
 
 	// Redirect to servers list page
-	http.Redirect(w, r, "/settings/servers", http.StatusSeeOther)
+	http.Redirect(w, r, "/settings/boxes", http.StatusSeeOther)
 }
 
-// HAProxyServerEditPage shows the form for editing a server.
-func (h *Handler) HAProxyServerEditPage(w http.ResponseWriter, r *http.Request) {
+// HAProxyBoxEditPage shows the form for editing a server.
+func (h *Handler) HAProxyBoxEditPage(w http.ResponseWriter, r *http.Request) {
 	user, _ := auth.GetUserFromContext(r.Context())
 
 	// Only admins can edit
-	if !h.authManager.HasPermission(r, models.ComponentSettings, models.PermissionManageServers) {
+	if !h.authManager.HasPermission(r, models.ComponentSettings, models.PermissionManageBoxes) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
@@ -157,7 +157,7 @@ func (h *Handler) HAProxyServerEditPage(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	server, err := h.db.GetServerByID(id)
+	server, err := h.db.GetBoxByID(id)
 	if err != nil {
 		h.logger.Error("Failed to get HAProxy server", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -168,19 +168,19 @@ func (h *Handler) HAProxyServerEditPage(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	component := pages.HAProxyServerEditPage(user, server, "")
+	component := pages.HAProxyBoxEditPage(user, server, "")
 	if err := component.Render(r.Context(), w); err != nil {
 		h.logger.Error("Failed to render edit server page", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 	}
 }
 
-// HAProxyServerUpdatePost handles updating a server.
-func (h *Handler) HAProxyServerUpdatePost(w http.ResponseWriter, r *http.Request) {
+// HAProxyBoxUpdatePost handles updating a server.
+func (h *Handler) HAProxyBoxUpdatePost(w http.ResponseWriter, r *http.Request) {
 	user, _ := auth.GetUserFromContext(r.Context())
 
 	// Only admins can update
-	if !h.authManager.HasPermission(r, models.ComponentSettings, models.PermissionManageServers) {
+	if !h.authManager.HasPermission(r, models.ComponentSettings, models.PermissionManageBoxes) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
@@ -198,7 +198,7 @@ func (h *Handler) HAProxyServerUpdatePost(w http.ResponseWriter, r *http.Request
 	}
 
 	// Get existing server
-	server, err := h.db.GetServerByID(id)
+	server, err := h.db.GetBoxByID(id)
 	if err != nil || server == nil {
 		http.Error(w, "Server not found", http.StatusNotFound)
 		return
@@ -229,43 +229,43 @@ func (h *Handler) HAProxyServerUpdatePost(w http.ResponseWriter, r *http.Request
 	}
 
 	// Update in database
-	if err := h.db.UpdateServer(server); err != nil {
+	if err := h.db.UpdateBox(server); err != nil {
 		h.logger.Error("Failed to update HAProxy server", "error", err)
 		h.renderServerFormWithError(w, r, user, server, true, fmt.Sprintf("Failed to update server: %v", err))
 		return
 	}
 
 	// Log audit
-	h.logAudit(r, user.ID, "haproxy_server_update", fmt.Sprintf("Updated HAProxy server: %s (%s)", server.Name, server.ServerID))
+	h.logAudit(r, user.ID, "haproxy_box_update", fmt.Sprintf("Updated HAProxy box: %s (%s)", server.Name, server.BoxID))
 
 	// Reload collector if enabled
 	if h.registry != nil {
 		// Decrypt API key for collector
 		apiKeyDecrypted, _ := encryptor.DecryptString(server.APIKeyEncrypted)
 
-		serverConfig := server.ToServerConfig(apiKeyDecrypted)
+		serverConfig := server.ToBoxConfig(apiKeyDecrypted)
 
 		if server.Enabled {
 			if err := h.registry.ReloadCollector(serverConfig); err != nil {
-				h.logger.Error("failed to reload collector for server", "server_id", server.ServerID, "error", err)
+				h.logger.Error("failed to reload collector for server", "server_id", server.BoxID, "error", err)
 			}
 		} else {
-			if err := h.registry.RemoveCollector(server.ServerID); err != nil {
-				h.logger.Error("failed to stop collector for server", "server_id", server.ServerID, "error", err)
+			if err := h.registry.RemoveCollector(server.BoxID); err != nil {
+				h.logger.Error("failed to stop collector for server", "server_id", server.BoxID, "error", err)
 			}
 		}
 	}
 
 	// Redirect to list
-	http.Redirect(w, r, "/settings/servers", http.StatusSeeOther)
+	http.Redirect(w, r, "/settings/boxes", http.StatusSeeOther)
 }
 
-// HAProxyServerDeletePost handles deleting a server.
-func (h *Handler) HAProxyServerDeletePost(w http.ResponseWriter, r *http.Request) {
+// HAProxyBoxDeletePost handles deleting a server.
+func (h *Handler) HAProxyBoxDeletePost(w http.ResponseWriter, r *http.Request) {
 	user, _ := auth.GetUserFromContext(r.Context())
 
 	// Only admins can delete
-	if !h.authManager.HasPermission(r, models.ComponentSettings, models.PermissionManageServers) {
+	if !h.authManager.HasPermission(r, models.ComponentSettings, models.PermissionManageBoxes) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
@@ -278,7 +278,7 @@ func (h *Handler) HAProxyServerDeletePost(w http.ResponseWriter, r *http.Request
 	}
 
 	// Get server for logging
-	server, err := h.db.GetServerByID(id)
+	server, err := h.db.GetBoxByID(id)
 	if err != nil || server == nil {
 		http.Error(w, "Server not found", http.StatusNotFound)
 		return
@@ -286,31 +286,31 @@ func (h *Handler) HAProxyServerDeletePost(w http.ResponseWriter, r *http.Request
 
 	// Stop collector if running
 	if h.registry != nil {
-		if err := h.registry.RemoveCollector(server.ServerID); err != nil {
-			h.logger.Error("failed to stop collector for server", "server_id", server.ServerID, "error", err)
+		if err := h.registry.RemoveCollector(server.BoxID); err != nil {
+			h.logger.Error("failed to stop collector for server", "server_id", server.BoxID, "error", err)
 		}
 	}
 
 	// Delete from database
-	if err := h.db.DeleteServer(id); err != nil {
+	if err := h.db.DeleteBox(id); err != nil {
 		h.logger.Error("Failed to delete HAProxy server", "error", err)
 		http.Error(w, "Failed to delete server", http.StatusInternalServerError)
 		return
 	}
 
 	// Log audit
-	h.logAudit(r, user.ID, "haproxy_server_delete", fmt.Sprintf("Deleted HAProxy server: %s (%s)", server.Name, server.ServerID))
+	h.logAudit(r, user.ID, "haproxy_box_delete", fmt.Sprintf("Deleted HAProxy box: %s (%s)", server.Name, server.BoxID))
 
 	// Redirect to list
-	http.Redirect(w, r, "/settings/servers", http.StatusSeeOther)
+	http.Redirect(w, r, "/settings/boxes", http.StatusSeeOther)
 }
 
-// HAProxyServerTogglePost handles enabling/disabling a server.
-func (h *Handler) HAProxyServerTogglePost(w http.ResponseWriter, r *http.Request) {
+// HAProxyBoxTogglePost handles enabling/disabling a server.
+func (h *Handler) HAProxyBoxTogglePost(w http.ResponseWriter, r *http.Request) {
 	user, _ := auth.GetUserFromContext(r.Context())
 
 	// Only admins can toggle
-	if !h.authManager.HasPermission(r, models.ComponentSettings, models.PermissionManageServers) {
+	if !h.authManager.HasPermission(r, models.ComponentSettings, models.PermissionManageBoxes) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
@@ -323,7 +323,7 @@ func (h *Handler) HAProxyServerTogglePost(w http.ResponseWriter, r *http.Request
 	}
 
 	// Get current server
-	server, err := h.db.GetServerByID(id)
+	server, err := h.db.GetBoxByID(id)
 	if err != nil || server == nil {
 		http.Error(w, "Server not found", http.StatusNotFound)
 		return
@@ -331,7 +331,7 @@ func (h *Handler) HAProxyServerTogglePost(w http.ResponseWriter, r *http.Request
 
 	// Toggle enabled status
 	newEnabled := !server.Enabled
-	if err := h.db.SetServerEnabled(id, newEnabled); err != nil {
+	if err := h.db.SetBoxEnabled(id, newEnabled); err != nil {
 		h.logger.Error("Failed to toggle HAProxy server", "error", err)
 		http.Error(w, "Failed to toggle server", http.StatusInternalServerError)
 		return
@@ -342,7 +342,7 @@ func (h *Handler) HAProxyServerTogglePost(w http.ResponseWriter, r *http.Request
 	if newEnabled {
 		action = "enabled"
 	}
-	h.logAudit(r, user.ID, "haproxy_server_toggle", fmt.Sprintf("%s HAProxy server: %s (%s)", action, server.Name, server.ServerID))
+	h.logAudit(r, user.ID, "haproxy_box_toggle", fmt.Sprintf("%s HAProxy box: %s (%s)", action, server.Name, server.BoxID))
 
 	// Start or stop collector
 	if h.registry != nil {
@@ -352,26 +352,26 @@ func (h *Handler) HAProxyServerTogglePost(w http.ResponseWriter, r *http.Request
 			if err == nil {
 				apiKeyDecrypted, _ := encryptor.DecryptString(server.APIKeyEncrypted)
 
-				serverConfig := server.ToServerConfig(apiKeyDecrypted)
+				serverConfig := server.ToBoxConfig(apiKeyDecrypted)
 				if err := h.registry.AddCollector(serverConfig); err != nil {
-					h.logger.Error("failed to start collector for server", "server_id", server.ServerID, "error", err)
+					h.logger.Error("failed to start collector for server", "server_id", server.BoxID, "error", err)
 				}
 			}
 		} else {
-			if err := h.registry.RemoveCollector(server.ServerID); err != nil {
-				h.logger.Error("failed to stop collector for server", "server_id", server.ServerID, "error", err)
+			if err := h.registry.RemoveCollector(server.BoxID); err != nil {
+				h.logger.Error("failed to stop collector for server", "server_id", server.BoxID, "error", err)
 			}
 		}
 	}
 
 	// Redirect to list
-	http.Redirect(w, r, "/settings/servers", http.StatusSeeOther)
+	http.Redirect(w, r, "/settings/boxes", http.StatusSeeOther)
 }
 
-// HAProxyServerTestConnectionPost tests the connection to a server using the Agent API.
-func (h *Handler) HAProxyServerTestConnectionPost(w http.ResponseWriter, r *http.Request) {
+// HAProxyBoxTestConnectionPost tests the connection to a server using the Agent API.
+func (h *Handler) HAProxyBoxTestConnectionPost(w http.ResponseWriter, r *http.Request) {
 	// Only admins can test
-	if !h.authManager.HasPermission(r, models.ComponentSettings, models.PermissionManageServers) {
+	if !h.authManager.HasPermission(r, models.ComponentSettings, models.PermissionManageBoxes) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
@@ -386,7 +386,7 @@ func (h *Handler) HAProxyServerTestConnectionPost(w http.ResponseWriter, r *http
 	}
 
 	// Get form values
-	serverIDStr := r.FormValue("server_id")
+	boxIDStr := r.FormValue("box_id")
 	agentURL := strings.TrimSpace(r.FormValue("agent_url"))
 	apiKey := strings.TrimSpace(r.FormValue("api_key"))
 
@@ -401,9 +401,9 @@ func (h *Handler) HAProxyServerTestConnectionPost(w http.ResponseWriter, r *http
 	}
 
 	// If editing an existing server and API key is empty, load from database
-	if serverIDStr != "" && apiKey == "" {
-		h.logger.Debug("test connection for existing server ID", "server_id", serverIDStr)
-		existingServer, err := h.db.GetServerByServerID(serverIDStr)
+	if boxIDStr != "" && apiKey == "" {
+		h.logger.Debug("test connection for existing server ID", "server_id", boxIDStr)
+		existingServer, err := h.db.GetBoxByBoxID(boxIDStr)
 		if err != nil {
 			h.logger.Error("ERROR: Failed to get existing server", "error", err)
 		} else if existingServer == nil {
@@ -478,22 +478,22 @@ func (h *Handler) HAProxyServerTestConnectionPost(w http.ResponseWriter, r *http
 
 // Helper methods
 
-func (h *Handler) renderServerFormWithError(w http.ResponseWriter, r *http.Request, user *models.User, server *database.ServerDB, isEdit bool, errorMsg string) {
+func (h *Handler) renderServerFormWithError(w http.ResponseWriter, r *http.Request, user *models.User, server *database.BoxDB, isEdit bool, errorMsg string) {
 	if isEdit {
-		component := pages.HAProxyServerEditPage(user, server, errorMsg)
+		component := pages.HAProxyBoxEditPage(user, server, errorMsg)
 		if err := component.Render(r.Context(), w); err != nil {
 			h.logger.Error("Failed to render form", "error", err)
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 		}
 	} else {
 		// Fetch existing servers to determine if we should show sidebar
-		servers, err := h.db.GetServers()
+		servers, err := h.db.GetBoxes()
 		if err != nil {
 			h.logger.Error("Failed to fetch servers", "error", err)
-			servers = []*database.ServerDB{} // Default to empty to show no-sidebar layout
+			servers = []*database.BoxDB{} // Default to empty to show no-sidebar layout
 		}
 
-		component := pages.HAProxyServerNewPage(user, servers, errorMsg)
+		component := pages.HAProxyBoxNewPage(user, servers, errorMsg)
 		if err := component.Render(r.Context(), w); err != nil {
 			h.logger.Error("Failed to render form", "error", err)
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -527,12 +527,12 @@ func (h *Handler) logAudit(r *http.Request, userID string, action, details strin
 	}
 }
 
-// HAProxyServerLogSettingsPage shows the log source settings for a server.
-func (h *Handler) HAProxyServerLogSettingsPage(w http.ResponseWriter, r *http.Request) {
+// HAProxyBoxLogSettingsPage shows the log source settings for a server.
+func (h *Handler) HAProxyBoxLogSettingsPage(w http.ResponseWriter, r *http.Request) {
 	user, _ := auth.GetUserFromContext(r.Context())
 
 	// Only admins can access
-	if !h.authManager.HasPermission(r, models.ComponentSettings, models.PermissionManageServers) {
+	if !h.authManager.HasPermission(r, models.ComponentSettings, models.PermissionManageBoxes) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
@@ -544,7 +544,7 @@ func (h *Handler) HAProxyServerLogSettingsPage(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	server, err := h.db.GetServerByID(id)
+	server, err := h.db.GetBoxByID(id)
 	if err != nil || server == nil {
 		http.Error(w, "Server not found", http.StatusNotFound)
 		return
@@ -586,12 +586,12 @@ func (h *Handler) HAProxyServerLogSettingsPage(w http.ResponseWriter, r *http.Re
 	}
 }
 
-// HAProxyServerLogSettingsPost saves the log source settings for a server.
-func (h *Handler) HAProxyServerLogSettingsPost(w http.ResponseWriter, r *http.Request) {
+// HAProxyBoxLogSettingsPost saves the log source settings for a server.
+func (h *Handler) HAProxyBoxLogSettingsPost(w http.ResponseWriter, r *http.Request) {
 	user, _ := auth.GetUserFromContext(r.Context())
 
 	// Only admins can access
-	if !h.authManager.HasPermission(r, models.ComponentSettings, models.PermissionManageServers) {
+	if !h.authManager.HasPermission(r, models.ComponentSettings, models.PermissionManageBoxes) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
@@ -603,7 +603,7 @@ func (h *Handler) HAProxyServerLogSettingsPost(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	server, err := h.db.GetServerByID(id)
+	server, err := h.db.GetBoxByID(id)
 	if err != nil || server == nil {
 		http.Error(w, "Server not found", http.StatusNotFound)
 		return
@@ -659,10 +659,10 @@ func (h *Handler) HAProxyServerLogSettingsPost(w http.ResponseWriter, r *http.Re
 	h.logAudit(r, user.ID, "log_settings_update", fmt.Sprintf("Updated log settings for server %s: %d sources enabled", server.Name, len(settings)))
 
 	// Redirect back to server list
-	http.Redirect(w, r, "/settings/servers", http.StatusSeeOther)
+	http.Redirect(w, r, "/settings/boxes", http.StatusSeeOther)
 }
 
-func (h *Handler) renderLogSettingsWithError(w http.ResponseWriter, r *http.Request, user *models.User, server *database.ServerDB, errorMsg string) {
+func (h *Handler) renderLogSettingsWithError(w http.ResponseWriter, r *http.Request, user *models.User, server *database.BoxDB, errorMsg string) {
 	// Get available log sources from the agent
 	var agentSources []agent.LogSource
 	if server.Enabled && server.UsesAgentAPI() {

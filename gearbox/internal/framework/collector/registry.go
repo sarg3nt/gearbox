@@ -61,7 +61,7 @@ func NewRegistry(logger *slog.Logger, db *database.DB, config RegistryConfig) *R
 }
 
 // AddCollector adds and starts a new collector for a server.
-func (r *Registry) AddCollector(serverConfig models.ServerConfig) error {
+func (r *Registry) AddCollector(serverConfig models.BoxConfig) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -123,7 +123,7 @@ func (r *Registry) RemoveCollector(serverID string) error {
 }
 
 // ReloadCollector restarts a collector with updated configuration.
-func (r *Registry) ReloadCollector(serverConfig models.ServerConfig) error {
+func (r *Registry) ReloadCollector(serverConfig models.BoxConfig) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 

@@ -61,7 +61,7 @@ func logViewerDefinition() *widget.WidgetDefinition {
 		Icon:        "document-text",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
-				"server_id": {
+				"box_id": {
 					Type:        "string",
 					Description: "Server ID to monitor (optional, uses current server if not specified)",
 				},
@@ -84,11 +84,11 @@ func logViewerDefinition() *widget.WidgetDefinition {
 			Required: []string{},
 		},
 		Renderer: func(ctx context.Context, config map[string]any, data any) (templ.Component, error) {
-			serverID := getStringFromConfig(config, "server_id", "")
+			boxID := getStringFromConfig(config, "box_id", "")
 			defaultLines := getIntFromConfig(config, "default_lines", 100)
 			defaultSource := getStringFromConfig(config, "default_source", "haproxy")
 			showControls := getBoolFromConfig(config, "show_controls", false)
-			return LogViewerWidget(serverID, defaultLines, defaultSource, showControls), nil
+			return LogViewerWidget(boxID, defaultLines, defaultSource, showControls), nil
 		},
 		TopBarControlsProvider: func(ctx *widget.WidgetRenderContext, config map[string]any) []widget.TopBarControl {
 			// Only provide top bar controls if in-widget controls are disabled

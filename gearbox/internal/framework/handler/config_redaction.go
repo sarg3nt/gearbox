@@ -187,7 +187,7 @@ type RedactedValue struct {
 // It stores original values server-side to restore them when saving.
 type ConfigRedactor struct {
 	mu sync.RWMutex
-	// redactedValues maps serverID -> map[redactionKey -> RedactedValue]
+	// redactedValues maps boxID -> map[redactionKey -> RedactedValue]
 	// redactionKey is a unique identifier for each redacted value (e.g., "stats_auth_0")
 	redactedValues map[string]map[string]RedactedValue
 }
@@ -207,12 +207,12 @@ func redactedMarker(patternName string, index int) string {
 // RedactConfig redacts sensitive values from HAProxy config content.
 // It stores the original values server-side for later restoration.
 // Returns the redacted content.
-func (r *ConfigRedactor) RedactConfig(serverID, content string) string {
+func (r *ConfigRedactor) RedactConfig(boxID, content string) string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	// Initialize/clear map for this server
-	r.redactedValues[serverID] = make(map[string]RedactedValue)
+	r.redactedValues[boxID] = make(map[string]RedactedValue)
 
 	result := content
 
@@ -260,7 +260,7 @@ func (r *ConfigRedactor) RedactConfig(serverID, content string) string {
 			counter++
 
 			// Store the original value with context
-			r.redactedValues[serverID][key] = RedactedValue{
+			r.redactedValues[boxID][key] = RedactedValue{
 				PatternName: sp.Name,
 				Original:    sensitiveValue,
 				Prefix:      prefix,
@@ -295,11 +295,11 @@ func convertMarkersToDisplay(content string) string {
 // If a value is still "<redacted:...>", it restores the original.
 // If the user changed it to something else, that new value is used.
 // Returns the restored content and an error if any markers couldn't be restored.
-func (r *ConfigRedactor) RestoreConfig(serverID, content string) (string, error) {
+func (r *ConfigRedactor) RestoreConfig(boxID, content string) (string, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	serverValues := r.redactedValues[serverID]
+	serverValues := r.redactedValues[boxID]
 
 	result := content
 	var unrestoredMarkers []string
@@ -335,11 +335,11 @@ func (r *ConfigRedactor) RestoreConfig(serverID, content string) (string, error)
 
 // HasUnrestorableMarkers checks if the content contains markers that cannot be restored.
 // This is useful for checking before attempting validation/save.
-func (r *ConfigRedactor) HasUnrestorableMarkers(serverID, content string) (bool, int) {
+func (r *ConfigRedactor) HasUnrestorableMarkers(boxID, content string) (bool, int) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	serverValues := r.redactedValues[serverID]
+	serverValues := r.redactedValues[boxID]
 	count := 0
 
 	markerPattern.ReplaceAllStringFunc(content, func(marker string) string {
@@ -365,18 +365,18 @@ func (r *ConfigRedactor) HasUnrestorableMarkers(serverID, content string) (bool,
 
 // ClearServerCache clears the stored redacted values for a server.
 // Call this after a successful save to free memory.
-func (r *ConfigRedactor) ClearServerCache(serverID string) {
+func (r *ConfigRedactor) ClearServerCache(boxID string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	delete(r.redactedValues, serverID)
+	delete(r.redactedValues, boxID)
 }
 
 // GetRedactedCount returns the number of redacted values for a server.
 // Useful for debugging and UI feedback.
-func (r *ConfigRedactor) GetRedactedCount(serverID string) int {
+func (r *ConfigRedactor) GetRedactedCount(boxID string) int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	if serverValues, exists := r.redactedValues[serverID]; exists {
+	if serverValues, exists := r.redactedValues[boxID]; exists {
 		return len(serverValues)
 	}
 	return 0
@@ -384,12 +384,12 @@ func (r *ConfigRedactor) GetRedactedCount(serverID string) int {
 
 // GetRedactedPatterns returns a list of pattern names that had matches for a server.
 // Useful for debugging and audit logging.
-func (r *ConfigRedactor) GetRedactedPatterns(serverID string) []string {
+func (r *ConfigRedactor) GetRedactedPatterns(boxID string) []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	patterns := make(map[string]bool)
-	if serverValues, exists := r.redactedValues[serverID]; exists {
+	if serverValues, exists := r.redactedValues[boxID]; exists {
 		for _, rv := range serverValues {
 			patterns[rv.PatternName] = true
 		}

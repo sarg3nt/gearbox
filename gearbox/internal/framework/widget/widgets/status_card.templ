@@ -142,7 +142,7 @@ templ renderMetric(metricConfig map[string]any, data map[string]any) {
 templ renderAction(actionConfig map[string]any, data map[string]any) {
 	if label, ok := actionConfig["label"].(string); ok {
 		if linkTemplate, ok := actionConfig["link"].(string); ok {
-			// Template variables in link (e.g., "/server/{{server_id}}/frontend/{{name}}")
+			// Template variables in link (e.g., "/box/{{server_id}}/frontend/{{name}}")
 			<a
 				href={ templ.SafeURL(processTemplateString(linkTemplate, data)) }
 				class="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-medium"

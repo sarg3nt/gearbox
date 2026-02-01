@@ -149,7 +149,7 @@ func (d *DB) CreateAlertRule(rule *models.AlertRule) (int64, error) {
 			condition, metric, threshold, operator, duration,
 			cooldown_minutes, notify_email, notify_webhook, notify_ui, webhook_url
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		rule.ServerID, rule.Name, rule.Description, rule.Type, rule.Enabled, rule.Severity,
+		rule.BoxID, rule.Name, rule.Description, rule.Type, rule.Enabled, rule.Severity,
 		rule.Condition, rule.Metric, rule.Threshold, rule.Operator, rule.Duration,
 		rule.CooldownMinutes, rule.NotifyEmail, rule.NotifyWebhook, rule.NotifyUI, rule.WebhookURL,
 	)
@@ -183,7 +183,7 @@ func (d *DB) GetAlertRules(serverID string) ([]models.AlertRule, error) {
 		var condition, metric, operator, webhookURL sql.NullString
 		var threshold sql.NullFloat64
 		err := rows.Scan(
-			&r.ID, &r.ServerID, &r.Name, &r.Description, &r.Type, &r.Enabled, &r.Severity,
+			&r.ID, &r.BoxID, &r.Name, &r.Description, &r.Type, &r.Enabled, &r.Severity,
 			&condition, &metric, &threshold, &operator, &r.Duration,
 			&r.CooldownMinutes, &r.NotifyEmail, &r.NotifyWebhook, &r.NotifyUI, &webhookURL,
 			&r.CreatedAt, &r.UpdatedAt,
@@ -235,7 +235,7 @@ func (d *DB) GetEnabledAlertRules(serverID string) ([]models.AlertRule, error) {
 		var condition, metric, operator, webhookURL sql.NullString
 		var threshold sql.NullFloat64
 		err := rows.Scan(
-			&r.ID, &r.ServerID, &r.Name, &r.Description, &r.Type, &r.Enabled, &r.Severity,
+			&r.ID, &r.BoxID, &r.Name, &r.Description, &r.Type, &r.Enabled, &r.Severity,
 			&condition, &metric, &threshold, &operator, &r.Duration,
 			&r.CooldownMinutes, &r.NotifyEmail, &r.NotifyWebhook, &r.NotifyUI, &webhookURL,
 			&r.CreatedAt, &r.UpdatedAt,
@@ -308,7 +308,7 @@ func (d *DB) CreateAlert(alert *models.Alert) (int64, error) {
 			metric, metric_value, threshold, affected_entity, triggered_at,
 			notified_email, notified_webhook, metadata
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		alert.RuleID, alert.ServerID, alert.Type, alert.Severity, alert.Status,
+		alert.RuleID, alert.BoxID, alert.Type, alert.Severity, alert.Status,
 		alert.Title, alert.Message, alert.Metric, alert.MetricValue, alert.Threshold,
 		alert.AffectedEntity, alert.TriggeredAt, alert.NotifiedEmail, alert.NotifiedWebhook,
 		metadataJSON,
@@ -389,7 +389,7 @@ func (d *DB) scanAlerts(rows *sql.Rows) ([]models.Alert, error) {
 		var acknowledgedAt, resolvedAt, silencedUntil sql.NullTime
 
 		err := rows.Scan(
-			&a.ID, &ruleID, &a.ServerID, &a.Type, &a.Severity, &a.Status,
+			&a.ID, &ruleID, &a.BoxID, &a.Type, &a.Severity, &a.Status,
 			&a.Title, &a.Message, &metric, &metricValue, &threshold,
 			&affectedEntity, &a.TriggeredAt, &acknowledgedAt, &acknowledgedBy,
 			&resolvedAt, &silencedUntil, &a.NotifiedEmail, &a.NotifiedWebhook, &metadata,
@@ -445,7 +445,7 @@ func (d *DB) scanAlertsWithEmails(rows *sql.Rows) ([]models.Alert, error) {
 		var acknowledgedAt, resolvedAt, silencedUntil sql.NullTime
 
 		err := rows.Scan(
-			&a.ID, &ruleID, &a.ServerID, &a.Type, &a.Severity, &a.Status,
+			&a.ID, &ruleID, &a.BoxID, &a.Type, &a.Severity, &a.Status,
 			&a.Title, &a.Message, &metric, &metricValue, &threshold,
 			&affectedEntity, &a.TriggeredAt, &acknowledgedAt, &acknowledgedBy, &ackEmail,
 			&resolvedAt, &resolvedBy, &resEmail,
@@ -677,7 +677,7 @@ func (d *DB) GetLastAlertForRule(ruleID int64) (*models.Alert, error) {
 	var acknowledgedAt, resolvedAt, silencedUntil sql.NullTime
 
 	err := row.Scan(
-		&a.ID, &ruleIDVal, &a.ServerID, &a.Type, &a.Severity, &a.Status,
+		&a.ID, &ruleIDVal, &a.BoxID, &a.Type, &a.Severity, &a.Status,
 		&a.Title, &a.Message, &metric, &metricValue, &threshold,
 		&affectedEntity, &a.TriggeredAt, &acknowledgedAt, &acknowledgedBy,
 		&resolvedAt, &silencedUntil, &a.NotifiedEmail, &a.NotifiedWebhook, &metadata,
@@ -1144,7 +1144,7 @@ func (d *DB) GetAlert(alertID int64) (*models.Alert, error) {
 	var acknowledgedAt, resolvedAt, silencedUntil sql.NullTime
 
 	err := row.Scan(
-		&a.ID, &ruleID, &a.ServerID, &a.Type, &a.Severity, &a.Status,
+		&a.ID, &ruleID, &a.BoxID, &a.Type, &a.Severity, &a.Status,
 		&a.Title, &a.Message, &metric, &metricValue, &threshold,
 		&affectedEntity, &a.TriggeredAt, &acknowledgedAt, &acknowledgedBy,
 		&resolvedAt, &silencedUntil, &a.NotifiedEmail, &a.NotifiedWebhook, &metadata,
@@ -1213,7 +1213,7 @@ func (d *DB) GetActiveAlertForRuleAndEntity(ruleID int64, affectedEntity string)
 	var acknowledgedAt, resolvedAt, silencedUntil sql.NullTime
 
 	err := row.Scan(
-		&a.ID, &ruleIDVal, &a.ServerID, &a.Type, &a.Severity, &a.Status,
+		&a.ID, &ruleIDVal, &a.BoxID, &a.Type, &a.Severity, &a.Status,
 		&a.Title, &a.Message, &metric, &metricValue, &threshold,
 		&affectedEntityVal, &a.TriggeredAt, &acknowledgedAt, &acknowledgedBy,
 		&resolvedAt, &silencedUntil, &a.NotifiedEmail, &a.NotifiedWebhook, &metadata,
@@ -1287,7 +1287,7 @@ func (d *DB) GetRecentlyAcknowledgedAlertForRule(ruleID int64, affectedEntity st
 	var acknowledgedAt, resolvedAt, silencedUntil sql.NullTime
 
 	err := row.Scan(
-		&a.ID, &ruleIDVal, &a.ServerID, &a.Type, &a.Severity, &a.Status,
+		&a.ID, &ruleIDVal, &a.BoxID, &a.Type, &a.Severity, &a.Status,
 		&a.Title, &a.Message, &metric, &metricValue, &threshold,
 		&affectedEntityVal, &a.TriggeredAt, &acknowledgedAt, &acknowledgedBy,
 		&resolvedAt, &silencedUntil, &a.NotifiedEmail, &a.NotifiedWebhook, &metadata,
@@ -1348,7 +1348,7 @@ func (d *DB) GetAlertRule(ruleID int64) (*models.AlertRule, error) {
 			created_at, updated_at
 		FROM alert_rules
 		WHERE id = ?`, ruleID).Scan(
-		&r.ID, &r.ServerID, &r.Name, &r.Description, &r.Type, &r.Enabled, &r.Severity,
+		&r.ID, &r.BoxID, &r.Name, &r.Description, &r.Type, &r.Enabled, &r.Severity,
 		&condition, &metric, &threshold, &operator, &r.Duration,
 		&r.CooldownMinutes, &r.NotifyEmail, &r.NotifyWebhook, &r.NotifyUI, &webhookURL,
 		&r.CreatedAt, &r.UpdatedAt,
