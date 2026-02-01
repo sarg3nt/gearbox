@@ -31,6 +31,9 @@ jobs:
         uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6
         with:
           go-version-file: gearbox/go.mod
+          cache-dependency-path: |
+            gearbox/go.sum
+            gearbox-agent/go.sum
 
       - name: Run gosec for gearbox
         uses: securego/gosec@6decf96c3d272d5a8bbdcf9fddb5789d0be16a8d # v2.22.4
