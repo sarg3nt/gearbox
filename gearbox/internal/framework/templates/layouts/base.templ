@@ -1213,12 +1213,9 @@ templ Sidebar(user *models.User, currentPath string) {
 			</div>
 		</div>
 
-		<!-- Navigation (only show items when plugins are enabled) -->
+		<!-- Navigation -->
 		<nav class="flex-1 py-4">
 			<ul id="sidebar-nav-list" class="space-y-1">
-				if hasAnyEnabledIntegration(ctx) {
-					@SidebarLink("/", "Dashboard", SidebarIconDashboard(), currentPath)
-				}
 				@OrderedIntegrationLinks(currentPath)
 			</ul>
 		</nav>
