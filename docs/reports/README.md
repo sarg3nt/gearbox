@@ -30,7 +30,6 @@ performance-baseline.md          # Reference baselines
 
 - [security-scan-report.md](security-scan-report.md) - Initial security scan before first GitHub commit (2026-01-31)
 - [security-migration-status.md](security-migration-status.md) - Security feature migration tracking
-- [documentation-audit-2026-01-31.md](documentation-audit-2026-01-31.md) - Documentation cleanup audit
 
 ### Development Work Summaries
 
