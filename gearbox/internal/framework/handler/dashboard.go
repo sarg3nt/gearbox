@@ -120,6 +120,12 @@ func (h *DashboardHandler) ViewDashboard(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// If dashboard is empty and editable, redirect to edit mode with palette open
+	if dash.Editable && len(dash.Widgets) == 0 {
+		http.Redirect(w, r, "/dashboards/"+slug+"/edit?open_palette=1", http.StatusSeeOther)
+		return
+	}
+
 	// Render dashboard
 	content, err := h.renderer.Render(r.Context(), dash, h.boxID, h.userID)
 	if err != nil {
@@ -169,11 +175,14 @@ func (h *DashboardHandler) EditDashboardPage(w http.ResponseWriter, r *http.Requ
 	// Get available widgets
 	widgets := h.widgetRegistry.List()
 
+	// Check if palette should be auto-opened (e.g., redirected from empty dashboard)
+	openPalette := r.URL.Query().Get("open_palette") == "1"
+
 	// Get user from context
 	user, _ := auth.GetUserFromContext(r.Context())
 
 	// Render editor with live content
-	component := pages.DashboardEditorPage(dash, content, widgets, user, r.URL.Path)
+	component := pages.DashboardEditorPage(dash, content, widgets, user, r.URL.Path, openPalette)
 	if err := component.Render(r.Context(), w); err != nil {
 		h.logger.Error("failed to render dashboard editor", "error", err)
 		http.Error(w, "Failed to render page", http.StatusInternalServerError)

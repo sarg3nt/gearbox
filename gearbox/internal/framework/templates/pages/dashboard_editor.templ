@@ -10,7 +10,7 @@ import (
 )
 
 // DashboardEditorPage renders the visual dashboard editor with live widget preview
-templ DashboardEditorPage(dash *dashboard.Dashboard, content templ.Component, widgets []*widget.WidgetDefinition, user *models.User, currentPath string) {
+templ DashboardEditorPage(dash *dashboard.Dashboard, content templ.Component, widgets []*widget.WidgetDefinition, user *models.User, currentPath string, openPalette bool) {
 	@layouts.Base("Edit Dashboard", user, currentPath) {
 		<!-- Widget Palette CSS -->
 		<link rel="stylesheet" href="/static/css/dashboard/palette.css"/>
@@ -49,8 +49,8 @@ templ DashboardEditorPage(dash *dashboard.Dashboard, content templ.Component, wi
 			</div>
 		</div>
 
-		<!-- Widget Palette Panel (collapsible) -->
-		<div id="widget-palette-panel" class="hidden mb-4 bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg shadow-lg">
+		<!-- Widget Palette Panel (collapsible, auto-opened when dashboard is empty) -->
+		<div id="widget-palette-panel" class={ widgetPaletteClass(openPalette) }>
 			<!-- Fixed Header -->
 			<div class="p-4 border-b border-gray-200 dark:border-slate-700 sticky top-0 bg-white dark:bg-slate-900 z-10">
 				<div class="flex items-center justify-between mb-3">
@@ -393,6 +393,14 @@ templ DashboardEditorScript(dash *dashboard.Dashboard) {
 }
 
 // Helper functions
+
+func widgetPaletteClass(openPalette bool) string {
+	if openPalette {
+		return "mb-4 bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg shadow-lg"
+	}
+	return "hidden mb-4 bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg shadow-lg"
+}
+
 func getWidgetStyle(pos dashboard.WidgetPosition) string {
 	return fmt.Sprintf("grid-column: span %d;", pos.Width)
 }

@@ -427,6 +427,17 @@ function toggleWidgetPalette() {
     }
 }
 
+// Auto-initialize palette if it's already visible on page load
+// (e.g., when redirected from an empty dashboard with open_palette=1)
+document.addEventListener('DOMContentLoaded', function() {
+    const panel = document.getElementById('widget-palette-panel');
+    if (panel && !panel.classList.contains('hidden')) {
+        const dashboardElement = document.getElementById('dashboard-grid-editor');
+        const boxID = dashboardElement ? dashboardElement.dataset.boxId : '';
+        initializeWidgetPalette(boxID);
+    }
+});
+
 // Export functions for use in other scripts
 window.initializeWidgetPalette = initializeWidgetPalette;
 window.toggleWidgetPalette = toggleWidgetPalette;
