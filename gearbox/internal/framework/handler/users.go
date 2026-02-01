@@ -308,7 +308,7 @@ func (h *Handler) CompleteAccountSetupPost(w http.ResponseWriter, r *http.Reques
 	h.logger.Info("✅ DEBUG: Password and email set successfully")
 
 	// SECURITY: Auto-delete admin credentials file after successful setup
-	credentialsFile := "data/admin-credentials.txt"
+	credentialsFile := "data/admin-credentials.txt" //#nosec G101 -- Not a credential; this is a file path constant
 	if _, err := os.Stat(credentialsFile); err == nil {
 		if err := os.Remove(credentialsFile); err != nil {
 			h.logger.Warn("failed to delete admin credentials file after account setup",
@@ -578,11 +578,14 @@ func (h *Handler) AdminDenyUserPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.authManager.LogAudit(r, &admin.ID, models.AuditActionAccountDenied, "denied request: "+req.Email)
+	// Log audit and send denial email only if request was found
+	if req != nil {
+		h.authManager.LogAudit(r, &admin.ID, models.AuditActionAccountDenied, "denied request: "+req.Email)
 
-	// Send denial email
-	if req != nil && h.emailService != nil && h.emailService.IsConfigured() {
-		_ = h.emailService.SendAccountDeniedEmail(req.Email, req.FirstName, reason)
+		// Send denial email
+		if h.emailService != nil && h.emailService.IsConfigured() {
+			_ = h.emailService.SendAccountDeniedEmail(req.Email, req.FirstName, reason)
+		}
 	}
 
 	http.Redirect(w, r, "/settings/users?success=Account+request+denied", http.StatusSeeOther)
@@ -1092,7 +1095,7 @@ func (h *Handler) APICurrentUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]interface{}{ //#nosec G104 -- HTTP response write error is not actionable
 		"id":           user.ID,
 		"email":        user.Email,
 		"first_name":   user.FirstName,
@@ -1122,7 +1125,7 @@ func (h *Handler) APIPendingUsersCount(w http.ResponseWriter, r *http.Request) {
 
 	if !user.IsAdmin() && !perms.CanApproveUsers() {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]int{
+		json.NewEncoder(w).Encode(map[string]int{ //#nosec G104 -- HTTP response write error is not actionable
 			"count": 0,
 		})
 		return
@@ -1136,7 +1139,7 @@ func (h *Handler) APIPendingUsersCount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]int{
+	json.NewEncoder(w).Encode(map[string]int{ //#nosec G104 -- HTTP response write error is not actionable
 		"count": len(requests),
 	})
 }

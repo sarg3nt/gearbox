@@ -194,7 +194,7 @@ func (p *Plugin) handleDownload(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/x-pem-file")
 				w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
 				w.Header().Set("Content-Length", fmt.Sprintf("%d", len(certData)))
-				w.Write(certData)
+				_, _ = w.Write(certData)
 				return
 			}
 		}
@@ -241,7 +241,7 @@ func (p *Plugin) handleDownload(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/x-pem-file")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(certData)))
-	w.Write(certData)
+	_, _ = w.Write(certData)
 }
 
 // GetCollector returns the certificate collector for use by other components.

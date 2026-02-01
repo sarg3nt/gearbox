@@ -378,7 +378,7 @@ func (h *Handler) HAProxyBoxTestConnectionPost(w http.ResponseWriter, r *http.Re
 
 	if err := r.ParseForm(); err != nil {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]interface{}{ //#nosec G104
 			"success": false,
 			"message": "Failed to parse form",
 		})
@@ -393,7 +393,7 @@ func (h *Handler) HAProxyBoxTestConnectionPost(w http.ResponseWriter, r *http.Re
 	// Validate required fields
 	if agentURL == "" {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]interface{}{ //#nosec G104
 			"success": false,
 			"message": "Agent URL is required",
 		})
@@ -428,7 +428,7 @@ func (h *Handler) HAProxyBoxTestConnectionPost(w http.ResponseWriter, r *http.Re
 	// Validate API key is available
 	if apiKey == "" {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]interface{}{ //#nosec G104
 			"success": false,
 			"message": "API key is required",
 		})
@@ -444,7 +444,7 @@ func (h *Handler) HAProxyBoxTestConnectionPost(w http.ResponseWriter, r *http.Re
 	_, err := client.Health()
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]interface{}{ //#nosec G104
 			"success": false,
 			"message": fmt.Sprintf("Health check failed: %v", err),
 		})
@@ -456,12 +456,12 @@ func (h *Handler) HAProxyBoxTestConnectionPost(w http.ResponseWriter, r *http.Re
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		if agent.IsUnauthorized(err) {
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			json.NewEncoder(w).Encode(map[string]interface{}{ //#nosec G104
 				"success": false,
 				"message": "Authentication failed: Invalid API key",
 			})
 		} else {
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			json.NewEncoder(w).Encode(map[string]interface{}{ //#nosec G104
 				"success": false,
 				"message": fmt.Sprintf("API request failed: %v", err),
 			})
@@ -470,7 +470,7 @@ func (h *Handler) HAProxyBoxTestConnectionPost(w http.ResponseWriter, r *http.Re
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]interface{}{ //#nosec G104
 		"success": true,
 		"message": "Connection test successful! Agent API is reachable and authenticated.",
 	})

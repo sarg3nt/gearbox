@@ -24,7 +24,7 @@ type DB struct {
 func New(dbPath string, logger *slog.Logger) (*DB, error) {
 	// Create directory if it doesn't exist
 	dir := filepath.Dir(dbPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create database directory: %w", err)
 	}
 
@@ -385,7 +385,7 @@ func (d *DB) SaveBackendSnapshots(boxID string, stats *models.HAProxyStats) erro
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	stmt, err := tx.Prepare(`
 		INSERT INTO backend_history (
@@ -396,7 +396,7 @@ func (d *DB) SaveBackendSnapshots(boxID string, stats *models.HAProxyStats) erro
 	if err != nil {
 		return err
 	}
-	defer stmt.Close()
+	defer func() { _ = stmt.Close() }()
 
 	for _, backend := range stats.Backends {
 		_, err := stmt.Exec(
@@ -446,7 +446,7 @@ func (d *DB) GetStatsHistory(boxID string, since time.Time, limit int) ([]StatsS
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var snapshots []StatsSnapshot
 	for rows.Next() {
@@ -488,7 +488,7 @@ func (d *DB) GetBackendHistory(boxID, backendName string, since time.Time, limit
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var snapshots []BackendSnapshot
 	for rows.Next() {
@@ -529,7 +529,7 @@ func (d *DB) GetSystemMetricsHistory(boxID string, since time.Time, limit int) (
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var snapshots []SystemMetricsSnapshot
 	for rows.Next() {
@@ -592,7 +592,7 @@ func (d *DB) GetActiveIncidents(boxID string) ([]Incident, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var incidents []Incident
 	for rows.Next() {
@@ -622,7 +622,7 @@ func (d *DB) GetRecentIncidents(boxID string, limit int) ([]Incident, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var incidents []Incident
 	for rows.Next() {
@@ -686,8 +686,8 @@ func (d *DB) GetDatabaseStats() (map[string]int64, error) {
 		}
 
 		var count int64
-		// Safe to use Sprintf here as table name is validated against whitelist
-		query := fmt.Sprintf("SELECT COUNT(*) FROM %s", table)
+		// Safe to use Sprintf here as table name is validated against whitelist above
+		query := fmt.Sprintf("SELECT COUNT(*) FROM %s", table) //#nosec G201 -- table name validated against whitelist
 		err := d.db.QueryRow(query).Scan(&count)
 		if err != nil {
 			return nil, fmt.Errorf("failed to count rows in table %s: %w", table, err)
@@ -841,9 +841,9 @@ func (d *DB) CleanupMetricsBySize(boxID string, maxSizeMB int) (int64, error) {
 
 	// Get current stats
 	var statsCount, backendCount, metricsCount int64
-	d.db.QueryRow("SELECT COUNT(*) FROM stats_history WHERE box_id = ?", boxID).Scan(&statsCount)
-	d.db.QueryRow("SELECT COUNT(*) FROM backend_history WHERE box_id = ?", boxID).Scan(&backendCount)
-	d.db.QueryRow("SELECT COUNT(*) FROM system_metrics_history WHERE box_id = ?", boxID).Scan(&metricsCount)
+	_ = d.db.QueryRow("SELECT COUNT(*) FROM stats_history WHERE box_id = ?", boxID).Scan(&statsCount)
+	_ = d.db.QueryRow("SELECT COUNT(*) FROM backend_history WHERE box_id = ?", boxID).Scan(&backendCount)
+	_ = d.db.QueryRow("SELECT COUNT(*) FROM system_metrics_history WHERE box_id = ?", boxID).Scan(&metricsCount)
 
 	// Estimate current size
 	currentSizeBytes := statsCount*150 + backendCount*200 + metricsCount*100
@@ -1005,7 +1005,7 @@ func (d *DB) GetDisabledEntities(boxID string) ([]DisabledEntity, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var entities []DisabledEntity
 	for rows.Next() {
@@ -1061,7 +1061,7 @@ func (d *DB) GetDisabledEntitiesByType(boxID string, entityType EntityType) (map
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	entities := make(map[string]bool)
 	for rows.Next() {

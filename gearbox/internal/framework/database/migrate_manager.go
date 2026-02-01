@@ -103,7 +103,8 @@ func (m *MigrateManager) Up() error {
 			"version", currentVersion)
 
 		// Force the version to the current version to mark it as clean
-		if err := migrator.Force(int(currentVersion)); err != nil {
+		forceVersion := int(currentVersion) //#nosec -- migration versions are small integers, no overflow risk
+		if err := migrator.Force(forceVersion); err != nil {
 			return fmt.Errorf("failed to force clean state: %w", err)
 		}
 

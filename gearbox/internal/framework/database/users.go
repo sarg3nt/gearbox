@@ -169,13 +169,13 @@ func (d *DB) migratePasskeysTable() {
 	if err != nil {
 		// Column doesn't exist, add it
 		// Default to true for backup_eligible since most modern authenticators support backup
-		d.db.Exec(`ALTER TABLE passkeys ADD COLUMN backup_eligible INTEGER NOT NULL DEFAULT 1`)
-		d.db.Exec(`ALTER TABLE passkeys ADD COLUMN backup_state INTEGER NOT NULL DEFAULT 0`)
+		_, _ = d.db.Exec(`ALTER TABLE passkeys ADD COLUMN backup_eligible INTEGER NOT NULL DEFAULT 1`)
+		_, _ = d.db.Exec(`ALTER TABLE passkeys ADD COLUMN backup_state INTEGER NOT NULL DEFAULT 0`)
 	} else {
 		// Columns exist - update any passkeys that have backup_eligible = 0
 		// Most modern authenticators (iCloud Keychain, 1Password, etc.) support backup
 		// This fixes passkeys created before we started storing the flags
-		d.db.Exec(`UPDATE passkeys SET backup_eligible = 1 WHERE backup_eligible = 0`)
+		_, _ = d.db.Exec(`UPDATE passkeys SET backup_eligible = 1 WHERE backup_eligible = 0`)
 	}
 }
 
@@ -459,7 +459,7 @@ func (d *DB) GetAllUsers() ([]*models.User, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var users []*models.User
 	for rows.Next() {
@@ -492,7 +492,7 @@ func (d *DB) GetActiveUsers() ([]*models.User, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var users []*models.User
 	for rows.Next() {
@@ -599,7 +599,7 @@ func (d *DB) GetPendingAccountRequests() ([]*models.AccountRequest, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var requests []*models.AccountRequest
 	for rows.Next() {
@@ -654,7 +654,7 @@ func (d *DB) ApproveAccountRequest(requestID int64, approverID string) (*models.
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Create the user
 	now := time.Now()
@@ -784,7 +784,7 @@ func (d *DB) GetUserPasskeys(userID string) ([]*models.Passkey, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var passkeys []*models.Passkey
 	for rows.Next() {
@@ -923,7 +923,7 @@ func (d *DB) GetRecentAuditLogs(limit int) ([]*models.AuditLog, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var logs []*models.AuditLog
 	for rows.Next() {
@@ -950,7 +950,7 @@ func (d *DB) GetUserAuditLogs(userID int64, limit int) ([]*models.AuditLog, erro
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var logs []*models.AuditLog
 	for rows.Next() {

@@ -175,7 +175,7 @@ func (d *DB) GetAlertRules(serverID string) ([]models.AlertRule, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var rules []models.AlertRule
 	for rows.Next() {
@@ -227,7 +227,7 @@ func (d *DB) GetEnabledAlertRules(serverID string) ([]models.AlertRule, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var rules []models.AlertRule
 	for rows.Next() {
@@ -348,7 +348,7 @@ func (d *DB) getAlertsByStatus(serverID, status string) ([]models.Alert, error) 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return d.scanAlertsWithEmails(rows)
 }
@@ -373,66 +373,11 @@ func (d *DB) GetRecentAlerts(serverID string, limit int) ([]models.Alert, error)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return d.scanAlertsWithEmails(rows)
 }
 
-// scanAlerts scans alert rows into Alert structs (legacy, without user emails).
-func (d *DB) scanAlerts(rows *sql.Rows) ([]models.Alert, error) {
-	var alerts []models.Alert
-	for rows.Next() {
-		var a models.Alert
-		var ruleID, acknowledgedBy sql.NullInt64
-		var metric, affectedEntity, metadata sql.NullString
-		var metricValue, threshold sql.NullFloat64
-		var acknowledgedAt, resolvedAt, silencedUntil sql.NullTime
-
-		err := rows.Scan(
-			&a.ID, &ruleID, &a.BoxID, &a.Type, &a.Severity, &a.Status,
-			&a.Title, &a.Message, &metric, &metricValue, &threshold,
-			&affectedEntity, &a.TriggeredAt, &acknowledgedAt, &acknowledgedBy,
-			&resolvedAt, &silencedUntil, &a.NotifiedEmail, &a.NotifiedWebhook, &metadata,
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		if ruleID.Valid {
-			a.RuleID = ruleID.Int64
-		}
-		if metric.Valid {
-			a.Metric = metric.String
-		}
-		if metricValue.Valid {
-			a.MetricValue = metricValue.Float64
-		}
-		if threshold.Valid {
-			a.Threshold = threshold.Float64
-		}
-		if affectedEntity.Valid {
-			a.AffectedEntity = affectedEntity.String
-		}
-		if acknowledgedAt.Valid {
-			a.AcknowledgedAt = &acknowledgedAt.Time
-		}
-		if acknowledgedBy.Valid {
-			a.AcknowledgedBy = &acknowledgedBy.Int64
-		}
-		if resolvedAt.Valid {
-			a.ResolvedAt = &resolvedAt.Time
-		}
-		if silencedUntil.Valid {
-			a.SilencedUntil = &silencedUntil.Time
-		}
-		if metadata.Valid {
-			a.Metadata = metadata.String
-		}
-
-		alerts = append(alerts, a)
-	}
-	return alerts, nil
-}
 
 // scanAlertsWithEmails scans alert rows with user email joins into Alert structs.
 func (d *DB) scanAlertsWithEmails(rows *sql.Rows) ([]models.Alert, error) {
@@ -562,7 +507,7 @@ func (d *DB) GetAlertSummary(serverID string) (*models.AlertSummary, error) {
 		var status string
 		var count int
 		if err := rows.Scan(&status, &count); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, err
 		}
 		switch status {
@@ -574,7 +519,7 @@ func (d *DB) GetAlertSummary(serverID string) (*models.AlertSummary, error) {
 			summary.TotalResolved = count
 		}
 	}
-	rows.Close()
+	_ = rows.Close()
 
 	// Count by severity (active only)
 	rows, err = d.db.Query(`
@@ -588,12 +533,12 @@ func (d *DB) GetAlertSummary(serverID string) (*models.AlertSummary, error) {
 		var severity string
 		var count int
 		if err := rows.Scan(&severity, &count); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, err
 		}
 		summary.BySeverity[severity] = count
 	}
-	rows.Close()
+	_ = rows.Close()
 
 	// Count by type (active only)
 	rows, err = d.db.Query(`
@@ -607,12 +552,12 @@ func (d *DB) GetAlertSummary(serverID string) (*models.AlertSummary, error) {
 		var alertType string
 		var count int
 		if err := rows.Scan(&alertType, &count); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, err
 		}
 		summary.ByType[alertType] = count
 	}
-	rows.Close()
+	_ = rows.Close()
 
 	// Get recent alerts
 	summary.RecentAlerts, _ = d.GetRecentAlerts(serverID, 10)
@@ -762,7 +707,7 @@ func (m AlertMetadata) String() string {
 
 func ParseAlertMetadata(s string) AlertMetadata {
 	var m AlertMetadata
-	json.Unmarshal([]byte(s), &m)
+	_ = json.Unmarshal([]byte(s), &m)
 	return m
 }
 
@@ -802,7 +747,7 @@ func (d *DB) GetAlertNotes(alertID int64) ([]AlertNote, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var notes []AlertNote
 	for rows.Next() {
@@ -828,7 +773,7 @@ func (d *DB) AcknowledgeAlertWithNote(alertID int64, userID string, note string)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Update alert status
 	_, err = tx.Exec(`
@@ -863,7 +808,7 @@ func (d *DB) ResolveAlertWithNote(alertID int64, userID string, note string) err
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Update alert status with resolved_by
 	_, err = tx.Exec(`
@@ -913,7 +858,7 @@ func (d *DB) GetUserAlertSubscriptions(userID int64) ([]UserAlertSubscription, e
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var subs []UserAlertSubscription
 	for rows.Next() {
@@ -972,7 +917,7 @@ func (d *DB) GetUsersToNotify(serverID, alertType, severity string) ([]int64, er
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var userIDs []int64
 	for rows.Next() {

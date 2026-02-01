@@ -82,7 +82,7 @@ func (d *DB) GetBoxes() ([]*BoxDB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query boxes: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var boxes []*BoxDB
 	for rows.Next() {
@@ -132,7 +132,7 @@ func (d *DB) GetEnabledBoxes() ([]*BoxDB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query enabled boxes: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var boxes []*BoxDB
 	for rows.Next() {

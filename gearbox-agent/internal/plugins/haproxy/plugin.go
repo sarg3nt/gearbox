@@ -195,7 +195,7 @@ func (p *Plugin) handleStats(w http.ResponseWriter, r *http.Request) {
 	// Allow requesting raw CSV format
 	if r.URL.Query().Get("format") == "csv" {
 		w.Header().Set("Content-Type", "text/csv")
-		w.Write([]byte(csvData))
+		_, _ = w.Write([]byte(csvData))
 		return
 	}
 

@@ -175,7 +175,7 @@ func (d *DB) SaveTrafficFlows(flows []models.TrafficFlow) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	stmt, err := tx.Prepare(`
 		INSERT INTO traffic_flows (
@@ -198,7 +198,7 @@ func (d *DB) SaveTrafficFlows(flows []models.TrafficFlow) error {
 	if err != nil {
 		return err
 	}
-	defer stmt.Close()
+	defer func() { _ = stmt.Close() }()
 
 	for _, flow := range flows {
 		_, err := stmt.Exec(
@@ -331,7 +331,7 @@ func (d *DB) GetTrafficSources(filter *models.TrafficFilter) ([]models.TrafficSo
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var sources []models.TrafficSourceStats
 	for rows.Next() {
@@ -410,7 +410,7 @@ func (d *DB) GetTrafficByBackend(filter *models.TrafficFilter) ([]models.Traffic
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var backends []models.TrafficBackendStats
 	for rows.Next() {
@@ -473,7 +473,7 @@ func (d *DB) GetTrafficByCountry(filter *models.TrafficFilter) ([]models.Traffic
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var countries []models.TrafficCountryStats
 	var totalRequests int64
@@ -553,7 +553,7 @@ func (d *DB) GetHourlyTraffic(filter *models.TrafficFilter) ([]models.HourlyTraf
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var hourly []models.HourlyTrafficStats
 	for rows.Next() {
@@ -676,7 +676,7 @@ func (d *DB) GetTrafficSnapshots(serverID string, since time.Time, limit int) ([
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var snapshots []models.TrafficSnapshot
 	for rows.Next() {
@@ -738,7 +738,7 @@ func (d *DB) GetActiveAnomalies(serverID string) ([]models.TrafficAnomaly, error
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var anomalies []models.TrafficAnomaly
 	for rows.Next() {
@@ -842,7 +842,7 @@ func (d *DB) GetRecentTrafficFlows(filter *models.TrafficFilter) ([]models.Traff
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var flows []models.TrafficFlow
 	for rows.Next() {

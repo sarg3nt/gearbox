@@ -96,7 +96,7 @@ func (d *DB) GetBlockedIPs(serverID string) ([]models.BlockedIP, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return d.scanBlockedIPs(rows)
 }
@@ -119,7 +119,7 @@ func (d *DB) GetAllBlockedIPs(serverID string, limit int) ([]models.BlockedIP, e
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return d.scanBlockedIPs(rows)
 }
@@ -295,7 +295,7 @@ func (d *DB) GetRecentBlockActivity(serverID string, limit int) ([]models.Blocke
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return d.scanBlockedIPs(rows)
 }
@@ -317,7 +317,7 @@ func (d *DB) GetAutoBlockedIPs(serverID string) ([]models.BlockedIP, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return d.scanBlockedIPs(rows)
 }

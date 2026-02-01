@@ -47,7 +47,7 @@ func (h *Handler) HAProxyConfigPage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.logger.Error("Failed to create agent client", "error", err)
 		component := pages.HAProxyConfigPageWithError(user, server, "Failed to connect to agent: "+err.Error(), canEdit)
-		component.Render(r.Context(), w)
+		_ = component.Render(r.Context(), w)
 		return
 	}
 
@@ -55,7 +55,7 @@ func (h *Handler) HAProxyConfigPage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.logger.Error("Failed to get HAProxy config", "error", err)
 		component := pages.HAProxyConfigPageWithError(user, server, "Failed to load configuration: "+err.Error(), canEdit)
-		component.Render(r.Context(), w)
+		_ = component.Render(r.Context(), w)
 		return
 	}
 
@@ -111,7 +111,7 @@ func (h *Handler) APIHAProxyConfigGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(configResp)
+	json.NewEncoder(w).Encode(configResp) //#nosec G104
 }
 
 // APIHAProxyConfigSave saves the HAProxy configuration.
@@ -191,7 +191,7 @@ func (h *Handler) APIHAProxyConfigSave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(updateResp)
+	json.NewEncoder(w).Encode(updateResp) //#nosec G104
 }
 
 // APIHAProxyConfigValidate validates the HAProxy configuration without saving.
@@ -247,7 +247,7 @@ func (h *Handler) APIHAProxyConfigValidate(w http.ResponseWriter, r *http.Reques
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(updateResp)
+	json.NewEncoder(w).Encode(updateResp) //#nosec G104
 }
 
 // APIHAProxyConfigBackups returns the list of configuration backups.
@@ -278,7 +278,7 @@ func (h *Handler) APIHAProxyConfigBackups(w http.ResponseWriter, r *http.Request
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(backupsResp)
+	json.NewEncoder(w).Encode(backupsResp) //#nosec G104
 }
 
 // APIHAProxyConfigRestore restores configuration from a backup.
@@ -344,7 +344,7 @@ func (h *Handler) APIHAProxyConfigRestore(w http.ResponseWriter, r *http.Request
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(restoreResp)
+	json.NewEncoder(w).Encode(restoreResp) //#nosec G104
 }
 
 // APIHAProxyConfigHistory returns the configuration change history.
@@ -369,7 +369,7 @@ func (h *Handler) APIHAProxyConfigHistory(w http.ResponseWriter, r *http.Request
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]interface{}{ //#nosec G104
 		"changes": changes,
 	})
 }
@@ -472,7 +472,7 @@ func (h *Handler) BoxGitSettingsSave(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		// Clear config if repo URL is empty
-		h.db.DeleteBoxGitConfig(server.ID, database.ConfigTypeHAProxy)
+		_ = h.db.DeleteBoxGitConfig(server.ID, database.ConfigTypeHAProxy)
 	}
 
 	// Save Firewall git config
@@ -501,7 +501,7 @@ func (h *Handler) BoxGitSettingsSave(w http.ResponseWriter, r *http.Request) {
 			h.logger.Error("Failed to save firewall git config", "error", err)
 		}
 	} else {
-		h.db.DeleteBoxGitConfig(server.ID, database.ConfigTypeFirewall)
+		_ = h.db.DeleteBoxGitConfig(server.ID, database.ConfigTypeFirewall)
 	}
 
 	// Log audit
@@ -542,7 +542,7 @@ func (h *Handler) FirewallConfigPage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.logger.Error("Failed to create agent client", "error", err)
 		component := pages.FirewallConfigPageWithError(user, server, "Failed to connect to agent: "+err.Error(), canEdit)
-		component.Render(r.Context(), w)
+		_ = component.Render(r.Context(), w)
 		return
 	}
 
@@ -550,7 +550,7 @@ func (h *Handler) FirewallConfigPage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.logger.Error("Failed to get firewall config", "error", err)
 		component := pages.FirewallConfigPageWithError(user, server, "Failed to load configuration: "+err.Error(), canEdit)
-		component.Render(r.Context(), w)
+		_ = component.Render(r.Context(), w)
 		return
 	}
 
@@ -595,7 +595,7 @@ func (h *Handler) APIFirewallConfigGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(configResp)
+	json.NewEncoder(w).Encode(configResp) //#nosec G104
 }
 
 // APIFirewallConfigSave saves the firewall configuration.
@@ -663,7 +663,7 @@ func (h *Handler) APIFirewallConfigSave(w http.ResponseWriter, r *http.Request) 
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(updateResp)
+	json.NewEncoder(w).Encode(updateResp) //#nosec G104
 }
 
 // APIFirewallConfigValidate validates the firewall configuration without saving.
@@ -704,7 +704,7 @@ func (h *Handler) APIFirewallConfigValidate(w http.ResponseWriter, r *http.Reque
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(updateResp)
+	json.NewEncoder(w).Encode(updateResp) //#nosec G104
 }
 
 // APIFirewallConfigBackups returns the list of firewall configuration backups.
@@ -735,7 +735,7 @@ func (h *Handler) APIFirewallConfigBackups(w http.ResponseWriter, r *http.Reques
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(backupsResp)
+	json.NewEncoder(w).Encode(backupsResp) //#nosec G104
 }
 
 // APIFirewallConfigRestore restores firewall configuration from a backup.
@@ -801,7 +801,7 @@ func (h *Handler) APIFirewallConfigRestore(w http.ResponseWriter, r *http.Reques
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(restoreResp)
+	json.NewEncoder(w).Encode(restoreResp) //#nosec G104
 }
 
 // Helper methods
@@ -823,7 +823,7 @@ func (h *Handler) getAgentClient(server *database.BoxDB) (*agent.Client, error) 
 func (h *Handler) jsonError(w http.ResponseWriter, message string, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]interface{}{ //#nosec G104
 		"success": false,
 		"message": message,
 	})

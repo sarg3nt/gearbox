@@ -74,7 +74,7 @@ func (h *DashboardHandler) SaveDashboardOrder(w http.ResponseWriter, r *http.Req
 	h.logger.Info("dashboard order saved", "order", req.Order)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	json.NewEncoder(w).Encode(map[string]string{ //#nosec G104
 		"status": "success",
 	})
 }
@@ -96,7 +96,7 @@ func (h *DashboardHandler) TogglePluginDashboard(w http.ResponseWriter, r *http.
 	h.logger.Info("plugin dashboard toggled", "slug", slug, "enabled", req.Enabled)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	json.NewEncoder(w).Encode(map[string]string{ //#nosec G104
 		"status": "success",
 	})
 }

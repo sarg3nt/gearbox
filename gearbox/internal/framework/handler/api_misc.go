@@ -180,7 +180,7 @@ func (h *Handler) APIEventsHandler(w http.ResponseWriter, r *http.Request) {
 
 		case <-keepalive.C:
 			// Send keepalive comment
-			fmt.Fprintf(w, ": keepalive\n\n")
+			_, _ = fmt.Fprintf(w, ": keepalive\n\n")
 			flusher.Flush()
 		}
 	}

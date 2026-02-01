@@ -409,7 +409,7 @@ func (m *Manager) applyMigration(ctx context.Context, pluginName string, migrati
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Run migration SQL
 	if _, err := tx.ExecContext(ctx, migration.Up); err != nil {

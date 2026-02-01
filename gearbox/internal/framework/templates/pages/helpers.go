@@ -350,28 +350,6 @@ func GetServiceURL(backendName string, metadata *models.Metadata) string {
 	return "https://" + backendMeta.Hostname
 }
 
-// hasContainerBackends checks if there are any non-hardware backends in a list
-func hasContainerBackends(backends []models.Backend) bool {
-	for _, backend := range backends {
-		info := ParseBackendName(backend.Name)
-		if info.Group != "hardware" {
-			return true
-		}
-	}
-	return false
-}
-
-// countContainerBackends counts the number of non-hardware backends in a list
-func countContainerBackends(backends []models.Backend) int {
-	count := 0
-	for _, backend := range backends {
-		info := ParseBackendName(backend.Name)
-		if info.Group != "hardware" {
-			count++
-		}
-	}
-	return count
-}
 
 // StatusSummary holds summary statistics for status doughnuts
 type StatusSummary struct {

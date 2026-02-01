@@ -276,7 +276,7 @@ func (h *Handler) APIInstallUpdatesHandler(w http.ResponseWriter, r *http.Reques
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusAccepted)
-		json.NewEncoder(w).Encode(result)
+		json.NewEncoder(w).Encode(result) //#nosec G104
 		return
 	}
 
@@ -374,7 +374,7 @@ func (h *Handler) APIScheduleRebootHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	auditMsg := "Scheduled system reboot"
+	var auditMsg string
 	if req.When == "" {
 		auditMsg = "Initiated immediate system reboot"
 	} else {
@@ -988,5 +988,5 @@ func (h *Handler) APIConfigureUnattendedHandler(w http.ResponseWriter, r *http.R
 // Helper for JSON responses
 func (h *Handler) jsonResponseOK(w http.ResponseWriter, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(data)
+	json.NewEncoder(w).Encode(data) //#nosec G104
 }

@@ -121,19 +121,20 @@ func (s *Service) SendEmail(to, subject, htmlBody, textBody string) error {
 func (s *Service) sendWithTLS(addr string, auth smtp.Auth, settings *models.SMTPSettings, to string, msg []byte) error {
 	tlsConfig := &tls.Config{
 		ServerName: settings.Host,
+		MinVersion: tls.VersionTLS12,
 	}
 
 	conn, err := tls.Dial("tcp", addr, tlsConfig)
 	if err != nil {
 		return fmt.Errorf("failed to connect with TLS: %w", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	client, err := smtp.NewClient(conn, settings.Host)
 	if err != nil {
 		return fmt.Errorf("failed to create SMTP client: %w", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	if auth != nil {
 		if err := client.Auth(auth); err != nil {
@@ -170,10 +171,11 @@ func (s *Service) sendWithStartTLS(addr string, auth smtp.Auth, settings *models
 	if err != nil {
 		return fmt.Errorf("failed to dial: %w", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	tlsConfig := &tls.Config{
 		ServerName: settings.Host,
+		MinVersion: tls.VersionTLS12,
 	}
 
 	if err := client.StartTLS(tlsConfig); err != nil {

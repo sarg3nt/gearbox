@@ -106,7 +106,7 @@ func (d *DB) GetUserPermissions(userID string) (*models.UserPermissions, error) 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	perms := &models.UserPermissions{
 		UserID:      userID,
@@ -143,7 +143,7 @@ func (d *DB) GetUserPermissionGrants(userID int64) ([]models.PermissionGrant, er
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var grants []models.PermissionGrant
 	for rows.Next() {
@@ -174,7 +174,7 @@ func (d *DB) SetUserPermissions(userID string, permissions map[models.Component]
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Delete existing permissions
 	_, err = tx.Exec(`DELETE FROM permission_grants WHERE user_id = ?`, userID)
@@ -189,7 +189,7 @@ func (d *DB) SetUserPermissions(userID string, permissions map[models.Component]
 	if err != nil {
 		return err
 	}
-	defer stmt.Close()
+	defer func() { _ = stmt.Close() }()
 
 	for component, perms := range permissions {
 		for _, perm := range perms {
@@ -276,7 +276,7 @@ func (d *DB) GetUsersWithPermission(component models.Component, permission model
 	if err != nil {
 		return nil, err
 	}
-	defer admins.Close()
+	defer func() { _ = admins.Close() }()
 
 	var users []models.User
 	for admins.Next() {
@@ -302,7 +302,7 @@ func (d *DB) GetUsersWithPermission(component models.Component, permission model
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var u models.User

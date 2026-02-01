@@ -29,7 +29,7 @@ func (d *DB) GetEnabledLogSources(haproxyID int64) ([]LogSourceSetting, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query log sources: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var sources []LogSourceSetting
 	for rows.Next() {
@@ -60,7 +60,7 @@ func (d *DB) GetEnabledLogSourcesByServerID(serverID string) ([]LogSourceSetting
 	if err != nil {
 		return nil, fmt.Errorf("failed to query log sources: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var sources []LogSourceSetting
 	for rows.Next() {
@@ -107,7 +107,7 @@ func (d *DB) SetEnabledLogSourcesByServerID(serverID string, sources []LogSource
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Delete existing settings
 	if _, err := tx.Exec("DELETE FROM log_source_settings WHERE haproxy_server_id = ?", haproxyID); err != nil {
@@ -123,7 +123,7 @@ func (d *DB) SetEnabledLogSourcesByServerID(serverID string, sources []LogSource
 		if err != nil {
 			return fmt.Errorf("failed to prepare insert statement: %w", err)
 		}
-		defer stmt.Close()
+		defer func() { _ = stmt.Close() }()
 
 		for _, source := range sources {
 			if _, err := stmt.Exec(haproxyID, source.LogName, source.DisplayName); err != nil {
@@ -151,7 +151,7 @@ func (d *DB) SetEnabledLogSources(haproxyID int64, sources []LogSourceSetting) e
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Delete existing settings
 	if _, err := tx.Exec("DELETE FROM log_source_settings WHERE haproxy_server_id = ?", haproxyID); err != nil {
@@ -167,7 +167,7 @@ func (d *DB) SetEnabledLogSources(haproxyID int64, sources []LogSourceSetting) e
 		if err != nil {
 			return fmt.Errorf("failed to prepare insert statement: %w", err)
 		}
-		defer stmt.Close()
+		defer func() { _ = stmt.Close() }()
 
 		for _, source := range sources {
 			if _, err := stmt.Exec(haproxyID, source.LogName, source.DisplayName); err != nil {

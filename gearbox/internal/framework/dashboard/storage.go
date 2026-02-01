@@ -25,7 +25,7 @@ func NewStorage(dataDir string, logger *slog.Logger) (*Storage, error) {
 
 	// Ensure the dashboards directory exists
 	dashboardDir := filepath.Join(dataDir, "dashboards")
-	if err := os.MkdirAll(dashboardDir, 0755); err != nil {
+	if err := os.MkdirAll(dashboardDir, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create dashboards directory: %w", err)
 	}
 
@@ -47,7 +47,7 @@ func (s *Storage) Load(slug string) (*Dashboard, error) {
 // LoadFromPath loads a dashboard from a specific file path.
 func (s *Storage) LoadFromPath(filePath string) (*Dashboard, error) {
 	// Read the YAML file
-	data, err := os.ReadFile(filePath)
+	data, err := os.ReadFile(filePath) //#nosec G304 -- filePath is constructed from slug via filepath.Join, not direct user input
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf("dashboard not found: %s", filePath)
@@ -113,7 +113,7 @@ func (s *Storage) Save(dashboard *Dashboard) error {
 	}
 
 	// Write to file
-	if err := os.WriteFile(filePath, data, 0644); err != nil {
+	if err := os.WriteFile(filePath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write dashboard file: %w", err)
 	}
 

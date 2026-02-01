@@ -129,5 +129,5 @@ func (h *Handler) APICertificateDownloadHandler(w http.ResponseWriter, r *http.R
 	w.Header().Set("Content-Type", "application/x-pem-file")
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(certData)))
-	w.Write(certData)
+	_, _ = w.Write(certData)
 }

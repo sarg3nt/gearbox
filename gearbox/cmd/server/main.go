@@ -78,7 +78,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	logger.Info("database initialized",
 		"path", cfg.DatabasePath,
 		"retention_hours", cfg.DatabaseRetentionHours)
@@ -117,7 +117,7 @@ func main() {
 		if cfg.AdminPassword == "" {
 			// SECURITY: Write password to secure file with restrictive permissions
 			// File will be auto-deleted after first password change
-			credentialsFile := "data/admin-credentials.txt"
+			credentialsFile := "data/admin-credentials.txt" //#nosec G101 -- Not a credential; this is a file path constant
 			credentialsContent := fmt.Sprintf("ADMIN USER CREATED\n\nEmail: admin\nPassword: %s\n\nIMPORTANT: You will be forced to change this password on first login.\nThis file will be automatically deleted after you change your password.\n", adminPassword)
 
 			if err := os.WriteFile(credentialsFile, []byte(credentialsContent), 0600); err != nil {
@@ -367,7 +367,9 @@ func main() {
 	dataSourceRegistry := widget.NewDataSourceRegistry(logger)
 
 	// Register core widgets
-	widgets.RegisterCoreWidgets(widgetRegistry)
+	if err := widgets.RegisterCoreWidgets(widgetRegistry); err != nil {
+		log.Fatalf("Failed to register core widgets: %v", err)
+	}
 
 	// Register HAProxy-specific widgets
 	if err := dashboardPlugin.RegisterHAProxyWidgets(widgetRegistry); err != nil {
@@ -464,7 +466,7 @@ func main() {
 			http.Error(w, "Not Found", http.StatusNotFound)
 			return
 		}
-		w.Write(data)
+		_, _ = w.Write(data)
 	})
 	r.Get("/favicon.svg", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/svg+xml")
@@ -474,7 +476,7 @@ func main() {
 			http.Error(w, "Not Found", http.StatusNotFound)
 			return
 		}
-		w.Write(data)
+		_, _ = w.Write(data)
 	})
 
 	// Static file server for CSS, JavaScript, and other assets

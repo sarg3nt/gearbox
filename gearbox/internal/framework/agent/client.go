@@ -73,7 +73,7 @@ func createTLSConfig() *tls.Config {
 		fmt.Fprintf(os.Stderr, "WARNING: TLS certificate verification is DISABLED (GEARBOX_INSECURE_TLS=true)\n")
 		fmt.Fprintf(os.Stderr, "WARNING: This is NOT recommended for production use\n")
 		return &tls.Config{
-			InsecureSkipVerify: true,
+			InsecureSkipVerify: true, //#nosec G402 -- User explicitly opted in via GEARBOX_INSECURE_TLS env var
 			MinVersion:         tls.VersionTLS12,
 		}
 	}
@@ -82,7 +82,7 @@ func createTLSConfig() *tls.Config {
 	caCertPath := os.Getenv("AGENT_CA_CERT_PATH")
 	if caCertPath != "" {
 		// Load CA certificate for validating agent certificates
-		caCertPEM, err := os.ReadFile(caCertPath)
+		caCertPEM, err := os.ReadFile(caCertPath) //#nosec G304 -- Path from trusted env var AGENT_CA_CERT_PATH
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "ERROR: Failed to read CA certificate from %s: %v\n", caCertPath, err)
 			fmt.Fprintf(os.Stderr, "ERROR: Falling back to system certificate pool\n")
@@ -117,7 +117,7 @@ func createTLSConfig() *tls.Config {
 // doRequest performs an HTTP request with authentication.
 func (c *Client) doRequest(method, path string, query url.Values) ([]byte, error) {
 	fullURL := c.baseURL + path
-	if query != nil && len(query) > 0 {
+	if len(query) > 0 {
 		fullURL += "?" + query.Encode()
 	}
 
@@ -169,7 +169,7 @@ func (c *Client) doRequestWithBody(method, path string, reqBody interface{}) ([]
 // doRequestWithBodyAndQuery performs an HTTP request with a JSON body and query parameters.
 func (c *Client) doRequestWithBodyAndQuery(method, path string, reqBody interface{}, query url.Values) ([]byte, error) {
 	fullURL := c.baseURL + path
-	if query != nil && len(query) > 0 {
+	if len(query) > 0 {
 		fullURL += "?" + query.Encode()
 	}
 

@@ -283,7 +283,7 @@ func (d *DB) initPluginsSchema() error {
 			}
 
 			// Also drop old index
-			d.db.Exec("DROP INDEX IF EXISTS idx_plugins_name")
+			_, _ = d.db.Exec("DROP INDEX IF EXISTS idx_plugins_name")
 
 			d.logger.Info("old plugins table dropped, will be recreated with new schema")
 		}
@@ -374,7 +374,7 @@ func (d *DB) GetPlugins(serverID string) ([]Plugin, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query plugins: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var plugins []Plugin
 	for rows.Next() {
@@ -403,7 +403,7 @@ func (d *DB) EnsureServerPlugins(serverID string) error {
 	if err != nil {
 		return fmt.Errorf("failed to query existing plugins: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var name string
@@ -474,7 +474,7 @@ func (d *DB) migrateCertbotToCertificatesLocked(serverID string) error {
 	var certsConfig CertificatesConfig
 	if err == nil && certsConfigStr != "" && certsConfigStr != "{}" {
 		// Parse existing certificates config
-		json.Unmarshal([]byte(certsConfigStr), &certsConfig)
+		_ = json.Unmarshal([]byte(certsConfigStr), &certsConfig)
 	}
 
 	// Merge certbot settings
@@ -695,7 +695,7 @@ func (d *DB) GetEnabledPlugins(serverID string) (map[string]bool, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query plugins: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	result := make(map[string]bool)
 	for rows.Next() {

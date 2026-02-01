@@ -91,7 +91,7 @@ func (h *Handler) PasskeyRegisterBegin(w http.ResponseWriter, r *http.Request) {
 
 	// Return options to client
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(PasskeyRegisterBeginResponse{
+	json.NewEncoder(w).Encode(PasskeyRegisterBeginResponse{ //#nosec G104
 		Options:   options,
 		SessionID: sessionID,
 	})
@@ -201,7 +201,7 @@ func (h *Handler) PasskeyRegisterFinish(w http.ResponseWriter, r *http.Request) 
 	h.authManager.LogAudit(r, &user.ID, models.AuditActionPasskeyAdded, fmt.Sprintf("passkey '%s' (id: %d)", passkeyName, passkeyID))
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]interface{}{ //#nosec G104
 		"success": true,
 		"message": "Passkey registered successfully",
 	})
@@ -298,7 +298,7 @@ func (h *Handler) PasskeyLoginBegin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(PasskeyLoginBeginResponse{
+	json.NewEncoder(w).Encode(PasskeyLoginBeginResponse{ //#nosec G104
 		Options:   options,
 		SessionID: sessionID,
 	})
@@ -422,7 +422,7 @@ func (h *Handler) PasskeyLoginFinish(w http.ResponseWriter, r *http.Request) {
 	h.authManager.LogAudit(r, &user.ID, models.AuditActionLogin, "via passkey")
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]interface{}{ //#nosec G104
 		"success":  true,
 		"redirect": "/",
 	})

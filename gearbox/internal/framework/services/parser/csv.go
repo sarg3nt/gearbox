@@ -206,11 +206,12 @@ func parseBackendServer(record []string, colMap map[string]int, name string) mod
 	// For single-server backends, this will be 100% or 0%
 	// For multi-server backends, the backend average will show partial availability
 	var uptimePercent float64
-	if status == "UP" {
+	switch status {
+	case "UP":
 		uptimePercent = 100.0
-	} else if status == "DOWN" {
+	case "DOWN":
 		uptimePercent = 0.0
-	} else {
+	default:
 		// MAINT, DRAIN, etc. - consider as unavailable for traffic
 		uptimePercent = 0.0
 	}

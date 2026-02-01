@@ -257,39 +257,6 @@ func (m *WebSocketManager) triggerMetadataRefresh(serverID string) {
 	}()
 }
 
-// triggerStatsRefresh triggers an immediate stats refresh for a server.
-func (m *WebSocketManager) triggerStatsRefresh(serverID string) {
-	manager, exists := m.registry.GetCollector(serverID)
-	if !exists {
-		m.logger.Debug("cannot refresh stats: collector not found",
-			"server_id", serverID)
-		return
-	}
-
-	// Refresh stats synchronously so cache is updated before SSE event
-	if err := manager.RefreshStats(); err != nil {
-		m.logger.Debug("failed to refresh stats",
-			"server_id", serverID,
-			"error", err)
-	}
-}
-
-// triggerMetricsRefresh triggers an immediate metrics refresh for a server.
-func (m *WebSocketManager) triggerMetricsRefresh(serverID string) {
-	manager, exists := m.registry.GetCollector(serverID)
-	if !exists {
-		m.logger.Debug("cannot refresh metrics: collector not found",
-			"server_id", serverID)
-		return
-	}
-
-	// Refresh metrics synchronously so cache is updated before SSE event
-	if err := manager.RefreshMetrics(); err != nil {
-		m.logger.Debug("failed to refresh metrics",
-			"server_id", serverID,
-			"error", err)
-	}
-}
 
 // updateStatsFromEvent updates the cache with stats from a WebSocket event.
 // This avoids a redundant API call to the agent since it already sent the stats.

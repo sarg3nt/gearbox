@@ -235,7 +235,7 @@ func (d *DB) GetAllGitConfigsForBox(haproxyBoxID int64) ([]BoxGitConfig, error) 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get git configs: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var configs []BoxGitConfig
 	for rows.Next() {
@@ -318,7 +318,7 @@ func (d *DB) GetConfigChanges(haproxyBoxID int64, configType ConfigType, limit i
 	if err != nil {
 		return nil, fmt.Errorf("failed to get config changes: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var changes []ConfigChange
 	for rows.Next() {
@@ -375,7 +375,7 @@ func (d *DB) GetRecentConfigChanges(limit int) ([]ConfigChange, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get recent config changes: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var changes []ConfigChange
 	for rows.Next() {

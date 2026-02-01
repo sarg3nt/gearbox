@@ -161,7 +161,7 @@ func (h *Handler) APIUpdateUserPermissions(w http.ResponseWriter, r *http.Reques
 		fmt.Sprintf("updated permissions for user: %s", targetUser.Email))
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]interface{}{ //#nosec G104
 		"success": true,
 		"message": "Permissions updated successfully",
 	})
@@ -216,7 +216,7 @@ func (h *Handler) APIApplyPermissionTemplate(w http.ResponseWriter, r *http.Requ
 		fmt.Sprintf("applied template '%s' to user: %s", req.TemplateName, targetUser.Email))
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]interface{}{ //#nosec G104
 		"success": true,
 		"message": fmt.Sprintf("Template '%s' applied successfully", req.TemplateName),
 	})
@@ -255,7 +255,7 @@ func (h *Handler) APIGetUserPermissions(w http.ResponseWriter, r *http.Request) 
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(userPerms)
+	json.NewEncoder(w).Encode(userPerms) //#nosec G104
 }
 
 // APIGetCurrentUserPermissions returns the current user's permissions.
@@ -267,5 +267,5 @@ func (h *Handler) APIGetCurrentUserPermissions(w http.ResponseWriter, r *http.Re
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(perms)
+	json.NewEncoder(w).Encode(perms) //#nosec G104
 }

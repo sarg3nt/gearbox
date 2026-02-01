@@ -20,7 +20,7 @@ type BackupInfo struct {
 // Returns the path to the backup file and any error.
 func (d *DB) CreateBackup(backupDir string) (*BackupInfo, error) {
 	// Ensure backup directory exists
-	if err := os.MkdirAll(backupDir, 0755); err != nil {
+	if err := os.MkdirAll(backupDir, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create backup directory: %w", err)
 	}
 
@@ -98,7 +98,7 @@ func (d *DB) RestoreFromBackup(backupPath string) error {
 	}
 
 	// Clean up temporary backup
-	os.Remove(tempBackup)
+	_ = os.Remove(tempBackup)
 
 	d.logger.Info("database restored from backup", "path", backupPath)
 	return nil
@@ -153,13 +153,13 @@ func DeleteBackup(backupPath string) error {
 
 // copyFile copies a file from src to dst.
 func copyFile(src, dst string) error {
-	sourceFile, err := os.Open(src)
+	sourceFile, err := os.Open(src) //#nosec G304 -- paths are internal database/backup paths, not user-controlled
 	if err != nil {
 		return err
 	}
 	defer sourceFile.Close()
 
-	destFile, err := os.Create(dst)
+	destFile, err := os.Create(dst) //#nosec G304 -- paths are internal database/backup paths, not user-controlled
 	if err != nil {
 		return err
 	}

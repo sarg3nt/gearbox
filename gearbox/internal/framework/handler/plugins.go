@@ -167,7 +167,7 @@ func (h *Handler) PluginTogglePost(w http.ResponseWriter, r *http.Request) {
 		if isAJAXRequest(r) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
-			json.NewEncoder(w).Encode(map[string]interface{}{"error": "Unauthorized"})
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": "Unauthorized"}) //#nosec G104
 			return
 		}
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -179,7 +179,7 @@ func (h *Handler) PluginTogglePost(w http.ResponseWriter, r *http.Request) {
 		if isAJAXRequest(r) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusForbidden)
-			json.NewEncoder(w).Encode(map[string]interface{}{"error": "Forbidden: insufficient permissions"})
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": "Forbidden: insufficient permissions"}) //#nosec G104
 			return
 		}
 		http.Error(w, "Forbidden: insufficient permissions", http.StatusForbidden)
@@ -205,7 +205,7 @@ func (h *Handler) PluginTogglePost(w http.ResponseWriter, r *http.Request) {
 		if isAJAXRequest(r) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(map[string]interface{}{"error": "Failed to get plugin"})
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": "Failed to get plugin"}) //#nosec G104
 			return
 		}
 		http.Redirect(w, r, redirectBase+"&error="+url.QueryEscape("Failed to get plugin"), http.StatusSeeOther)
@@ -216,7 +216,7 @@ func (h *Handler) PluginTogglePost(w http.ResponseWriter, r *http.Request) {
 		if isAJAXRequest(r) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusNotFound)
-			json.NewEncoder(w).Encode(map[string]interface{}{"error": "Integration not found"})
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": "Integration not found"}) //#nosec G104
 			return
 		}
 		http.Redirect(w, r, redirectBase+"&error="+url.QueryEscape("Integration not found"), http.StatusSeeOther)
@@ -230,7 +230,7 @@ func (h *Handler) PluginTogglePost(w http.ResponseWriter, r *http.Request) {
 		if isAJAXRequest(r) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(map[string]interface{}{"error": "Failed to toggle plugin"})
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": "Failed to toggle plugin"}) //#nosec G104
 			return
 		}
 		http.Redirect(w, r, redirectBase+"&error="+url.QueryEscape("Failed to toggle plugin"), http.StatusSeeOther)
@@ -255,7 +255,7 @@ func (h *Handler) PluginTogglePost(w http.ResponseWriter, r *http.Request) {
 	// Return JSON for AJAX requests
 	if isAJAXRequest(r) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]interface{}{ //#nosec G104
 			"success": true,
 			"message": plugin.DisplayName + " has been " + action,
 			"enabled": newEnabled,
@@ -792,7 +792,7 @@ func (h *Handler) APIPluginsHandler(w http.ResponseWriter, r *http.Request) {
 	if boxID == "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "No server specified"})
+		json.NewEncoder(w).Encode(map[string]string{"error": "No server specified"}) //#nosec G104
 		return
 	}
 
@@ -801,12 +801,12 @@ func (h *Handler) APIPluginsHandler(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("Failed to get plugins", "error", err)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to get plugins"})
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to get plugins"}) //#nosec G104
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(plugins)
+	json.NewEncoder(w).Encode(plugins) //#nosec G104
 }
 
 // APIPluginStatusHandler returns enabled status for plugins.
@@ -822,7 +822,7 @@ func (h *Handler) APIPluginStatusHandler(w http.ResponseWriter, r *http.Request)
 	if boxID == "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "No server specified"})
+		json.NewEncoder(w).Encode(map[string]string{"error": "No server specified"}) //#nosec G104
 		return
 	}
 
@@ -831,12 +831,12 @@ func (h *Handler) APIPluginStatusHandler(w http.ResponseWriter, r *http.Request)
 		h.logger.Error("Failed to get plugin status", "error", err)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to get plugin status"})
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to get plugin status"}) //#nosec G104
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(status)
+	json.NewEncoder(w).Encode(status) //#nosec G104
 }
 
 // APIMetricsStorageStatsHandler returns storage statistics for metrics data.
@@ -845,7 +845,7 @@ func (h *Handler) APIMetricsStorageStatsHandler(w http.ResponseWriter, r *http.R
 	if boxID == "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "No server specified"})
+		json.NewEncoder(w).Encode(map[string]string{"error": "No server specified"}) //#nosec G104
 		return
 	}
 
@@ -854,12 +854,12 @@ func (h *Handler) APIMetricsStorageStatsHandler(w http.ResponseWriter, r *http.R
 		h.logger.Error("Failed to get metrics storage stats", "error", err)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to get storage stats"})
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to get storage stats"}) //#nosec G104
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(stats)
+	json.NewEncoder(w).Encode(stats) //#nosec G104
 }
 
 // APIUpdatePluginSortOrder updates the sort order for plugins.
@@ -868,7 +868,7 @@ func (h *Handler) APIUpdatePluginSortOrder(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized"})
+		json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized"}) //#nosec G104
 		return
 	}
 
@@ -876,7 +876,7 @@ func (h *Handler) APIUpdatePluginSortOrder(w http.ResponseWriter, r *http.Reques
 	if !h.authManager.HasPermission(r, models.ComponentPlugins, models.PermissionManage) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Forbidden"})
+		json.NewEncoder(w).Encode(map[string]string{"error": "Forbidden"}) //#nosec G104
 		return
 	}
 
@@ -891,7 +891,7 @@ func (h *Handler) APIUpdatePluginSortOrder(w http.ResponseWriter, r *http.Reques
 	if boxID == "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "No server specified"})
+		json.NewEncoder(w).Encode(map[string]string{"error": "No server specified"}) //#nosec G104
 		return
 	}
 
@@ -900,7 +900,7 @@ func (h *Handler) APIUpdatePluginSortOrder(w http.ResponseWriter, r *http.Reques
 	if err := json.NewDecoder(r.Body).Decode(&orders); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid request body"})
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid request body"}) //#nosec G104
 		return
 	}
 
@@ -908,14 +908,14 @@ func (h *Handler) APIUpdatePluginSortOrder(w http.ResponseWriter, r *http.Reques
 		h.logger.Error("Failed to update plugin sort orders", "error", err)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to update sort order"})
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to update sort order"}) //#nosec G104
 		return
 	}
 
 	h.logAudit(r, user.ID, "plugin_reordered", "Updated plugin display order")
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"success": "Order updated"})
+	json.NewEncoder(w).Encode(map[string]string{"success": "Order updated"}) //#nosec G104
 }
 
 // APIClearMetricsDataHandler clears all metrics data for a server.
@@ -924,7 +924,7 @@ func (h *Handler) APIClearMetricsDataHandler(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized"})
+		json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized"}) //#nosec G104
 		return
 	}
 
@@ -932,7 +932,7 @@ func (h *Handler) APIClearMetricsDataHandler(w http.ResponseWriter, r *http.Requ
 	if !h.authManager.HasPermission(r, models.ComponentPlugins, models.PermissionManage) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Forbidden"})
+		json.NewEncoder(w).Encode(map[string]string{"error": "Forbidden"}) //#nosec G104
 		return
 	}
 
@@ -940,7 +940,7 @@ func (h *Handler) APIClearMetricsDataHandler(w http.ResponseWriter, r *http.Requ
 	if boxID == "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "No server specified"})
+		json.NewEncoder(w).Encode(map[string]string{"error": "No server specified"}) //#nosec G104
 		return
 	}
 
@@ -948,14 +948,14 @@ func (h *Handler) APIClearMetricsDataHandler(w http.ResponseWriter, r *http.Requ
 		h.logger.Error("Failed to clear metrics data", "error", err)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to clear metrics data"})
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to clear metrics data"}) //#nosec G104
 		return
 	}
 
 	h.logAudit(r, user.ID, "metrics_cleared", "Cleared all metrics data for server "+boxID)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"success": "Metrics data cleared"})
+	json.NewEncoder(w).Encode(map[string]string{"success": "Metrics data cleared"}) //#nosec G104
 }
 
 // deployPluginDashboards deploys predefined dashboards for a plugin.

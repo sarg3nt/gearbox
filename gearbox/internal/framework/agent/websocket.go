@@ -154,7 +154,7 @@ func (w *WSClient) connectAndRead(ctx context.Context) error {
 		w.mu.Lock()
 		w.connected = false
 		if w.conn != nil {
-			w.conn.Close()
+			_ = w.conn.Close()
 			w.conn = nil
 		}
 		cb := w.connectionCallback

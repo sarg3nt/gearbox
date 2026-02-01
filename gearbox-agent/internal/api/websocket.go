@@ -97,7 +97,7 @@ func (h *WSHandler) HandleEvents(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("WebSocket upgrade failed", "error", err)
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Subscribe to events
 	sub := h.eventBus.Subscribe()
