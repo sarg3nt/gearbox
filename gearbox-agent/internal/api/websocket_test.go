@@ -89,6 +89,9 @@ func TestWSHandler_HandleEvents(t *testing.T) {
 	}
 	defer conn.Close()
 
+	// Wait for subscription to register on the server side
+	time.Sleep(50 * time.Millisecond)
+
 	// Publish an event
 	testEvent := events.NewEvent(events.EventSyncStarted, map[string]interface{}{
 		"test_key": "test_value",
@@ -134,6 +137,9 @@ func TestWSHandler_MultipleEvents(t *testing.T) {
 		t.Fatalf("Failed to connect WebSocket: %v", err)
 	}
 	defer conn.Close()
+
+	// Wait for subscription to register on the server side
+	time.Sleep(50 * time.Millisecond)
 
 	// Publish multiple events
 	eventTypes := []events.EventType{

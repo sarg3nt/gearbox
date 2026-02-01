@@ -198,6 +198,14 @@ func TestIsEntityDisabled(t *testing.T) {
 func TestMigrationSystemInitialization(t *testing.T) {
 	db := setupTestDB(t)
 
+	// Check if migration files exist using the same logic as the migration manager
+	mm := NewMigrateManager(db.db, db.logger)
+	hasMigrations := mm.hasMigrationFiles()
+
+	if !hasMigrations {
+		t.Skip("no migration files present, skipping migration verification")
+	}
+
 	// Verify migration tracking table exists
 	var count int
 	err := db.db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='schema_migrations'").Scan(&count)

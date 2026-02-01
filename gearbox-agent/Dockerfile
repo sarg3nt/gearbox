@@ -19,7 +19,7 @@ ARG COMMIT_SHA=unknown
 ARG BUILD_DATE=unknown
 
 # Build the application with CGO disabled for static binary
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
     -ldflags="-s -w -X main.Version=${VERSION} -X main.CommitSHA=${COMMIT_SHA} -X main.BuildDate=${BUILD_DATE}" \
     -o gearbox-agent \
     ./cmd/gearbox-agent
