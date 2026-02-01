@@ -1592,6 +1592,8 @@ func hasAnyEnabledIntegration(ctx context.Context) bool {
 // integrationPath returns the URL path for a given integration name.
 func integrationPath(name string) string {
 	switch name {
+	case "haproxy":
+		return "/haproxy"
 	case "metrics":
 		return "/history"
 	case "logs":

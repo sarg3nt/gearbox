@@ -627,6 +627,7 @@ func main() {
 		r.Get("/config/firewall/{boxID}", h.FirewallConfigPage)
 
 		// HTMX partial routes (return HTML fragments)
+		r.Get("/htmx/sidebar-nav", h.SidebarNavPartialHandler)
 		r.Get("/htmx/{boxID}/status-summary", h.StatusSummaryPartialHandler)
 		r.Get("/htmx/{boxID}/backend-grid", h.BackendGridPartialHandler)
 		r.Get("/htmx/{boxID}/stats", h.StatsPartialHandler)

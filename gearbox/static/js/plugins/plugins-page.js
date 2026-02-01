@@ -191,6 +191,8 @@ const serverSelector = document.getElementById('server-selector');
 if (serverSelector && window.BoxSelector) {
 	window.BoxSelector.initFromSelect(serverSelector);
 }
+// Set Done button to first enabled plugin on load
+updateDoneButton();
 	});
 
 	// Toggle integration via AJAX - allows multiple toasts without page reload
@@ -236,6 +238,10 @@ fetch('/settings/plugins/' + encodeURIComponent(pluginName) + '/toggle?server=' 
 		if (window.showToast) {
 			window.showToast(data.message || (displayName + ' has been ' + (newEnabled ? 'enabled' : 'disabled')), 'success', 3000);
 		}
+		// Refresh sidebar nav to reflect enabled/disabled state
+		refreshSidebar();
+		// Update Done button to point to first enabled plugin
+		updateDoneButton();
 	}
 })
 .catch(error => {
@@ -299,4 +305,55 @@ if (card) {
 		}
 	}
 }
+	}
+
+	// Plugin name to URL path mapping
+	const pluginPaths = {
+		'haproxy': '/haproxy',
+		'metrics': '/history',
+		'logs': '/logs',
+		'services': '/services',
+		'certificates': '/certificates',
+		'traffic': '/traffic',
+		'alerts': '/alerts',
+		'os_updates': '/os-updates'
+	};
+
+	// Refresh sidebar nav by fetching updated HTML from server
+	function refreshSidebar() {
+		const navList = document.getElementById('sidebar-nav-list');
+		if (!navList) return;
+
+		fetch('/htmx/sidebar-nav')
+			.then(response => {
+				if (!response.ok) throw new Error('Failed to fetch sidebar');
+				return response.text();
+			})
+			.then(html => {
+				navList.innerHTML = html;
+			})
+			.catch(err => {
+				console.error('Failed to refresh sidebar:', err);
+			});
+	}
+
+	// Update Done button href to point to first enabled plugin
+	function updateDoneButton() {
+		const doneBtn = document.getElementById('plugins-done-btn');
+		if (!doneBtn) return;
+
+		// Read current toggle states from the plugin cards
+		const cards = document.querySelectorAll('.plugin-card');
+		for (const card of cards) {
+			const toggle = card.querySelector('[data-enabled]');
+			if (toggle && toggle.dataset.enabled === 'true') {
+				const name = card.dataset.pluginName;
+				if (name && pluginPaths[name]) {
+					doneBtn.href = pluginPaths[name];
+					return;
+				}
+			}
+		}
+		// No enabled plugins, fall back to root
+		doneBtn.href = '/';
 	}
