@@ -103,7 +103,7 @@ func (p *Plugin) PredefinedDashboards() []plugin.DashboardDefinition {
 			DefaultEnabled: true,
 			YAML: `version: "1.0"
 name: HAProxy Overview
-description: HAProxy monitoring dashboard with status summary, backend grid, and system metrics
+description: HAProxy monitoring dashboard with status summary and backend grid
 created_by: plugin:haproxy
 plugin_name: haproxy
 editable: false
@@ -131,16 +131,6 @@ widgets:
       default_collapsed: false
       server_id: ""
       show_filters: true
-  - id: system-metrics-1
-    type: system-metrics
-    position:
-      row: 3
-      column: 1
-      width: 12
-      height: auto
-    config:
-      server_id: ""
-      show_title: true
 `,
 		},
 	}
