@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -136,8 +137,8 @@ func (h *Handler) HAProxyBoxCreatePost(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Redirect to servers list page
-	http.Redirect(w, r, "/settings/boxes", http.StatusSeeOther)
+	// Redirect to plugins page so user can enable plugins for this new server
+	http.Redirect(w, r, "/settings/plugins?server="+url.QueryEscape(server.BoxID), http.StatusSeeOther)
 }
 
 // HAProxyBoxEditPage shows the form for editing a server.

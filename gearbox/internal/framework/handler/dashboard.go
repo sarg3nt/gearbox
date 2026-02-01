@@ -120,42 +120,6 @@ func (h *DashboardHandler) ViewDashboard(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// If dashboard is empty and editable, guide the user to set up their dashboard
-	if dash.Editable && len(dash.Widgets) == 0 {
-		// Determine the current server ID to check plugin state
-		boxID := h.boxID
-		if boxID == "" {
-			// Fall back to the first enabled server
-			if servers, err := h.db.GetEnabledBoxes(); err == nil && len(servers) > 0 {
-				boxID = servers[0].BoxID
-			}
-		}
-
-		// Check if any plugins are enabled for this server.
-		// If not, send them to the plugins page first so they can enable plugins
-		// (which registers widgets they can then add to dashboards).
-		if boxID != "" {
-			enabledPlugins, err := h.db.GetEnabledPlugins(boxID)
-			if err == nil {
-				hasEnabledPlugin := false
-				for _, enabled := range enabledPlugins {
-					if enabled {
-						hasEnabledPlugin = true
-						break
-					}
-				}
-				if !hasEnabledPlugin {
-					http.Redirect(w, r, "/settings/plugins", http.StatusSeeOther)
-					return
-				}
-			}
-		}
-
-		// Plugins are enabled, redirect to edit mode with widget palette open
-		http.Redirect(w, r, "/dashboards/"+slug+"/edit?open_palette=1", http.StatusSeeOther)
-		return
-	}
-
 	// Render dashboard
 	content, err := h.renderer.Render(r.Context(), dash, h.boxID, h.userID)
 	if err != nil {
