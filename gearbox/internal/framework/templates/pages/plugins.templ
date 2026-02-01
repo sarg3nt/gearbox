@@ -72,6 +72,16 @@ templ PluginsPage(user *models.User, servers []models.BoxConfig, currentServerID
 				}
 			</div>
 
+			<!-- Done button to navigate to main dashboard -->
+			<div class="mt-8 flex justify-end">
+				<a
+					href="/"
+					class="px-6 py-2.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+				>
+					Done
+				</a>
+			</div>
+
 			<script src="/static/js/plugins/plugins-page.js"></script>
 		</div>
 	}

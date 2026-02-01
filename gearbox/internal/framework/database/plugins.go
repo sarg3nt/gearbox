@@ -162,7 +162,7 @@ type Plugin struct {
 	SortOrder   int             `json:"sort_order"` // Order for display in UI (lower = higher priority)
 	CreatedAt   time.Time       `json:"created_at"`
 	UpdatedAt   time.Time       `json:"updated_at"`
-	UpdatedBy   *int64          `json:"updated_by,omitempty"`
+	UpdatedBy   *string         `json:"updated_by,omitempty"`
 }
 
 // DefaultPlugins returns the default integration configurations for a server.
@@ -302,7 +302,7 @@ func (d *DB) initPluginsSchema() error {
 		sort_order INTEGER NOT NULL DEFAULT 0,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-		updated_by INTEGER,
+		updated_by TEXT,
 		UNIQUE(server_id, name),
 		FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
 	);

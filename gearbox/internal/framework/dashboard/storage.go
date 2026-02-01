@@ -209,7 +209,7 @@ func (s *Storage) CreateDefaultDashboard() error {
 		return nil
 	}
 
-	// Create default dashboard
+	// Create a default, empty, editable dashboard so users can configure it as needed.
 	dashboard := &Dashboard{
 		Version:     "1.0",
 		Name:        "Dashboard",
@@ -221,25 +221,8 @@ func (s *Storage) CreateDefaultDashboard() error {
 			Columns: 12,
 			Gap:     4,
 		},
-		Widgets: []Widget{
-			{
-				ID:   "welcome-1",
-				Type: "alert-banner",
-				Position: WidgetPosition{
-					Row:    1,
-					Column: 1,
-					Width:  12,
-					Height: "auto",
-				},
-				Config: map[string]interface{}{
-					"severity":   "info",
-					"message":    "Welcome to Gearbox! This is your default dashboard. You can customize it by adding widgets.",
-					"icon":       "info",
-					"dismissible": true,
-				},
-			},
-		},
-		Slug: "dashboard",
+		Widgets: []Widget{},
+		Slug:    "dashboard",
 	}
 
 	// Save dashboard
