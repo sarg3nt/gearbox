@@ -59,6 +59,7 @@ func updateSummaryCardDefinition() *widget.WidgetDefinition {
 		Name:        "Update Summary Card",
 		Description: "Summary showing count of available updates and security updates",
 		Category:    "system-management",
+		PluginName:  "os_updates",
 		Icon:        "information-circle",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
@@ -90,6 +91,7 @@ func availableUpdatesListDefinition() *widget.WidgetDefinition {
 		Name:        "Available Updates List",
 		Description: "Table of packages with available updates, filterable by type and installable with selection",
 		Category:    "system-management",
+		PluginName:  "os_updates",
 		Icon:        "clipboard-list",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
@@ -127,6 +129,7 @@ func updateHistoryDefinition() *widget.WidgetDefinition {
 		Name:        "Update History",
 		Description: "Log of recently installed package updates with timestamps and version information",
 		Category:    "system-management",
+		PluginName:  "os_updates",
 		Icon:        "clock",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{

@@ -59,6 +59,7 @@ func servicesOverviewCardDefinition() *widget.WidgetDefinition {
 		Name:        "Services Overview Card",
 		Description: "Summary of service statuses: running, stopped, failed",
 		Category:    "system-monitoring",
+		PluginName:  "services",
 		Icon:        "activity",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
@@ -90,6 +91,7 @@ func servicesListDefinition() *widget.WidgetDefinition {
 		Name:        "Services List",
 		Description: "Complete list of system services with status and control buttons",
 		Category:    "system-monitoring",
+		PluginName:  "services",
 		Icon:        "list",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
@@ -135,6 +137,7 @@ func failedServicesAlertDefinition() *widget.WidgetDefinition {
 		Name:        "Failed Services Alert",
 		Description: "Alert widget showing services that have failed",
 		Category:    "system-monitoring",
+		PluginName:  "services",
 		Icon:        "alert-triangle",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{

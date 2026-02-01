@@ -60,6 +60,7 @@ func trafficSummaryCardDefinition() *widget.WidgetDefinition {
 		Name:        "Traffic Summary Card",
 		Description: "5-card summary showing requests, bandwidth, unique sources, error rate, and response codes",
 		Category:    "traffic-monitoring",
+		PluginName:  "traffic",
 		Icon:        "chart-bar",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
@@ -91,6 +92,7 @@ func trafficFlowVisualizationDefinition() *widget.WidgetDefinition {
 		Name:        "Traffic Flow Visualization",
 		Description: "Interactive D3.js network visualization showing traffic flow between sources, HAProxy, and backends",
 		Category:    "traffic-monitoring",
+		PluginName:  "traffic",
 		Icon:        "share",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
@@ -128,6 +130,7 @@ func topSourcesTableDefinition() *widget.WidgetDefinition {
 		Name:        "Top Traffic Sources Table",
 		Description: "Table showing the most active IP addresses with request counts, bandwidth, and status",
 		Category:    "traffic-monitoring",
+		PluginName:  "traffic",
 		Icon:        "users",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
@@ -165,6 +168,7 @@ func backendTrafficTableDefinition() *widget.WidgetDefinition {
 		Name:        "Backend Traffic Table",
 		Description: "Table showing traffic distribution, latency, and error rates across all backends",
 		Category:    "traffic-monitoring",
+		PluginName:  "traffic",
 		Icon:        "server",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{

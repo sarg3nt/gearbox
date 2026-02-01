@@ -51,6 +51,7 @@ func activeAlertsCardDefinition() *widget.WidgetDefinition {
 		Name:        "Active Alerts Card",
 		Description: "Displays count of active alerts requiring attention",
 		Category:    "alerts",
+		PluginName:  "alerts",
 		Icon:        "alert-triangle",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
@@ -76,6 +77,7 @@ func acknowledgedAlertsCardDefinition() *widget.WidgetDefinition {
 		Name:        "Acknowledged Alerts Card",
 		Description: "Displays count of acknowledged alerts being investigated",
 		Category:    "alerts",
+		PluginName:  "alerts",
 		Icon:        "check-circle",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
@@ -101,6 +103,7 @@ func resolvedAlertsCardDefinition() *widget.WidgetDefinition {
 		Name:        "Resolved Alerts Card",
 		Description: "Displays count of resolved alerts",
 		Category:    "alerts",
+		PluginName:  "alerts",
 		Icon:        "check-square",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
@@ -126,6 +129,7 @@ func alertRulesCardDefinition() *widget.WidgetDefinition {
 		Name:        "Alert Rules Card",
 		Description: "Displays count of enabled alert rules with configuration link",
 		Category:    "alerts",
+		PluginName:  "alerts",
 		Icon:        "sliders",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
@@ -151,6 +155,7 @@ func alertsGridDefinition() *widget.WidgetDefinition {
 		Name:        "Alerts Grid",
 		Description: "Full alert list with filtering, sorting, and action buttons",
 		Category:    "alerts",
+		PluginName:  "alerts",
 		Icon:        "list",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{

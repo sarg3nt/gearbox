@@ -35,6 +35,7 @@ func placementBoxDefinition() *widget.WidgetDefinition {
 		Name:        "Placement Box",
 		Description: "Container widget with configurable styling and layout",
 		Category:    "layout",
+		PluginName:  "core",
 		Icon:        "box",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
@@ -89,6 +90,7 @@ func statusCardDefinition() *widget.WidgetDefinition {
 		Name:        "Status Card",
 		Description: "Displays status information with health indicator and metrics",
 		Category:    "status-metrics",
+		PluginName:  "core",
 		Icon:        "activity",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
@@ -177,6 +179,7 @@ func metricCardDefinition() *widget.WidgetDefinition {
 		Name:        "Metric Card",
 		Description: "Displays a single metric with value, trend, and threshold coloring",
 		Category:    "status-metrics",
+		PluginName:  "core",
 		Icon:        "trending-up",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
@@ -248,6 +251,7 @@ func collapsibleContainerDefinition() *widget.WidgetDefinition {
 		Name:        "Collapsible Container",
 		Description: "Container that can be expanded or collapsed",
 		Category:    "layout",
+		PluginName:  "core",
 		Icon:        "chevrons-up-down",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{

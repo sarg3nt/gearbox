@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sarg3nt/gearbox/internal/framework/auth"
 	"github.com/sarg3nt/gearbox/internal/framework/dashboard"
+	"github.com/sarg3nt/gearbox/internal/framework/database"
 	"github.com/sarg3nt/gearbox/internal/framework/templates/pages"
 	"github.com/sarg3nt/gearbox/internal/framework/widget"
 )
@@ -18,6 +20,7 @@ type DashboardHandler struct {
 	renderer           *dashboard.Renderer
 	widgetRegistry     *widget.Registry
 	dataSourceRegistry *widget.DataSourceRegistry
+	db                 *database.DB
 	logger             *slog.Logger
 	serverID           string
 	userID             string
@@ -28,6 +31,7 @@ func NewDashboardHandler(
 	storage *dashboard.Storage,
 	widgetRegistry *widget.Registry,
 	dataSourceRegistry *widget.DataSourceRegistry,
+	db *database.DB,
 	logger *slog.Logger,
 	serverID string,
 	userID string,
@@ -43,6 +47,7 @@ func NewDashboardHandler(
 		renderer:           renderer,
 		widgetRegistry:     widgetRegistry,
 		dataSourceRegistry: dataSourceRegistry,
+		db:                 db,
 		logger:             logger,
 		serverID:           serverID,
 		userID:             userID,
@@ -66,6 +71,7 @@ func (h *DashboardHandler) RegisterRoutes(r chi.Router) {
 	r.Put("/api/dashboards/{slug}", h.UpdateDashboard)
 	r.Post("/api/dashboards/order", h.SaveDashboardOrder)
 	r.Post("/api/dashboards/{slug}/toggle", h.TogglePluginDashboard)
+	r.Get("/api/dashboards/widgets", h.GetWidgetPalette)
 }
 
 // ListDashboards handles GET /dashboards
@@ -307,4 +313,93 @@ func (h *DashboardHandler) UpdateDashboard(w http.ResponseWriter, r *http.Reques
 		"status": "success",
 		"slug":   dash.Slug,
 	})
+}
+
+// GetWidgetPalette handles GET /api/dashboards/widgets
+// Returns available widgets from enabled plugins for the selected server
+func (h *DashboardHandler) GetWidgetPalette(w http.ResponseWriter, r *http.Request) {
+	// Get server ID from query parameter
+	serverID := r.URL.Query().Get("server_id")
+	if serverID == "" {
+		serverID = h.serverID // Use default if not specified
+	}
+
+	// Get optional filter parameters
+	pluginFilter := r.URL.Query().Get("plugin")
+	categoryFilter := r.URL.Query().Get("category")
+	searchTerm := r.URL.Query().Get("search")
+
+	// Get enabled plugins for this server
+	enabledPlugins, err := h.db.GetEnabledPlugins(serverID)
+	if err != nil {
+		h.logger.Error("failed to get enabled plugins", "server_id", serverID, "error", err)
+		http.Error(w, "Failed to get enabled plugins", http.StatusInternalServerError)
+		return
+	}
+
+	// Get all registered widgets
+	allWidgets := h.widgetRegistry.List()
+
+	// Filter widgets based on enabled plugins and query parameters
+	var filteredWidgets []*widget.WidgetDefinition
+	for _, w := range allWidgets {
+		// Skip widgets from disabled plugins (unless it's a core widget)
+		if w.PluginName != "core" {
+			if enabled, ok := enabledPlugins[w.PluginName]; !ok || !enabled {
+				continue
+			}
+		}
+
+		// Apply plugin filter
+		if pluginFilter != "" && w.PluginName != pluginFilter {
+			continue
+		}
+
+		// Apply category filter
+		if categoryFilter != "" && w.Category != categoryFilter {
+			continue
+		}
+
+		// Apply search filter (search in name and description)
+		if searchTerm != "" {
+			searchLower := strings.ToLower(searchTerm)
+			nameLower := strings.ToLower(w.Name)
+			descLower := strings.ToLower(w.Description)
+			if !strings.Contains(nameLower, searchLower) && !strings.Contains(descLower, searchLower) {
+				continue
+			}
+		}
+
+		filteredWidgets = append(filteredWidgets, w)
+	}
+
+	// Convert to JSON-friendly format
+	type WidgetResponse struct {
+		Type        string `json:"type"`
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Category    string `json:"category"`
+		PluginName  string `json:"plugin_name"`
+		Icon        string `json:"icon"`
+	}
+
+	response := make([]WidgetResponse, 0, len(filteredWidgets))
+	for _, w := range filteredWidgets {
+		response = append(response, WidgetResponse{
+			Type:        w.Type,
+			Name:        w.Name,
+			Description: w.Description,
+			Category:    w.Category,
+			PluginName:  w.PluginName,
+			Icon:        w.Icon,
+		})
+	}
+
+	// Return JSON response
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		h.logger.Error("failed to encode widget palette response", "error", err)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
 }

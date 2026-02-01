@@ -57,6 +57,7 @@ func logViewerDefinition() *widget.WidgetDefinition {
 		Name:        "Log Viewer",
 		Description: "Full-featured log viewer with real-time streaming, ANSI color support, filtering, and export capabilities",
 		Category:    "system-monitoring",
+		PluginName:  "logs",
 		Icon:        "document-text",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{

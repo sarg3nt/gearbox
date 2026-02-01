@@ -23,6 +23,18 @@ func getPath(paths []string) string {
 	return ""
 }
 
+// shouldHideSidebar determines if the sidebar should be hidden based on context
+// Returns true if there are no servers configured (initial setup state)
+func shouldHideSidebar(ctx context.Context, currentPath string) bool {
+	// Check if plugin status is in context - if not, we're in initial setup
+	_, hasPluginStatus := auth.GetPluginStatusFromContext(ctx)
+	_, hasPluginOrder := auth.GetPluginOrderFromContext(ctx)
+
+	// If neither plugin status nor order is set, we're in initial setup (no servers)
+	// Hide the sidebar to provide a cleaner first-time experience
+	return !hasPluginStatus && !hasPluginOrder
+}
+
 templ Base(title string, user *models.User, currentPath ...string) {
 	<!DOCTYPE html>
 	<html lang="en" class="h-full">
@@ -683,13 +695,21 @@ templ Base(title string, user *models.User, currentPath ...string) {
 	<body class="h-full bg-gray-100 dark:bg-slate-900">
 		@ui.CollapsibleRestoreScript()
 		if user != nil {
-			@Sidebar(user, getPath(currentPath))
-			<div id="main-content" class="main-content ml-64 min-h-screen flex flex-col pt-[57px]">
-				@Header()
-				<main class="flex-1 p-6">
+			// Check if we should hide the sidebar (e.g., on initial setup pages)
+			if shouldHideSidebar(ctx, getPath(currentPath)) {
+				<!-- No sidebar, full-width layout for initial setup -->
+				<main class="min-h-screen">
 					{ children... }
 				</main>
-			</div>
+			} else {
+				@Sidebar(user, getPath(currentPath))
+				<div id="main-content" class="main-content ml-64 min-h-screen flex flex-col pt-[57px]">
+					@Header()
+					<main class="flex-1 p-6">
+						{ children... }
+					</main>
+				</div>
+			}
 		} else {
 			<main class="min-h-screen">
 				{ children... }
@@ -1078,7 +1098,6 @@ templ Sidebar(user *models.User, currentPath string) {
 		<nav class="flex-1 py-4">
 			<ul class="space-y-1">
 				@SidebarLink("/", "Dashboard", SidebarIconDashboard(), currentPath)
-				@SidebarLink("/status-grid", "Status Grid", SidebarIconGrid(), currentPath)
 				@OrderedIntegrationLinks(currentPath)
 			</ul>
 		</nav>

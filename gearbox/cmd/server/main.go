@@ -378,6 +378,7 @@ func main() {
 		dashboardStorage,
 		widgetRegistry,
 		dataSourceRegistry,
+		db,
 		logger,
 		"", // serverID - can be set per request
 		"", // userID - can be set per request

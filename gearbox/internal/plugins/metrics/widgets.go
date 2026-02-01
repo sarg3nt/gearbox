@@ -64,6 +64,7 @@ func cpuUsageGraphDefinition() *widget.WidgetDefinition {
 		Name:        "CPU Usage Graph",
 		Description: "Time-series graph showing CPU usage percentage over time",
 		Category:    "system-metrics",
+		PluginName:  "metrics",
 		Icon:        "cpu",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
@@ -101,6 +102,7 @@ func memoryUsageGraphDefinition() *widget.WidgetDefinition {
 		Name:        "Memory Usage Graph",
 		Description: "Time-series graph showing memory usage over time",
 		Category:    "system-metrics",
+		PluginName:  "metrics",
 		Icon:        "database",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
@@ -138,6 +140,7 @@ func diskUsageGraphDefinition() *widget.WidgetDefinition {
 		Name:        "Disk Usage Graph",
 		Description: "Time-series graph showing disk usage by mount point",
 		Category:    "system-metrics",
+		PluginName:  "metrics",
 		Icon:        "hard-drive",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
@@ -175,6 +178,7 @@ func diskIOGraphDefinition() *widget.WidgetDefinition {
 		Name:        "Disk I/O Graph",
 		Description: "Time-series graph showing disk read/write rates",
 		Category:    "system-metrics",
+		PluginName:  "metrics",
 		Icon:        "activity",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
@@ -212,6 +216,7 @@ func networkTrafficGraphDefinition() *widget.WidgetDefinition {
 		Name:        "Network Traffic Graph",
 		Description: "Time-series graph showing network bandwidth usage",
 		Category:    "system-metrics",
+		PluginName:  "metrics",
 		Icon:        "wifi",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
@@ -249,6 +254,7 @@ func loadAverageGraphDefinition() *widget.WidgetDefinition {
 		Name:        "Load Average Graph",
 		Description: "Time-series graph showing system load average (1m, 5m, 15m)",
 		Category:    "system-metrics",
+		PluginName:  "metrics",
 		Icon:        "trending-up",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
@@ -286,6 +292,7 @@ func uptimeDisplayDefinition() *widget.WidgetDefinition {
 		Name:        "System Uptime",
 		Description: "Displays system uptime with formatted output",
 		Category:    "system-metrics",
+		PluginName:  "metrics",
 		Icon:        "clock",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{

@@ -12,6 +12,8 @@ import (
 // DashboardEditorPage renders the visual dashboard editor with live widget preview
 templ DashboardEditorPage(dash *dashboard.Dashboard, content templ.Component, widgets []*widget.WidgetDefinition, user *models.User, currentPath string) {
 	@layouts.Base("Edit Dashboard", user, currentPath) {
+		<!-- Widget Palette CSS -->
+		<link rel="stylesheet" href="/static/css/dashboard/palette.css"/>
 		<!-- Edit Mode Indicator -->
 		<div class="mb-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
 			<div class="flex items-center justify-between">
@@ -49,16 +51,43 @@ templ DashboardEditorPage(dash *dashboard.Dashboard, content templ.Component, wi
 
 		<!-- Widget Palette Panel (collapsible) -->
 		<div id="widget-palette-panel" class="hidden mb-4 bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg shadow-lg">
-			<div class="p-4 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
-				<h3 class="font-semibold text-gray-900 dark:text-gray-100">Available Widgets</h3>
-				<button onclick="toggleWidgetPalette()" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
-					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-					</svg>
-				</button>
+			<!-- Fixed Header -->
+			<div class="p-4 border-b border-gray-200 dark:border-slate-700 sticky top-0 bg-white dark:bg-slate-900 z-10">
+				<div class="flex items-center justify-between mb-3">
+					<h3 class="font-semibold text-gray-900 dark:text-gray-100">Available Widgets</h3>
+					<button onclick="toggleWidgetPalette()" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+						<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+						</svg>
+					</button>
+				</div>
+
+				<!-- Search Input -->
+				<input
+					type="text"
+					id="widget-palette-search"
+					placeholder="Search widgets..."
+					class="w-full px-3 py-2 mb-2 text-sm border border-gray-300 dark:border-slate-600 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+				/>
+
+				<!-- Filter by Plugin -->
+				<select
+					id="widget-palette-plugin-filter"
+					class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+				>
+					<option value="">All Plugins</option>
+					<!-- Populated dynamically by JavaScript -->
+				</select>
 			</div>
-			<div class="p-4 max-h-96 overflow-y-auto">
-				@WidgetPalette(widgets)
+
+			<!-- Scrollable Widget List -->
+			<div id="widget-palette-list" class="p-4 max-h-96 overflow-y-auto">
+				<div class="text-center text-gray-500 dark:text-gray-400 py-8">
+					<svg class="w-8 h-8 mx-auto mb-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+					</svg>
+					<p class="text-sm">Loading widgets...</p>
+				</div>
 			</div>
 		</div>
 
@@ -354,11 +383,11 @@ templ WidgetConfigModal() {
 }
 
 // DashboardEditorScript provides the editor JavaScript
-
-// DashboardEditorScript provides the editor JavaScript
 templ DashboardEditorScript(dash *dashboard.Dashboard) {
 	<!-- Load Sortable.js module -->
 	<script type="module" src="/static/js/dashboard/sortable-loader.js"></script>
+	<!-- Load widget palette logic -->
+	<script src="/static/js/dashboard/palette.js" defer></script>
 	<!-- Load dashboard editor logic -->
 	<script src="/static/js/dashboard/editor.js" defer></script>
 }

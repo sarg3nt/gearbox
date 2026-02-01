@@ -36,6 +36,7 @@ func statusSummaryDoughnutsDefinition() *widget.WidgetDefinition {
 		Name:        "HAProxy Status Summary",
 		Description: "Three doughnut charts showing health status of frontends, backends, and servers",
 		Category:    "haproxy-monitoring",
+		PluginName:  "haproxy",
 		Icon:        "activity",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
@@ -47,8 +48,8 @@ func statusSummaryDoughnutsDefinition() *widget.WidgetDefinition {
 			Required: []string{},
 		},
 		Renderer: func(ctx context.Context, config map[string]any, data any) (templ.Component, error) {
-			// Get server ID from config or use first available server
-			serverID := getStringFromConfig(config, "server_id", "light-hugger")
+			// Get server ID from config or use empty string (widget should select first available)
+			serverID := getStringFromConfig(config, "server_id", "")
 			// For now, use HTMX to load the content dynamically
 			return HAProxyStatusSummaryWidgetHTMX(serverID), nil
 		},
@@ -71,6 +72,7 @@ func backendStatusGridDefinition() *widget.WidgetDefinition {
 		Name:        "HAProxy Backend Grid",
 		Description: "Collapsible grid of backend status cards grouped by frontend",
 		Category:    "haproxy-monitoring",
+		PluginName:  "haproxy",
 		Icon:        "grid",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
@@ -92,7 +94,7 @@ func backendStatusGridDefinition() *widget.WidgetDefinition {
 			Required: []string{},
 		},
 		Renderer: func(ctx context.Context, config map[string]any, data any) (templ.Component, error) {
-			serverID := getStringFromConfig(config, "server_id", "light-hugger")
+			serverID := getStringFromConfig(config, "server_id", "")
 			return HAProxyBackendGridWidgetHTMX(serverID), nil
 		},
 	}
@@ -106,6 +108,7 @@ func systemMetricsWidgetDefinition() *widget.WidgetDefinition {
 		Name:        "System Metrics",
 		Description: "CPU, memory, disk, and network metrics with real-time updates",
 		Category:    "system-monitoring",
+		PluginName:  "metrics",
 		Icon:        "cpu",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
@@ -122,7 +125,7 @@ func systemMetricsWidgetDefinition() *widget.WidgetDefinition {
 			Required: []string{},
 		},
 		Renderer: func(ctx context.Context, config map[string]any, data any) (templ.Component, error) {
-			serverID := getStringFromConfig(config, "server_id", "light-hugger")
+			serverID := getStringFromConfig(config, "server_id", "")
 			return SystemMetricsWidgetHTMX(serverID), nil
 		},
 	}
@@ -136,6 +139,7 @@ func serviceStatusWidgetDefinition() *widget.WidgetDefinition {
 		Name:        "Service Status",
 		Description: "Status indicators for critical system services",
 		Category:    "system-monitoring",
+		PluginName:  "services",
 		Icon:        "shield",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
@@ -147,7 +151,7 @@ func serviceStatusWidgetDefinition() *widget.WidgetDefinition {
 			Required: []string{},
 		},
 		Renderer: func(ctx context.Context, config map[string]any, data any) (templ.Component, error) {
-			serverID := getStringFromConfig(config, "server_id", "light-hugger")
+			serverID := getStringFromConfig(config, "server_id", "")
 			// Service status is included in the metrics widget, so just show metrics
 			return SystemMetricsWidgetHTMX(serverID), nil
 		},
@@ -162,6 +166,7 @@ func certificateWarningsWidgetDefinition() *widget.WidgetDefinition {
 		Name:        "Certificate Warnings",
 		Description: "Warnings for expired or expiring SSL/TLS certificates",
 		Category:    "security-monitoring",
+		PluginName:  "certificates",
 		Icon:        "alert-triangle",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{

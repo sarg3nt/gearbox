@@ -90,22 +90,40 @@ Framework = Shared services and building blocks (graphs, tables, panels, cards, 
 
 **Remaining Tasks:**
 
-#### Task 1: Widget Palette API
+#### Task 1: Widget Palette API ✅
 
-- [ ] Create `/api/dashboards/widgets` endpoint in `gearbox/internal/framework/handler/dashboard.go`
-- [ ] Return all available widgets from **enabled plugins only** for the selected server
-- [ ] Support filtering by plugin name, category, search term
-- [ ] Register route in router setup
-- [ ] Test with curl/Postman
+- [x] Create `/api/dashboards/widgets` endpoint in `gearbox/internal/framework/handler/dashboard.go`
+- [x] Return all available widgets from **enabled plugins only** for the selected server
+- [x] Support filtering by plugin name, category, search term
+- [x] Register route in router setup
+- [x] Added `PluginName` field to all 31 widget definitions across 8 plugins
+- [x] Built successfully with `make templ-generate && make build`
 
-#### Task 2: Widget Palette Side Panel UI
+**Implementation Details:**
 
-- [ ] Add palette panel HTML to `gearbox/internal/framework/templates/pages/dashboard_editor.templ`
-- [ ] Create `gearbox/static/css/dashboard/palette.css` for styling
-- [ ] Create `gearbox/static/js/dashboard/palette.js` for interactions
-- [ ] Display widgets as cards with icon, name, description, plugin badge
-- [ ] Add filtering UI (search, plugin dropdown)
-- [ ] Make panel scrollable with fixed header
+- Route: `GET /api/dashboards/widgets`
+- Query params: `?server_id=<id>&plugin=<name>&category=<cat>&search=<term>`
+- Returns JSON array of widgets from enabled plugins
+- Core widgets always included (PluginName = "core")
+
+#### Task 2: Widget Palette Side Panel UI ✅
+
+- [x] Add palette panel HTML to `gearbox/internal/framework/templates/pages/dashboard_editor.templ`
+- [x] Create `gearbox/static/css/dashboard/palette.css` for styling
+- [x] Create `gearbox/static/js/dashboard/palette.js` for interactions
+- [x] Display widgets as cards with icon, name, description, plugin badge
+- [x] Add filtering UI (search, plugin dropdown)
+- [x] Make panel scrollable with fixed header
+- [x] Built successfully with `make templ-generate && make build`
+
+**Implementation Details:**
+
+- Enhanced widget palette panel with fixed header and scrollable list
+- Widget cards display icon, name, description, and color-coded plugin badges
+- Real-time search across name, description, and plugin
+- Plugin dropdown filter with all available plugins
+- Fetches widgets dynamically from `/api/dashboards/widgets` endpoint
+- Responsive design with dark mode support
 
 #### Task 3: Drag-and-Drop from Palette
 
@@ -119,6 +137,14 @@ Framework = Shared services and building blocks (graphs, tables, panels, cards, 
 - [ ] Create dynamic plugin navigation
 - [ ] Show plugin menu items only when enabled for server
 - [ ] Ensure plugin menu items update when plugins are enabled/disabled
+
+#### Task 5: Left Hand Navigation bar Updates
+
+- [ ] Items can be rearranged by clicking edit icon that is next to the toggle sidebar icon
+- [ ] When in edit mode user can drag a menu item up or down and other nav items flow around it
+- [ ] Edit icon becomes save icon
+- [ ] When a plugin is enabled it generates its default "dashboard" interface yaml file if it does not already exist.  Each plugin's default dashboard has a default name and icon as designed by plugin developer.  When plugins is enabled it is added to the nav bar
+- [ ] The rearrangement of left hand nav items will be removed from the plugin screen, all nav rearrangement is now in the nav bar only.
 
 **Testing Checklist:**
 

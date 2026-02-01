@@ -21,6 +21,10 @@ type WidgetDefinition struct {
 	// Category groups widgets (data-visualization, data-display, status-metrics, etc.)
 	Category string
 
+	// PluginName is the name of the plugin that provides this widget (e.g., "haproxy", "metrics")
+	// Used to filter widgets based on enabled plugins for a server
+	PluginName string
+
 	// Icon is the icon name for the widget
 	Icon string
 

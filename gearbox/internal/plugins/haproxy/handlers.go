@@ -18,9 +18,9 @@ func NewHandlers(deps plugin.Dependencies) *Handlers {
 	return &Handlers{deps: deps}
 }
 
-// OverviewPage serves the main dashboard page.
-// It redirects to the light-hugger dashboard which uses the new widget system.
-// If no servers are configured, redirects to the HAProxy servers settings page.
+// OverviewPage serves the HAProxy overview page.
+// It redirects to the HAProxy dashboard which uses the widget system.
+// If no servers are configured, redirects to the servers settings page.
 func (h *Handlers) OverviewPage(w http.ResponseWriter, r *http.Request) {
 	// Get enabled servers using the ServerAdapter
 	serverAdapter, ok := h.deps.Servers.(*services.ServerAdapter)
@@ -31,20 +31,20 @@ func (h *Handlers) OverviewPage(w http.ResponseWriter, r *http.Request) {
 	}
 	servers := serverAdapter.GetEnabledServersAsModels()
 
-	// If no servers configured, redirect to HAProxy servers settings page
+	// If no servers configured, redirect to servers settings page
 	if len(servers) == 0 {
 		http.Redirect(w, r, "/settings/servers", http.StatusSeeOther)
 		return
 	}
 
-	// Redirect to the light-hugger dashboard (widget-based dashboard)
-	http.Redirect(w, r, "/dashboards/light-hugger", http.StatusSeeOther)
+	// Redirect to the HAProxy dashboard (widget-based dashboard)
+	http.Redirect(w, r, "/dashboards/haproxy-overview", http.StatusSeeOther)
 }
 
 // StatusGridPage serves the status grid page.
-// For now, redirects to the main dashboard. In the future, this could
+// For now, redirects to the HAProxy dashboard. In the future, this could
 // render a different dashboard layout focused on status grid view.
 func (h *Handlers) StatusGridPage(w http.ResponseWriter, r *http.Request) {
-	// Redirect to main dashboard for now
-	http.Redirect(w, r, "/dashboards/light-hugger", http.StatusSeeOther)
+	// Redirect to HAProxy dashboard for now
+	http.Redirect(w, r, "/dashboards/haproxy-overview", http.StatusSeeOther)
 }

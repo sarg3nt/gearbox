@@ -58,6 +58,7 @@ func certExpirySummaryDefinition() *widget.WidgetDefinition {
 		Name:        "Certificate Expiry Summary",
 		Description: "Summary cards showing expiring soon, expired, and total certificates",
 		Category:    "security",
+		PluginName:  "certificates",
 		Icon:        "shield",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
@@ -88,6 +89,7 @@ func certificatesListDefinition() *widget.WidgetDefinition {
 		Name:        "Certificates List",
 		Description: "Complete table of all certificates with expiry dates and renewal options",
 		Category:    "security",
+		PluginName:  "certificates",
 		Icon:        "list",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{
@@ -131,6 +133,7 @@ func expiringCertsAlertDefinition() *widget.WidgetDefinition {
 		Name:        "Expiring Certificates Alert",
 		Description: "Highlighted list of certificates expiring within 30 days",
 		Category:    "security",
+		PluginName:  "certificates",
 		Icon:        "alert-circle",
 		ConfigSchema: widget.ConfigSchema{
 			Properties: map[string]widget.Property{

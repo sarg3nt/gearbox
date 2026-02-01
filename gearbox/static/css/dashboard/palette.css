@@ -1,0 +1,299 @@
+/* Widget Palette Styling */
+
+/* Widget card in palette */
+.palette-widget-card {
+    padding: 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    cursor: grab;
+    transition: all 0.2s;
+    background: white;
+}
+
+.dark .palette-widget-card {
+    border-color: #475569;
+    background: #1e293b;
+}
+
+.palette-widget-card:hover {
+    background: #f9fafb;
+    border-color: #3b82f6;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
+    transform: translateY(-1px);
+}
+
+.dark .palette-widget-card:hover {
+    background: #334155;
+    border-color: #60a5fa;
+    box-shadow: 0 2px 8px rgba(96, 165, 250, 0.1);
+}
+
+.palette-widget-card:active {
+    cursor: grabbing;
+    transform: translateY(0);
+}
+
+/* Widget card icon */
+.palette-widget-icon {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #eff6ff;
+    border-radius: 6px;
+    flex-shrink: 0;
+}
+
+.dark .palette-widget-icon {
+    background: #1e3a8a;
+}
+
+.palette-widget-icon svg {
+    width: 20px;
+    height: 20px;
+    color: #3b82f6;
+}
+
+.dark .palette-widget-icon svg {
+    color: #60a5fa;
+}
+
+/* Widget card text */
+.palette-widget-title {
+    font-size: 14px;
+    font-weight: 500;
+    color: #111827;
+    margin-bottom: 2px;
+    line-height: 1.4;
+}
+
+.dark .palette-widget-title {
+    color: #f9fafb;
+}
+
+.palette-widget-description {
+    font-size: 12px;
+    color: #6b7280;
+    line-height: 1.4;
+}
+
+.dark .palette-widget-description {
+    color: #9ca3af;
+}
+
+/* Plugin badge */
+.palette-plugin-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    font-size: 10px;
+    font-weight: 500;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 4px;
+}
+
+/* Core plugin badge */
+.palette-plugin-badge.plugin-core {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.dark .palette-plugin-badge.plugin-core {
+    background: #1e3a8a;
+    color: #93c5fd;
+}
+
+/* HAProxy plugin badge */
+.palette-plugin-badge.plugin-haproxy {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.dark .palette-plugin-badge.plugin-haproxy {
+    background: #78350f;
+    color: #fde68a;
+}
+
+/* Metrics plugin badge */
+.palette-plugin-badge.plugin-metrics {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.dark .palette-plugin-badge.plugin-metrics {
+    background: #064e3b;
+    color: #a7f3d0;
+}
+
+/* Alerts plugin badge */
+.palette-plugin-badge.plugin-alerts {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.dark .palette-plugin-badge.plugin-alerts {
+    background: #7f1d1d;
+    color: #fecaca;
+}
+
+/* Services plugin badge */
+.palette-plugin-badge.plugin-services {
+    background: #e0e7ff;
+    color: #3730a3;
+}
+
+.dark .palette-plugin-badge.plugin-services {
+    background: #312e81;
+    color: #c7d2fe;
+}
+
+/* Certificates plugin badge */
+.palette-plugin-badge.plugin-certificates {
+    background: #fce7f3;
+    color: #831843;
+}
+
+.dark .palette-plugin-badge.plugin-certificates {
+    background: #701a75;
+    color: #f9a8d4;
+}
+
+/* Traffic plugin badge */
+.palette-plugin-badge.plugin-traffic {
+    background: #fef9c3;
+    color: #713f12;
+}
+
+.dark .palette-plugin-badge.plugin-traffic {
+    background: #713f12;
+    color: #fef08a;
+}
+
+/* Logs plugin badge */
+.palette-plugin-badge.plugin-logs {
+    background: #f3e8ff;
+    color: #581c87;
+}
+
+.dark .palette-plugin-badge.plugin-logs {
+    background: #581c87;
+    color: #e9d5ff;
+}
+
+/* OS Updates plugin badge */
+.palette-plugin-badge.plugin-os_updates {
+    background: #ddd6fe;
+    color: #4c1d95;
+}
+
+.dark .palette-plugin-badge.plugin-os_updates {
+    background: #4c1d95;
+    color: #ddd6fe;
+}
+
+/* Dashboard plugin badge */
+.palette-plugin-badge.plugin-dashboard {
+    background: #e5e7eb;
+    color: #374151;
+}
+
+.dark .palette-plugin-badge.plugin-dashboard {
+    background: #374151;
+    color: #e5e7eb;
+}
+
+/* Category sections */
+.palette-category {
+    margin-bottom: 24px;
+}
+
+.palette-category:last-child {
+    margin-bottom: 0;
+}
+
+.palette-category-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.dark .palette-category-title {
+    color: #9ca3af;
+    border-bottom-color: #475569;
+}
+
+/* Widget list */
+.palette-widget-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+/* Empty state */
+.palette-empty-state {
+    text-align: center;
+    padding: 48px 16px;
+    color: #9ca3af;
+}
+
+.dark .palette-empty-state {
+    color: #6b7280;
+}
+
+.palette-empty-state svg {
+    width: 48px;
+    height: 48px;
+    margin: 0 auto 12px;
+    color: #d1d5db;
+}
+
+.dark .palette-empty-state svg {
+    color: #4b5563;
+}
+
+/* Dragging state */
+.palette-widget-card.sortable-drag {
+    opacity: 0.5;
+}
+
+.palette-widget-card.sortable-ghost {
+    opacity: 0.3;
+}
+
+/* Scrollbar styling for palette list */
+#widget-palette-list::-webkit-scrollbar {
+    width: 8px;
+}
+
+#widget-palette-list::-webkit-scrollbar-track {
+    background: #f3f4f6;
+    border-radius: 4px;
+}
+
+.dark #widget-palette-list::-webkit-scrollbar-track {
+    background: #1e293b;
+}
+
+#widget-palette-list::-webkit-scrollbar-thumb {
+    background: #d1d5db;
+    border-radius: 4px;
+}
+
+.dark #widget-palette-list::-webkit-scrollbar-thumb {
+    background: #475569;
+}
+
+#widget-palette-list::-webkit-scrollbar-thumb:hover {
+    background: #9ca3af;
+}
+
+.dark #widget-palette-list::-webkit-scrollbar-thumb:hover {
+    background: #64748b;
+}

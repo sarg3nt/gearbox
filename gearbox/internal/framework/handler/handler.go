@@ -235,6 +235,20 @@ func (h *Handler) InjectIntegrationStatus(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
+
+		// No server configured - explicitly disable all plugins in navigation
+		// This provides a clean initial setup experience without plugin clutter
+		status := map[string]bool{
+			"metrics":      false,
+			"logs":         false,
+			"services":     false,
+			"certificates": false,
+			"traffic":      false,
+			"alerts":       false,
+			"os_updates":   false,
+		}
+		ctx = auth.SetPluginStatus(ctx, status)
+		ctx = auth.SetIntegrationOrder(ctx, []auth.SidebarIntegration{})
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
