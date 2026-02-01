@@ -2,33 +2,44 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
+    paths:
+      - 'gearbox/**'
+      - '.github/workflows/ci.yml'
   pull_request:
-    branches: [main, develop]
+    branches: [main]
+    paths:
+      - 'gearbox/**'
+      - '.github/workflows/ci.yml'
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: ./gearbox
 
     steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2
+        with:
+          egress-policy: audit
+
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6
         with:
-          go-version: '1.25'
-          cache-dependency-path: gearbox/go.sum
+          go-version-file: gearbox/go.mod
 
       - name: Install Templ
-        run: go install github.com/a-h/templ/cmd/templ@latest
+        run: go install github.com/a-h/templ/cmd/templ@v0.3.977
 
       - name: Download dependencies
         run: go mod download
@@ -40,7 +51,7 @@ jobs:
         run: go test -v -race -coverprofile=coverage.out ./...
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5
         with:
           files: ./gearbox/coverage.out
           flags: unittests
@@ -51,52 +62,65 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: ./gearbox
 
     steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2
+        with:
+          egress-policy: audit
+
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6
         with:
-          go-version: '1.25'
-          cache-dependency-path: gearbox/go.sum
+          go-version-file: gearbox/go.mod
 
       - name: Install Templ
-        run: go install github.com/a-h/templ/cmd/templ@latest
+        run: go install github.com/a-h/templ/cmd/templ@v0.3.977
 
       - name: Generate Templ templates
         run: templ generate
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v9
+        uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9
         with:
-          version: latest
+          version: v2.8.0
           working-directory: ./gearbox
           args: --timeout=5m
 
   build:
     name: Build
+    needs: [test, lint]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: ./gearbox
 
     steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2
+        with:
+          egress-policy: audit
+
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6
         with:
-          go-version: '1.25'
-          cache-dependency-path: gearbox/go.sum
+          go-version-file: gearbox/go.mod
 
       - name: Install Templ
-        run: go install github.com/a-h/templ/cmd/templ@latest
+        run: go install github.com/a-h/templ/cmd/templ@v0.3.977
 
       - name: Download dependencies
         run: go mod download
@@ -104,16 +128,23 @@ jobs:
       - name: Generate Templ templates
         run: templ generate
 
+      - name: Verify generated templates are up-to-date
+        run: |
+          git diff --exit-code -- '**/*_templ.go' || {
+            echo "::error::Generated templ files are out of date. Run 'templ generate' and commit the changes."
+            exit 1
+          }
+
       - name: Build binary
         run: |
           CGO_ENABLED=0 go build \
             -ldflags="-s -w -X main.Version=${{ github.ref_name }} -X main.CommitSHA=${{ github.sha }} -X main.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            -o bin/haproxy-monitor \
+            -o bin/gearbox \
             ./cmd/server
 
       - name: Upload binary artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: haproxy-monitor-${{ github.sha }}
-          path: gearbox/bin/haproxy-monitor
+          name: gearbox-${{ github.sha }}
+          path: gearbox/bin/gearbox
           retention-days: 7

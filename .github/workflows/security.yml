@@ -2,49 +2,55 @@ name: Security Scanning
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
-    branches: [main, develop]
+    branches: [main]
   schedule:
     # Run security scans weekly on Monday at 9 AM UTC
     - cron: '0 9 * * 1'
 
-permissions:
-  contents: read
-  security-events: write # Required for uploading SARIF results
+permissions: {}
 
 jobs:
   gosec:
     name: Go Security Scan (gosec)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2
+        with:
+          egress-policy: audit
+
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6
         with:
-          go-version: '1.25'
+          go-version-file: gearbox/go.mod
 
       - name: Run gosec for gearbox
-        uses: securego/gosec@master
+        uses: securego/gosec@6decf96c3d272d5a8bbdcf9fddb5789d0be16a8d # v2.22.4
         with:
           args: '-no-fail -fmt sarif -out gosec-gearbox.sarif ./gearbox/...'
 
       - name: Run gosec for gearbox-agent
-        uses: securego/gosec@master
+        uses: securego/gosec@6decf96c3d272d5a8bbdcf9fddb5789d0be16a8d # v2.22.4
         with:
           args: '-no-fail -fmt sarif -out gosec-agent.sarif ./gearbox-agent/...'
 
       - name: Upload gosec results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@b20883b0cd1f46c72ae0ba6d1090936928f9fa30 # v4
         if: always()
         with:
           sarif_file: gosec-gearbox.sarif
           category: gosec-gearbox
 
       - name: Upload gosec agent results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@b20883b0cd1f46c72ae0ba6d1090936928f9fa30 # v4
         if: always()
         with:
           sarif_file: gosec-agent.sarif
@@ -53,12 +59,20 @@ jobs:
   trivy-repo:
     name: Trivy Repository Scan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2
+        with:
+          egress-policy: audit
+
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
 
       - name: Run Trivy vulnerability scanner in repo mode
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@6c175e9c4083a92bbca2f9724c8a5e33bc2d97a5 # 0.30.0
         with:
           scan-type: 'fs'
           scan-ref: '.'
@@ -67,7 +81,7 @@ jobs:
           severity: 'CRITICAL,HIGH,MEDIUM'
 
       - name: Upload Trivy results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@b20883b0cd1f46c72ae0ba6d1090936928f9fa30 # v4
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
@@ -76,15 +90,22 @@ jobs:
   npm-audit:
     name: NPM Security Audit
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: ./gearbox
     steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2
+        with:
+          egress-policy: audit
+
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6
         with:
           node-version: '20'
 
@@ -108,7 +129,7 @@ jobs:
           fi
 
       - name: Upload npm audit results
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
           name: npm-audit-results
@@ -118,13 +139,20 @@ jobs:
   dependency-review:
     name: Dependency Review
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     if: github.event_name == 'pull_request'
     steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2
+        with:
+          egress-policy: audit
+
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
 
       - name: Dependency Review
-        uses: actions/dependency-review-action@v6
+        uses: actions/dependency-review-action@3c4e3dcb1aa7874d2c16be7d79418e9b7efd6261 # v4
         with:
           fail-on-severity: moderate
           deny-licenses: GPL-3.0, AGPL-3.0
@@ -132,21 +160,30 @@ jobs:
   gitleaks:
     name: Secret Scanning (gitleaks)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2
+        with:
+          egress-policy: audit
+
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
         with:
           fetch-depth: 0
 
       - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }} # Optional: for Gitleaks Pro
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
 
   security-summary:
     name: Security Scan Summary
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     needs: [gosec, trivy-repo, npm-audit, gitleaks]
     if: always()
     steps:

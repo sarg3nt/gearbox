@@ -1,0 +1,43 @@
+name: OpenSSF Scorecard
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # Run weekly on Sunday at 6 AM UTC
+    - cron: '0 6 * * 0'
+
+permissions: {}
+
+jobs:
+  analysis:
+    name: Scorecard Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      id-token: write
+
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
+        with:
+          persist-credentials: false
+
+      - name: Run Scorecard analysis
+        uses: ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a # v2
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+
+      - name: Upload results to GitHub Security
+        uses: github/codeql-action/upload-sarif@b20883b0cd1f46c72ae0ba6d1090936928f9fa30 # v4
+        with:
+          sarif_file: results.sarif
+          category: scorecard

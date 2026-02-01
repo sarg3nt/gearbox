@@ -1,0 +1,26 @@
+dashboard:
+  - changed-files:
+      - any-glob-to-any-file: 'gearbox/**'
+
+agent:
+  - changed-files:
+      - any-glob-to-any-file: 'gearbox-agent/**'
+
+docs:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'docs/**'
+          - '**/*.md'
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file: '.github/**'
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '**/go.mod'
+          - '**/go.sum'
+          - '**/package.json'
+          - '**/package-lock.json'
+          - '.github/dependabot.yml'

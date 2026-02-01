@@ -5,33 +5,36 @@ on:
     tags:
       - 'v*'
 
-permissions:
-  contents: write
-  packages: write
-  attestations: write
-  id-token: write
+permissions: {}
 
 jobs:
   create-release:
     name: Create Release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2
+        with:
+          egress-policy: audit
+
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
         with:
           fetch-depth: 0
 
       - name: Generate changelog
         id: changelog
-        uses: mikepenz/release-changelog-builder-action@v6
+        uses: mikepenz/release-changelog-builder-action@6faf020194b7c8853f9e55c4fd92e40b02122a04 # v6
         with:
           configuration: ".github/changelog-config.json"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2
         with:
           body: ${{ steps.changelog.outputs.changelog }}
           draft: false
@@ -39,10 +42,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  build-monitor-binaries:
-    name: Build Monitor Binaries
+  build-dashboard-binaries:
+    name: Build Dashboard Binaries
     needs: create-release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     strategy:
       matrix:
         goos: [linux, darwin, windows]
@@ -56,17 +63,21 @@ jobs:
         working-directory: ./gearbox
 
     steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2
+        with:
+          egress-policy: audit
+
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6
         with:
-          go-version: '1.25'
-          cache-dependency-path: gearbox/go.sum
+          go-version-file: gearbox/go.mod
 
       - name: Install Templ
-        run: go install github.com/a-h/templ/cmd/templ@latest
+        run: go install github.com/a-h/templ/cmd/templ@v0.3.977
 
       - name: Download dependencies
         run: go mod download
@@ -84,7 +95,7 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 0
         run: |
-          BINARY_NAME="haproxy-monitor-${{ steps.version.outputs.VERSION }}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          BINARY_NAME="gearbox-${{ steps.version.outputs.VERSION }}-${{ matrix.goos }}-${{ matrix.goarch }}"
           if [ "${{ matrix.goos }}" = "windows" ]; then
             BINARY_NAME="${BINARY_NAME}.exe"
           fi
@@ -102,8 +113,13 @@ jobs:
             cd ..
           fi
 
+      - name: Generate build provenance attestation
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: gearbox/bin/*
+
       - name: Upload release assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2
         with:
           files: |
             gearbox/bin/*
@@ -114,6 +130,10 @@ jobs:
     name: Build Agent Binaries
     needs: create-release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     strategy:
       matrix:
         goos: [linux]
@@ -124,14 +144,18 @@ jobs:
         working-directory: ./gearbox-agent
 
     steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2
+        with:
+          egress-policy: audit
+
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6
         with:
-          go-version: '1.25'
-          cache-dependency-path: gearbox-agent/go.sum
+          go-version-file: gearbox-agent/go.mod
 
       - name: Download dependencies
         run: go mod download
@@ -165,8 +189,13 @@ jobs:
           rm -rf "${ARCHIVE_NAME}" "${BINARY_NAME}"
           cd ..
 
+      - name: Generate build provenance attestation
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: gearbox-agent/bin/*
+
       - name: Upload release assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2
         with:
           files: |
             gearbox-agent/bin/*
@@ -174,17 +203,31 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   generate-checksums:
-    name: Generate Checksums
-    needs: [build-monitor-binaries, build-agent-binaries]
+    name: Generate Checksums and Sign
+    needs: [build-dashboard-binaries, build-agent-binaries]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
 
     steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2
+        with:
+          egress-policy: audit
+
       - name: Download all release assets
-        uses: robinraju/release-downloader@v1
+        uses: robinraju/release-downloader@daf26c55d821e836577a15f77d86ddc078948b05 # v1
         with:
           tag: ${{ github.ref_name }}
           fileName: "*.tar.gz"
           out-file-path: assets
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+
+      - name: Install Syft
+        uses: anchore/sbom-action/download-syft@deef08a0db64bfad603422135db61477b16cef56 # v0
 
       - name: Generate checksums
         run: |
@@ -192,69 +235,24 @@ jobs:
           sha256sum *.tar.gz > checksums.txt
           cat checksums.txt
 
-      - name: Upload checksums
-        uses: softprops/action-gh-release@v2
+      - name: Sign checksums with cosign
+        run: cosign sign-blob --yes --output-signature assets/checksums.txt.sig --output-certificate assets/checksums.txt.pem assets/checksums.txt
+
+      - name: Generate SBOMs
+        run: |
+          cd assets
+          for archive in *.tar.gz; do
+            sbom_name="${archive%.tar.gz}.sbom.spdx.json"
+            syft "$archive" -o spdx-json="$sbom_name"
+          done
+
+      - name: Upload checksums, signature, and SBOMs
+        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2
         with:
-          files: assets/checksums.txt
+          files: |
+            assets/checksums.txt
+            assets/checksums.txt.sig
+            assets/checksums.txt.pem
+            assets/*.sbom.spdx.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  build-docker:
-    name: Build and Push Docker Image
-    needs: create-release
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Get version
-        id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository }}/haproxy-monitor
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=raw,value=latest
-
-      - name: Build and push Docker image
-        id: build
-        uses: docker/build-push-action@v6
-        with:
-          context: ./gearbox
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          build-args: |
-            VERSION=${{ steps.version.outputs.VERSION }}
-            COMMIT_SHA=${{ github.sha }}
-            BUILD_DATE=${{ github.event.repository.updated_at }}
-
-      - name: Generate artifact attestation
-        uses: actions/attest-build-provenance@v3
-        with:
-          subject-name: ghcr.io/${{ github.repository }}/haproxy-monitor
-          subject-digest: ${{ steps.build.outputs.digest }}
-          push-to-registry: true
