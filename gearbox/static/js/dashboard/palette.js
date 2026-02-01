@@ -185,6 +185,52 @@ function renderWidgets() {
         const categoryDiv = createCategorySection(category, categories[category]);
         paletteList.appendChild(categoryDiv);
     });
+
+    // Initialize Sortable for palette after rendering
+    initializePaletteSortable();
+}
+
+/**
+ * Initialize Sortable.js for the widget palette
+ */
+function initializePaletteSortable() {
+    // Wait for Sortable to be available
+    if (typeof window.Sortable === 'undefined') {
+        console.warn('Sortable not loaded yet, skipping palette sortable initialization');
+        return;
+    }
+
+    // Get all widget lists in the palette
+    const widgetLists = document.querySelectorAll('.palette-widget-list');
+
+    widgetLists.forEach(list => {
+        // Skip if already initialized
+        if (list.sortableInstance) {
+            return;
+        }
+
+        const sortable = window.Sortable.create(list, {
+            group: {
+                name: 'widget-palette',
+                pull: 'clone',
+                put: false
+            },
+            sort: false,
+            animation: 150,
+            dragClass: 'palette-widget-dragging',
+            ghostClass: 'palette-widget-ghost',
+            onEnd: function() {
+                // Reset any styling changes after drag
+                const cards = list.querySelectorAll('.palette-widget-card');
+                cards.forEach(card => {
+                    card.style.opacity = '1';
+                });
+            }
+        });
+
+        // Store instance reference
+        list.sortableInstance = sortable;
+    });
 }
 
 /**
@@ -268,8 +314,9 @@ function createWidgetCard(widget) {
     card.dataset.widgetName = widget.name;
     card.dataset.widgetPlugin = widget.plugin_name;
 
-    // Set up drag event
+    // Set up drag events
     card.addEventListener('dragstart', handleWidgetDragStart);
+    card.addEventListener('dragend', handleWidgetDragEnd);
 
     card.innerHTML = `
         <div class="flex items-start gap-3">
@@ -337,15 +384,29 @@ function escapeHtml(text) {
 function handleWidgetDragStart(event) {
     const widgetType = event.currentTarget.dataset.widgetType;
     const widgetName = event.currentTarget.dataset.widgetName;
+    const widgetPlugin = event.currentTarget.dataset.widgetPlugin;
 
-    // Set drag data
+    // Store widget data for Sortable.js
+    event.currentTarget.dataset.isNewWidget = 'true';
+
+    // Set drag data for browser drag-drop API
     event.dataTransfer.effectAllowed = 'copy';
     event.dataTransfer.setData('text/plain', widgetType);
     event.dataTransfer.setData('application/x-widget-type', widgetType);
     event.dataTransfer.setData('application/x-widget-name', widgetName);
+    event.dataTransfer.setData('application/x-widget-plugin', widgetPlugin);
 
     // Add visual feedback
     event.currentTarget.style.opacity = '0.5';
+}
+
+/**
+ * Handle drag end event for widget cards
+ * @param {DragEvent} event - Drag event
+ */
+function handleWidgetDragEnd(event) {
+    // Restore opacity
+    event.currentTarget.style.opacity = '1';
 }
 
 /**

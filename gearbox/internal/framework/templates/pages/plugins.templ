@@ -81,12 +81,6 @@ templ pluginCard(integration database.Plugin, serverID string) {
 	<div class="plugin-card bg-white dark:bg-slate-800 rounded-lg shadow p-6 transition-transform duration-200 ease-out" data-plugin-name={ integration.Name }>
 		<div class="flex items-center justify-between gap-4">
 			<div class="flex items-center space-x-4 min-w-0 flex-1">
-				<!-- Drag handle -->
-				<div class="drag-handle cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 p-1 -ml-2 flex-shrink-0">
-					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"></path>
-					</svg>
-				</div>
 				<div
 					class={ "plugin-icon w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0", templ.KV("bg-blue-100 dark:bg-blue-900", integration.Enabled), templ.KV("bg-gray-100 dark:bg-gray-700", !integration.Enabled) }
 					data-enabled-bg="bg-blue-100 dark:bg-blue-900"

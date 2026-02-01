@@ -461,6 +461,125 @@ templ Base(title string, user *models.User, currentPath ...string) {
 				}
 			}
 
+			// Sidebar edit mode state
+			let sidebarEditMode = false;
+			let sidebarSortable = null;
+
+			function toggleSidebarEditMode() {
+				sidebarEditMode = !sidebarEditMode;
+				const iconEdit = document.getElementById('sidebar-icon-edit');
+				const iconSave = document.getElementById('sidebar-icon-save');
+				const dragHandles = document.querySelectorAll('.nav-drag-handle');
+				const navLinks = document.querySelectorAll('.nav-link');
+
+				if (sidebarEditMode) {
+					// Enter edit mode
+					if (iconEdit) iconEdit.classList.add('hidden');
+					if (iconSave) iconSave.classList.remove('hidden');
+
+					// Show drag handles
+					dragHandles.forEach(handle => handle.classList.remove('hidden'));
+
+					// Disable link clicks
+					navLinks.forEach(link => {
+						link.style.pointerEvents = 'none';
+						link.style.cursor = 'grab';
+					});
+
+					// Initialize Sortable if not already done
+					initSidebarSortable();
+				} else {
+					// Exit edit mode (save)
+					if (iconEdit) iconEdit.classList.remove('hidden');
+					if (iconSave) iconSave.classList.add('hidden');
+
+					// Hide drag handles
+					dragHandles.forEach(handle => handle.classList.add('hidden'));
+
+					// Re-enable link clicks
+					navLinks.forEach(link => {
+						link.style.pointerEvents = '';
+						link.style.cursor = '';
+					});
+
+					// Save the new order
+					saveSidebarOrder();
+				}
+			}
+
+			function initSidebarSortable() {
+				if (typeof window.Sortable === 'undefined') {
+					console.error('Sortable not loaded!');
+					return;
+				}
+
+				const navList = document.getElementById('sidebar-nav-list');
+				if (!navList) {
+					console.error('Navigation list not found!');
+					return;
+				}
+
+				// Destroy existing sortable instance if it exists
+				if (sidebarSortable) {
+					sidebarSortable.destroy();
+				}
+
+				// Create new sortable instance
+				sidebarSortable = window.Sortable.create(navList, {
+					animation: 200,
+					handle: '.nav-drag-handle',
+					draggable: '.nav-item-draggable',
+					ghostClass: 'bg-blue-50 dark:bg-slate-700',
+					chosenClass: 'opacity-50',
+					dragClass: 'opacity-75',
+					onEnd: function(evt) {
+						console.log('Item moved from index', evt.oldIndex, 'to', evt.newIndex);
+					}
+				});
+			}
+
+			function saveSidebarOrder() {
+				const navItems = document.querySelectorAll('.nav-item-draggable');
+				const order = [];
+
+				navItems.forEach((item, index) => {
+					const pluginName = item.dataset.pluginName;
+					if (pluginName) {
+						order.push({
+							name: pluginName,
+							sortOrder: index
+						});
+					}
+				});
+
+				console.log('Saving sidebar order:', order);
+
+				// Get the selected server ID
+				const serverID = window.ServerSelector ? window.ServerSelector.getSelectedServer() : null;
+				if (!serverID) {
+					console.error('No server selected');
+					return;
+				}
+
+				// Send to server
+				fetch(`/api/integrations/sort-order?server=${encodeURIComponent(serverID)}`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					credentials: 'same-origin',
+					body: JSON.stringify({ order: order })
+				})
+				.then(response => {
+					if (response.ok) {
+						console.log('Sidebar order saved successfully');
+					} else {
+						console.error('Failed to save sidebar order');
+					}
+				})
+				.catch(error => {
+					console.error('Error saving sidebar order:', error);
+				});
+			}
+
 			// Session keep-alive and timeout tracking
 			let sessionKeepAliveInterval = null;
 			let sessionTimeoutChecker = null;
@@ -1096,15 +1215,28 @@ templ Sidebar(user *models.User, currentPath string) {
 
 		<!-- Navigation -->
 		<nav class="flex-1 py-4">
-			<ul class="space-y-1">
+			<ul id="sidebar-nav-list" class="space-y-1">
 				@SidebarLink("/", "Dashboard", SidebarIconDashboard(), currentPath)
 				@OrderedIntegrationLinks(currentPath)
 			</ul>
 		</nav>
 
-		<!-- Collapse/Expand toggle (no top border) -->
+		<!-- Collapse/Expand and Edit toggle (no top border) -->
 		<div class="p-3">
-			<div id="toggle-container" class="flex justify-end">
+			<div id="toggle-container" class="flex justify-between items-center">
+				<!-- Edit/Save button -->
+				<button id="sidebar-edit-btn" onclick="toggleSidebarEditMode()" class="p-1.5 hover:bg-gray-100 dark:hover:bg-slate-700 rounded transition-colors text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200" title="Edit Navigation">
+					<!-- Edit icon (default) -->
+					<svg id="sidebar-icon-edit" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"></path>
+					</svg>
+					<!-- Save icon (hidden by default) -->
+					<svg id="sidebar-icon-save" class="w-5 h-5 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+					</svg>
+				</button>
+
+				<!-- Collapse/expand button -->
 				<button onclick="toggleSidebar()" class="p-1.5 hover:bg-gray-100 dark:hover:bg-slate-700 rounded transition-colors text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200" title="Toggle Sidebar">
 					<!-- Panel collapse icon (sidebar open) -->
 					<svg id="sidebar-icon-collapse" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
@@ -1334,6 +1466,90 @@ templ SidebarLinkWithBadge(href string, label string, icon templ.Component, curr
 	</li>
 }
 
+// SidebarLinkDraggable renders a sidebar link with drag-and-drop support for reordering.
+templ SidebarLinkDraggable(href string, label string, icon templ.Component, currentPath string, pluginName string) {
+	<li class="nav-item-draggable" data-plugin-name={ pluginName }>
+		if isActivePath(href, currentPath) {
+			<a href={ templ.SafeURL(href) } class="nav-link flex items-center space-x-3 px-4 py-3 bg-blue-50 dark:bg-slate-700 border-l-4 border-blue-600 dark:border-blue-400 text-blue-700 dark:text-blue-300 transition-colors">
+				<!-- Drag handle (hidden by default, shown in edit mode) -->
+				<div class="nav-drag-handle hidden flex-shrink-0 cursor-grab mr-2">
+					<svg class="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
+						<circle cx="7" cy="5" r="1.5"></circle>
+						<circle cx="7" cy="12" r="1.5"></circle>
+						<circle cx="7" cy="19" r="1.5"></circle>
+						<circle cx="14" cy="5" r="1.5"></circle>
+						<circle cx="14" cy="12" r="1.5"></circle>
+						<circle cx="14" cy="19" r="1.5"></circle>
+					</svg>
+				</div>
+				@icon
+				<span class="sidebar-text whitespace-nowrap font-medium">{ label }</span>
+			</a>
+		} else {
+			<a href={ templ.SafeURL(href) } class="nav-link flex items-center space-x-3 px-4 py-3 border-l-4 border-transparent hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors">
+				<!-- Drag handle (hidden by default, shown in edit mode) -->
+				<div class="nav-drag-handle hidden flex-shrink-0 cursor-grab mr-2">
+					<svg class="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
+						<circle cx="7" cy="5" r="1.5"></circle>
+						<circle cx="7" cy="12" r="1.5"></circle>
+						<circle cx="7" cy="19" r="1.5"></circle>
+						<circle cx="14" cy="5" r="1.5"></circle>
+						<circle cx="14" cy="12" r="1.5"></circle>
+						<circle cx="14" cy="19" r="1.5"></circle>
+					</svg>
+				</div>
+				@icon
+				<span class="sidebar-text whitespace-nowrap">{ label }</span>
+			</a>
+		}
+	</li>
+}
+
+// SidebarLinkDraggableWithBadge renders a draggable sidebar link with a notification badge.
+templ SidebarLinkDraggableWithBadge(href string, label string, icon templ.Component, currentPath string, pluginName string, badgeID string) {
+	<li class="nav-item-draggable" data-plugin-name={ pluginName }>
+		if isActivePath(href, currentPath) {
+			<a href={ templ.SafeURL(href) } class="nav-link flex items-center space-x-3 px-4 py-3 bg-blue-50 dark:bg-slate-700 border-l-4 border-blue-600 dark:border-blue-400 text-blue-700 dark:text-blue-300 transition-colors">
+				<!-- Drag handle (hidden by default, shown in edit mode) -->
+				<div class="nav-drag-handle hidden flex-shrink-0 cursor-grab mr-2">
+					<svg class="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
+						<circle cx="7" cy="5" r="1.5"></circle>
+						<circle cx="7" cy="12" r="1.5"></circle>
+						<circle cx="7" cy="19" r="1.5"></circle>
+						<circle cx="14" cy="5" r="1.5"></circle>
+						<circle cx="14" cy="12" r="1.5"></circle>
+						<circle cx="14" cy="19" r="1.5"></circle>
+					</svg>
+				</div>
+				<div class="relative flex-shrink-0">
+					@icon
+					<span id={ badgeID } class="absolute -top-1 -right-1 hidden min-w-[18px] h-[18px] px-1 text-[10px] font-bold text-white bg-red-500 rounded-full flex items-center justify-center"></span>
+				</div>
+				<span class="sidebar-text whitespace-nowrap font-medium">{ label }</span>
+			</a>
+		} else {
+			<a href={ templ.SafeURL(href) } class="nav-link flex items-center space-x-3 px-4 py-3 border-l-4 border-transparent hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors">
+				<!-- Drag handle (hidden by default, shown in edit mode) -->
+				<div class="nav-drag-handle hidden flex-shrink-0 cursor-grab mr-2">
+					<svg class="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
+						<circle cx="7" cy="5" r="1.5"></circle>
+						<circle cx="7" cy="12" r="1.5"></circle>
+						<circle cx="7" cy="19" r="1.5"></circle>
+						<circle cx="14" cy="5" r="1.5"></circle>
+						<circle cx="14" cy="12" r="1.5"></circle>
+						<circle cx="14" cy="19" r="1.5"></circle>
+					</svg>
+				</div>
+				<div class="relative flex-shrink-0">
+					@icon
+					<span id={ badgeID } class="absolute -top-1 -right-1 hidden min-w-[18px] h-[18px] px-1 text-[10px] font-bold text-white bg-red-500 rounded-full flex items-center justify-center"></span>
+				</div>
+				<span class="sidebar-text whitespace-nowrap">{ label }</span>
+			</a>
+		}
+	</li>
+}
+
 // SidebarLinkWithIntegration renders a sidebar link only if the integration is enabled.
 // Uses server-side context to determine visibility - disabled integrations are not rendered at all.
 templ SidebarLinkWithIntegration(href string, label string, icon templ.Component, currentPath string, integration string) {
@@ -1377,14 +1593,18 @@ func canViewIntegration(ctx context.Context, integrationName string) bool {
 // Falls back to default order if no custom order is stored.
 // Links are only shown if the integration is enabled AND the user has View permission.
 templ OrderedIntegrationLinks(currentPath string) {
-	if integrations, ok := auth.GetPluginOrderFromContext(ctx); ok && len(integrations) > 0 {
-		for _, integration := range integrations {
-			if integration.Enabled && canViewIntegration(ctx, integration.Name) {
-				@renderIntegrationLink(integration.Name, currentPath)
+	if integrations, ok := auth.GetPluginOrderFromContext(ctx); ok {
+		if len(integrations) > 0 {
+			// Show ordered integrations from database
+			for _, integration := range integrations {
+				if integration.Enabled && canViewIntegration(ctx, integration.Name) {
+					@renderIntegrationLink(integration.Name, currentPath)
+				}
 			}
 		}
+		// If integrations list is empty (no server configured), show nothing
 	} else {
-		// Fallback to default order if no order in context - still check permissions
+		// Fallback to default order only if context doesn't exist at all (backwards compatibility)
 		if canViewIntegration(ctx, "metrics") {
 			@SidebarLinkWithIntegration("/history", "Metrics", SidebarIconMetrics(), currentPath, "metrics")
 		}
@@ -1413,19 +1633,19 @@ templ OrderedIntegrationLinks(currentPath string) {
 templ renderIntegrationLink(name string, currentPath string) {
 	switch name {
 		case "metrics":
-			@SidebarLink("/history", "Metrics", SidebarIconMetrics(), currentPath)
+			@SidebarLinkDraggable("/history", "Metrics", SidebarIconMetrics(), currentPath, "metrics")
 		case "logs":
-			@SidebarLink("/logs", "Logs", SidebarIconLogs(), currentPath)
+			@SidebarLinkDraggable("/logs", "Logs", SidebarIconLogs(), currentPath, "logs")
 		case "services":
-			@SidebarLink("/services", "Services", SidebarIconServices(), currentPath)
+			@SidebarLinkDraggable("/services", "Services", SidebarIconServices(), currentPath, "services")
 		case "certificates":
-			@SidebarLink("/certificates", "Certificates", SidebarIconCertificate(), currentPath)
+			@SidebarLinkDraggable("/certificates", "Certificates", SidebarIconCertificate(), currentPath, "certificates")
 		case "traffic":
-			@SidebarLink("/traffic", "Traffic", SidebarIconTraffic(), currentPath)
+			@SidebarLinkDraggable("/traffic", "Traffic", SidebarIconTraffic(), currentPath, "traffic")
 		case "alerts":
-			@SidebarLinkWithBadge("/alerts", "Alerts", SidebarIconAlerts(), currentPath, "alert-badge")
+			@SidebarLinkDraggableWithBadge("/alerts", "Alerts", SidebarIconAlerts(), currentPath, "alerts", "alert-badge")
 		case "os_updates":
-			@SidebarLink("/os-updates", "OS Updates", SidebarIconOSUpdates(), currentPath)
+			@SidebarLinkDraggable("/os-updates", "OS Updates", SidebarIconOSUpdates(), currentPath, "os_updates")
 	}
 }
 

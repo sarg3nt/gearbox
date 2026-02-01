@@ -75,115 +75,23 @@ items.forEach(item => {
 });
 	}
 
+	// NOTE: Drag-and-drop functionality has been removed from the plugins page.
+	// Plugin reordering is now done in the sidebar navigation using the edit mode button.
+	// The sidebar provides a consistent interface for rearranging navigation items.
 	function initDragAndDrop() {
-const list = document.getElementById('plugins-list');
-if (!list) return;
-
-const items = list.querySelectorAll('.plugin-card');
-items.forEach(item => {
-	const handle = item.querySelector('.drag-handle');
-	if (!handle) return;
-
-	handle.addEventListener('mousedown', () => {
-		item.setAttribute('draggable', 'true');
-	});
-
-	handle.addEventListener('mouseup', () => {
-		item.setAttribute('draggable', 'false');
-	});
-
-	item.addEventListener('dragstart', (e) => {
-		draggedItem = item;
-		draggedIndex = getItemIndex(item);
-		currentDropIndex = draggedIndex;
-
-		// Use setTimeout to allow the drag image to be captured first
-		setTimeout(() => {
-			item.classList.add('opacity-50', 'scale-[0.98]');
-		}, 0);
-		e.dataTransfer.effectAllowed = 'move';
-		e.dataTransfer.setData('text/plain', ''); // Required for Firefox
-	});
-
-	item.addEventListener('dragend', () => {
-		item.classList.remove('opacity-50', 'scale-[0.98]');
-		item.setAttribute('draggable', 'false');
-
-		// Perform the actual DOM reorder if position changed
-		if (currentDropIndex !== -1 && currentDropIndex !== draggedIndex) {
-			// Reset transforms instantly before DOM manipulation
-			resetItemTransforms(true);
-
-			const items = Array.from(list.querySelectorAll('.plugin-card'));
-
-			if (currentDropIndex > draggedIndex) {
-				// Moving down - insert after the item at currentDropIndex
-				const targetItem = items[currentDropIndex];
-				list.insertBefore(draggedItem, targetItem.nextSibling);
-			} else {
-				// Moving up - insert before the item at currentDropIndex
-				const targetItem = items[currentDropIndex];
-				list.insertBefore(draggedItem, targetItem);
-			}
-		} else {
-			resetItemTransforms(true);
-		}
-
-		draggedItem = null;
-		draggedIndex = -1;
-		currentDropIndex = -1;
-
-		// Save the new order
-		savePluginOrder();
-	});
-
-	item.addEventListener('dragover', (e) => {
-		e.preventDefault();
-		e.dataTransfer.dropEffect = 'move';
-
-		if (!draggedItem || draggedItem === item) return;
-
-		const rect = item.getBoundingClientRect();
-		const midY = rect.top + rect.height / 2;
-		const itemIndex = getItemIndex(item);
-
-		// Determine target index based on cursor position
-		let targetIndex;
-		if (e.clientY < midY) {
-			targetIndex = itemIndex;
-		} else {
-			targetIndex = itemIndex;
-			// If we're in the lower half, we want to drop after this item
-			if (itemIndex > draggedIndex) {
-				targetIndex = itemIndex;
-			} else {
-				targetIndex = itemIndex + 1;
-			}
-		}
-
-		// Clamp to valid range
-		const maxIndex = Array.from(list.querySelectorAll('.plugin-card')).length - 1;
-		targetIndex = Math.max(0, Math.min(targetIndex, maxIndex));
-
-		animateItems(targetIndex);
-	});
-});
-
-// Handle dragover on the list itself for edge cases
-list.addEventListener('dragover', (e) => {
-	e.preventDefault();
-});
-
-// Reset animations if drag leaves the list area
-list.addEventListener('dragleave', (e) => {
-	if (!list.contains(e.relatedTarget)) {
-		currentDropIndex = draggedIndex;
-		resetItemTransforms(false);
-	}
-});
+		// Drag-and-drop removed - use sidebar edit mode instead
+		return;
 	}
 
+	// NOTE: Plugin order saving has been moved to sidebar edit mode.
+	// This function is no longer used from the plugins page.
 	function savePluginOrder() {
+		// Moved to sidebar edit mode - see base.templ saveSidebarOrder()
+		return;
+	}
+
+	// Legacy function kept for compatibility - no longer used
+	function _legacySavePluginOrder() {
 const list = document.getElementById('plugins-list');
 const items = list.querySelectorAll('.plugin-card');
 const serverID = document.getElementById('current-server-id').value;

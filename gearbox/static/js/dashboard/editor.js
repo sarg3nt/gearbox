@@ -139,7 +139,7 @@ function injectEditControls() {
 		return;
 	}
 
-	console.log('Creating Sortable instance with manual swap animation');
+	console.log('Creating Sortable instance with manual swap animation and palette group support');
 
 	let lastSwapTarget = null;
 
@@ -151,6 +151,11 @@ function injectEditControls() {
 		dragClass: 'widget-drag-replica',
 		direction: 'vertical',
 		easing: 'cubic-bezier(0.4, 0.0, 0.2, 1)',
+		group: {
+			name: 'dashboard-widgets',
+			pull: false,
+			put: ['widget-palette']
+		},
 		onStart: function(evt) {
 			const item = evt.item;
 			item.dataset.wasDragging = 'true';
@@ -162,6 +167,14 @@ function injectEditControls() {
 			// evt.related = element being hovered over
 			const draggedElement = evt.dragged;
 			const targetElement = evt.related;
+
+			// Check if this is a new widget from the palette
+			const isNewWidget = draggedElement.classList.contains('palette-widget-card');
+
+			// If it's a new widget from palette, allow default Sortable behavior
+			if (isNewWidget) {
+				return true;
+			}
 
 			// Only process if we're hovering over a different widget container
 			if (!targetElement || !targetElement.classList.contains('widget-container')) {
@@ -199,6 +212,59 @@ function injectEditControls() {
 			}
 
 			return false; // Prevent Sortable's default behavior
+		},
+		onAdd: function(evt) {
+			// Handle drop from palette (new widget)
+			const item = evt.item;
+			console.log('Widget dropped from palette:', item);
+
+			// Get widget data from the palette card
+			const widgetType = item.dataset.widgetType;
+			const widgetName = item.dataset.widgetName;
+			const widgetPlugin = item.dataset.widgetPlugin;
+
+			if (!widgetType) {
+				console.error('No widget type found on dropped item');
+				item.remove();
+				return;
+			}
+
+			// Remove the palette card from the grid (it was just a drag placeholder)
+			item.remove();
+
+			// Generate widget ID and create widget instance
+			const widgetId = `widget-${Date.now()}`;
+			const widget = {
+				id: widgetId,
+				type: widgetType,
+				plugin: widgetPlugin || 'core',
+				position: {
+					row: evt.newIndex + 1,
+					column: 1,
+					width: 6,
+					height: 'auto'
+				},
+				config: {}
+			};
+
+			// Add to dashboard state
+			dashboardState.widgets.splice(evt.newIndex, 0, widget);
+			console.log('Added new widget to state:', widget);
+
+			// Create and render the actual widget element with loading state
+			renderWidgetWithContent(widget, evt.newIndex);
+
+			// Hide empty state if visible
+			const emptyState = document.getElementById('empty-state');
+			if (emptyState) {
+				emptyState.style.display = 'none';
+			}
+
+			// Update order of all widgets
+			updateWidgetOrder();
+
+			// Auto-save dashboard
+			saveDashboardSilently();
 		},
 		onEnd: function(evt) {
 			const item = evt.item;
@@ -287,6 +353,158 @@ window.addWidget = function(widgetType) {
 		emptyState.style.display = 'none';
 	}
 };
+
+// Render widget with actual content from server
+function renderWidgetWithContent(widget, insertIndex) {
+	const grid = document.querySelector('[data-dashboard="true"]');
+	if (!grid) {
+		console.error('Grid not found in renderWidgetWithContent');
+		return;
+	}
+
+	// Create widget container with loading state
+	const widgetEl = document.createElement('div');
+	widgetEl.className = 'widget-container';
+	widgetEl.setAttribute('data-widget-id', widget.id);
+	widgetEl.setAttribute('data-widget-type', widget.type);
+	widgetEl.setAttribute('data-row', widget.position.row);
+	widgetEl.setAttribute('data-column', widget.position.column);
+	widgetEl.setAttribute('data-width', widget.position.width);
+	widgetEl.style.gridColumn = `span ${widget.position.width}`;
+	widgetEl.style.gridRowStart = widget.position.row;
+
+	// Add loading state
+	widgetEl.innerHTML = `
+		<div class="widget-card bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg p-4">
+			<div class="flex items-center justify-center py-8">
+				<div class="text-center">
+					<svg class="w-8 h-8 mx-auto mb-2 animate-spin text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+					</svg>
+					<p class="text-sm text-gray-600 dark:text-gray-400">Loading widget...</p>
+				</div>
+			</div>
+		</div>
+	`;
+
+	// Insert at the correct position
+	const allWidgets = grid.querySelectorAll('.widget-container');
+	if (insertIndex >= allWidgets.length) {
+		// Insert before empty state if it exists, otherwise append
+		const emptyState = document.getElementById('empty-state');
+		if (emptyState && grid.contains(emptyState)) {
+			grid.insertBefore(widgetEl, emptyState);
+		} else {
+			grid.appendChild(widgetEl);
+		}
+	} else {
+		grid.insertBefore(widgetEl, allWidgets[insertIndex]);
+	}
+
+	// Inject edit controls after adding to DOM
+	injectEditControlsForWidget(widgetEl);
+
+	// TODO: Fetch widget content from server via HTMX or API
+	// For now, we'll show a placeholder that says the widget was added
+	setTimeout(() => {
+		widgetEl.innerHTML = `
+			<div class="widget-card bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg p-4">
+				<div class="widget-header flex items-center justify-between mb-3 pb-3 border-b border-gray-200 dark:border-slate-700">
+					<h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100">${escapeHtml(widget.type)}</h3>
+					<span class="text-xs text-gray-500 dark:text-gray-400">${escapeHtml(widget.plugin)}</span>
+				</div>
+				<div class="text-sm text-gray-600 dark:text-gray-400">
+					<p>Widget added successfully!</p>
+					<p class="text-xs mt-2">Save the dashboard to persist this widget.</p>
+				</div>
+			</div>
+		`;
+		// Re-inject edit controls after replacing content
+		injectEditControlsForWidget(widgetEl);
+	}, 500);
+
+	console.log('Widget rendered with content:', widget);
+}
+
+// Inject edit controls for a specific widget
+function injectEditControlsForWidget(container) {
+	// Skip if controls already injected
+	if (container.querySelector('.widget-drag-handle-center')) {
+		return;
+	}
+
+	const widgetId = container.dataset.widgetId;
+
+	// Store original height for restoring after drag
+	const originalHeight = container.offsetHeight;
+	container.dataset.originalHeight = originalHeight;
+
+	// Make container position relative if not already
+	if (getComputedStyle(container).position === 'static') {
+		container.style.position = 'relative';
+	}
+
+	// Create drag handle at top center
+	const dragHandle = document.createElement('div');
+	dragHandle.className = 'widget-drag-handle-center widget-drag-handle';
+	dragHandle.title = 'Drag to reposition';
+
+	const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+	svg.setAttribute('width', '24');
+	svg.setAttribute('height', '12');
+	svg.setAttribute('viewBox', '0 0 24 12');
+	svg.setAttribute('fill', 'currentColor');
+
+	const circlePositions = [
+		{cx: 4, cy: 3}, {cx: 12, cy: 3}, {cx: 20, cy: 3},
+		{cx: 4, cy: 9}, {cx: 12, cy: 9}, {cx: 20, cy: 9}
+	];
+
+	circlePositions.forEach(pos => {
+		const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+		circle.setAttribute('cx', pos.cx);
+		circle.setAttribute('cy', pos.cy);
+		circle.setAttribute('r', '2');
+		svg.appendChild(circle);
+	});
+
+	dragHandle.appendChild(svg);
+
+	// Create edit toolbar at top right
+	const toolbar = document.createElement('div');
+	toolbar.className = 'widget-edit-toolbar';
+
+	const deleteBtn = document.createElement('button');
+	deleteBtn.className = 'widget-edit-btn delete-btn';
+	deleteBtn.title = 'Delete';
+	deleteBtn.onclick = () => window.deleteWidget(widgetId);
+
+	const deleteSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+	deleteSvg.setAttribute('fill', 'none');
+	deleteSvg.setAttribute('stroke', 'currentColor');
+	deleteSvg.setAttribute('viewBox', '0 0 24 24');
+
+	const deletePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+	deletePath.setAttribute('stroke-linecap', 'round');
+	deletePath.setAttribute('stroke-linejoin', 'round');
+	deletePath.setAttribute('stroke-width', '2');
+	deletePath.setAttribute('d', 'M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16');
+
+	deleteSvg.appendChild(deletePath);
+	deleteBtn.appendChild(deleteSvg);
+	toolbar.appendChild(deleteBtn);
+
+	// Add controls to container
+	container.appendChild(dragHandle);
+	container.appendChild(toolbar);
+}
+
+// Helper function to escape HTML
+function escapeHtml(text) {
+	const div = document.createElement('div');
+	div.textContent = text;
+	return div.innerHTML;
+}
 
 // Render widget in grid
 function renderWidget(widget) {
@@ -438,6 +656,41 @@ window.saveWidgetConfig = function() {
 	closeConfigModal();
 };
 
+// Save dashboard silently (auto-save after drag-drop)
+function saveDashboardSilently() {
+	const dashboardGridEditor = document.getElementById('dashboard-grid-editor');
+	if (!dashboardGridEditor) {
+		console.error('Could not find dashboard-grid-editor element');
+		return;
+	}
+	const dashboardSlug = dashboardGridEditor.dataset.dashboardId;
+
+	console.log('Auto-saving dashboard with widgets:', dashboardState.widgets);
+
+	const payload = { widgets: dashboardState.widgets };
+
+	fetch(`/api/dashboards/${dashboardSlug}`, {
+		method: 'PUT',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(payload)
+	})
+	.then(response => {
+		if (response.ok) {
+			console.log('Dashboard auto-saved successfully');
+			// Show a brief success indicator
+			showSuccessToast('Widget added');
+		} else {
+			return response.text().then(text => {
+				throw new Error(text || 'Failed to auto-save dashboard');
+			});
+		}
+	})
+	.catch(error => {
+		console.error('Auto-save failed:', error);
+		showError('Auto-save Failed', error.message || 'An error occurred while auto-saving the dashboard');
+	});
+}
+
 // Save dashboard - make global
 window.saveDashboard = function() {
 	const dashboardGridEditor = document.getElementById('dashboard-grid-editor');
@@ -479,6 +732,35 @@ window.saveDashboard = function() {
 		showError('Save Failed', error.message || 'An error occurred while saving the dashboard');
 	});
 };
+
+// Show success toast message
+function showSuccessToast(message) {
+	const toast = document.createElement('div');
+	toast.className = 'fixed top-4 right-4 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center gap-2';
+
+	const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+	svg.setAttribute('class', 'w-5 h-5 flex-shrink-0');
+	svg.setAttribute('fill', 'none');
+	svg.setAttribute('stroke', 'currentColor');
+	svg.setAttribute('viewBox', '0 0 24 24');
+
+	const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+	path.setAttribute('stroke-linecap', 'round');
+	path.setAttribute('stroke-linejoin', 'round');
+	path.setAttribute('stroke-width', '2');
+	path.setAttribute('d', 'M5 13l4 4L19 7');
+
+	svg.appendChild(path);
+
+	const messageEl = document.createElement('span');
+	messageEl.textContent = message;
+
+	toast.appendChild(svg);
+	toast.appendChild(messageEl);
+
+	document.body.appendChild(toast);
+	setTimeout(() => toast.remove(), 2000);
+}
 
 // Show error message
 function showError(title, message) {

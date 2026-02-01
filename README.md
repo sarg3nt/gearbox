@@ -17,6 +17,17 @@ Gearbox is a general-purpose monitoring and management platform with a plugin-ba
 
 **IMPORTANT:** Gearbox is NOT an HAProxy-specific tool. It is a universal monitoring platform. HAProxy monitoring is just one plugin among many.
 
+## 🚀 Getting Started
+
+**New to Gearbox?** Follow our comprehensive [Getting Started Guide](docs/GETTING_STARTED.md) for step-by-step instructions on:
+
+- Installing the Gearbox dashboard and agent
+- Generating and configuring API keys
+- Adding your first monitored server
+- Enabling plugins and creating dashboards
+
+The guide includes detailed examples, troubleshooting tips, and best practices for production deployments.
+
 ## Quick Start
 
 ### Prerequisites

@@ -259,12 +259,20 @@
 }
 
 /* Dragging state */
-.palette-widget-card.sortable-drag {
+.palette-widget-card.sortable-drag,
+.palette-widget-dragging {
     opacity: 0.5;
+    cursor: grabbing;
 }
 
-.palette-widget-card.sortable-ghost {
+.palette-widget-card.sortable-ghost,
+.palette-widget-ghost {
     opacity: 0.3;
+    background: #f3f4f6;
+}
+
+.dark .palette-widget-ghost {
+    background: #334155;
 }
 
 /* Scrollbar styling for palette list */

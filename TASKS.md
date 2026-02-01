@@ -125,26 +125,51 @@ Framework = Shared services and building blocks (graphs, tables, panels, cards, 
 - Fetches widgets dynamically from `/api/dashboards/widgets` endpoint
 - Responsive design with dark mode support
 
-#### Task 3: Drag-and-Drop from Palette
+#### Task 3: Drag-and-Drop from Palette ✅
 
-- [ ] Extend `gearbox/static/js/dashboard/editor.js` drag-drop functionality
-- [ ] Use SortableJS `group` option to enable cross-container dragging
-- [ ] On drop: generate widget ID, create instance, add to dashboard, save YAML
-- [ ] Show loading state while widget content loads via HTMX
+- [x] Extend `gearbox/static/js/dashboard/editor.js` drag-drop functionality
+- [x] Use SortableJS `group` option to enable cross-container dragging
+- [x] On drop: generate widget ID, create instance, add to dashboard, save YAML
+- [x] Show loading state while widget content loads via HTMX
 
-#### Task 4: Navigation Updates
+**Implementation Details:**
 
-- [ ] Create dynamic plugin navigation
-- [ ] Show plugin menu items only when enabled for server
-- [ ] Ensure plugin menu items update when plugins are enabled/disabled
+- Configured SortableJS with `group` option for cross-container dragging between palette and grid
+- Palette widgets use `pull: 'clone'` to allow dragging without removing from palette
+- Grid accepts drops from palette via `put: ['widget-palette']`
+- `onAdd` handler creates new widget instances with unique IDs when dropped
+- Auto-saves dashboard after widget drop with silent save (no page reload)
+- Displays loading state during widget creation, then shows placeholder content
+- Widget position is automatically calculated based on drop index
+- Edit controls (drag handle, delete button) are injected after widget creation
+- Success toast notification confirms widget addition
+- Built successfully with `make templ-generate && make build`
 
-#### Task 5: Left Hand Navigation bar Updates
+#### Task 4: Navigation Updates ✅
 
-- [ ] Items can be rearranged by clicking edit icon that is next to the toggle sidebar icon
-- [ ] When in edit mode user can drag a menu item up or down and other nav items flow around it
-- [ ] Edit icon becomes save icon
-- [ ] When a plugin is enabled it generates its default "dashboard" interface yaml file if it does not already exist.  Each plugin's default dashboard has a default name and icon as designed by plugin developer.  When plugins is enabled it is added to the nav bar
-- [ ] The rearrangement of left hand nav items will be removed from the plugin screen, all nav rearrangement is now in the nav bar only.
+- [x] Create dynamic plugin navigation
+- [x] Show plugin menu items only when enabled for server
+- [x] Ensure plugin menu items update when plugins are enabled/disabled
+- [x] Left hand nav items can be rearranged by clicking edit icon that is next to the toggle sidebar icon
+- [x] When in edit mode user can drag a menu item up or down and other nav items flow around it
+- [x] Edit icon becomes save icon while in edit mode
+- [x] When a plugin is enabled it generates its default "dashboard" interface yaml file if it does not already exist.  Each plugin's default dashboard has a default name and icon as designed by plugin developer.  When plugins is enabled it is added to the nav bar
+- [x] The rearrangement of left hand nav items will be removed from the plugin screen, all nav rearrangement is now in the nav bar only.
+
+**Implementation Details:**
+
+- Added edit mode toggle button next to sidebar collapse button in [base.templ](gearbox/internal/framework/templates/layouts/base.templ:1105-1129)
+- Edit icon switches to save/checkmark icon when in edit mode
+- Created `SidebarLinkDraggable` and `SidebarLinkDraggableWithBadge` templ components with data attributes and drag handles
+- Implemented `toggleSidebarEditMode()` JavaScript function for managing edit state
+- Used SortableJS for drag-and-drop reordering of navigation items
+- Drag handles visible only in edit mode, links disabled during editing
+- `saveSidebarOrder()` POSTs new order to `/api/integrations/sort-order` endpoint
+- Removed drag handle from plugin cards in [plugins.templ](gearbox/internal/framework/templates/pages/plugins.templ)
+- Disabled drag-and-drop in [plugins-page.js](gearbox/static/js/plugins/plugins-page.js) with explanatory comments
+- Dynamic navigation already working via `OrderedIntegrationLinks()` and middleware
+- Plugin dashboards auto-generate when enabled (completed in Task 1)
+- Built successfully with `make templ-generate && make build`
 
 **Testing Checklist:**
 
@@ -186,20 +211,3 @@ Framework = Shared services and building blocks (graphs, tables, panels, cards, 
 - **Agent API Docs:** [gearbox-agent/docs/](gearbox-agent/docs/)
 - **Plugin Architecture:** [docs/plugins.md](docs/plugins.md)
 - **Development Guide:** [gearbox/docs/development.md](gearbox/docs/development.md)
-
----
-
-## Fresh Start
-
-Code to run for a fresh start (deletes local database and starts dev server):
-
-```bash
-# from the gearbox directory
-cd ../gearbox-agent
-make deploy
-cd -
-rm -f data/haproxy-monitor.db
-rm -rf data/dashboards
-make dev-local
-```
-

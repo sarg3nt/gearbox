@@ -3,51 +3,131 @@ package pages
 import (
 	"fmt"
 	"github.com/sarg3nt/gearbox/internal/framework/database"
+	"github.com/sarg3nt/gearbox/internal/framework/middleware"
 	"github.com/sarg3nt/gearbox/internal/framework/models"
 	"github.com/sarg3nt/gearbox/internal/framework/ui"
 	"github.com/sarg3nt/gearbox/internal/framework/templates/layouts"
 )
 
 // HAProxyServersPage renders the list of monitored servers.
+// When no servers exist, it uses a minimal layout without the sidebar (like login page).
 templ HAProxyServersPage(user *models.User, servers []*database.ServerDB) {
-	@layouts.Base("Servers", user, "/settings") {
-		<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-			<div class="mb-6 flex justify-between items-center">
-				<div>
-					<h1 class="text-3xl font-bold text-gray-900 dark:text-white">Servers</h1>
-					<p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
-						Manage monitored server connections
-					</p>
+	if len(servers) == 0 {
+		@HAProxyServersPageNoSidebar(user)
+	} else {
+		@layouts.Base("Servers", user, "/settings") {
+			@HAProxyServersPageContent(user, servers)
+		}
+	}
+}
+
+// HAProxyServersPageNoSidebar renders the servers page without sidebar when no servers configured.
+templ HAProxyServersPageNoSidebar(user *models.User) {
+	<!DOCTYPE html>
+	<html lang="en" class="h-full">
+	<head>
+		<meta charset="UTF-8"/>
+		<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+		<title>Servers - Gearbox</title>
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
+		if middleware.UseLocalAssets(ctx) {
+			<script src="/static/js/vendor/tailwind.js"></script>
+		} else {
+			<script src="https://cdn.tailwindcss.com"></script>
+		}
+		<script>
+			tailwind.config = { darkMode: 'class' }
+			// Apply theme immediately
+			function getThemePreference() {
+				const stored = localStorage.getItem('theme');
+				if (stored) return stored;
+				return 'system';
+			}
+			function getEffectiveTheme() {
+				const pref = getThemePreference();
+				if (pref === 'system') {
+					return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+				}
+				return pref;
+			}
+			if (getEffectiveTheme() === 'dark') {
+				document.documentElement.classList.add('dark');
+			}
+		</script>
+	</head>
+	<body class="h-full bg-gray-100 dark:bg-slate-900">
+		<div class="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+			<div class="max-w-2xl w-full">
+				<div class="text-center mb-8">
+					<div class="flex justify-center mb-4">
+						<img src="/favicon.svg" alt="Gearbox Logo" class="w-16 h-16"/>
+					</div>
+					<h1 class="text-3xl font-bold text-gray-900 dark:text-white">Gearbox</h1>
+					<p class="mt-2 text-sm text-gray-600 dark:text-gray-400">Real-time monitoring for HAProxy</p>
 				</div>
-				<a
-					href="/settings/servers/new"
-					class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-				>
-					<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+				<div class="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-8 text-center">
+					<svg class="mx-auto h-16 w-16 text-gray-400 mb-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"></path>
 					</svg>
-					Add Server
-				</a>
-			</div>
-			if len(servers) == 0 {
-				<div class="bg-white dark:bg-slate-800 rounded-lg shadow p-8 text-center">
-					<svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7"></path>
-					</svg>
-					<h3 class="mt-4 text-lg font-medium text-gray-900 dark:text-white">No servers configured</h3>
-					<p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
+					<h2 class="text-2xl font-semibold text-gray-900 dark:text-white mb-3">No servers configured</h2>
+					<p class="text-gray-600 dark:text-gray-400 mb-6">
 						Get started by adding your first monitored server.
 					</p>
-					<div class="mt-6">
-						<a
-							href="/settings/servers/new"
-							class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
-						>
-							Add Server
-						</a>
-					</div>
+					<a
+						href="/settings/servers/new"
+						class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+					>
+						<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+						</svg>
+						Add Server
+					</a>
 				</div>
-			} else {
+			</div>
+		</div>
+	</body>
+	</html>
+}
+
+// HAProxyServersPageContent renders the main content of the servers page.
+templ HAProxyServersPageContent(user *models.User, servers []*database.ServerDB) {
+	<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+		<div class="mb-6 flex justify-between items-center">
+			<div>
+				<h1 class="text-3xl font-bold text-gray-900 dark:text-white">Servers</h1>
+				<p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
+					Manage monitored server connections
+				</p>
+			</div>
+			<a
+				href="/settings/servers/new"
+				class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+			>
+				<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+				</svg>
+				Add Server
+			</a>
+		</div>
+		if len(servers) == 0 {
+			<div class="bg-white dark:bg-slate-800 rounded-lg shadow p-8 text-center">
+				<svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7"></path>
+				</svg>
+				<h3 class="mt-4 text-lg font-medium text-gray-900 dark:text-white">No servers configured</h3>
+				<p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
+					Get started by adding your first monitored server.
+				</p>
+				<div class="mt-6">
+					<a
+						href="/settings/servers/new"
+						class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
+					>
+						Add Server
+					</a>
+				</div>
+			</div>
+		} else {
 				<div class="bg-white dark:bg-slate-800 rounded-lg shadow overflow-hidden">
 					<table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
 						<thead class="bg-gray-50 dark:bg-slate-700">
@@ -206,9 +286,9 @@ templ HAProxyServersPage(user *models.User, servers []*database.ServerDB) {
 						</tbody>
 					</table>
 				</div>
-			}
-		</div>
-		<!-- Notes Modal -->
+		}
+	</div>
+	<!-- Notes Modal -->
 		<div id="notes-modal" class="fixed inset-0 z-50 hidden overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
 			<div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
 				<div class="fixed inset-0 bg-gray-500 bg-opacity-75 dark:bg-gray-900 dark:bg-opacity-75 transition-opacity" onclick="closeNotesModal()"></div>
@@ -319,14 +399,58 @@ templ HAProxyServersPage(user *models.User, servers []*database.ServerDB) {
 				}
 			});
 		</script>
-	}
 }
 
 // HAProxyServerNewPage renders the form for creating a new server.
-templ HAProxyServerNewPage(user *models.User, errorMsg string) {
-	@layouts.Base("Add Server", user, "/settings") {
-		@haProxyServerForm(user, nil, false, errorMsg)
+// When no servers exist, it uses a minimal layout without the sidebar.
+templ HAProxyServerNewPage(user *models.User, servers []*database.ServerDB, errorMsg string) {
+	if len(servers) == 0 {
+		@HAProxyServerNewPageNoSidebar(user, errorMsg)
+	} else {
+		@layouts.Base("Add Server", user, "/settings") {
+			@haProxyServerForm(user, nil, false, errorMsg)
+		}
 	}
+}
+
+// HAProxyServerNewPageNoSidebar renders the new server form without sidebar when no servers configured.
+templ HAProxyServerNewPageNoSidebar(user *models.User, errorMsg string) {
+	<!DOCTYPE html>
+	<html lang="en">
+	<head>
+		<meta charset="UTF-8"/>
+		<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+		<title>Add Server - Gearbox</title>
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
+		if middleware.UseLocalAssets(ctx) {
+			<script src="/static/js/vendor/tailwind.js"></script>
+		} else {
+			<script src="https://cdn.tailwindcss.com"></script>
+		}
+		<script>
+			tailwind.config = { darkMode: 'class' }
+			// Apply theme immediately
+			function getThemePreference() {
+				const stored = localStorage.getItem('theme');
+				if (stored) return stored;
+				return 'system';
+			}
+			function getEffectiveTheme() {
+				const pref = getThemePreference();
+				if (pref === 'system') {
+					return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+				}
+				return pref;
+			}
+			if (getEffectiveTheme() === 'dark') {
+				document.documentElement.classList.add('dark');
+			}
+		</script>
+	</head>
+	<body class="bg-gray-100 dark:bg-slate-900 min-h-screen">
+		@haProxyServerForm(user, nil, false, errorMsg)
+	</body>
+	</html>
 }
 
 // HAProxyServerEditPage renders the form for editing a server.
@@ -348,7 +472,10 @@ templ haProxyServerForm(user *models.User, server *database.ServerDB, isEdit boo
 				}
 			</h1>
 			<p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
-				Configure connection details for server monitoring
+				Gearbox requires at least one server or workstation to monitor to function - we call these a "Box".
+				To monitor a Box, you must first install gearbox-agent on it and configure an API key.
+				Use the "Generate API Key" button below to create a key, then add it to the <code class="px-1 py-0.5 bg-gray-100 dark:bg-slate-700 rounded text-xs">GEARBOX_API_KEY</code> environment variable on your Box.
+				See the <a href="https://github.com/sarg3nt/gearbox/blob/main/docs/GETTING_STARTED.md" target="_blank" class="text-blue-600 dark:text-blue-400 hover:underline">Getting Started Guide</a> { "for" } step-by-step instructions.
 			</p>
 		</div>
 		if errorMsg != "" {
@@ -379,7 +506,7 @@ templ haProxyServerForm(user *models.User, server *database.ServerDB, isEdit boo
 								value={ server.Name }
 							}
 							required
-							class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-slate-700 dark:text-white sm:text-sm px-3"
+							class="mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-slate-700 dark:text-white sm:text-sm px-3 py-2"
 							placeholder="My Server"
 						/>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">A friendly name for this server</p>
@@ -397,7 +524,7 @@ templ haProxyServerForm(user *models.User, server *database.ServerDB, isEdit boo
 								readonly
 							}
 							required
-							class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-slate-700 dark:text-white sm:text-sm px-3"
+							class="mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-slate-700 dark:text-white sm:text-sm px-3 py-2"
 							placeholder="server-01"
 						/>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -432,7 +559,7 @@ templ haProxyServerForm(user *models.User, server *database.ServerDB, isEdit boo
 							if server != nil {
 								value={ server.Location }
 							}
-							class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-slate-700 dark:text-white sm:text-sm px-3"
+							class="mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-slate-700 dark:text-white sm:text-sm px-3 py-2"
 							placeholder="e.g., Data Center 1, Rack 42"
 						/>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Physical or logical location of this server</p>
@@ -445,7 +572,7 @@ templ haProxyServerForm(user *models.User, server *database.ServerDB, isEdit boo
 							id="notes"
 							name="notes"
 							rows="3"
-							class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-slate-700 dark:text-white sm:text-sm px-3"
+							class="mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-slate-700 dark:text-white sm:text-sm px-3 py-2"
 							placeholder="Additional notes about this server..."
 						>if server != nil {
 							{ server.Notes }
@@ -470,7 +597,7 @@ templ haProxyServerForm(user *models.User, server *database.ServerDB, isEdit boo
 								value={ server.AgentURL }
 							}
 							required
-							class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-slate-700 dark:text-white sm:text-sm px-3"
+							class="mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-slate-700 dark:text-white sm:text-sm px-3 py-2"
 							placeholder="https://server.example.com:8405"
 						/>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">URL to the Gearbox Agent API (e.g., https://host:8405)</p>
@@ -479,19 +606,28 @@ templ haProxyServerForm(user *models.User, server *database.ServerDB, isEdit boo
 						<label for="api_key" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
 							API Key <span class="text-red-500">*</span>
 						</label>
-						<input
-							type="password"
-							id="api_key"
-							name="api_key"
-							autocomplete="new-password"
-							if isEdit && server != nil && len(server.APIKeyEncrypted) > 0 {
-								placeholder="••••••••••••••••"
-							} else {
-								placeholder="Enter API key"
-								required
-							}
-							class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-slate-700 dark:text-white sm:text-sm px-3"
-						/>
+						<div class="mt-1 flex gap-2">
+							<input
+								type="password"
+								id="api_key"
+								name="api_key"
+								autocomplete="new-password"
+								if isEdit && server != nil && len(server.APIKeyEncrypted) > 0 {
+									placeholder="••••••••••••••••"
+								} else {
+									placeholder="Enter API key"
+									required
+								}
+								class="flex-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-slate-700 dark:text-white sm:text-sm px-3 py-2"
+							/>
+							<button
+								type="button"
+								onclick="showGenerateApiKeyModal()"
+								class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 whitespace-nowrap"
+							>
+								Generate API Key
+							</button>
+						</div>
 						if isEdit && server != nil && len(server.APIKeyEncrypted) > 0 {
 							<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Leave blank to keep existing API key</p>
 						}
@@ -533,7 +669,110 @@ templ haProxyServerForm(user *models.User, server *database.ServerDB, isEdit boo
 		</form>
 		<div id="test-result" class="mt-6 hidden"></div>
 	</div>
+	<!-- API Key Generation Modal -->
+	<div id="apiKeyModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 dark:bg-opacity-70 overflow-y-auto h-full w-full z-50">
+		<div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white dark:bg-slate-800">
+			<div class="mt-3">
+				<div class="flex items-center justify-between mb-4">
+					<h3 class="text-lg font-medium text-gray-900 dark:text-white">Generated API Key</h3>
+					<button onclick="closeApiKeyModal()" class="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300">
+						<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+						</svg>
+					</button>
+				</div>
+				<div class="mb-4">
+					<p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
+						Copy this API key and add it to the <code class="px-1 py-0.5 bg-gray-100 dark:bg-slate-700 rounded text-xs">GEARBOX_API_KEY</code> environment variable on your server. You won't be able to see this key again.
+					</p>
+					<div class="relative">
+						<input
+							type="text"
+							id="generatedApiKey"
+							readonly
+							class="w-full px-3 py-2 pr-10 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-50 dark:bg-slate-700 text-gray-900 dark:text-white font-mono text-sm"
+						/>
+						<button
+							onclick="copyApiKey()"
+							class="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+							title="Copy to clipboard"
+						>
+							<svg id="copyIcon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+							</svg>
+							<svg id="copiedIcon" class="hidden w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+							</svg>
+						</button>
+					</div>
+				</div>
+				<div class="flex justify-end gap-3">
+					<button
+						onclick="closeApiKeyModal()"
+						class="px-4 py-2 bg-gray-200 dark:bg-slate-700 text-gray-800 dark:text-gray-200 text-sm font-medium rounded-md hover:bg-gray-300 dark:hover:bg-slate-600"
+					>
+						Close
+					</button>
+					<button
+						onclick="useGeneratedKey()"
+						class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-md"
+					>
+						Use This Key
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
 	<script>
+		function generateApiKey() {
+			// Generate a secure random API key (32 bytes = 64 hex characters)
+			const array = new Uint8Array(32);
+			crypto.getRandomValues(array);
+			return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+		}
+
+		function showGenerateApiKeyModal() {
+			const apiKey = generateApiKey();
+			document.getElementById('generatedApiKey').value = apiKey;
+			document.getElementById('apiKeyModal').classList.remove('hidden');
+			// Reset copy icon state
+			document.getElementById('copyIcon').classList.remove('hidden');
+			document.getElementById('copiedIcon').classList.add('hidden');
+		}
+
+		function closeApiKeyModal() {
+			document.getElementById('apiKeyModal').classList.add('hidden');
+		}
+
+		function copyApiKey() {
+			const input = document.getElementById('generatedApiKey');
+			input.select();
+			document.execCommand('copy');
+
+			// Show copied icon
+			document.getElementById('copyIcon').classList.add('hidden');
+			document.getElementById('copiedIcon').classList.remove('hidden');
+
+			// Reset after 2 seconds
+			setTimeout(() => {
+				document.getElementById('copyIcon').classList.remove('hidden');
+				document.getElementById('copiedIcon').classList.add('hidden');
+			}, 2000);
+		}
+
+		function useGeneratedKey() {
+			const apiKey = document.getElementById('generatedApiKey').value;
+			document.getElementById('api_key').value = apiKey;
+			closeApiKeyModal();
+		}
+
+		// Close modal on escape key
+		document.addEventListener('keydown', function(e) {
+			if (e.key === 'Escape') {
+				closeApiKeyModal();
+			}
+		});
+
 		async function testConnection() {
 			const spinner = document.getElementById('test-spinner');
 			const resultDiv = document.getElementById('test-result');

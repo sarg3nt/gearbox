@@ -50,7 +50,14 @@ func (h *Handler) HAProxyServerNewPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	component := pages.HAProxyServerNewPage(user, "")
+	// Fetch existing servers to determine if we should show sidebar
+	servers, err := h.db.GetServers()
+	if err != nil {
+		h.logger.Error("Failed to fetch servers", "error", err)
+		servers = []*database.ServerDB{} // Default to empty to show no-sidebar layout
+	}
+
+	component := pages.HAProxyServerNewPage(user, servers, "")
 	if err := component.Render(r.Context(), w); err != nil {
 		h.logger.Error("Failed to render new server page", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -479,7 +486,14 @@ func (h *Handler) renderServerFormWithError(w http.ResponseWriter, r *http.Reque
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 		}
 	} else {
-		component := pages.HAProxyServerNewPage(user, errorMsg)
+		// Fetch existing servers to determine if we should show sidebar
+		servers, err := h.db.GetServers()
+		if err != nil {
+			h.logger.Error("Failed to fetch servers", "error", err)
+			servers = []*database.ServerDB{} // Default to empty to show no-sidebar layout
+		}
+
+		component := pages.HAProxyServerNewPage(user, servers, errorMsg)
 		if err := component.Render(r.Context(), w); err != nil {
 			h.logger.Error("Failed to render form", "error", err)
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
