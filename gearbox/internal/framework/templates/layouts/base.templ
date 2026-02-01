@@ -1213,10 +1213,12 @@ templ Sidebar(user *models.User, currentPath string) {
 			</div>
 		</div>
 
-		<!-- Navigation -->
+		<!-- Navigation (only show items when plugins are enabled) -->
 		<nav class="flex-1 py-4">
 			<ul id="sidebar-nav-list" class="space-y-1">
-				@SidebarLink("/", "Dashboard", SidebarIconDashboard(), currentPath)
+				if hasAnyEnabledIntegration(ctx) {
+					@SidebarLink("/", "Dashboard", SidebarIconDashboard(), currentPath)
+				}
 				@OrderedIntegrationLinks(currentPath)
 			</ul>
 		</nav>
@@ -1568,6 +1570,57 @@ templ SidebarLinkWithIntegration(href string, label string, icon templ.Component
 			}
 		</li>
 	}
+}
+
+// hasAnyEnabledIntegration checks if any integration (plugin) is enabled in the current context.
+func hasAnyEnabledIntegration(ctx context.Context) bool {
+	integrations, ok := auth.GetPluginOrderFromContext(ctx)
+	if !ok {
+		return false
+	}
+	for _, integration := range integrations {
+		if integration.Enabled {
+			return true
+		}
+	}
+	return false
+}
+
+// integrationPath returns the URL path for a given integration name.
+func integrationPath(name string) string {
+	switch name {
+	case "metrics":
+		return "/history"
+	case "logs":
+		return "/logs"
+	case "services":
+		return "/services"
+	case "certificates":
+		return "/certificates"
+	case "traffic":
+		return "/traffic"
+	case "alerts":
+		return "/alerts"
+	case "os_updates":
+		return "/os-updates"
+	default:
+		return "/"
+	}
+}
+
+// firstEnabledIntegrationPath returns the URL path for the first enabled integration.
+// Returns "/" if no integrations are enabled.
+func firstEnabledIntegrationPath(ctx context.Context) string {
+	integrations, ok := auth.GetPluginOrderFromContext(ctx)
+	if !ok {
+		return "/"
+	}
+	for _, integration := range integrations {
+		if integration.Enabled {
+			return integrationPath(integration.Name)
+		}
+	}
+	return "/"
 }
 
 // canViewIntegration checks if the user has permission to view an integration.

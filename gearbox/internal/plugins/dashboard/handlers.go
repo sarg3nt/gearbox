@@ -3,6 +3,7 @@ package dashboard
 import (
 	"net/http"
 
+	"github.com/sarg3nt/gearbox/internal/framework/auth"
 	"github.com/sarg3nt/gearbox/internal/framework/plugin"
 	"github.com/sarg3nt/gearbox/internal/framework/services"
 )
@@ -19,8 +20,7 @@ func NewHandlers(deps plugin.Dependencies) *Handlers {
 }
 
 // OverviewPage serves the main dashboard page.
-// It redirects to the default dashboard which uses the widget system.
-// If no servers are configured, redirects to the servers settings page.
+// It redirects to the first enabled plugin page, or to setup pages if not configured.
 func (h *Handlers) OverviewPage(w http.ResponseWriter, r *http.Request) {
 	// Get enabled servers using the ServerAdapter
 	serverAdapter, ok := h.deps.Servers.(*services.ServerAdapter)
@@ -37,14 +37,44 @@ func (h *Handlers) OverviewPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Redirect to the default dashboard (widget-based dashboard)
-	http.Redirect(w, r, "/dashboards/dashboard", http.StatusSeeOther)
+	// Redirect to the first enabled plugin page if available
+	if integrations, ok := auth.GetPluginOrderFromContext(r.Context()); ok {
+		for _, integration := range integrations {
+			if integration.Enabled {
+				http.Redirect(w, r, integrationPathFromName(integration.Name), http.StatusSeeOther)
+				return
+			}
+		}
+	}
+
+	// No plugins enabled — send to plugins settings page
+	http.Redirect(w, r, "/settings/plugins", http.StatusSeeOther)
+}
+
+// integrationPathFromName maps an integration name to its URL path.
+func integrationPathFromName(name string) string {
+	switch name {
+	case "metrics":
+		return "/history"
+	case "logs":
+		return "/logs"
+	case "services":
+		return "/services"
+	case "certificates":
+		return "/certificates"
+	case "traffic":
+		return "/traffic"
+	case "alerts":
+		return "/alerts"
+	case "os_updates":
+		return "/os-updates"
+	default:
+		return "/dashboards/dashboard"
+	}
 }
 
 // StatusGridPage serves the status grid page.
-// For now, redirects to the main dashboard. In the future, this could
-// render a different dashboard layout focused on status grid view.
+// For now, redirects to the overview page which handles routing.
 func (h *Handlers) StatusGridPage(w http.ResponseWriter, r *http.Request) {
-	// Redirect to main dashboard for now
-	http.Redirect(w, r, "/dashboards/dashboard", http.StatusSeeOther)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
