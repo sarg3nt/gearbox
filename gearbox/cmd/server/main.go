@@ -36,6 +36,7 @@ import (
 	_ "github.com/sarg3nt/gearbox/internal/plugins/alerts"
 	_ "github.com/sarg3nt/gearbox/internal/plugins/certificates"
 	dashboardPlugin "github.com/sarg3nt/gearbox/internal/plugins/dashboard"
+	_ "github.com/sarg3nt/gearbox/internal/plugins/haproxy"
 	_ "github.com/sarg3nt/gearbox/internal/plugins/logs"
 	_ "github.com/sarg3nt/gearbox/internal/plugins/metrics"
 	_ "github.com/sarg3nt/gearbox/internal/plugins/services"
