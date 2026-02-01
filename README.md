@@ -19,7 +19,7 @@ Gearbox is a general-purpose monitoring and management platform with a plugin-ba
 
 ## 🚀 Getting Started
 
-**New to Gearbox?** Follow our comprehensive [Getting Started Guide](docs/GETTING_STARTED.md) for step-by-step instructions on:
+**New to Gearbox?** Follow our comprehensive [Getting Started Guide](docs/getting-started.md) for step-by-step instructions on:
 
 - Installing the Gearbox dashboard and agent
 - Generating and configuring API keys

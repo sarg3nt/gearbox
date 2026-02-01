@@ -410,7 +410,7 @@ Update all widget config schemas:
 
 - [x] Update `.env.example` - references to /settings/servers
 - [x] Update `docs/development.md` - configuration instructions
-- [x] Update `docs/GETTING_STARTED.md` - all "server" → "box"
+- [x] Update `docs/getting-started.md` - all "server" → "box"
 - [x] Update `README.md` - terminology consistency
 - [x] Update plugin README files - "multi-server support" → "multi-box support"
 - [x] Update comments in main.go
@@ -418,7 +418,7 @@ Update all widget config schemas:
 **Files:**
 - `gearbox/.env.example`
 - `gearbox/docs/development.md`
-- `docs/GETTING_STARTED.md`
+- `docs/getting-started.md`
 - `README.md`
 - `gearbox/cmd/server/main.go`
 
