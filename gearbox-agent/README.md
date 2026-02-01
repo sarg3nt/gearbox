@@ -10,6 +10,7 @@ A Go service that runs on monitored servers and workstations to provide:
 **Universal Monitoring:** Works on ANY Linux system - HAProxy hosts, Docker hosts, TrueNAS Scale, workstations, bare servers.
 
 **HAProxy-Specific Features (when HAProxy is detected):**
+
 - Auto-configuration from Docker Compose labels in GitHub
 - HAProxy stats and runtime info collection
 - Replaces the original Python `haproxy-autoconfig.py` script
@@ -17,6 +18,9 @@ A Go service that runs on monitored servers and workstations to provide:
 ## Table of Contents
 
 - [Quick Start](#quick-start)
+- [Installation Methods](#installation-methods)
+  - [Binary Installation](#binary-installation)
+  - [Docker Installation](#docker-installation)
 - [API Endpoints](#api-endpoints)
 - [Configuration](#configuration)
 - [Authentication](#authentication)
@@ -26,7 +30,18 @@ A Go service that runs on monitored servers and workstations to provide:
 
 ## Quick Start
 
-### Installation
+The fastest way to get started depends on your environment:
+
+- **Binary Installation**: Direct systemd service on Linux servers
+- **Docker Installation**: Containerized deployment with Docker or Docker Compose
+
+See [Installation Methods](#installation-methods) below for detailed instructions.
+
+## Installation Methods
+
+### Binary Installation
+
+For traditional Linux deployments with systemd:
 
 ```bash
 # Build for Linux
@@ -38,6 +53,45 @@ make deploy-first
 # Subsequent deployments
 make deploy
 ```
+
+See the [Deployment](#deployment) section for full binary installation details.
+
+### Docker Installation
+
+For containerized deployments:
+
+#### Option 1: Docker Run
+
+```bash
+# Pull the image
+docker pull ghcr.io/sarg3nt/gearbox/gearbox-agent:latest
+
+# Run the container
+docker run -d \
+  --name gearbox-agent \
+  -p 8405:8405 \
+  -v /var/lib/gearbox-agent:/var/lib/gearbox-agent \
+  ghcr.io/sarg3nt/gearbox/gearbox-agent:latest
+```
+
+#### Option 2: Docker Compose
+
+```bash
+# Create docker-compose.yml (see docker-compose.yml in this directory for full example)
+docker-compose up -d
+```
+
+#### Option 3: Build from source
+
+```bash
+# Build Docker image locally
+make docker-build
+
+# Run locally built image
+make docker-run
+```
+
+See [docs/docker.md](docs/docker.md) for complete Docker installation and configuration guide.
 
 ### Verify Installation
 

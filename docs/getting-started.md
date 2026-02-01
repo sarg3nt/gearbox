@@ -37,7 +37,24 @@ The dashboard will be available at `http://localhost:3000`
 
 ### Step 2: Install Gearbox Agent on Your Box
 
-On the server or workstation you want to monitor:
+Choose the installation method that works best for your environment:
+
+#### Option A: Docker Installation (Recommended)
+
+The easiest way to get started with minimal dependencies:
+
+```bash
+# Pull the latest image
+docker pull ghcr.io/sarg3nt/gearbox/gearbox-agent:latest
+
+# Or use Docker Compose (see Step 5 for docker-compose.yml example)
+```
+
+See [gearbox-agent/docs/docker.md](../gearbox-agent/docs/docker.md) for complete Docker setup guide.
+
+#### Option B: Binary Installation
+
+For traditional systemd-based deployments:
 
 ```bash
 # Clone the repository
@@ -81,6 +98,47 @@ port: 8405
 ```
 
 ### Step 5: Start the Agent
+
+#### If Using Docker
+
+**Using docker run:**
+
+```bash
+docker run -d \
+  --name gearbox-agent \
+  -p 8405:8405 \
+  -v gearbox-agent-data:/var/lib/gearbox-agent \
+  -e HAPROXY_AGENT_LOG_LEVEL=info \
+  ghcr.io/sarg3nt/gearbox/gearbox-agent:latest
+```
+
+**Using Docker Compose:**
+
+Create `docker-compose.yml`:
+
+```yaml
+version: '3.8'
+
+services:
+  gearbox-agent:
+    image: ghcr.io/sarg3nt/gearbox/gearbox-agent:latest
+    container_name: gearbox-agent
+    restart: unless-stopped
+    ports:
+      - "8405:8405"
+    volumes:
+      - ./data:/var/lib/gearbox-agent
+    environment:
+      - HAPROXY_AGENT_LOG_LEVEL=info
+```
+
+Then start:
+
+```bash
+docker-compose up -d
+```
+
+#### If Using Binary
 
 ```bash
 # Start the agent

@@ -1,0 +1,107 @@
+name: CI - Agent
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'gearbox-agent/**'
+      - '.github/workflows/ci-agent.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'gearbox-agent/**'
+      - '.github/workflows/ci-agent.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./gearbox-agent
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+          cache-dependency-path: gearbox-agent/go.sum
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run tests
+        run: go test -v -race -coverprofile=coverage.out ./...
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./gearbox-agent/coverage.out
+          flags: agent-unittests
+          name: codecov-agent
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./gearbox-agent
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+          cache-dependency-path: gearbox-agent/go.sum
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
+          working-directory: ./gearbox-agent
+          args: --timeout=5m
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./gearbox-agent
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+          cache-dependency-path: gearbox-agent/go.sum
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Build binary
+        run: |
+          CGO_ENABLED=0 go build \
+            -ldflags="-s -w -X main.Version=${{ github.ref_name }} -X main.CommitSHA=${{ github.sha }} -X main.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            -o bin/gearbox-agent \
+            ./cmd/gearbox-agent
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: gearbox-agent-${{ github.sha }}
+          path: gearbox-agent/bin/gearbox-agent
+          retention-days: 7

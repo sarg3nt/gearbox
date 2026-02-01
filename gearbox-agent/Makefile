@@ -1,4 +1,4 @@
-.PHONY: help build build-linux build-release test lint clean deploy run swagger swagger-install upload-binary
+.PHONY: help build build-linux build-release test lint clean deploy run swagger swagger-install upload-binary docker-build docker-push docker-run docker-stop
 
 # Variables
 APP_NAME := gearbox-agent
@@ -6,6 +6,12 @@ VERSION ?= dev
 COMMIT_SHA ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -ldflags "-s -w -X main.Version=$(VERSION) -X main.CommitSHA=$(COMMIT_SHA) -X main.BuildDate=$(BUILD_DATE)"
+
+# Docker variables
+DOCKER_REGISTRY ?= ghcr.io
+DOCKER_REPO ?= sarg3nt/gearbox
+DOCKER_IMAGE := $(DOCKER_REGISTRY)/$(DOCKER_REPO)/gearbox-agent
+DOCKER_TAG ?= $(VERSION)
 
 # Deployment settings
 DEPLOY_HOST ?= 10.0.0.3
@@ -144,3 +150,39 @@ upload-binary: build-linux ## Build and upload binary to web server for cloud-in
 	@echo ""
 	@echo "The binary is now available for cloud-init provisioning at:"
 	@echo "  http://$(WEB_SERVER_HOST):8080/light-hugger/gearbox-agent"
+
+docker-build: ## Build Docker image
+	@echo "Building Docker image: $(DOCKER_IMAGE):$(DOCKER_TAG)"
+	@docker build \
+		--build-arg VERSION=$(VERSION) \
+		--build-arg COMMIT_SHA=$(COMMIT_SHA) \
+		--build-arg BUILD_DATE=$(BUILD_DATE) \
+		-t $(DOCKER_IMAGE):$(DOCKER_TAG) \
+		-t $(DOCKER_IMAGE):latest \
+		.
+	@echo "Docker image built successfully"
+
+docker-push: docker-build ## Build and push Docker image to registry
+	@echo "Pushing Docker image: $(DOCKER_IMAGE):$(DOCKER_TAG)"
+	@docker push $(DOCKER_IMAGE):$(DOCKER_TAG)
+	@docker push $(DOCKER_IMAGE):latest
+	@echo "Docker image pushed successfully"
+
+docker-run: ## Run Docker container locally (development)
+	@echo "Running $(APP_NAME) in Docker container..."
+	@docker run -d \
+		--name $(APP_NAME) \
+		-p 8405:8405 \
+		-v $(PWD)/data:/var/lib/gearbox-agent \
+		$(DOCKER_IMAGE):latest
+	@echo "Container started. Access at https://localhost:8405"
+	@echo "View logs with: docker logs -f $(APP_NAME)"
+
+docker-stop: ## Stop and remove Docker container
+	@echo "Stopping $(APP_NAME) container..."
+	@docker stop $(APP_NAME) || true
+	@docker rm $(APP_NAME) || true
+	@echo "Container stopped and removed"
+
+docker-logs: ## Show Docker container logs
+	@docker logs -f $(APP_NAME)

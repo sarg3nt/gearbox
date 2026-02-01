@@ -1,4 +1,4 @@
-name: Docker Build and Push
+name: Docker Build and Push - Agent
 
 on:
   push:
@@ -6,17 +6,17 @@ on:
     tags:
       - 'v*'
     paths:
-      - 'gearbox/**'
-      - '.github/workflows/docker.yml'
+      - 'gearbox-agent/**'
+      - '.github/workflows/docker-agent.yml'
   pull_request:
     branches: [main]
     paths:
-      - 'gearbox/**'
-      - '.github/workflows/docker.yml'
+      - 'gearbox-agent/**'
+      - '.github/workflows/docker-agent.yml'
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}/gearbox
+  IMAGE_NAME: ${{ github.repository }}/gearbox-agent
 
 permissions:
   contents: read
@@ -65,7 +65,7 @@ jobs:
         id: build
         uses: docker/build-push-action@v6
         with:
-          context: ./gearbox
+          context: ./gearbox-agent
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

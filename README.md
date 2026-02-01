@@ -47,13 +47,32 @@ Visit `http://localhost:3000`
 
 ### Running the Agent
 
+#### Binary Installation
+
 ```bash
 cd gearbox-agent
 make build
 ./bin/gearbox-agent
 ```
 
-Agent runs on `https://localhost:8405`
+#### Docker Installation
+
+```bash
+# Using Docker
+docker run -d \
+  --name gearbox-agent \
+  -p 8405:8405 \
+  -v gearbox-agent-data:/var/lib/gearbox-agent \
+  ghcr.io/sarg3nt/gearbox/gearbox-agent:latest
+
+# Using Docker Compose
+cd gearbox-agent
+docker-compose up -d
+```
+
+Agent runs on <https://localhost:8405>
+
+See [gearbox-agent/README.md](gearbox-agent/README.md) for installation options and [gearbox-agent/docs/docker.md](gearbox-agent/docs/docker.md) for Docker-specific configuration.
 
 ## Architecture
 
@@ -256,6 +275,7 @@ You are free to:
 - Host and use an **unmodified version** of the software for free
 
 ### What you cannot do
+
 You may not:
 
 - Offer the software as a hosted or managed service where the software itself is
@@ -263,9 +283,10 @@ You may not:
 - Rebrand, resell, or offer it as a competing commercial product or service
 
 ### Commercial use
+
 If you wish to offer this software (or a modified version of it) as a managed or
-hosted service, commercial licensing is available.  
-Please contact **dave@sarg3.net** for more information.
+hosted service, commercial licensing is available.
+Please contact <dave@sarg3.net> for more information.
 
 This license is designed to be friendly to internal enterprise use while
 protecting the project from being resold or rebranded as a competing service.

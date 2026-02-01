@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  gearbox-agent:
+    image: ghcr.io/sarg3nt/gearbox/gearbox-agent:latest
+    container_name: gearbox-agent
+    restart: unless-stopped
+    ports:
+      - "8405:8405"
+    volumes:
+      # Data directory for API keys, state, etc.
+      - ./data:/var/lib/gearbox-agent
+      # Optional: Mount TLS certificates
+      # - /path/to/certs:/etc/certs:ro
+      # Optional: Mount HAProxy socket (if monitoring HAProxy on host)
+      # - /run/haproxy:/run/haproxy:ro
+      # Optional: Mount systemd for service monitoring
+      # - /run/systemd:/run/systemd:ro
+    environment:
+      # Server configuration
+      - HAPROXY_AGENT_LISTEN=0.0.0.0:8405
+      - HAPROXY_AGENT_DATA_DIR=/var/lib/gearbox-agent
+      - HAPROXY_AGENT_LOG_LEVEL=info
+
+      # Optional: TLS configuration (use custom certificates)
+      # - HAPROXY_AGENT_TLS_CERT=/etc/certs/fullchain.crt
+      # - HAPROXY_AGENT_TLS_KEY=/etc/certs/key.key
+
+      # Optional: Git sync configuration
+      # - HAPROXY_GIT_REPO=https://github.com/your-org/your-repo
+      # - HAPROXY_GIT_PAT=ghp_your_personal_access_token
+      # - HAPROXY_GIT_BRANCH=main
+      # - HAPROXY_APPS_FOLDER=apps
+      # - HAPROXY_POLL_INTERVAL=5m
+
+      # Optional: Webhook configuration
+      # - HAPROXY_WEBHOOK_ENABLED=true
+      # - HAPROXY_WEBHOOK_POLL_BACKUP=false
+
+      # Optional: HAProxy stats configuration (if monitoring HAProxy)
+      # - HAPROXY_STATS_SOCKET=/run/haproxy/admin.sock
+      # - HAPROXY_STATS_URL=http://localhost:8404/stats
+      # - HAPROXY_STATS_USER=admin
+      # - HAPROXY_STATS_PASSWORD=secret
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "--no-check-certificate", "https://localhost:8405/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+
+    # Run as non-root user (matches Dockerfile)
+    user: "1000:1000"

@@ -1,0 +1,46 @@
+# Build artifacts
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.out
+
+# Documentation
+*.md
+!README.md
+# Keep swagger docs - they're needed for the build
+# docs/swagger.json
+# docs/swagger.yaml
+# docs/docs.go
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Testing
+test/
+*_test.go
+
+# CI/CD
+.github/
+
+# Deployment
+deploy/
+
+# Misc
+tmp/
+*.log
