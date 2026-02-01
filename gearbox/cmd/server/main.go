@@ -623,8 +623,8 @@ func main() {
 
 		// Page routes (non-plugin)
 		r.Get("/os-updates", h.OSUpdatesPage)
-		r.Get("/box/{serverID}/frontend/{name}", h.FrontendDetailPage)
-		r.Get("/box/{serverID}/backend/{name}", h.BackendDetailPage)
+		r.Get("/box/{boxID}/frontend/{name}", h.FrontendDetailPage)
+		r.Get("/box/{boxID}/backend/{name}", h.BackendDetailPage)
 
 		// Config editor pages
 		r.Get("/config/haproxy/{boxID}", h.HAProxyConfigPage)
@@ -646,36 +646,36 @@ func main() {
 			r.Get("/user/permissions", h.APIGetCurrentUserPermissions)
 			r.Get("/user/pending-count", h.APIPendingUsersCount)
 			r.Get("/websocket/status", h.APIWebSocketStatusHandler) // WebSocket connection status
-			r.Get("/{serverID}/stats", h.APIStatsHandler)
-			r.Get("/{serverID}/metadata", h.APIMetadataHandler)
-			r.Get("/{serverID}/metrics", h.APISystemMetricsHandler)
-			r.Get("/{serverID}/logs/{logName}", h.APILogsHandler)
-			r.Get("/{serverID}/log-sources", h.APILogSourcesHandler) // Get enabled log sources
+			r.Get("/{boxID}/stats", h.APIStatsHandler)
+			r.Get("/{boxID}/metadata", h.APIMetadataHandler)
+			r.Get("/{boxID}/metrics", h.APISystemMetricsHandler)
+			r.Get("/{boxID}/logs/{logName}", h.APILogsHandler)
+			r.Get("/{boxID}/log-sources", h.APILogSourcesHandler) // Get enabled log sources
 			// History API endpoints
-			r.Get("/{serverID}/history/stats", h.APIStatsHistoryHandler)
-			r.Get("/{serverID}/history/metrics", h.APISystemMetricsHistoryHandler)
-			r.Get("/{serverID}/history/backend/{backendName}", h.APIBackendHistoryHandler)
-			r.Get("/{serverID}/incidents", h.APIIncidentsHandler)
+			r.Get("/{boxID}/history/stats", h.APIStatsHistoryHandler)
+			r.Get("/{boxID}/history/metrics", h.APISystemMetricsHistoryHandler)
+			r.Get("/{boxID}/history/backend/{backendName}", h.APIBackendHistoryHandler)
+			r.Get("/{boxID}/incidents", h.APIIncidentsHandler)
 
 			// Disabled entities management
-			r.Get("/{serverID}/disabled-entities", h.APIDisabledEntitiesHandler)
-			r.Post("/{serverID}/disable-entity", h.APIDisableEntityHandler)
-			r.Post("/{serverID}/enable-entity", h.APIEnableEntityHandler)
+			r.Get("/{boxID}/disabled-entities", h.APIDisabledEntitiesHandler)
+			r.Post("/{boxID}/disable-entity", h.APIDisableEntityHandler)
+			r.Post("/{boxID}/enable-entity", h.APIEnableEntityHandler)
 
 			// Certificate management
-			r.Get("/{serverID}/certificates", h.APICertificatesHandler)
-			r.Post("/{serverID}/certificates/{domain}/refresh", h.APICertificateRefreshHandler)
-			r.Get("/{serverID}/certificates/{domain}/download", h.APICertificateDownloadHandler)
+			r.Get("/{boxID}/certificates", h.APICertificatesHandler)
+			r.Post("/{boxID}/certificates/{domain}/refresh", h.APICertificateRefreshHandler)
+			r.Get("/{boxID}/certificates/{domain}/download", h.APICertificateDownloadHandler)
 
 			// Services management
-			r.Get("/{serverID}/services-config", h.APIServicesConfigHandler)
-			r.Get("/{serverID}/services", h.APIServicesHandler)
-			r.Post("/{serverID}/service-control", h.APIServiceControlHandler)
+			r.Get("/{boxID}/services-config", h.APIServicesConfigHandler)
+			r.Get("/{boxID}/services", h.APIServicesHandler)
+			r.Post("/{boxID}/service-control", h.APIServiceControlHandler)
 
 			// Traffic analysis API
-			r.Get("/{serverID}/traffic", h.APITrafficAnalysisHandler)
-			r.Get("/{serverID}/traffic/sources", h.APITrafficSourcesHandler)
-			r.Get("/{serverID}/traffic/network", h.APITrafficNetworkHandler)
+			r.Get("/{boxID}/traffic", h.APITrafficAnalysisHandler)
+			r.Get("/{boxID}/traffic/sources", h.APITrafficSourcesHandler)
+			r.Get("/{boxID}/traffic/network", h.APITrafficNetworkHandler)
 
 			// Integrations API
 			r.Get("/plugins", h.APIPluginsHandler)
@@ -689,23 +689,23 @@ func main() {
 			r.Get("/backup/download/{path}", h.APIDownloadBackup)
 
 			// Metrics storage management
-			r.Get("/{serverID}/metrics/storage-stats", h.APIMetricsStorageStatsHandler)
-			r.Post("/{serverID}/metrics/clear", h.APIClearMetricsDataHandler)
+			r.Get("/{boxID}/metrics/storage-stats", h.APIMetricsStorageStatsHandler)
+			r.Post("/{boxID}/metrics/clear", h.APIClearMetricsDataHandler)
 
 			// HAProxy config management
-			r.Get("/{serverID}/haproxy/config", h.APIHAProxyConfigGet)
-			r.Post("/{serverID}/haproxy/config", h.APIHAProxyConfigSave)
-			r.Post("/{serverID}/haproxy/config/validate", h.APIHAProxyConfigValidate)
-			r.Get("/{serverID}/haproxy/config/backups", h.APIHAProxyConfigBackups)
-			r.Post("/{serverID}/haproxy/config/restore", h.APIHAProxyConfigRestore)
-			r.Get("/{serverID}/haproxy/config/history", h.APIHAProxyConfigHistory)
+			r.Get("/{boxID}/haproxy/config", h.APIHAProxyConfigGet)
+			r.Post("/{boxID}/haproxy/config", h.APIHAProxyConfigSave)
+			r.Post("/{boxID}/haproxy/config/validate", h.APIHAProxyConfigValidate)
+			r.Get("/{boxID}/haproxy/config/backups", h.APIHAProxyConfigBackups)
+			r.Post("/{boxID}/haproxy/config/restore", h.APIHAProxyConfigRestore)
+			r.Get("/{boxID}/haproxy/config/history", h.APIHAProxyConfigHistory)
 
 			// Firewall config management
-			r.Get("/{serverID}/firewall/config", h.APIFirewallConfigGet)
-			r.Post("/{serverID}/firewall/config", h.APIFirewallConfigSave)
-			r.Post("/{serverID}/firewall/config/validate", h.APIFirewallConfigValidate)
-			r.Get("/{serverID}/firewall/config/backups", h.APIFirewallConfigBackups)
-			r.Post("/{serverID}/firewall/config/restore", h.APIFirewallConfigRestore)
+			r.Get("/{boxID}/firewall/config", h.APIFirewallConfigGet)
+			r.Post("/{boxID}/firewall/config", h.APIFirewallConfigSave)
+			r.Post("/{boxID}/firewall/config/validate", h.APIFirewallConfigValidate)
+			r.Get("/{boxID}/firewall/config/backups", h.APIFirewallConfigBackups)
+			r.Post("/{boxID}/firewall/config/restore", h.APIFirewallConfigRestore)
 
 			// User permissions API
 			r.Route("/users", func(r chi.Router) {
@@ -716,12 +716,12 @@ func main() {
 
 			// Alerts API
 			r.Get("/alerts/count", h.APIGlobalAlertCountHandler) // Global active alert count
-			r.Get("/{serverID}/alerts", h.APIAlertsHandler)
-			r.Get("/{serverID}/alerts/summary", h.APIAlertSummaryHandler)
-			r.Get("/{serverID}/alerts/rules", h.APIAlertRulesHandler)
-			r.Post("/{serverID}/alerts/rules", h.APICreateAlertRuleHandler)
-			r.Get("/{serverID}/alerts/retention", h.APIAlertRetentionConfigHandler)
-			r.Post("/{serverID}/alerts/retention", h.APIUpdateAlertRetentionConfigHandler)
+			r.Get("/{boxID}/alerts", h.APIAlertsHandler)
+			r.Get("/{boxID}/alerts/summary", h.APIAlertSummaryHandler)
+			r.Get("/{boxID}/alerts/rules", h.APIAlertRulesHandler)
+			r.Post("/{boxID}/alerts/rules", h.APICreateAlertRuleHandler)
+			r.Get("/{boxID}/alerts/retention", h.APIAlertRetentionConfigHandler)
+			r.Post("/{boxID}/alerts/retention", h.APIUpdateAlertRetentionConfigHandler)
 			r.Put("/alerts/rules/{ruleID}", h.APIUpdateAlertRuleHandler)
 			r.Delete("/alerts/rules/{ruleID}", h.APIDeleteAlertRuleHandler)
 			r.Post("/alerts/{alertID}/acknowledge", h.APIAcknowledgeAlertWithNoteHandler)
