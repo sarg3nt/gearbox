@@ -35,7 +35,7 @@ import (
 	// Import plugins - blank identifier triggers init() registration
 	_ "github.com/sarg3nt/gearbox/internal/plugins/alerts"
 	_ "github.com/sarg3nt/gearbox/internal/plugins/certificates"
-	dashboardPlugin "github.com/sarg3nt/gearbox/internal/plugins/dashboard"
+	_ "github.com/sarg3nt/gearbox/internal/plugins/dashboard"
 	_ "github.com/sarg3nt/gearbox/internal/plugins/haproxy"
 	_ "github.com/sarg3nt/gearbox/internal/plugins/logs"
 	_ "github.com/sarg3nt/gearbox/internal/plugins/metrics"
@@ -370,11 +370,6 @@ func main() {
 	// Register core widgets
 	if err := widgets.RegisterCoreWidgets(widgetRegistry); err != nil {
 		log.Fatalf("Failed to register core widgets: %v", err)
-	}
-
-	// Register HAProxy-specific widgets
-	if err := dashboardPlugin.RegisterHAProxyWidgets(widgetRegistry); err != nil {
-		log.Fatalf("Failed to register HAProxy widgets: %v", err)
 	}
 
 	dashboardHandler := handler.NewDashboardHandler(
