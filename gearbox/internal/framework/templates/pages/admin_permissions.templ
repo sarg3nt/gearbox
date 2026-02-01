@@ -70,7 +70,7 @@ templ AdminPermissions(
 templ permissionUserRow(user *models.User, perms *models.UserPermissions) {
 	<li>
 		<a
-			href={ templ.URL(fmt.Sprintf("/settings/permissions/%d", user.ID)) }
+			href={ templ.URL(fmt.Sprintf("/settings/permissions/%s", user.ID)) }
 			class="block hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
 		>
 			<div class="px-4 py-4 sm:px-6">

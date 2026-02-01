@@ -1089,20 +1089,20 @@ templ AdminUsers(admin *models.User, users []*models.User, pendingRequests []*mo
 										}
 									</td>
 									<td class="py-2 px-3 text-right space-x-2">
-										<a href={ templ.SafeURL(fmt.Sprintf("/settings/users/%d", u.ID)) } class="text-blue-600 dark:text-blue-400 hover:underline">Edit</a>
-										<a href={ templ.SafeURL(fmt.Sprintf("/settings/permissions/%d", u.ID)) } class="text-purple-600 dark:text-purple-400 hover:underline">Permissions</a>
+										<a href={ templ.SafeURL(fmt.Sprintf("/settings/users/%s", u.ID)) } class="text-blue-600 dark:text-blue-400 hover:underline">Edit</a>
+										<a href={ templ.SafeURL(fmt.Sprintf("/settings/permissions/%s", u.ID)) } class="text-purple-600 dark:text-purple-400 hover:underline">Permissions</a>
 										if u.ID != admin.ID {
 											if u.Status == models.UserStatusActive {
 												<form action="/settings/users/toggle" method="POST" class="inline">
 													<input type="hidden" name="csrf_token" value={ csrfToken }/>
-													<input type="hidden" name="user_id" value={ fmt.Sprintf("%d", u.ID) }/>
+													<input type="hidden" name="user_id" value={ u.ID }/>
 													<input type="hidden" name="action" value="disable"/>
 													<button type="submit" class="text-red-600 dark:text-red-400 hover:underline">Disable</button>
 												</form>
 											} else {
 												<form action="/settings/users/toggle" method="POST" class="inline">
 													<input type="hidden" name="csrf_token" value={ csrfToken }/>
-													<input type="hidden" name="user_id" value={ fmt.Sprintf("%d", u.ID) }/>
+													<input type="hidden" name="user_id" value={ u.ID }/>
 													<input type="hidden" name="action" value="enable"/>
 													<button type="submit" class="text-green-600 dark:text-green-400 hover:underline">Enable</button>
 												</form>
@@ -1130,7 +1130,7 @@ templ AdminUserDetail(admin *models.User, targetUser *models.User, errorMessage 
 				</div>
 				<div class="flex items-center space-x-3">
 					<a
-						href={ templ.SafeURL(fmt.Sprintf("/settings/permissions/%d", targetUser.ID)) }
+						href={ templ.SafeURL(fmt.Sprintf("/settings/permissions/%s", targetUser.ID)) }
 						class="inline-flex items-center px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-colors"
 					>
 						<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1155,7 +1155,7 @@ templ AdminUserDetail(admin *models.User, targetUser *models.User, errorMessage 
 			<!-- User Information -->
 			<div class="bg-white dark:bg-slate-800 p-6 rounded-lg shadow">
 				<h2 class="text-lg font-semibold mb-4 text-gray-800 dark:text-gray-100">User Information</h2>
-				<form action={ templ.SafeURL(fmt.Sprintf("/settings/users/%d", targetUser.ID)) } method="POST" class="space-y-4">
+				<form action={ templ.SafeURL(fmt.Sprintf("/settings/users/%s", targetUser.ID)) } method="POST" class="space-y-4">
 					<input type="hidden" name="csrf_token" value={ csrfToken }/>
 
 					<div class="grid grid-cols-2 gap-4">
@@ -1188,7 +1188,7 @@ templ AdminUserDetail(admin *models.User, targetUser *models.User, errorMessage 
 							</select>
 							<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
 								For granular permissions, use
-								<a href={ templ.SafeURL(fmt.Sprintf("/settings/permissions/%d", targetUser.ID)) } class="text-purple-600 dark:text-purple-400 hover:underline font-medium">
+								<a href={ templ.SafeURL(fmt.Sprintf("/settings/permissions/%s", targetUser.ID)) } class="text-purple-600 dark:text-purple-400 hover:underline font-medium">
 									Manage Permissions
 								</a>
 							</p>
@@ -1216,7 +1216,7 @@ templ AdminUserDetail(admin *models.User, targetUser *models.User, errorMessage 
 				<dl class="space-y-2 text-sm">
 					<div class="flex">
 						<dt class="w-36 text-gray-500 dark:text-gray-400">User ID:</dt>
-						<dd class="text-gray-800 dark:text-gray-200">{ fmt.Sprintf("%d", targetUser.ID) }</dd>
+						<dd class="text-gray-800 dark:text-gray-200">{ targetUser.ID }</dd>
 					</div>
 					<div class="flex">
 						<dt class="w-36 text-gray-500 dark:text-gray-400">Created:</dt>
@@ -1262,7 +1262,7 @@ templ AdminUserDetail(admin *models.User, targetUser *models.User, errorMessage 
 								<p class="text-gray-700 dark:text-gray-300 font-medium">Force Password Reset</p>
 								<p class="text-xs text-gray-500 dark:text-gray-400">User will be required to change password on next login</p>
 							</div>
-							<form action={ templ.SafeURL(fmt.Sprintf("/settings/users/%d/reset-password", targetUser.ID)) } method="POST">
+							<form action={ templ.SafeURL(fmt.Sprintf("/settings/users/%s/reset-password", targetUser.ID)) } method="POST">
 								<input type="hidden" name="csrf_token" value={ csrfToken }/>
 								<button type="submit" class="bg-yellow-600 hover:bg-yellow-700 text-white font-medium py-2 px-4 rounded text-sm">
 									Force Reset
@@ -1275,7 +1275,7 @@ templ AdminUserDetail(admin *models.User, targetUser *models.User, errorMessage 
 									<p class="text-gray-700 dark:text-gray-300 font-medium">Delete User</p>
 									<p class="text-xs text-gray-500 dark:text-gray-400">Permanently remove this user and all their data. This cannot be undone.</p>
 								</div>
-								<form action={ templ.SafeURL(fmt.Sprintf("/settings/users/%d/delete", targetUser.ID)) } method="POST" class="user-delete-form">
+								<form action={ templ.SafeURL(fmt.Sprintf("/settings/users/%s/delete", targetUser.ID)) } method="POST" class="user-delete-form">
 									<input type="hidden" name="csrf_token" value={ csrfToken }/>
 									<button type="submit" class="bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded text-sm">
 										Delete User
