@@ -21,6 +21,7 @@ gearbox-agent/.env
 *~
 .vscode/
 .idea/
+scratch.md
 
 # Build artifacts
 **/*_templ.go
