@@ -209,9 +209,7 @@ func (s *Storage) CreateDefaultDashboard() error {
 		return nil
 	}
 
-	// Create default dashboard with no widgets.
-	// Empty dashboards auto-redirect to edit mode with the widget palette open,
-	// so users can immediately start adding widgets.
+	// Create a default, empty, editable dashboard so users can configure it as needed.
 	dashboard := &Dashboard{
 		Version:     "1.0",
 		Name:        "Dashboard",
