@@ -5,8 +5,8 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/sarg3nt/gearbox/internal/framework/auth"
 	"github.com/sarg3nt/gearbox/internal/framework/dashboard"
-	"github.com/sarg3nt/gearbox/internal/framework/models"
 	"github.com/sarg3nt/gearbox/internal/framework/templates/pages"
 )
 
@@ -42,8 +42,7 @@ func (h *DashboardHandler) DashboardManagerPage(w http.ResponseWriter, r *http.R
 	}
 
 	// Get user from context
-	var user *models.User
-	// TODO: Get user from auth context
+	user, _ := auth.GetUserFromContext(r.Context())
 
 	// Render manager page
 	data := dashboard.DashboardManagerData{

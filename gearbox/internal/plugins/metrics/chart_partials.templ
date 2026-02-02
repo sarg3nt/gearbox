@@ -1,0 +1,558 @@
+package metrics
+
+import (
+	"fmt"
+)
+
+// SessionsRequestsChartPartial renders a Chart.js time-series chart for sessions and requests.
+templ SessionsRequestsChartPartial(boxID string, hours int, limit int) {
+	<div id={ fmt.Sprintf("card-sessions-requests-%s", boxID) } class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
+		<div class="flex justify-between items-center mb-2">
+			<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300">Sessions & Requests</h4>
+			<button class={ fmt.Sprintf("fullscreen-btn-sessions-requests-%s", boxID), "p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" } title="Toggle fullscreen">
+				<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+				</svg>
+			</button>
+		</div>
+		<div class="chart-aspect-container">
+			<canvas id={ fmt.Sprintf("chart-sessions-requests-%s", boxID) }></canvas>
+		</div>
+	</div>
+	<script type="module">
+		import { getChartColors, createChartOptions, createLineDataset, formatTime } from '/static/js/charts/chart-defaults.js';
+		import { toggleFullscreen } from '/static/js/charts/chart-fullscreen.js';
+
+		const canvasId = { fmt.Sprintf("'chart-sessions-requests-%s'", boxID) };
+		const cardId = { fmt.Sprintf("'card-sessions-requests-%s'", boxID) };
+		const boxID = { fmt.Sprintf("'%s'", boxID) };
+
+		if (!window.chartInstances) window.chartInstances = {};
+
+		// Setup fullscreen button
+		const fullscreenBtn = document.querySelector({ fmt.Sprintf("'.fullscreen-btn-sessions-requests-%s'", boxID) });
+		if (fullscreenBtn) {
+			fullscreenBtn.addEventListener('click', () => {
+				toggleFullscreen(cardId, () => {
+					if (window.chartInstances && window.chartInstances[canvasId]) {
+						setTimeout(() => window.chartInstances[canvasId].resize(), 100);
+					}
+				});
+			});
+		}
+
+		async function loadChart() {
+			try {
+				const response = await fetch({ fmt.Sprintf("`/api/${boxID}/history/stats?hours=%d&limit=%d`", hours, limit) });
+				const json = await response.json();
+				const data = json.data || [];
+
+				const colors = getChartColors();
+				const ctx = document.getElementById(canvasId);
+				if (!ctx) return;
+
+				if (window.chartInstances[canvasId]) {
+					window.chartInstances[canvasId].destroy();
+				}
+
+				window.chartInstances[canvasId] = new Chart(ctx.getContext('2d'), {
+					type: 'line',
+					data: {
+						labels: data.map(d => formatTime(d.collected_at)),
+						datasets: [
+							createLineDataset('Sessions', data.map(d => d.total_sessions), colors.primary),
+							createLineDataset('Requests (÷1000)', data.map(d => Math.round(d.total_requests / 1000)), colors.secondary)
+						]
+					},
+					options: createChartOptions(0)
+				});
+			} catch (error) {
+				console.error('Failed to load sessions/requests chart:', error);
+			}
+		}
+
+		loadChart();
+		document.body.addEventListener('dashboard:settings-changed', loadChart);
+		document.body.addEventListener('dashboard:reset-zoom', () => {
+			if (window.chartInstances[canvasId] && window.chartInstances[canvasId].resetZoom) {
+				window.chartInstances[canvasId].resetZoom();
+			}
+		});
+	</script>
+}
+
+// ServerHealthChartPartial renders a Chart.js time-series chart for server health.
+templ ServerHealthChartPartial(boxID string, hours int, limit int) {
+	<div id={ fmt.Sprintf("card-server-health-%s", boxID) } class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
+		<div class="flex justify-between items-center mb-2">
+			<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300">Server Health</h4>
+			<button class={ fmt.Sprintf("fullscreen-btn-server-health-%s", boxID), "p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" } title="Toggle fullscreen">
+				<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+				</svg>
+			</button>
+		</div>
+		<div class="chart-aspect-container">
+			<canvas id={ fmt.Sprintf("chart-server-health-%s", boxID) }></canvas>
+		</div>
+	</div>
+	<script type="module">
+		import { getChartColors, createChartOptions, createLineDataset, formatTime } from '/static/js/charts/chart-defaults.js';
+		import { toggleFullscreen } from '/static/js/charts/chart-fullscreen.js';
+
+		const canvasId = { fmt.Sprintf("'chart-server-health-%s'", boxID) };
+		const cardId = { fmt.Sprintf("'card-server-health-%s'", boxID) };
+		const boxID = { fmt.Sprintf("'%s'", boxID) };
+
+		if (!window.chartInstances) window.chartInstances = {};
+
+		const fullscreenBtn = document.querySelector({ fmt.Sprintf("'.fullscreen-btn-server-health-%s'", boxID) });
+		if (fullscreenBtn) {
+			fullscreenBtn.addEventListener('click', () => {
+				toggleFullscreen(cardId, () => {
+					if (window.chartInstances && window.chartInstances[canvasId]) {
+						setTimeout(() => window.chartInstances[canvasId].resize(), 100);
+					}
+				});
+			});
+		}
+
+		async function loadChart() {
+			try {
+				const response = await fetch({ fmt.Sprintf("`/api/${boxID}/history/stats?hours=%d&limit=%d`", hours, limit) });
+				const json = await response.json();
+				const data = json.data || [];
+
+				const colors = getChartColors();
+				const ctx = document.getElementById(canvasId);
+				if (!ctx) return;
+
+				if (window.chartInstances[canvasId]) {
+					window.chartInstances[canvasId].destroy();
+				}
+
+				window.chartInstances[canvasId] = new Chart(ctx.getContext('2d'), {
+					type: 'line',
+					data: {
+						labels: data.map(d => formatTime(d.collected_at)),
+						datasets: [
+							createLineDataset('Healthy Servers', data.map(d => d.healthy_servers), colors.secondary),
+							createLineDataset('Total Servers', data.map(d => d.total_servers), colors.primary)
+						]
+					},
+					options: createChartOptions(0)
+				});
+			} catch (error) {
+				console.error('Failed to load server health chart:', error);
+			}
+		}
+
+		loadChart();
+		document.body.addEventListener('dashboard:settings-changed', loadChart);
+		document.body.addEventListener('dashboard:reset-zoom', () => {
+			if (window.chartInstances[canvasId] && window.chartInstances[canvasId].resetZoom) {
+				window.chartInstances[canvasId].resetZoom();
+			}
+		});
+	</script>
+}
+
+// CPULoadChartPartial renders a Chart.js time-series chart for CPU load average.
+templ CPULoadChartPartial(boxID string, hours int, limit int) {
+	<div id={ fmt.Sprintf("card-cpu-load-%s", boxID) } class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
+		<div class="flex justify-between items-center mb-2">
+			<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300">CPU Load</h4>
+			<button class={ fmt.Sprintf("fullscreen-btn-cpu-load-%s", boxID), "p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" } title="Toggle fullscreen">
+				<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+				</svg>
+			</button>
+		</div>
+		<div class="chart-aspect-container">
+			<canvas id={ fmt.Sprintf("chart-cpu-load-%s", boxID) }></canvas>
+		</div>
+	</div>
+	<script type="module">
+		import { getChartColors, createChartOptions, createLineDataset, formatTime } from '/static/js/charts/chart-defaults.js';
+		import { toggleFullscreen } from '/static/js/charts/chart-fullscreen.js';
+
+		const canvasId = { fmt.Sprintf("'chart-cpu-load-%s'", boxID) };
+		const cardId = { fmt.Sprintf("'card-cpu-load-%s'", boxID) };
+		const boxID = { fmt.Sprintf("'%s'", boxID) };
+
+		if (!window.chartInstances) window.chartInstances = {};
+
+		const fullscreenBtn = document.querySelector({ fmt.Sprintf("'.fullscreen-btn-cpu-load-%s'", boxID) });
+		if (fullscreenBtn) {
+			fullscreenBtn.addEventListener('click', () => {
+				toggleFullscreen(cardId, () => {
+					if (window.chartInstances && window.chartInstances[canvasId]) {
+						setTimeout(() => window.chartInstances[canvasId].resize(), 100);
+					}
+				});
+			});
+		}
+
+		async function loadChart() {
+			try {
+				const response = await fetch({ fmt.Sprintf("`/api/${boxID}/history/metrics?hours=%d&limit=%d`", hours, limit) });
+				const json = await response.json();
+				const data = json.data || [];
+
+				const colors = getChartColors();
+				const ctx = document.getElementById(canvasId);
+				if (!ctx) return;
+
+				if (window.chartInstances[canvasId]) {
+					window.chartInstances[canvasId].destroy();
+				}
+
+				window.chartInstances[canvasId] = new Chart(ctx.getContext('2d'), {
+					type: 'line',
+					data: {
+						labels: data.map(d => formatTime(d.collected_at)),
+						datasets: [
+							createLineDataset('1 min', data.map(d => d.load_average_1), colors.primary),
+							createLineDataset('5 min', data.map(d => d.load_average_5), colors.secondary),
+							createLineDataset('15 min', data.map(d => d.load_average_15), colors.purple)
+						]
+					},
+					options: createChartOptions(0)
+				});
+			} catch (error) {
+				console.error('Failed to load CPU load chart:', error);
+			}
+		}
+
+		loadChart();
+		document.body.addEventListener('dashboard:settings-changed', loadChart);
+		document.body.addEventListener('dashboard:reset-zoom', () => {
+			if (window.chartInstances[canvasId] && window.chartInstances[canvasId].resetZoom) {
+				window.chartInstances[canvasId].resetZoom();
+			}
+		});
+	</script>
+}
+
+// MemoryUsageChartPartial renders a Chart.js time-series chart for memory usage percentage.
+templ MemoryUsageChartPartial(boxID string, hours int, limit int) {
+	<div id={ fmt.Sprintf("card-memory-usage-%s", boxID) } class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
+		<div class="flex justify-between items-center mb-2">
+			<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300">Memory Usage</h4>
+			<button class={ fmt.Sprintf("fullscreen-btn-memory-usage-%s", boxID), "p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" } title="Toggle fullscreen">
+				<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+				</svg>
+			</button>
+		</div>
+		<div class="chart-aspect-container">
+			<canvas id={ fmt.Sprintf("chart-memory-usage-%s", boxID) }></canvas>
+		</div>
+	</div>
+	<script type="module">
+		import { getChartColors, createPercentageYAxisOptions, createLineDataset, formatTime } from '/static/js/charts/chart-defaults.js';
+		import { toggleFullscreen } from '/static/js/charts/chart-fullscreen.js';
+
+		const canvasId = { fmt.Sprintf("'chart-memory-usage-%s'", boxID) };
+		const cardId = { fmt.Sprintf("'card-memory-usage-%s'", boxID) };
+		const boxID = { fmt.Sprintf("'%s'", boxID) };
+
+		if (!window.chartInstances) window.chartInstances = {};
+
+		const fullscreenBtn = document.querySelector({ fmt.Sprintf("'.fullscreen-btn-memory-usage-%s'", boxID) });
+		if (fullscreenBtn) {
+			fullscreenBtn.addEventListener('click', () => {
+				toggleFullscreen(cardId, () => {
+					if (window.chartInstances && window.chartInstances[canvasId]) {
+						setTimeout(() => window.chartInstances[canvasId].resize(), 100);
+					}
+				});
+			});
+		}
+
+		async function loadChart() {
+			try {
+				const response = await fetch({ fmt.Sprintf("`/api/${boxID}/history/metrics?hours=%d&limit=%d`", hours, limit) });
+				const json = await response.json();
+				const data = json.data || [];
+
+				const colors = getChartColors();
+				const ctx = document.getElementById(canvasId);
+				if (!ctx) return;
+
+				if (window.chartInstances[canvasId]) {
+					window.chartInstances[canvasId].destroy();
+				}
+
+				window.chartInstances[canvasId] = new Chart(ctx.getContext('2d'), {
+					type: 'line',
+					data: {
+						labels: data.map(d => formatTime(d.collected_at)),
+						datasets: [
+							createLineDataset('Memory %', data.map(d => d.memory_usage_percent), colors.warning)
+						]
+					},
+					options: createPercentageYAxisOptions()
+				});
+			} catch (error) {
+				console.error('Failed to load memory usage chart:', error);
+			}
+		}
+
+		loadChart();
+		document.body.addEventListener('dashboard:settings-changed', loadChart);
+		document.body.addEventListener('dashboard:reset-zoom', () => {
+			if (window.chartInstances[canvasId] && window.chartInstances[canvasId].resetZoom) {
+				window.chartInstances[canvasId].resetZoom();
+			}
+		});
+	</script>
+}
+
+// NetworkThroughputChartPartial renders a Chart.js time-series chart for network throughput (RX/TX rates).
+templ NetworkThroughputChartPartial(boxID string, hours int, limit int) {
+	<div id={ fmt.Sprintf("card-network-throughput-%s", boxID) } class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
+		<div class="flex justify-between items-center mb-2">
+			<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300">Network Throughput</h4>
+			<button class={ fmt.Sprintf("fullscreen-btn-network-throughput-%s", boxID), "p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" } title="Toggle fullscreen">
+				<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+				</svg>
+			</button>
+		</div>
+		<div class="chart-aspect-container">
+			<canvas id={ fmt.Sprintf("chart-network-throughput-%s", boxID) }></canvas>
+		</div>
+	</div>
+	<script type="module">
+		import { getChartColors, createChartOptions, createLineDataset, formatTime } from '/static/js/charts/chart-defaults.js';
+		import { toggleFullscreen } from '/static/js/charts/chart-fullscreen.js';
+
+		const canvasId = { fmt.Sprintf("'chart-network-throughput-%s'", boxID) };
+		const cardId = { fmt.Sprintf("'card-network-throughput-%s'", boxID) };
+		const boxID = { fmt.Sprintf("'%s'", boxID) };
+
+		if (!window.chartInstances) window.chartInstances = {};
+
+		const fullscreenBtn = document.querySelector({ fmt.Sprintf("'.fullscreen-btn-network-throughput-%s'", boxID) });
+		if (fullscreenBtn) {
+			fullscreenBtn.addEventListener('click', () => {
+				toggleFullscreen(cardId, () => {
+					if (window.chartInstances && window.chartInstances[canvasId]) {
+						setTimeout(() => window.chartInstances[canvasId].resize(), 100);
+					}
+				});
+			});
+		}
+
+		async function loadChart() {
+			try {
+				const response = await fetch({ fmt.Sprintf("`/api/${boxID}/history/metrics?hours=%d&limit=%d`", hours, limit) });
+				const json = await response.json();
+				const data = json.data || [];
+
+				const colors = getChartColors();
+				const ctx = document.getElementById(canvasId);
+				if (!ctx) return;
+
+				const rxRate = [];
+				const txRate = [];
+				const labels = [];
+
+				for (let i = 1; i < data.length; i++) {
+					const prev = data[i - 1];
+					const curr = data[i];
+
+					const timeDiff = (new Date(curr.collected_at) - new Date(prev.collected_at)) / 1000;
+					if (timeDiff <= 0) continue;
+
+					const rxDiff = curr.network_rx_bytes - prev.network_rx_bytes;
+					const txDiff = curr.network_tx_bytes - prev.network_tx_bytes;
+
+					const rxMbps = rxDiff >= 0 ? (rxDiff * 8 / 1000000) / timeDiff : 0;
+					const txMbps = txDiff >= 0 ? (txDiff * 8 / 1000000) / timeDiff : 0;
+
+					rxRate.push(rxMbps);
+					txRate.push(txMbps);
+					labels.push(formatTime(curr.collected_at));
+				}
+
+				if (window.chartInstances[canvasId]) {
+					window.chartInstances[canvasId].destroy();
+				}
+
+				window.chartInstances[canvasId] = new Chart(ctx.getContext('2d'), {
+					type: 'line',
+					data: {
+						labels: labels,
+						datasets: [
+							createLineDataset('RX (Mbps)', rxRate, colors.primary),
+							createLineDataset('TX (Mbps)', txRate, colors.purple)
+						]
+					},
+					options: createChartOptions(0)
+				});
+			} catch (error) {
+				console.error('Failed to load network throughput chart:', error);
+			}
+		}
+
+		loadChart();
+		document.body.addEventListener('dashboard:settings-changed', loadChart);
+		document.body.addEventListener('dashboard:reset-zoom', () => {
+			if (window.chartInstances[canvasId] && window.chartInstances[canvasId].resetZoom) {
+				window.chartInstances[canvasId].resetZoom();
+			}
+		});
+	</script>
+}
+
+// ResponseTimesChartPartial renders a Chart.js time-series chart for average response times.
+templ ResponseTimesChartPartial(boxID string, hours int, limit int) {
+	<div id={ fmt.Sprintf("card-response-times-%s", boxID) } class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
+		<div class="flex justify-between items-center mb-2">
+			<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300">Response Times</h4>
+			<button class={ fmt.Sprintf("fullscreen-btn-response-times-%s", boxID), "p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" } title="Toggle fullscreen">
+				<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+				</svg>
+			</button>
+		</div>
+		<div class="chart-aspect-container">
+			<canvas id={ fmt.Sprintf("chart-response-times-%s", boxID) }></canvas>
+		</div>
+	</div>
+	<script type="module">
+		import { getChartColors, createChartOptions, createLineDataset, formatTime } from '/static/js/charts/chart-defaults.js';
+		import { toggleFullscreen } from '/static/js/charts/chart-fullscreen.js';
+
+		const canvasId = { fmt.Sprintf("'chart-response-times-%s'", boxID) };
+		const cardId = { fmt.Sprintf("'card-response-times-%s'", boxID) };
+		const boxID = { fmt.Sprintf("'%s'", boxID) };
+
+		if (!window.chartInstances) window.chartInstances = {};
+
+		const fullscreenBtn = document.querySelector({ fmt.Sprintf("'.fullscreen-btn-response-times-%s'", boxID) });
+		if (fullscreenBtn) {
+			fullscreenBtn.addEventListener('click', () => {
+				toggleFullscreen(cardId, () => {
+					if (window.chartInstances && window.chartInstances[canvasId]) {
+						setTimeout(() => window.chartInstances[canvasId].resize(), 100);
+					}
+				});
+			});
+		}
+
+		async function loadChart() {
+			try {
+				const response = await fetch({ fmt.Sprintf("`/api/${boxID}/history/stats?hours=%d&limit=%d`", hours, limit) });
+				const json = await response.json();
+				const data = json.data || [];
+
+				const colors = getChartColors();
+				const ctx = document.getElementById(canvasId);
+				if (!ctx) return;
+
+				if (window.chartInstances[canvasId]) {
+					window.chartInstances[canvasId].destroy();
+				}
+
+				window.chartInstances[canvasId] = new Chart(ctx.getContext('2d'), {
+					type: 'line',
+					data: {
+						labels: data.map(d => formatTime(d.collected_at)),
+						datasets: [
+							createLineDataset('Avg Response Time (ms)', data.map(d => d.avg_response_time), colors.primary)
+						]
+					},
+					options: createChartOptions(0)
+				});
+			} catch (error) {
+				console.error('Failed to load response times chart:', error);
+			}
+		}
+
+		loadChart();
+		document.body.addEventListener('dashboard:settings-changed', loadChart);
+		document.body.addEventListener('dashboard:reset-zoom', () => {
+			if (window.chartInstances[canvasId] && window.chartInstances[canvasId].resetZoom) {
+				window.chartInstances[canvasId].resetZoom();
+			}
+		});
+	</script>
+}
+
+// ErrorRatesChartPartial renders a Chart.js time-series chart for 5xx error counts.
+templ ErrorRatesChartPartial(boxID string, hours int, limit int) {
+	<div id={ fmt.Sprintf("card-error-rates-%s", boxID) } class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
+		<div class="flex justify-between items-center mb-2">
+			<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300">Error Rates (5xx)</h4>
+			<button class={ fmt.Sprintf("fullscreen-btn-error-rates-%s", boxID), "p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" } title="Toggle fullscreen">
+				<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+				</svg>
+			</button>
+		</div>
+		<div class="chart-aspect-container">
+			<canvas id={ fmt.Sprintf("chart-error-rates-%s", boxID) }></canvas>
+		</div>
+	</div>
+	<script type="module">
+		import { getChartColors, createIntegerYAxisOptions, createLineDataset, formatTime } from '/static/js/charts/chart-defaults.js';
+		import { toggleFullscreen } from '/static/js/charts/chart-fullscreen.js';
+
+		const canvasId = { fmt.Sprintf("'chart-error-rates-%s'", boxID) };
+		const cardId = { fmt.Sprintf("'card-error-rates-%s'", boxID) };
+		const boxID = { fmt.Sprintf("'%s'", boxID) };
+
+		if (!window.chartInstances) window.chartInstances = {};
+
+		const fullscreenBtn = document.querySelector({ fmt.Sprintf("'.fullscreen-btn-error-rates-%s'", boxID) });
+		if (fullscreenBtn) {
+			fullscreenBtn.addEventListener('click', () => {
+				toggleFullscreen(cardId, () => {
+					if (window.chartInstances && window.chartInstances[canvasId]) {
+						setTimeout(() => window.chartInstances[canvasId].resize(), 100);
+					}
+				});
+			});
+		}
+
+		async function loadChart() {
+			try {
+				const response = await fetch({ fmt.Sprintf("`/api/${boxID}/history/stats?hours=%d&limit=%d`", hours, limit) });
+				const json = await response.json();
+				const data = json.data || [];
+
+				const colors = getChartColors();
+				const ctx = document.getElementById(canvasId);
+				if (!ctx) return;
+
+				if (window.chartInstances[canvasId]) {
+					window.chartInstances[canvasId].destroy();
+				}
+
+				window.chartInstances[canvasId] = new Chart(ctx.getContext('2d'), {
+					type: 'line',
+					data: {
+						labels: data.map(d => formatTime(d.collected_at)),
+						datasets: [
+							createLineDataset('5xx Errors', data.map(d => d.total_5xx_errors), colors.danger)
+						]
+					},
+					options: createIntegerYAxisOptions()
+				});
+			} catch (error) {
+				console.error('Failed to load error rates chart:', error);
+			}
+		}
+
+		loadChart();
+		document.body.addEventListener('dashboard:settings-changed', loadChart);
+		document.body.addEventListener('dashboard:reset-zoom', () => {
+			if (window.chartInstances[canvasId] && window.chartInstances[canvasId].resetZoom) {
+				window.chartInstances[canvasId].resetZoom();
+			}
+		});
+	</script>
+}

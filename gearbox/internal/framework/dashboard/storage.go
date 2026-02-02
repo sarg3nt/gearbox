@@ -183,6 +183,7 @@ func (s *Storage) List() ([]DashboardMetadata, error) {
 			CreatedBy:   dashboard.CreatedBy,
 			PluginName:  dashboard.PluginName,
 			Editable:    dashboard.Editable,
+			Enabled:     true, // Default to enabled; TODO: persist enabled state
 			FilePath:    dashboard.FilePath,
 			CreatedAt:   dashboard.CreatedAt,
 			UpdatedAt:   dashboard.UpdatedAt,

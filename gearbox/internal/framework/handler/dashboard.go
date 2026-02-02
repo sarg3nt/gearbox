@@ -166,8 +166,16 @@ func (h *DashboardHandler) EditDashboardPage(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	// Resolve server ID: use stored value, or fall back to first enabled server
+	serverID := h.boxID
+	if serverID == "" {
+		if boxes, dbErr := h.db.GetEnabledBoxes(); dbErr == nil && len(boxes) > 0 {
+			serverID = boxes[0].BoxID
+		}
+	}
+
 	// Render dashboard content (same as view mode)
-	content, err := h.renderer.Render(r.Context(), dash, h.boxID, h.userID)
+	content, err := h.renderer.Render(r.Context(), dash, serverID, h.userID)
 	if err != nil {
 		h.logger.Error("failed to render dashboard", "slug", slug, "error", err)
 		http.Error(w, "Failed to render dashboard", http.StatusInternalServerError)
@@ -184,7 +192,7 @@ func (h *DashboardHandler) EditDashboardPage(w http.ResponseWriter, r *http.Requ
 	user, _ := auth.GetUserFromContext(r.Context())
 
 	// Render editor with live content
-	component := pages.DashboardEditorPage(dash, content, widgets, user, r.URL.Path, openPalette)
+	component := pages.DashboardEditorPage(dash, content, widgets, user, r.URL.Path, openPalette, serverID)
 	if err := component.Render(r.Context(), w); err != nil {
 		h.logger.Error("failed to render dashboard editor", "error", err)
 		http.Error(w, "Failed to render page", http.StatusInternalServerError)
@@ -329,10 +337,19 @@ func (h *DashboardHandler) UpdateDashboard(w http.ResponseWriter, r *http.Reques
 // GetWidgetPalette handles GET /api/dashboards/widgets
 // Returns available widgets from enabled plugins for the selected server
 func (h *DashboardHandler) GetWidgetPalette(w http.ResponseWriter, r *http.Request) {
-	// Get server ID from query parameter
+	// Get server ID from query parameter (accept both "server_id" and "box_id")
 	boxID := r.URL.Query().Get("server_id")
 	if boxID == "" {
+		boxID = r.URL.Query().Get("box_id")
+	}
+	if boxID == "" {
 		boxID = h.boxID // Use default if not specified
+	}
+	// Final fallback: use first enabled server
+	if boxID == "" {
+		if boxes, err := h.db.GetEnabledBoxes(); err == nil && len(boxes) > 0 {
+			boxID = boxes[0].BoxID
+		}
 	}
 
 	// Get optional filter parameters

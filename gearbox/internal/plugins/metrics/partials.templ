@@ -1,0 +1,157 @@
+package metrics
+
+import (
+	"fmt"
+	"time"
+)
+
+// CPUPartial renders a CPU usage display for the dashboard widget.
+templ CPUPartial(cpuPercent float64) {
+	<div class="text-center">
+		<div class="text-4xl font-bold text-gray-900 dark:text-white">
+			{ fmt.Sprintf("%.1f%%", cpuPercent) }
+		</div>
+		<div class="mt-2 w-full bg-gray-200 dark:bg-slate-700 rounded-full h-3">
+			<div
+				class={ "h-3 rounded-full transition-all duration-500", cpuBarColor(cpuPercent) }
+				style={ fmt.Sprintf("width: %.1f%%", cpuPercent) }
+			></div>
+		</div>
+	</div>
+}
+
+// MemoryPartial renders a memory usage display for the dashboard widget.
+templ MemoryPartial(usedBytes, totalBytes int64, usagePercent float64) {
+	<div class="text-center">
+		<div class="text-4xl font-bold text-gray-900 dark:text-white">
+			{ fmt.Sprintf("%.1f%%", usagePercent) }
+		</div>
+		<div class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+			{ formatBytes(usedBytes) } / { formatBytes(totalBytes) }
+		</div>
+		<div class="mt-2 w-full bg-gray-200 dark:bg-slate-700 rounded-full h-3">
+			<div
+				class={ "h-3 rounded-full transition-all duration-500", cpuBarColor(usagePercent) }
+				style={ fmt.Sprintf("width: %.1f%%", usagePercent) }
+			></div>
+		</div>
+	</div>
+}
+
+// DiskPartial renders a disk usage display for the dashboard widget.
+templ DiskPartial(usedBytes, totalBytes int64, usagePercent float64) {
+	<div class="text-center">
+		<div class="text-4xl font-bold text-gray-900 dark:text-white">
+			{ fmt.Sprintf("%.1f%%", usagePercent) }
+		</div>
+		<div class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+			{ formatBytes(usedBytes) } / { formatBytes(totalBytes) }
+		</div>
+		<div class="mt-2 w-full bg-gray-200 dark:bg-slate-700 rounded-full h-3">
+			<div
+				class={ "h-3 rounded-full transition-all duration-500", cpuBarColor(usagePercent) }
+				style={ fmt.Sprintf("width: %.1f%%", usagePercent) }
+			></div>
+		</div>
+	</div>
+}
+
+// NetworkPartial renders a network traffic display for the dashboard widget.
+templ NetworkPartial(rxMbps, txMbps float64) {
+	<div class="grid grid-cols-2 gap-4 text-center">
+		<div>
+			<div class="text-sm font-medium text-gray-500 dark:text-gray-400">Download</div>
+			<div class="text-2xl font-bold text-green-600 dark:text-green-400">
+				{ fmt.Sprintf("%.2f", rxMbps) }
+			</div>
+			<div class="text-xs text-gray-400">Mbps</div>
+		</div>
+		<div>
+			<div class="text-sm font-medium text-gray-500 dark:text-gray-400">Upload</div>
+			<div class="text-2xl font-bold text-blue-600 dark:text-blue-400">
+				{ fmt.Sprintf("%.2f", txMbps) }
+			</div>
+			<div class="text-xs text-gray-400">Mbps</div>
+		</div>
+	</div>
+}
+
+// LoadPartial renders a load average display for the dashboard widget.
+templ LoadPartial(load1, load5, load15 float64) {
+	<div class="grid grid-cols-3 gap-4 text-center">
+		<div>
+			<div class="text-sm font-medium text-gray-500 dark:text-gray-400">1 min</div>
+			<div class="text-2xl font-bold text-gray-900 dark:text-white">
+				{ fmt.Sprintf("%.2f", load1) }
+			</div>
+		</div>
+		<div>
+			<div class="text-sm font-medium text-gray-500 dark:text-gray-400">5 min</div>
+			<div class="text-2xl font-bold text-gray-900 dark:text-white">
+				{ fmt.Sprintf("%.2f", load5) }
+			</div>
+		</div>
+		<div>
+			<div class="text-sm font-medium text-gray-500 dark:text-gray-400">15 min</div>
+			<div class="text-2xl font-bold text-gray-900 dark:text-white">
+				{ fmt.Sprintf("%.2f", load15) }
+			</div>
+		</div>
+	</div>
+}
+
+// UptimePartial renders a system uptime display for the dashboard widget.
+templ UptimePartial(uptime time.Duration) {
+	<div class="text-center">
+		<div class="text-3xl font-bold text-gray-900 dark:text-white">
+			{ formatUptime(uptime) }
+		</div>
+	</div>
+}
+
+// Helper functions
+
+func cpuBarColor(percent float64) string {
+	if percent >= 90 {
+		return "bg-red-500"
+	}
+	if percent >= 70 {
+		return "bg-yellow-500"
+	}
+	return "bg-green-500"
+}
+
+func formatBytes(bytes int64) string {
+	const (
+		KB = 1024
+		MB = KB * 1024
+		GB = MB * 1024
+		TB = GB * 1024
+	)
+	switch {
+	case bytes >= TB:
+		return fmt.Sprintf("%.1f TB", float64(bytes)/float64(TB))
+	case bytes >= GB:
+		return fmt.Sprintf("%.1f GB", float64(bytes)/float64(GB))
+	case bytes >= MB:
+		return fmt.Sprintf("%.1f MB", float64(bytes)/float64(MB))
+	case bytes >= KB:
+		return fmt.Sprintf("%.1f KB", float64(bytes)/float64(KB))
+	default:
+		return fmt.Sprintf("%d B", bytes)
+	}
+}
+
+func formatUptime(d time.Duration) string {
+	days := int(d.Hours()) / 24
+	hours := int(d.Hours()) % 24
+	minutes := int(d.Minutes()) % 60
+
+	if days > 0 {
+		return fmt.Sprintf("%dd %dh %dm", days, hours, minutes)
+	}
+	if hours > 0 {
+		return fmt.Sprintf("%dh %dm", hours, minutes)
+	}
+	return fmt.Sprintf("%dm", minutes)
+}

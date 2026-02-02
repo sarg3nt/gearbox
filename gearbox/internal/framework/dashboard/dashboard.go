@@ -108,6 +108,7 @@ type DashboardMetadata struct {
 	CreatedBy   string
 	PluginName  *string
 	Editable    bool
+	Enabled     bool
 	FilePath    string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time

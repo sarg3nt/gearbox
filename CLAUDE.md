@@ -104,9 +104,10 @@ When a new feature is planned or a bug is reported:
 2. **Add to Project Board** — Add the issue to the GitHub Project board using `gh project item-add`
 3. **Create a Feature Branch** — Branch from `main` using the naming convention below
 4. **Do the Work** — Implement the feature or fix on the branch
-5. **Create a PR** — Use `gh pr create` targeting `main`, linked to the issue (use `Closes #N` in the body)
-6. **Track Progress** — Keep the project board and issues in sync
-7. **Complete** — When user confirms done: merge PR, close issue, move project card to Done
+5. **Ask Before Creating PR** — Always ask the user for confirmation before creating a PR. Do not create PRs automatically.
+6. **Create a PR** — Use `gh pr create` targeting `main`, linked to the issue (use `Closes #N` in the body)
+7. **Track Progress** — Keep the project board and issues in sync
+8. **Complete** — When user confirms done: merge PR, close issue, move project card to Done
 
 ### Branch Naming Convention
 

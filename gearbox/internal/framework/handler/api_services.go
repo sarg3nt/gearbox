@@ -11,6 +11,7 @@ import (
 	"github.com/sarg3nt/gearbox/internal/framework/database"
 	apperrors "github.com/sarg3nt/gearbox/internal/framework/errors"
 	"github.com/sarg3nt/gearbox/internal/framework/models"
+	"github.com/sarg3nt/gearbox/internal/plugins/services"
 )
 
 // APIServicesConfigHandler returns the services integration config for a server.
@@ -67,21 +68,31 @@ func (h *Handler) APIServicesHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Parse services from query param
 	servicesParam := r.URL.Query().Get("services")
-	var services []string
+	var svcNames []string
 	if servicesParam != "" {
 		for _, s := range strings.Split(servicesParam, ",") {
 			s = strings.TrimSpace(s)
 			if s != "" {
-				services = append(services, s)
+				svcNames = append(svcNames, s)
 			}
 		}
 	}
 
 	// Fetch from agent
 	agentClient := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey)
-	servicesResp, err := agentClient.GetServices(services)
+	servicesResp, err := agentClient.GetServices(svcNames)
 	if err != nil {
 		apperrors.WriteHTTPError(w, h.logger, apperrors.Internal("get services", err))
+		return
+	}
+
+	// If this is an HTMX request (from dashboard widgets), return HTML fragment
+	if r.Header.Get("HX-Request") == "true" {
+		component := services.ServicesListPartial(servicesResp.Services)
+		if err := component.Render(r.Context(), w); err != nil {
+			h.logger.Error("Failed to render services list partial", "error", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+		}
 		return
 	}
 
@@ -142,4 +153,102 @@ func (h *Handler) APIServiceControlHandler(w http.ResponseWriter, r *http.Reques
 	}
 
 	h.writeJSON(w, resp)
+}
+
+// fetchServicesFromAgent is a helper that fetches services from the agent for a given server.
+func (h *Handler) fetchServicesFromAgent(boxID string) (*agent.ServicesResponse, error) {
+	serverConfig, exists := h.getServerConfig(boxID)
+	if !exists || !serverConfig.UsesAgentAPI() {
+		return nil, apperrors.NotFound("server", nil)
+	}
+
+	agentClient := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey)
+	return agentClient.GetServices(nil)
+}
+
+// APIServicesOverviewHandler returns an HTML fragment with services overview summary.
+// Used by the services-overview-card widget via HTMX.
+func (h *Handler) APIServicesOverviewHandler(w http.ResponseWriter, r *http.Request) {
+	if !h.authManager.HasPermission(r, models.ComponentServices, models.PermissionView) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
+		http.Error(w, "Server ID required", http.StatusBadRequest)
+		return
+	}
+
+	servicesResp, err := h.fetchServicesFromAgent(boxID)
+	if err != nil {
+		h.logger.Error("Failed to fetch services for overview", "box_id", boxID, "error", err)
+		http.Error(w, "Failed to fetch services", http.StatusInternalServerError)
+		return
+	}
+
+	component := services.ServicesOverviewPartial(servicesResp.Services)
+	if err := component.Render(r.Context(), w); err != nil {
+		h.logger.Error("Failed to render services overview partial", "error", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	}
+}
+
+// APIServicesListHTMLHandler returns an HTML fragment with the services list.
+// Used by the services-list widget via HTMX.
+func (h *Handler) APIServicesListHTMLHandler(w http.ResponseWriter, r *http.Request) {
+	if !h.authManager.HasPermission(r, models.ComponentServices, models.PermissionView) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
+		http.Error(w, "Server ID required", http.StatusBadRequest)
+		return
+	}
+
+	servicesResp, err := h.fetchServicesFromAgent(boxID)
+	if err != nil {
+		h.logger.Error("Failed to fetch services for list", "box_id", boxID, "error", err)
+		http.Error(w, "Failed to fetch services", http.StatusInternalServerError)
+		return
+	}
+
+	component := services.ServicesListPartial(servicesResp.Services)
+	if err := component.Render(r.Context(), w); err != nil {
+		h.logger.Error("Failed to render services list partial", "error", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	}
+}
+
+// APIServicesFailedHandler returns an HTML fragment with failed services.
+// Used by the failed-services-alert widget via HTMX.
+func (h *Handler) APIServicesFailedHandler(w http.ResponseWriter, r *http.Request) {
+	if !h.authManager.HasPermission(r, models.ComponentServices, models.PermissionView) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	boxID := chi.URLParam(r, "boxID")
+	if boxID == "" {
+		http.Error(w, "Server ID required", http.StatusBadRequest)
+		return
+	}
+
+	servicesResp, err := h.fetchServicesFromAgent(boxID)
+	if err != nil {
+		h.logger.Error("Failed to fetch services for failed check", "box_id", boxID, "error", err)
+		http.Error(w, "Failed to fetch services", http.StatusInternalServerError)
+		return
+	}
+
+	hideWhenEmpty := r.URL.Query().Get("hide_when_empty") == "true"
+	failedServices := services.FilterFailed(servicesResp.Services)
+
+	component := services.FailedServicesPartial(failedServices, hideWhenEmpty)
+	if err := component.Render(r.Context(), w); err != nil {
+		h.logger.Error("Failed to render failed services partial", "error", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	}
 }

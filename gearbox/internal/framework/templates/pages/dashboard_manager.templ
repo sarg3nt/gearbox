@@ -100,14 +100,11 @@ templ CustomDashboardsList(dashboards []dashboard.DashboardMetadata) {
 				</a>
 			</div>
 		} else {
-			<div id="dashboard-sortable" class="space-y-3">
+			<div class="space-y-3">
 				for _, dash := range dashboards {
-					@DraggableDashboardCard(dash, true)
+					@ManagerDashboardCard(dash)
 				}
 			</div>
-			<p class="text-sm text-gray-500 dark:text-gray-400 mt-4">
-				💡 Drag dashboards to reorder them in the navigation
-			</p>
 		}
 	</div>
 }
@@ -133,24 +130,23 @@ templ PluginDashboardsList(dashboards []dashboard.PluginDashboardInfo) {
 	</div>
 }
 
-// DraggableDashboardCard renders a single dashboard card with optional drag handle
-templ DraggableDashboardCard(dash dashboard.DashboardMetadata, draggable bool) {
+// ManagerDashboardCard renders a single dashboard card with enable/disable toggle
+templ ManagerDashboardCard(dash dashboard.DashboardMetadata) {
 	<div
 		class="dashboard-item bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg p-4 hover:shadow-md transition-shadow"
 		data-slug={ dash.Slug }
-		if draggable {
-			draggable="true"
-		}
 	>
 		<div class="flex items-center gap-4">
-			<!-- Drag Handle -->
-			if draggable {
-				<div class="cursor-move text-gray-400 hover:text-gray-600">
-					<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-						<path d="M9 3h2v2H9V3zm0 4h2v2H9V7zm0 4h2v2H9v-2zm0 4h2v2H9v-2zm0 4h2v2H9v-2zm4-16h2v2h-2V3zm0 4h2v2h-2V7zm0 4h2v2h-2v-2zm0 4h2v2h-2v-2zm0 4h2v2h-2v-2z"></path>
-					</svg>
-				</div>
-			}
+			<!-- Enable/Disable Toggle -->
+			<label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+				<input
+					type="checkbox"
+					class="sr-only peer"
+					checked?={ dash.Enabled }
+					onchange={ toggleUserDashboard(dash.Slug) }
+				/>
+				<div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+			</label>
 
 			<!-- Dashboard Info -->
 			<div class="flex-1 min-w-0">
@@ -169,7 +165,7 @@ templ DraggableDashboardCard(dash dashboard.DashboardMetadata, draggable bool) {
 			<div class="flex gap-2">
 				<a
 					href={ templ.SafeURL("/dashboards/" + dash.Slug) }
-					class="p-2 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg"
+					class="p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg"
 					title="View"
 				>
 					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -242,7 +238,6 @@ templ PluginDashboardCard(dash dashboard.PluginDashboardInfo) {
 
 // DashboardManagerScript provides the manager JavaScript
 templ DashboardManagerScript() {
-	<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 	<script>
 	// Tab switching
 	function switchTab(tab) {
@@ -261,33 +256,24 @@ templ DashboardManagerScript() {
 		document.getElementById(`tab-content-${tab}`).classList.remove('hidden');
 	}
 
-	// Initialize Sortable for dashboard reordering
-	document.addEventListener('DOMContentLoaded', function() {
-		const sortable = document.getElementById('dashboard-sortable');
-		if (sortable) {
-			Sortable.create(sortable, {
-				animation: 150,
-				handle: '.cursor-move',
-				onEnd: function(evt) {
-					saveDashboardOrder();
-				}
-			});
-		}
-	});
+	// Toggle user dashboard sidebar visibility
+	function toggleUserDashboard(slug) {
+		const checkbox = event.target;
+		const enabled = checkbox.checked;
 
-	// Save dashboard order
-	function saveDashboardOrder() {
-		const items = document.querySelectorAll('.dashboard-item');
-		const order = Array.from(items).map(item => item.dataset.slug);
-
-		fetch('/api/dashboards/order', {
+		fetch(`/api/dashboards/${slug}/toggle`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ order: order })
+			body: JSON.stringify({ enabled: enabled })
 		})
 		.then(response => {
 			if (!response.ok) {
-				console.error('Failed to save dashboard order');
+				checkbox.checked = !enabled;
+				showAlertDialog({
+					title: 'Error',
+					message: 'Failed to toggle dashboard',
+					type: 'error'
+				});
 			}
 		});
 	}
@@ -351,4 +337,8 @@ script deleteDashboardFromManager(slug string) {
 
 script togglePluginDashboard(slug string) {
 	togglePluginDashboard(slug);
+}
+
+script toggleUserDashboard(slug string) {
+	toggleUserDashboard(slug);
 }

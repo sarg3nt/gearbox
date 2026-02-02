@@ -647,6 +647,20 @@ func main() {
 			r.Get("/{boxID}/stats", h.APIStatsHandler)
 			r.Get("/{boxID}/metadata", h.APIMetadataHandler)
 			r.Get("/{boxID}/metrics", h.APISystemMetricsHandler)
+			r.Get("/{boxID}/metrics/cpu", h.APIMetricsCPUHandler)         // HTML partial for CPU widget
+			r.Get("/{boxID}/metrics/memory", h.APIMetricsMemoryHandler)   // HTML partial for memory widget
+			r.Get("/{boxID}/metrics/disk", h.APIMetricsDiskHandler)       // HTML partial for disk widget
+			r.Get("/{boxID}/metrics/network", h.APIMetricsNetworkHandler) // HTML partial for network widget
+			r.Get("/{boxID}/metrics/load", h.APIMetricsLoadHandler)       // HTML partial for load widget
+			r.Get("/{boxID}/metrics/uptime", h.APIMetricsUptimeHandler)   // HTML partial for uptime widget
+			// Chart widget HTML partials (with Chart.js)
+			r.Get("/{boxID}/charts/sessions-requests", h.APIChartsSessionsRequestsHandler)
+			r.Get("/{boxID}/charts/server-health", h.APIChartsServerHealthHandler)
+			r.Get("/{boxID}/charts/cpu-load", h.APIChartsCPULoadHandler)
+			r.Get("/{boxID}/charts/memory-usage", h.APIChartsMemoryUsageHandler)
+			r.Get("/{boxID}/charts/network-throughput", h.APIChartsNetworkThroughputHandler)
+			r.Get("/{boxID}/charts/response-times", h.APIChartsResponseTimesHandler)
+			r.Get("/{boxID}/charts/error-rates", h.APIChartsErrorRatesHandler)
 			r.Get("/{boxID}/logs/{logName}", h.APILogsHandler)
 			r.Get("/{boxID}/log-sources", h.APILogSourcesHandler) // Get enabled log sources
 			// History API endpoints
@@ -667,7 +681,9 @@ func main() {
 
 			// Services management
 			r.Get("/{boxID}/services-config", h.APIServicesConfigHandler)
-			r.Get("/{boxID}/services", h.APIServicesHandler)
+			r.Get("/{boxID}/services/overview", h.APIServicesOverviewHandler) // HTML partial for overview widget
+			r.Get("/{boxID}/services/failed", h.APIServicesFailedHandler)     // HTML partial for failed services widget
+			r.Get("/{boxID}/services", h.APIServicesHandler)                  // JSON for services page JS
 			r.Post("/{boxID}/service-control", h.APIServiceControlHandler)
 
 			// Traffic analysis API

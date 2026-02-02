@@ -1,0 +1,169 @@
+package services
+
+import (
+	"fmt"
+	"github.com/sarg3nt/gearbox/internal/framework/agent"
+)
+
+// ServicesOverviewPartial renders the services overview summary as an HTML fragment.
+// This is the HTMX response for /api/{boxID}/services/overview
+templ ServicesOverviewPartial(services []agent.ServiceStatus) {
+	<div class="grid grid-cols-3 gap-4">
+		<div class="text-center">
+			<div class="text-2xl font-bold text-green-600 dark:text-green-400">{ fmt.Sprintf("%d", countActive(services)) }</div>
+			<div class="text-xs text-gray-500 dark:text-gray-400">Running</div>
+		</div>
+		<div class="text-center">
+			<div class="text-2xl font-bold text-red-600 dark:text-red-400">{ fmt.Sprintf("%d", countFailed(services)) }</div>
+			<div class="text-xs text-gray-500 dark:text-gray-400">Failed</div>
+		</div>
+		<div class="text-center">
+			<div class="text-2xl font-bold text-gray-600 dark:text-gray-400">{ fmt.Sprintf("%d", countInactive(services)) }</div>
+			<div class="text-xs text-gray-500 dark:text-gray-400">Stopped</div>
+		</div>
+	</div>
+}
+
+// ServicesListPartial renders a list of services as an HTML fragment.
+// This is the HTMX response for /api/{boxID}/services
+templ ServicesListPartial(services []agent.ServiceStatus) {
+	if len(services) == 0 {
+		<div class="text-center text-gray-500 dark:text-gray-400 py-8">
+			No services configured
+		</div>
+	} else {
+		<div class="space-y-2">
+			for _, svc := range services {
+				<div class={ "flex items-center justify-between p-3 rounded-lg border-l-4", serviceCardClass(svc) }>
+					<div class="flex items-center gap-3">
+						<span class={ "w-2.5 h-2.5 rounded-full", serviceDotClass(svc) }></span>
+						<div>
+							<div class="text-sm font-medium text-gray-900 dark:text-gray-100">{ svc.Name }</div>
+							if svc.Description != "" {
+								<div class="text-xs text-gray-500 dark:text-gray-400">{ svc.Description }</div>
+							}
+						</div>
+					</div>
+					<div class="flex items-center gap-3">
+						if svc.Active && svc.Uptime != "" {
+							<span class="text-xs text-gray-500 dark:text-gray-400 font-mono">{ svc.Uptime }</span>
+						}
+						<span class={ "text-xs font-medium px-2 py-0.5 rounded-full", serviceStatusBadgeClass(svc) }>
+							{ serviceStatusText(svc) }
+						</span>
+					</div>
+				</div>
+			}
+		</div>
+	}
+}
+
+// FailedServicesPartial renders failed services as an HTML fragment.
+// This is the HTMX response for /api/{boxID}/services/failed
+templ FailedServicesPartial(services []agent.ServiceStatus, hideWhenEmpty bool) {
+	if len(services) == 0 {
+		if hideWhenEmpty {
+			<!-- Empty: hidden by configuration -->
+		} else {
+			<div class="flex items-center gap-2 text-green-600 dark:text-green-400">
+				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+				</svg>
+				<span class="text-sm">All services are running normally</span>
+			</div>
+		}
+	} else {
+		<div class="space-y-2">
+			for _, svc := range services {
+				<div class="flex items-center justify-between p-3 bg-red-50 dark:bg-red-900/20 rounded-lg border-l-4 border-red-500">
+					<div class="flex items-center gap-3">
+						<span class="w-2.5 h-2.5 rounded-full bg-red-500"></span>
+						<div>
+							<div class="text-sm font-medium text-gray-900 dark:text-gray-100">{ svc.Name }</div>
+							if svc.Description != "" {
+								<div class="text-xs text-gray-500 dark:text-gray-400">{ svc.Description }</div>
+							}
+						</div>
+					</div>
+					<span class="text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-800 text-red-700 dark:text-red-300">
+						Failed
+					</span>
+				</div>
+			}
+		</div>
+	}
+}
+
+// Helper functions
+
+func countActive(services []agent.ServiceStatus) int {
+	count := 0
+	for _, svc := range services {
+		if svc.Active {
+			count++
+		}
+	}
+	return count
+}
+
+func countFailed(services []agent.ServiceStatus) int {
+	count := 0
+	for _, svc := range services {
+		if !svc.Active && svc.Status == "failed" {
+			count++
+		}
+	}
+	return count
+}
+
+func countInactive(services []agent.ServiceStatus) int {
+	count := 0
+	for _, svc := range services {
+		if !svc.Active && svc.Status != "failed" {
+			count++
+		}
+	}
+	return count
+}
+
+// FilterFailed returns only non-active services from the list.
+func FilterFailed(services []agent.ServiceStatus) []agent.ServiceStatus {
+	var failed []agent.ServiceStatus
+	for _, svc := range services {
+		if !svc.Active {
+			failed = append(failed, svc)
+		}
+	}
+	return failed
+}
+
+func serviceCardClass(svc agent.ServiceStatus) string {
+	if svc.Active {
+		return "bg-green-50 dark:bg-green-900/10 border-green-500"
+	}
+	return "bg-red-50 dark:bg-red-900/10 border-red-500"
+}
+
+func serviceDotClass(svc agent.ServiceStatus) string {
+	if svc.Active {
+		return "bg-green-500"
+	}
+	return "bg-red-500"
+}
+
+func serviceStatusBadgeClass(svc agent.ServiceStatus) string {
+	if svc.Active {
+		return "bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-300"
+	}
+	return "bg-red-100 dark:bg-red-800 text-red-700 dark:text-red-300"
+}
+
+func serviceStatusText(svc agent.ServiceStatus) string {
+	if svc.Active {
+		return "Active"
+	}
+	if svc.Status == "failed" {
+		return "Failed"
+	}
+	return "Inactive"
+}
