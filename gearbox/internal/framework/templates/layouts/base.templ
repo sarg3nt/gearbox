@@ -572,15 +572,15 @@ templ Base(title string, user *models.User, currentPath ...string) {
 
 				console.log('Saving sidebar order:', order);
 
-				// Get the selected server ID
+				// Build URL — server param is optional, API defaults to first enabled server
+				let url = '/api/plugins/sort-order';
 				const serverID = window.ServerSelector ? window.ServerSelector.getSelectedServer() : null;
-				if (!serverID) {
-					console.error('No server selected');
-					return;
+				if (serverID) {
+					url += `?server=${encodeURIComponent(serverID)}`;
 				}
 
 				// Send to server
-				fetch(`/api/integrations/sort-order?server=${encodeURIComponent(serverID)}`, {
+				fetch(url, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					credentials: 'same-origin',
@@ -590,7 +590,7 @@ templ Base(title string, user *models.User, currentPath ...string) {
 					if (response.ok) {
 						console.log('Sidebar order saved successfully');
 					} else {
-						console.error('Failed to save sidebar order');
+						console.error('Failed to save sidebar order:', response.statusText);
 					}
 				})
 				.catch(error => {
