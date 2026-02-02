@@ -467,6 +467,11 @@ templ Base(title string, user *models.User, currentPath ...string) {
 			let sidebarEditMode = false;
 			let sidebarSortable = null;
 
+			// Prevent navigation when in edit mode
+			function preventNavClick(e) {
+				e.preventDefault();
+			}
+
 			function toggleSidebarEditMode() {
 				sidebarEditMode = !sidebarEditMode;
 				const iconEdit = document.getElementById('sidebar-icon-edit');
@@ -482,9 +487,9 @@ templ Base(title string, user *models.User, currentPath ...string) {
 					// Show drag handles
 					dragHandles.forEach(handle => handle.classList.remove('hidden'));
 
-					// Disable link clicks
+					// Prevent link navigation but keep pointer events active for drag handles
 					navLinks.forEach(link => {
-						link.style.pointerEvents = 'none';
+						link.addEventListener('click', preventNavClick);
 						link.style.cursor = 'grab';
 					});
 
@@ -500,7 +505,7 @@ templ Base(title string, user *models.User, currentPath ...string) {
 
 					// Re-enable link clicks
 					navLinks.forEach(link => {
-						link.style.pointerEvents = '';
+						link.removeEventListener('click', preventNavClick);
 						link.style.cursor = '';
 					});
 
