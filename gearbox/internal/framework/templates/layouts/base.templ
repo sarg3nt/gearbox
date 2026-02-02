@@ -477,11 +477,8 @@ templ Base(title string, user *models.User, currentPath ...string) {
 			let sidebarEditMode = false;
 			let sidebarSortable = null;
 
-			// Prevent navigation and native browser drag when in edit mode
+			// Prevent navigation when in edit mode
 			function preventNavClick(e) {
-				e.preventDefault();
-			}
-			function preventNativeDrag(e) {
 				e.preventDefault();
 			}
 
@@ -497,15 +494,12 @@ templ Base(title string, user *models.User, currentPath ...string) {
 					if (iconEdit) iconEdit.classList.add('hidden');
 					if (iconSave) iconSave.classList.remove('hidden');
 
-					// Show drag handles
+					// Show drag handle indicators
 					dragHandles.forEach(handle => handle.classList.remove('hidden'));
 
-					// Prevent link navigation and disable native browser drag
-					// (browser natively drags <a> tags, which conflicts with SortableJS)
+					// Prevent link navigation — entire item is draggable
 					navLinks.forEach(link => {
 						link.addEventListener('click', preventNavClick);
-						link.addEventListener('dragstart', preventNativeDrag);
-						link.setAttribute('draggable', 'false');
 						link.style.cursor = 'grab';
 					});
 
@@ -516,14 +510,12 @@ templ Base(title string, user *models.User, currentPath ...string) {
 					if (iconEdit) iconEdit.classList.remove('hidden');
 					if (iconSave) iconSave.classList.add('hidden');
 
-					// Hide drag handles
+					// Hide drag handle indicators
 					dragHandles.forEach(handle => handle.classList.add('hidden'));
 
 					// Restore link behavior
 					navLinks.forEach(link => {
 						link.removeEventListener('click', preventNavClick);
-						link.removeEventListener('dragstart', preventNativeDrag);
-						link.removeAttribute('draggable');
 						link.style.cursor = '';
 					});
 
@@ -554,7 +546,6 @@ templ Base(title string, user *models.User, currentPath ...string) {
 				// (SortableJS uses classList.add internally). Custom classes are defined in <style>.
 				sidebarSortable = window.Sortable.create(navList, {
 					animation: 200,
-					handle: '.nav-drag-handle',
 					draggable: '.nav-item-draggable',
 					ghostClass: 'sortable-ghost',
 					chosenClass: 'sortable-chosen',
@@ -1502,7 +1493,7 @@ templ SidebarLinkWithBadge(href string, label string, icon templ.Component, curr
 templ SidebarLinkDraggable(href string, label string, icon templ.Component, currentPath string, pluginName string) {
 	<li class="nav-item-draggable" data-plugin-name={ pluginName }>
 		if isActivePath(href, currentPath) {
-			<a href={ templ.SafeURL(href) } class="nav-link flex items-center space-x-3 px-4 py-3 bg-blue-50 dark:bg-slate-700 border-l-4 border-blue-600 dark:border-blue-400 text-blue-700 dark:text-blue-300 transition-colors">
+			<a href={ templ.SafeURL(href) } draggable="false" class="nav-link flex items-center space-x-3 px-4 py-3 bg-blue-50 dark:bg-slate-700 border-l-4 border-blue-600 dark:border-blue-400 text-blue-700 dark:text-blue-300 transition-colors">
 				<!-- Drag handle (hidden by default, shown in edit mode) -->
 				<div class="nav-drag-handle hidden flex-shrink-0 cursor-grab mr-2">
 					<svg class="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
@@ -1518,7 +1509,7 @@ templ SidebarLinkDraggable(href string, label string, icon templ.Component, curr
 				<span class="sidebar-text whitespace-nowrap font-medium">{ label }</span>
 			</a>
 		} else {
-			<a href={ templ.SafeURL(href) } class="nav-link flex items-center space-x-3 px-4 py-3 border-l-4 border-transparent hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors">
+			<a href={ templ.SafeURL(href) } draggable="false" class="nav-link flex items-center space-x-3 px-4 py-3 border-l-4 border-transparent hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors">
 				<!-- Drag handle (hidden by default, shown in edit mode) -->
 				<div class="nav-drag-handle hidden flex-shrink-0 cursor-grab mr-2">
 					<svg class="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
@@ -1541,7 +1532,7 @@ templ SidebarLinkDraggable(href string, label string, icon templ.Component, curr
 templ SidebarLinkDraggableWithBadge(href string, label string, icon templ.Component, currentPath string, pluginName string, badgeID string) {
 	<li class="nav-item-draggable" data-plugin-name={ pluginName }>
 		if isActivePath(href, currentPath) {
-			<a href={ templ.SafeURL(href) } class="nav-link flex items-center space-x-3 px-4 py-3 bg-blue-50 dark:bg-slate-700 border-l-4 border-blue-600 dark:border-blue-400 text-blue-700 dark:text-blue-300 transition-colors">
+			<a href={ templ.SafeURL(href) } draggable="false" class="nav-link flex items-center space-x-3 px-4 py-3 bg-blue-50 dark:bg-slate-700 border-l-4 border-blue-600 dark:border-blue-400 text-blue-700 dark:text-blue-300 transition-colors">
 				<!-- Drag handle (hidden by default, shown in edit mode) -->
 				<div class="nav-drag-handle hidden flex-shrink-0 cursor-grab mr-2">
 					<svg class="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
@@ -1560,7 +1551,7 @@ templ SidebarLinkDraggableWithBadge(href string, label string, icon templ.Compon
 				<span class="sidebar-text whitespace-nowrap font-medium">{ label }</span>
 			</a>
 		} else {
-			<a href={ templ.SafeURL(href) } class="nav-link flex items-center space-x-3 px-4 py-3 border-l-4 border-transparent hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors">
+			<a href={ templ.SafeURL(href) } draggable="false" class="nav-link flex items-center space-x-3 px-4 py-3 border-l-4 border-transparent hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors">
 				<!-- Drag handle (hidden by default, shown in edit mode) -->
 				<div class="nav-drag-handle hidden flex-shrink-0 cursor-grab mr-2">
 					<svg class="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
