@@ -27,16 +27,11 @@ document.addEventListener('DOMContentLoaded', function() {
 		}
 	}
 
-	// Wait for Sortable module to load before injecting controls
-	if (window.sortableReady) {
-		console.log('Sortable already loaded, initializing controls');
+	// Initialize controls — Sortable is loaded globally via base.templ
+	if (typeof window.Sortable !== 'undefined') {
 		injectEditControls();
 	} else {
-		console.log('Waiting for Sortable to load...');
-		window.addEventListener('sortable-loaded', function() {
-			console.log('Sortable loaded event received, initializing controls');
-			injectEditControls();
-		});
+		console.error('Sortable not loaded! Dashboard editor drag-and-drop will not work.');
 	}
 });
 

@@ -275,14 +275,15 @@ templ DisabledEntitiesPage(user *models.User, entities []database.DisabledEntity
 				const checkboxes = document.querySelectorAll('.entity-checkbox:checked');
 				const bulkBar = document.getElementById('bulk-actions-bar');
 				const countSpan = document.getElementById('selected-count');
+				const selectAll = document.getElementById('select-all');
 
 				if (checkboxes.length > 0) {
-					bulkBar.classList.remove('hidden');
-					countSpan.textContent = checkboxes.length;
+					if (bulkBar) bulkBar.classList.remove('hidden');
+					if (countSpan) countSpan.textContent = checkboxes.length;
 				} else {
-					bulkBar.classList.add('hidden');
+					if (bulkBar) bulkBar.classList.add('hidden');
 					// Also uncheck "select all"
-					document.getElementById('select-all').checked = false;
+					if (selectAll) selectAll.checked = false;
 				}
 			}
 
@@ -290,7 +291,8 @@ templ DisabledEntitiesPage(user *models.User, entities []database.DisabledEntity
 			function clearSelection() {
 				const checkboxes = document.querySelectorAll('.entity-checkbox');
 				checkboxes.forEach(cb => cb.checked = false);
-				document.getElementById('select-all').checked = false;
+				const selectAll = document.getElementById('select-all');
+				if (selectAll) selectAll.checked = false;
 				updateBulkActionsBar();
 			}
 

@@ -101,6 +101,10 @@ dev-assets: ## Download CDN assets locally for secure development (CSP-compliant
 	@curl -fsSL https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js -o static/js/vendor/hammer.min.js
 	@echo "  → Chart.js Zoom Plugin..."
 	@curl -fsSL https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js -o static/js/vendor/chartjs-plugin-zoom.min.js
+	@echo "  → D3.js..."
+	@curl -fsSL https://d3js.org/d3.v7.min.js -o static/js/vendor/d3.v7.min.js
+	@echo "  → SortableJS..."
+	@curl -fsSL https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js -o static/js/vendor/sortable.min.js
 	@echo "  → Tabulator CSS..."
 	@curl -fsSL https://unpkg.com/tabulator-tables@6.3.0/dist/css/tabulator.min.css -o static/css/vendor/tabulator.min.css
 	@echo "  → Tabulator JS..."

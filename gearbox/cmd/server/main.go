@@ -599,6 +599,7 @@ func main() {
 
 			// Plugins management (requires ComponentPlugins/PermissionManage - checked in handlers)
 			r.Get("/plugins", h.PluginsPage)
+			r.Post("/plugins/haproxy/git", h.HAProxyGitSettingsSave)
 			r.Get("/plugins/{name}", h.PluginDetailPage)
 			r.Post("/plugins/{name}", h.PluginUpdatePost)
 			r.Post("/plugins/{name}/toggle", h.PluginTogglePost)

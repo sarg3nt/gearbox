@@ -86,6 +86,7 @@ templ Base(title string, user *models.User, currentPath ...string) {
 			<script src="/static/js/vendor/chartjs-plugin-zoom.min.js"></script>
 			<link rel="stylesheet" href="/static/css/vendor/tabulator.min.css"/>
 			<script src="/static/js/vendor/tabulator.min.js"></script>
+			<script src="/static/js/vendor/sortable.min.js"></script>
 		} else {
 			<!-- CDN JavaScript libraries -->
 			<script src="https://unpkg.com/htmx.org@1.9.10/dist/htmx.min.js"></script>
@@ -95,8 +96,19 @@ templ Base(title string, user *models.User, currentPath ...string) {
 			<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 			<link rel="stylesheet" href="https://unpkg.com/tabulator-tables@6.3.0/dist/css/tabulator.min.css"/>
 			<script src="https://unpkg.com/tabulator-tables@6.3.0/dist/js/tabulator.min.js"></script>
+			<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 		}
 		<style>
+			/* SortableJS sidebar drag styles (single class names required by SortableJS) */
+			.sortable-ghost {
+				@apply bg-blue-50 dark:bg-slate-700;
+			}
+			.sortable-chosen {
+				@apply opacity-50;
+			}
+			.sortable-drag {
+				@apply opacity-75;
+			}
 			/* Base styles */
 			.metric-card {
 				@apply bg-white dark:bg-slate-800 rounded-lg shadow p-6;
@@ -465,6 +477,11 @@ templ Base(title string, user *models.User, currentPath ...string) {
 			let sidebarEditMode = false;
 			let sidebarSortable = null;
 
+			// Prevent navigation when in edit mode
+			function preventNavClick(e) {
+				e.preventDefault();
+			}
+
 			function toggleSidebarEditMode() {
 				sidebarEditMode = !sidebarEditMode;
 				const iconEdit = document.getElementById('sidebar-icon-edit');
@@ -477,12 +494,14 @@ templ Base(title string, user *models.User, currentPath ...string) {
 					if (iconEdit) iconEdit.classList.add('hidden');
 					if (iconSave) iconSave.classList.remove('hidden');
 
-					// Show drag handles
+					// Show drag handle indicators
 					dragHandles.forEach(handle => handle.classList.remove('hidden'));
 
-					// Disable link clicks
+					// Prevent link navigation — entire item is draggable
+					// Remove first to avoid duplicate listeners from rapid toggling
 					navLinks.forEach(link => {
-						link.style.pointerEvents = 'none';
+						link.removeEventListener('click', preventNavClick);
+						link.addEventListener('click', preventNavClick);
 						link.style.cursor = 'grab';
 					});
 
@@ -493,12 +512,12 @@ templ Base(title string, user *models.User, currentPath ...string) {
 					if (iconEdit) iconEdit.classList.remove('hidden');
 					if (iconSave) iconSave.classList.add('hidden');
 
-					// Hide drag handles
+					// Hide drag handle indicators
 					dragHandles.forEach(handle => handle.classList.add('hidden'));
 
-					// Re-enable link clicks
+					// Restore link behavior
 					navLinks.forEach(link => {
-						link.style.pointerEvents = '';
+						link.removeEventListener('click', preventNavClick);
 						link.style.cursor = '';
 					});
 
@@ -525,13 +544,14 @@ templ Base(title string, user *models.User, currentPath ...string) {
 				}
 
 				// Create new sortable instance
+				// Note: ghostClass/chosenClass/dragClass only accept a single class name
+				// (SortableJS uses classList.add internally). Custom classes are defined in <style>.
 				sidebarSortable = window.Sortable.create(navList, {
 					animation: 200,
-					handle: '.nav-drag-handle',
 					draggable: '.nav-item-draggable',
-					ghostClass: 'bg-blue-50 dark:bg-slate-700',
-					chosenClass: 'opacity-50',
-					dragClass: 'opacity-75',
+					ghostClass: 'sortable-ghost',
+					chosenClass: 'sortable-chosen',
+					dragClass: 'sortable-drag',
 					onEnd: function(evt) {
 						console.log('Item moved from index', evt.oldIndex, 'to', evt.newIndex);
 					}
@@ -540,39 +560,37 @@ templ Base(title string, user *models.User, currentPath ...string) {
 
 			function saveSidebarOrder() {
 				const navItems = document.querySelectorAll('.nav-item-draggable');
-				const order = [];
+				// API expects a flat map: {"pluginName": sortIndex, ...}
+				const orders = {};
 
 				navItems.forEach((item, index) => {
 					const pluginName = item.dataset.pluginName;
 					if (pluginName) {
-						order.push({
-							name: pluginName,
-							sortOrder: index
-						});
+						orders[pluginName] = index;
 					}
 				});
 
-				console.log('Saving sidebar order:', order);
+				console.log('Saving sidebar order:', orders);
 
-				// Get the selected server ID
+				// Build URL — server param is optional, API defaults to first enabled server
+				let url = '/api/plugins/sort-order';
 				const serverID = window.ServerSelector ? window.ServerSelector.getSelectedServer() : null;
-				if (!serverID) {
-					console.error('No server selected');
-					return;
+				if (serverID) {
+					url += `?server=${encodeURIComponent(serverID)}`;
 				}
 
 				// Send to server
-				fetch(`/api/integrations/sort-order?server=${encodeURIComponent(serverID)}`, {
+				fetch(url, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					credentials: 'same-origin',
-					body: JSON.stringify({ order: order })
+					body: JSON.stringify(orders)
 				})
 				.then(response => {
 					if (response.ok) {
 						console.log('Sidebar order saved successfully');
 					} else {
-						console.error('Failed to save sidebar order');
+						console.error('Failed to save sidebar order:', response.statusText);
 					}
 				})
 				.catch(error => {
@@ -1475,7 +1493,7 @@ templ SidebarLinkWithBadge(href string, label string, icon templ.Component, curr
 templ SidebarLinkDraggable(href string, label string, icon templ.Component, currentPath string, pluginName string) {
 	<li class="nav-item-draggable" data-plugin-name={ pluginName }>
 		if isActivePath(href, currentPath) {
-			<a href={ templ.SafeURL(href) } class="nav-link flex items-center space-x-3 px-4 py-3 bg-blue-50 dark:bg-slate-700 border-l-4 border-blue-600 dark:border-blue-400 text-blue-700 dark:text-blue-300 transition-colors">
+			<a href={ templ.SafeURL(href) } draggable="false" class="nav-link flex items-center space-x-3 px-4 py-3 bg-blue-50 dark:bg-slate-700 border-l-4 border-blue-600 dark:border-blue-400 text-blue-700 dark:text-blue-300 transition-colors">
 				<!-- Drag handle (hidden by default, shown in edit mode) -->
 				<div class="nav-drag-handle hidden flex-shrink-0 cursor-grab mr-2">
 					<svg class="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
@@ -1491,7 +1509,7 @@ templ SidebarLinkDraggable(href string, label string, icon templ.Component, curr
 				<span class="sidebar-text whitespace-nowrap font-medium">{ label }</span>
 			</a>
 		} else {
-			<a href={ templ.SafeURL(href) } class="nav-link flex items-center space-x-3 px-4 py-3 border-l-4 border-transparent hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors">
+			<a href={ templ.SafeURL(href) } draggable="false" class="nav-link flex items-center space-x-3 px-4 py-3 border-l-4 border-transparent hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors">
 				<!-- Drag handle (hidden by default, shown in edit mode) -->
 				<div class="nav-drag-handle hidden flex-shrink-0 cursor-grab mr-2">
 					<svg class="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
@@ -1514,7 +1532,7 @@ templ SidebarLinkDraggable(href string, label string, icon templ.Component, curr
 templ SidebarLinkDraggableWithBadge(href string, label string, icon templ.Component, currentPath string, pluginName string, badgeID string) {
 	<li class="nav-item-draggable" data-plugin-name={ pluginName }>
 		if isActivePath(href, currentPath) {
-			<a href={ templ.SafeURL(href) } class="nav-link flex items-center space-x-3 px-4 py-3 bg-blue-50 dark:bg-slate-700 border-l-4 border-blue-600 dark:border-blue-400 text-blue-700 dark:text-blue-300 transition-colors">
+			<a href={ templ.SafeURL(href) } draggable="false" class="nav-link flex items-center space-x-3 px-4 py-3 bg-blue-50 dark:bg-slate-700 border-l-4 border-blue-600 dark:border-blue-400 text-blue-700 dark:text-blue-300 transition-colors">
 				<!-- Drag handle (hidden by default, shown in edit mode) -->
 				<div class="nav-drag-handle hidden flex-shrink-0 cursor-grab mr-2">
 					<svg class="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
@@ -1533,7 +1551,7 @@ templ SidebarLinkDraggableWithBadge(href string, label string, icon templ.Compon
 				<span class="sidebar-text whitespace-nowrap font-medium">{ label }</span>
 			</a>
 		} else {
-			<a href={ templ.SafeURL(href) } class="nav-link flex items-center space-x-3 px-4 py-3 border-l-4 border-transparent hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors">
+			<a href={ templ.SafeURL(href) } draggable="false" class="nav-link flex items-center space-x-3 px-4 py-3 border-l-4 border-transparent hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors">
 				<!-- Drag handle (hidden by default, shown in edit mode) -->
 				<div class="nav-drag-handle hidden flex-shrink-0 cursor-grab mr-2">
 					<svg class="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 24 24">

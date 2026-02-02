@@ -104,7 +104,7 @@ items.forEach((item, index) => {
 	orderedNames.push(name);
 });
 
-fetch('/api/integrations/sort-order?server=' + encodeURIComponent(boxID), {
+fetch('/api/plugins/sort-order?server=' + encodeURIComponent(boxID), {
 	method: 'POST',
 	headers: { 'Content-Type': 'application/json' },
 	body: JSON.stringify(orders)

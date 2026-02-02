@@ -106,7 +106,7 @@ templ pluginCard(integration database.Plugin, serverID string) {
 			</div>
 			<div class="flex items-center space-x-4 flex-shrink-0">
 				// Show configure button for integrations with config
-				if integration.Name == database.PluginServices || integration.Name == database.PluginCertificates || integration.Name == database.PluginLogs || integration.Name == database.PluginMetrics || integration.Name == database.PluginTraffic || integration.Name == database.PluginAlerts {
+				if integration.Name == database.PluginHAProxy || integration.Name == database.PluginServices || integration.Name == database.PluginCertificates || integration.Name == database.PluginLogs || integration.Name == database.PluginMetrics || integration.Name == database.PluginTraffic || integration.Name == database.PluginAlerts {
 					<a
 						href={ templ.SafeURL("/settings/plugins/" + integration.Name + "?server=" + serverID) }
 						class="px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
