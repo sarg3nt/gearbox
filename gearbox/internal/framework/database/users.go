@@ -1268,10 +1268,12 @@ func (d *DB) updateSessionActivityDebounced(userID string) {
 	go func() {
 		d.mu.Lock()
 		defer d.mu.Unlock()
-		_, _ = d.db.Exec(`
+		if _, err := d.db.Exec(`
 			UPDATE users
 			SET session_last_activity = ?
-			WHERE id = ?`, now, userID)
+			WHERE id = ?`, now, userID); err != nil {
+			d.logger.Warn("failed to update session activity", "userID", userID, "error", err)
+		}
 	}()
 }
 
@@ -1281,15 +1283,20 @@ func (d *DB) ClearUserSessionToken(userID string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
+	// Clean up the debounce tracking entry for this user
+	d.sessionActivityMu.Lock()
+	delete(d.sessionActivityTimes, userID)
+	d.sessionActivityMu.Unlock()
+
 	_, err := d.db.Exec(`
-		UPDATE users 
+		UPDATE users
 		SET session_token = NULL,
 		    session_created_at = NULL,
 		    session_last_activity = NULL,
 		    session_ip = NULL,
 		    session_user_agent = NULL
 		WHERE id = ?`, userID)
-	
+
 	return err
 }
 

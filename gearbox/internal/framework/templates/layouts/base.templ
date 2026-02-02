@@ -498,7 +498,9 @@ templ Base(title string, user *models.User, currentPath ...string) {
 					dragHandles.forEach(handle => handle.classList.remove('hidden'));
 
 					// Prevent link navigation — entire item is draggable
+					// Remove first to avoid duplicate listeners from rapid toggling
 					navLinks.forEach(link => {
+						link.removeEventListener('click', preventNavClick);
 						link.addEventListener('click', preventNavClick);
 						link.style.cursor = 'grab';
 					});

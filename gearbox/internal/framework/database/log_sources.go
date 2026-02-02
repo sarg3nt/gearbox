@@ -49,8 +49,8 @@ func (d *DB) GetEnabledLogSourcesByServerID(serverID string) ([]LogSourceSetting
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	// Use LEFT JOIN so servers without HAProxy entries return empty results instead of errors.
-	// The haproxy_servers table may not have an entry for every server.
+	// INNER JOIN ensures only servers with HAProxy entries return log sources.
+	// Servers without HAProxy configuration will naturally get zero rows.
 	query := `
 		SELECT ls.id, ls.haproxy_server_id, ls.log_name, ls.display_name
 		FROM log_source_settings ls
@@ -61,8 +61,7 @@ func (d *DB) GetEnabledLogSourcesByServerID(serverID string) ([]LogSourceSetting
 
 	rows, err := d.db.Query(query, serverID)
 	if err != nil {
-		// If the query fails (e.g., haproxy_servers table doesn't exist yet),
-		// return empty list rather than propagating the error
+		d.logger.Warn("failed to query log sources by server ID", "serverID", serverID, "error", err)
 		return nil, nil
 	}
 	defer func() { _ = rows.Close() }()
