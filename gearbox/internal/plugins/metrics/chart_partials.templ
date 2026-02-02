@@ -19,72 +19,72 @@ templ SessionsRequestsChartPartial(boxID string, hours int, limit int) {
 			<canvas id={ fmt.Sprintf("chart-sessions-requests-%s", boxID) }></canvas>
 		</div>
 	</div>
-	<script type="module" data-box-id={ boxID } data-hours={ fmt.Sprintf("%d", hours) } data-limit={ fmt.Sprintf("%d", limit) }>
-		const script = document.currentScript;
-		const boxID = script.dataset.boxId;
-		const hours = parseInt(script.dataset.hours);
-		const limit = parseInt(script.dataset.limit);
+	<script type="module">
+		(async function() {
+			const boxID = { fmt.Sprintf("'%s'", boxID) };
+			const hours = { fmt.Sprintf("%d", hours) };
+			const limit = { fmt.Sprintf("%d", limit) };
 
-		import('/static/js/charts/chart-defaults.js').then(defaults => {
-			import('/static/js/charts/chart-fullscreen.js').then(fullscreen => {
-				const { getChartColors, createChartOptions, createLineDataset, formatTime } = defaults;
-				const { toggleFullscreen } = fullscreen;
+			const defaults = await import('/static/js/charts/chart-defaults.js');
+			const fullscreen = await import('/static/js/charts/chart-fullscreen.js');
 
-				const canvasId = 'chart-sessions-requests-' + boxID;
-				const cardId = 'card-sessions-requests-' + boxID;
+			const { getChartColors, createChartOptions, createLineDataset, formatTime } = defaults;
+			const { toggleFullscreen } = fullscreen;
 
-				if (!window.chartInstances) window.chartInstances = {};
+			const canvasId = 'chart-sessions-requests-' + boxID;
+			const cardId = 'card-sessions-requests-' + boxID;
 
-				const fullscreenBtn = document.querySelector('.fullscreen-btn-sessions-requests-' + boxID);
-				if (fullscreenBtn) {
-					fullscreenBtn.addEventListener('click', () => {
-						toggleFullscreen(cardId, () => {
-							if (window.chartInstances && window.chartInstances[canvasId]) {
-								setTimeout(() => window.chartInstances[canvasId].resize(), 100);
-							}
-						});
-					});
-				}
+			if (!window.chartInstances) window.chartInstances = {};
 
-				async function loadChart() {
-					try {
-						const response = await fetch('/api/' + boxID + '/history/stats?hours=' + hours + '&limit=' + limit);
-						const json = await response.json();
-						const data = json.data || [];
-
-						const colors = getChartColors();
-						const ctx = document.getElementById(canvasId);
-						if (!ctx) return;
-
-						if (window.chartInstances[canvasId]) {
-							window.chartInstances[canvasId].destroy();
+			const fullscreenBtn = document.querySelector('.fullscreen-btn-sessions-requests-' + boxID);
+			if (fullscreenBtn) {
+				fullscreenBtn.addEventListener('click', () => {
+					toggleFullscreen(cardId, () => {
+						if (window.chartInstances && window.chartInstances[canvasId]) {
+							setTimeout(() => window.chartInstances[canvasId].resize(), 100);
 						}
-
-						window.chartInstances[canvasId] = new Chart(ctx.getContext('2d'), {
-							type: 'line',
-							data: {
-								labels: data.map(d => formatTime(d.collected_at)),
-								datasets: [
-									createLineDataset('Sessions', data.map(d => d.total_sessions), colors.primary),
-									createLineDataset('Requests (÷1000)', data.map(d => Math.round(d.total_requests / 1000)), colors.secondary)
-								]
-							},
-							options: createChartOptions(0)
-						});
-					} catch (error) {
-						console.error('Failed to load sessions/requests chart:', error);
-					}
-				}
-
-				loadChart();
-				document.body.addEventListener('dashboard:settings-changed', loadChart);
-				document.body.addEventListener('dashboard:reset-zoom', () => {
-					if (window.chartInstances[canvasId] && window.chartInstances[canvasId].resetZoom) {
-						window.chartInstances[canvasId].resetZoom();
-					}
+					});
 				});
+			}
+
+			async function loadChart() {
+				try {
+					const response = await fetch('/api/' + boxID + '/history/stats?hours=' + hours + '&limit=' + limit);
+					const json = await response.json();
+					const data = json.data || [];
+
+					const colors = getChartColors();
+					const ctx = document.getElementById(canvasId);
+					if (!ctx) return;
+
+					if (window.chartInstances[canvasId]) {
+						window.chartInstances[canvasId].destroy();
+					}
+
+					window.chartInstances[canvasId] = new Chart(ctx.getContext('2d'), {
+						type: 'line',
+						data: {
+							labels: data.map(d => formatTime(d.collected_at)),
+							datasets: [
+								createLineDataset('Sessions', data.map(d => d.total_sessions), colors.primary),
+								createLineDataset('Requests (÷1000)', data.map(d => Math.round(d.total_requests / 1000)), colors.secondary)
+							]
+						},
+						options: createChartOptions(0)
+					});
+				} catch (error) {
+					console.error('Failed to load sessions/requests chart:', error);
+				}
+			}
+
+			loadChart();
+			document.body.addEventListener('dashboard:settings-changed', loadChart);
+			document.body.addEventListener('dashboard:reset-zoom', () => {
+				if (window.chartInstances[canvasId] && window.chartInstances[canvasId].resetZoom) {
+					window.chartInstances[canvasId].resetZoom();
+				}
 			});
-		});
+		})();
 	</script>
 }
 
@@ -103,72 +103,72 @@ templ ServerHealthChartPartial(boxID string, hours int, limit int) {
 			<canvas id={ fmt.Sprintf("chart-server-health-%s", boxID) }></canvas>
 		</div>
 	</div>
-	<script type="module" data-box-id={ boxID } data-hours={ fmt.Sprintf("%d", hours) } data-limit={ fmt.Sprintf("%d", limit) }>
-		const script = document.currentScript;
-		const boxID = script.dataset.boxId;
-		const hours = parseInt(script.dataset.hours);
-		const limit = parseInt(script.dataset.limit);
+	<script type="module">
+		(async function() {
+			const boxID = { fmt.Sprintf("'%s'", boxID) };
+			const hours = { fmt.Sprintf("%d", hours) };
+			const limit = { fmt.Sprintf("%d", limit) };
 
-		import('/static/js/charts/chart-defaults.js').then(defaults => {
-			import('/static/js/charts/chart-fullscreen.js').then(fullscreen => {
-				const { getChartColors, createChartOptions, createLineDataset, formatTime } = defaults;
-				const { toggleFullscreen } = fullscreen;
+			const defaults = await import('/static/js/charts/chart-defaults.js');
+			const fullscreen = await import('/static/js/charts/chart-fullscreen.js');
 
-				const canvasId = 'chart-server-health-' + boxID;
-				const cardId = 'card-server-health-' + boxID;
+			const { getChartColors, createChartOptions, createLineDataset, formatTime } = defaults;
+			const { toggleFullscreen } = fullscreen;
 
-				if (!window.chartInstances) window.chartInstances = {};
+			const canvasId = 'chart-server-health-' + boxID;
+			const cardId = 'card-server-health-' + boxID;
 
-				const fullscreenBtn = document.querySelector('.fullscreen-btn-server-health-' + boxID);
-				if (fullscreenBtn) {
-					fullscreenBtn.addEventListener('click', () => {
-						toggleFullscreen(cardId, () => {
-							if (window.chartInstances && window.chartInstances[canvasId]) {
-								setTimeout(() => window.chartInstances[canvasId].resize(), 100);
-							}
-						});
-					});
-				}
+			if (!window.chartInstances) window.chartInstances = {};
 
-				async function loadChart() {
-					try {
-						const response = await fetch('/api/' + boxID + '/history/stats?hours=' + hours + '&limit=' + limit);
-						const json = await response.json();
-						const data = json.data || [];
-
-						const colors = getChartColors();
-						const ctx = document.getElementById(canvasId);
-						if (!ctx) return;
-
-						if (window.chartInstances[canvasId]) {
-							window.chartInstances[canvasId].destroy();
+			const fullscreenBtn = document.querySelector('.fullscreen-btn-server-health-' + boxID);
+			if (fullscreenBtn) {
+				fullscreenBtn.addEventListener('click', () => {
+					toggleFullscreen(cardId, () => {
+						if (window.chartInstances && window.chartInstances[canvasId]) {
+							setTimeout(() => window.chartInstances[canvasId].resize(), 100);
 						}
-
-						window.chartInstances[canvasId] = new Chart(ctx.getContext('2d'), {
-							type: 'line',
-							data: {
-								labels: data.map(d => formatTime(d.collected_at)),
-								datasets: [
-									createLineDataset('Healthy Servers', data.map(d => d.healthy_servers), colors.secondary),
-									createLineDataset('Total Servers', data.map(d => d.total_servers), colors.primary)
-								]
-							},
-							options: createChartOptions(0)
-						});
-					} catch (error) {
-						console.error('Failed to load server health chart:', error);
-					}
-				}
-
-				loadChart();
-				document.body.addEventListener('dashboard:settings-changed', loadChart);
-				document.body.addEventListener('dashboard:reset-zoom', () => {
-					if (window.chartInstances[canvasId] && window.chartInstances[canvasId].resetZoom) {
-						window.chartInstances[canvasId].resetZoom();
-					}
+					});
 				});
+			}
+
+			async function loadChart() {
+				try {
+					const response = await fetch('/api/' + boxID + '/history/stats?hours=' + hours + '&limit=' + limit);
+					const json = await response.json();
+					const data = json.data || [];
+
+					const colors = getChartColors();
+					const ctx = document.getElementById(canvasId);
+					if (!ctx) return;
+
+					if (window.chartInstances[canvasId]) {
+						window.chartInstances[canvasId].destroy();
+					}
+
+					window.chartInstances[canvasId] = new Chart(ctx.getContext('2d'), {
+						type: 'line',
+						data: {
+							labels: data.map(d => formatTime(d.collected_at)),
+							datasets: [
+								createLineDataset('Healthy Servers', data.map(d => d.healthy_servers), colors.secondary),
+								createLineDataset('Total Servers', data.map(d => d.total_servers), colors.primary)
+							]
+						},
+						options: createChartOptions(0)
+					});
+				} catch (error) {
+					console.error('Failed to load server health chart:', error);
+				}
+			}
+
+			loadChart();
+			document.body.addEventListener('dashboard:settings-changed', loadChart);
+			document.body.addEventListener('dashboard:reset-zoom', () => {
+				if (window.chartInstances[canvasId] && window.chartInstances[canvasId].resetZoom) {
+					window.chartInstances[canvasId].resetZoom();
+				}
 			});
-		});
+		})();
 	</script>
 }
 
@@ -187,73 +187,73 @@ templ CPULoadChartPartial(boxID string, hours int, limit int) {
 			<canvas id={ fmt.Sprintf("chart-cpu-load-%s", boxID) }></canvas>
 		</div>
 	</div>
-	<script type="module" data-box-id={ boxID } data-hours={ fmt.Sprintf("%d", hours) } data-limit={ fmt.Sprintf("%d", limit) }>
-		const script = document.currentScript;
-		const boxID = script.dataset.boxId;
-		const hours = parseInt(script.dataset.hours);
-		const limit = parseInt(script.dataset.limit);
+	<script type="module">
+		(async function() {
+			const boxID = { fmt.Sprintf("'%s'", boxID) };
+			const hours = { fmt.Sprintf("%d", hours) };
+			const limit = { fmt.Sprintf("%d", limit) };
 
-		import('/static/js/charts/chart-defaults.js').then(defaults => {
-			import('/static/js/charts/chart-fullscreen.js').then(fullscreen => {
-				const { getChartColors, createChartOptions, createLineDataset, formatTime } = defaults;
-				const { toggleFullscreen } = fullscreen;
+			const defaults = await import('/static/js/charts/chart-defaults.js');
+			const fullscreen = await import('/static/js/charts/chart-fullscreen.js');
 
-				const canvasId = 'chart-cpu-load-' + boxID;
-				const cardId = 'card-cpu-load-' + boxID;
+			const { getChartColors, createChartOptions, createLineDataset, formatTime } = defaults;
+			const { toggleFullscreen } = fullscreen;
 
-				if (!window.chartInstances) window.chartInstances = {};
+			const canvasId = 'chart-cpu-load-' + boxID;
+			const cardId = 'card-cpu-load-' + boxID;
 
-				const fullscreenBtn = document.querySelector('.fullscreen-btn-cpu-load-' + boxID);
-				if (fullscreenBtn) {
-					fullscreenBtn.addEventListener('click', () => {
-						toggleFullscreen(cardId, () => {
-							if (window.chartInstances && window.chartInstances[canvasId]) {
-								setTimeout(() => window.chartInstances[canvasId].resize(), 100);
-							}
-						});
-					});
-				}
+			if (!window.chartInstances) window.chartInstances = {};
 
-				async function loadChart() {
-					try {
-						const response = await fetch('/api/' + boxID + '/history/metrics?hours=' + hours + '&limit=' + limit);
-						const json = await response.json();
-						const data = json.data || [];
-
-						const colors = getChartColors();
-						const ctx = document.getElementById(canvasId);
-						if (!ctx) return;
-
-						if (window.chartInstances[canvasId]) {
-							window.chartInstances[canvasId].destroy();
+			const fullscreenBtn = document.querySelector('.fullscreen-btn-cpu-load-' + boxID);
+			if (fullscreenBtn) {
+				fullscreenBtn.addEventListener('click', () => {
+					toggleFullscreen(cardId, () => {
+						if (window.chartInstances && window.chartInstances[canvasId]) {
+							setTimeout(() => window.chartInstances[canvasId].resize(), 100);
 						}
-
-						window.chartInstances[canvasId] = new Chart(ctx.getContext('2d'), {
-							type: 'line',
-							data: {
-								labels: data.map(d => formatTime(d.collected_at)),
-								datasets: [
-									createLineDataset('1 min', data.map(d => d.load_average_1), colors.primary),
-									createLineDataset('5 min', data.map(d => d.load_average_5), colors.secondary),
-									createLineDataset('15 min', data.map(d => d.load_average_15), colors.purple)
-								]
-							},
-							options: createChartOptions(0)
-						});
-					} catch (error) {
-						console.error('Failed to load CPU load chart:', error);
-					}
-				}
-
-				loadChart();
-				document.body.addEventListener('dashboard:settings-changed', loadChart);
-				document.body.addEventListener('dashboard:reset-zoom', () => {
-					if (window.chartInstances[canvasId] && window.chartInstances[canvasId].resetZoom) {
-						window.chartInstances[canvasId].resetZoom();
-					}
+					});
 				});
+			}
+
+			async function loadChart() {
+				try {
+					const response = await fetch('/api/' + boxID + '/history/metrics?hours=' + hours + '&limit=' + limit);
+					const json = await response.json();
+					const data = json.data || [];
+
+					const colors = getChartColors();
+					const ctx = document.getElementById(canvasId);
+					if (!ctx) return;
+
+					if (window.chartInstances[canvasId]) {
+						window.chartInstances[canvasId].destroy();
+					}
+
+					window.chartInstances[canvasId] = new Chart(ctx.getContext('2d'), {
+						type: 'line',
+						data: {
+							labels: data.map(d => formatTime(d.collected_at)),
+							datasets: [
+								createLineDataset('1 min', data.map(d => d.load_average_1), colors.primary),
+								createLineDataset('5 min', data.map(d => d.load_average_5), colors.secondary),
+								createLineDataset('15 min', data.map(d => d.load_average_15), colors.purple)
+							]
+						},
+						options: createChartOptions(0)
+					});
+				} catch (error) {
+					console.error('Failed to load CPU load chart:', error);
+				}
+			}
+
+			loadChart();
+			document.body.addEventListener('dashboard:settings-changed', loadChart);
+			document.body.addEventListener('dashboard:reset-zoom', () => {
+				if (window.chartInstances[canvasId] && window.chartInstances[canvasId].resetZoom) {
+					window.chartInstances[canvasId].resetZoom();
+				}
 			});
-		});
+		})();
 	</script>
 }
 
@@ -272,71 +272,71 @@ templ MemoryUsageChartPartial(boxID string, hours int, limit int) {
 			<canvas id={ fmt.Sprintf("chart-memory-usage-%s", boxID) }></canvas>
 		</div>
 	</div>
-	<script type="module" data-box-id={ boxID } data-hours={ fmt.Sprintf("%d", hours) } data-limit={ fmt.Sprintf("%d", limit) }>
-		const script = document.currentScript;
-		const boxID = script.dataset.boxId;
-		const hours = parseInt(script.dataset.hours);
-		const limit = parseInt(script.dataset.limit);
+	<script type="module">
+		(async function() {
+			const boxID = { fmt.Sprintf("'%s'", boxID) };
+			const hours = { fmt.Sprintf("%d", hours) };
+			const limit = { fmt.Sprintf("%d", limit) };
 
-		import('/static/js/charts/chart-defaults.js').then(defaults => {
-			import('/static/js/charts/chart-fullscreen.js').then(fullscreen => {
-				const { getChartColors, createPercentageYAxisOptions, createLineDataset, formatTime } = defaults;
-				const { toggleFullscreen } = fullscreen;
+			const defaults = await import('/static/js/charts/chart-defaults.js');
+			const fullscreen = await import('/static/js/charts/chart-fullscreen.js');
 
-				const canvasId = 'chart-memory-usage-' + boxID;
-				const cardId = 'card-memory-usage-' + boxID;
+			const { getChartColors, createPercentageYAxisOptions, createLineDataset, formatTime } = defaults;
+			const { toggleFullscreen } = fullscreen;
 
-				if (!window.chartInstances) window.chartInstances = {};
+			const canvasId = 'chart-memory-usage-' + boxID;
+			const cardId = 'card-memory-usage-' + boxID;
 
-				const fullscreenBtn = document.querySelector('.fullscreen-btn-memory-usage-' + boxID);
-				if (fullscreenBtn) {
-					fullscreenBtn.addEventListener('click', () => {
-						toggleFullscreen(cardId, () => {
-							if (window.chartInstances && window.chartInstances[canvasId]) {
-								setTimeout(() => window.chartInstances[canvasId].resize(), 100);
-							}
-						});
-					});
-				}
+			if (!window.chartInstances) window.chartInstances = {};
 
-				async function loadChart() {
-					try {
-						const response = await fetch('/api/' + boxID + '/history/metrics?hours=' + hours + '&limit=' + limit);
-						const json = await response.json();
-						const data = json.data || [];
-
-						const colors = getChartColors();
-						const ctx = document.getElementById(canvasId);
-						if (!ctx) return;
-
-						if (window.chartInstances[canvasId]) {
-							window.chartInstances[canvasId].destroy();
+			const fullscreenBtn = document.querySelector('.fullscreen-btn-memory-usage-' + boxID);
+			if (fullscreenBtn) {
+				fullscreenBtn.addEventListener('click', () => {
+					toggleFullscreen(cardId, () => {
+						if (window.chartInstances && window.chartInstances[canvasId]) {
+							setTimeout(() => window.chartInstances[canvasId].resize(), 100);
 						}
-
-						window.chartInstances[canvasId] = new Chart(ctx.getContext('2d'), {
-							type: 'line',
-							data: {
-								labels: data.map(d => formatTime(d.collected_at)),
-								datasets: [
-									createLineDataset('Memory %', data.map(d => d.memory_usage_percent), colors.warning)
-								]
-							},
-							options: createPercentageYAxisOptions()
-						});
-					} catch (error) {
-						console.error('Failed to load memory usage chart:', error);
-					}
-				}
-
-				loadChart();
-				document.body.addEventListener('dashboard:settings-changed', loadChart);
-				document.body.addEventListener('dashboard:reset-zoom', () => {
-					if (window.chartInstances[canvasId] && window.chartInstances[canvasId].resetZoom) {
-						window.chartInstances[canvasId].resetZoom();
-					}
+					});
 				});
+			}
+
+			async function loadChart() {
+				try {
+					const response = await fetch('/api/' + boxID + '/history/metrics?hours=' + hours + '&limit=' + limit);
+					const json = await response.json();
+					const data = json.data || [];
+
+					const colors = getChartColors();
+					const ctx = document.getElementById(canvasId);
+					if (!ctx) return;
+
+					if (window.chartInstances[canvasId]) {
+						window.chartInstances[canvasId].destroy();
+					}
+
+					window.chartInstances[canvasId] = new Chart(ctx.getContext('2d'), {
+						type: 'line',
+						data: {
+							labels: data.map(d => formatTime(d.collected_at)),
+							datasets: [
+								createLineDataset('Memory %', data.map(d => d.memory_usage_percent), colors.warning)
+							]
+						},
+						options: createPercentageYAxisOptions()
+					});
+				} catch (error) {
+					console.error('Failed to load memory usage chart:', error);
+				}
+			}
+
+			loadChart();
+			document.body.addEventListener('dashboard:settings-changed', loadChart);
+			document.body.addEventListener('dashboard:reset-zoom', () => {
+				if (window.chartInstances[canvasId] && window.chartInstances[canvasId].resetZoom) {
+					window.chartInstances[canvasId].resetZoom();
+				}
 			});
-		});
+		})();
 	</script>
 }
 
@@ -355,94 +355,94 @@ templ NetworkThroughputChartPartial(boxID string, hours int, limit int) {
 			<canvas id={ fmt.Sprintf("chart-network-throughput-%s", boxID) }></canvas>
 		</div>
 	</div>
-	<script type="module" data-box-id={ boxID } data-hours={ fmt.Sprintf("%d", hours) } data-limit={ fmt.Sprintf("%d", limit) }>
-		const script = document.currentScript;
-		const boxID = script.dataset.boxId;
-		const hours = parseInt(script.dataset.hours);
-		const limit = parseInt(script.dataset.limit);
+	<script type="module">
+		(async function() {
+			const boxID = { fmt.Sprintf("'%s'", boxID) };
+			const hours = { fmt.Sprintf("%d", hours) };
+			const limit = { fmt.Sprintf("%d", limit) };
 
-		import('/static/js/charts/chart-defaults.js').then(defaults => {
-			import('/static/js/charts/chart-fullscreen.js').then(fullscreen => {
-				const { getChartColors, createChartOptions, createLineDataset, formatTime } = defaults;
-				const { toggleFullscreen } = fullscreen;
+			const defaults = await import('/static/js/charts/chart-defaults.js');
+			const fullscreen = await import('/static/js/charts/chart-fullscreen.js');
 
-				const canvasId = 'chart-network-throughput-' + boxID;
-				const cardId = 'card-network-throughput-' + boxID;
+			const { getChartColors, createChartOptions, createLineDataset, formatTime } = defaults;
+			const { toggleFullscreen } = fullscreen;
 
-				if (!window.chartInstances) window.chartInstances = {};
+			const canvasId = 'chart-network-throughput-' + boxID;
+			const cardId = 'card-network-throughput-' + boxID;
 
-				const fullscreenBtn = document.querySelector('.fullscreen-btn-network-throughput-' + boxID);
-				if (fullscreenBtn) {
-					fullscreenBtn.addEventListener('click', () => {
-						toggleFullscreen(cardId, () => {
-							if (window.chartInstances && window.chartInstances[canvasId]) {
-								setTimeout(() => window.chartInstances[canvasId].resize(), 100);
-							}
-						});
+			if (!window.chartInstances) window.chartInstances = {};
+
+			const fullscreenBtn = document.querySelector('.fullscreen-btn-network-throughput-' + boxID);
+			if (fullscreenBtn) {
+				fullscreenBtn.addEventListener('click', () => {
+					toggleFullscreen(cardId, () => {
+						if (window.chartInstances && window.chartInstances[canvasId]) {
+							setTimeout(() => window.chartInstances[canvasId].resize(), 100);
+						}
 					});
-				}
-
-				async function loadChart() {
-					try {
-						const response = await fetch('/api/' + boxID + '/history/metrics?hours=' + hours + '&limit=' + limit);
-						const json = await response.json();
-						const data = json.data || [];
-
-						const colors = getChartColors();
-						const ctx = document.getElementById(canvasId);
-						if (!ctx) return;
-
-						const rxRate = [];
-						const txRate = [];
-						const labels = [];
-
-						for (let i = 1; i < data.length; i++) {
-							const prev = data[i - 1];
-							const curr = data[i];
-
-							const timeDiff = (new Date(curr.collected_at) - new Date(prev.collected_at)) / 1000;
-							if (timeDiff <= 0) continue;
-
-							const rxDiff = curr.network_rx_bytes - prev.network_rx_bytes;
-							const txDiff = curr.network_tx_bytes - prev.network_tx_bytes;
-
-							const rxMbps = rxDiff >= 0 ? (rxDiff * 8 / 1000000) / timeDiff : 0;
-							const txMbps = txDiff >= 0 ? (txDiff * 8 / 1000000) / timeDiff : 0;
-
-							rxRate.push(rxMbps);
-							txRate.push(txMbps);
-							labels.push(formatTime(curr.collected_at));
-						}
-
-						if (window.chartInstances[canvasId]) {
-							window.chartInstances[canvasId].destroy();
-						}
-
-						window.chartInstances[canvasId] = new Chart(ctx.getContext('2d'), {
-							type: 'line',
-							data: {
-								labels: labels,
-								datasets: [
-									createLineDataset('RX (Mbps)', rxRate, colors.primary),
-									createLineDataset('TX (Mbps)', txRate, colors.purple)
-								]
-							},
-							options: createChartOptions(0)
-						});
-					} catch (error) {
-						console.error('Failed to load network throughput chart:', error);
-					}
-				}
-
-				loadChart();
-				document.body.addEventListener('dashboard:settings-changed', loadChart);
-				document.body.addEventListener('dashboard:reset-zoom', () => {
-					if (window.chartInstances[canvasId] && window.chartInstances[canvasId].resetZoom) {
-						window.chartInstances[canvasId].resetZoom();
-					}
 				});
+			}
+
+			async function loadChart() {
+				try {
+					const response = await fetch('/api/' + boxID + '/history/metrics?hours=' + hours + '&limit=' + limit);
+					const json = await response.json();
+					const data = json.data || [];
+
+					const colors = getChartColors();
+					const ctx = document.getElementById(canvasId);
+					if (!ctx) return;
+
+					const rxRate = [];
+					const txRate = [];
+					const labels = [];
+
+					for (let i = 1; i < data.length; i++) {
+						const prev = data[i - 1];
+						const curr = data[i];
+
+						const timeDiff = (new Date(curr.collected_at) - new Date(prev.collected_at)) / 1000;
+						if (timeDiff <= 0) continue;
+
+						const rxDiff = curr.network_rx_bytes - prev.network_rx_bytes;
+						const txDiff = curr.network_tx_bytes - prev.network_tx_bytes;
+
+						const rxMbps = rxDiff >= 0 ? (rxDiff * 8 / 1000000) / timeDiff : 0;
+						const txMbps = txDiff >= 0 ? (txDiff * 8 / 1000000) / timeDiff : 0;
+
+						rxRate.push(rxMbps);
+						txRate.push(txMbps);
+						labels.push(formatTime(curr.collected_at));
+					}
+
+					if (window.chartInstances[canvasId]) {
+						window.chartInstances[canvasId].destroy();
+					}
+
+					window.chartInstances[canvasId] = new Chart(ctx.getContext('2d'), {
+						type: 'line',
+						data: {
+							labels: labels,
+							datasets: [
+								createLineDataset('RX (Mbps)', rxRate, colors.primary),
+								createLineDataset('TX (Mbps)', txRate, colors.purple)
+							]
+						},
+						options: createChartOptions(0)
+					});
+				} catch (error) {
+					console.error('Failed to load network throughput chart:', error);
+				}
+			}
+
+			loadChart();
+			document.body.addEventListener('dashboard:settings-changed', loadChart);
+			document.body.addEventListener('dashboard:reset-zoom', () => {
+				if (window.chartInstances[canvasId] && window.chartInstances[canvasId].resetZoom) {
+					window.chartInstances[canvasId].resetZoom();
+				}
 			});
-		});
+		})();
 	</script>
 }
 
@@ -461,71 +461,71 @@ templ ResponseTimesChartPartial(boxID string, hours int, limit int) {
 			<canvas id={ fmt.Sprintf("chart-response-times-%s", boxID) }></canvas>
 		</div>
 	</div>
-	<script type="module" data-box-id={ boxID } data-hours={ fmt.Sprintf("%d", hours) } data-limit={ fmt.Sprintf("%d", limit) }>
-		const script = document.currentScript;
-		const boxID = script.dataset.boxId;
-		const hours = parseInt(script.dataset.hours);
-		const limit = parseInt(script.dataset.limit);
+	<script type="module">
+		(async function() {
+			const boxID = { fmt.Sprintf("'%s'", boxID) };
+			const hours = { fmt.Sprintf("%d", hours) };
+			const limit = { fmt.Sprintf("%d", limit) };
 
-		import('/static/js/charts/chart-defaults.js').then(defaults => {
-			import('/static/js/charts/chart-fullscreen.js').then(fullscreen => {
-				const { getChartColors, createChartOptions, createLineDataset, formatTime } = defaults;
-				const { toggleFullscreen } = fullscreen;
+			const defaults = await import('/static/js/charts/chart-defaults.js');
+			const fullscreen = await import('/static/js/charts/chart-fullscreen.js');
 
-				const canvasId = 'chart-response-times-' + boxID;
-				const cardId = 'card-response-times-' + boxID;
+			const { getChartColors, createChartOptions, createLineDataset, formatTime } = defaults;
+			const { toggleFullscreen } = fullscreen;
 
-				if (!window.chartInstances) window.chartInstances = {};
+			const canvasId = 'chart-response-times-' + boxID;
+			const cardId = 'card-response-times-' + boxID;
 
-				const fullscreenBtn = document.querySelector('.fullscreen-btn-response-times-' + boxID);
-				if (fullscreenBtn) {
-					fullscreenBtn.addEventListener('click', () => {
-						toggleFullscreen(cardId, () => {
-							if (window.chartInstances && window.chartInstances[canvasId]) {
-								setTimeout(() => window.chartInstances[canvasId].resize(), 100);
-							}
-						});
-					});
-				}
+			if (!window.chartInstances) window.chartInstances = {};
 
-				async function loadChart() {
-					try {
-						const response = await fetch('/api/' + boxID + '/history/stats?hours=' + hours + '&limit=' + limit);
-						const json = await response.json();
-						const data = json.data || [];
-
-						const colors = getChartColors();
-						const ctx = document.getElementById(canvasId);
-						if (!ctx) return;
-
-						if (window.chartInstances[canvasId]) {
-							window.chartInstances[canvasId].destroy();
+			const fullscreenBtn = document.querySelector('.fullscreen-btn-response-times-' + boxID);
+			if (fullscreenBtn) {
+				fullscreenBtn.addEventListener('click', () => {
+					toggleFullscreen(cardId, () => {
+						if (window.chartInstances && window.chartInstances[canvasId]) {
+							setTimeout(() => window.chartInstances[canvasId].resize(), 100);
 						}
-
-						window.chartInstances[canvasId] = new Chart(ctx.getContext('2d'), {
-							type: 'line',
-							data: {
-								labels: data.map(d => formatTime(d.collected_at)),
-								datasets: [
-									createLineDataset('Avg Response Time (ms)', data.map(d => d.avg_response_time), colors.primary)
-								]
-							},
-							options: createChartOptions(0)
-						});
-					} catch (error) {
-						console.error('Failed to load response times chart:', error);
-					}
-				}
-
-				loadChart();
-				document.body.addEventListener('dashboard:settings-changed', loadChart);
-				document.body.addEventListener('dashboard:reset-zoom', () => {
-					if (window.chartInstances[canvasId] && window.chartInstances[canvasId].resetZoom) {
-						window.chartInstances[canvasId].resetZoom();
-					}
+					});
 				});
+			}
+
+			async function loadChart() {
+				try {
+					const response = await fetch('/api/' + boxID + '/history/stats?hours=' + hours + '&limit=' + limit);
+					const json = await response.json();
+					const data = json.data || [];
+
+					const colors = getChartColors();
+					const ctx = document.getElementById(canvasId);
+					if (!ctx) return;
+
+					if (window.chartInstances[canvasId]) {
+						window.chartInstances[canvasId].destroy();
+					}
+
+					window.chartInstances[canvasId] = new Chart(ctx.getContext('2d'), {
+						type: 'line',
+						data: {
+							labels: data.map(d => formatTime(d.collected_at)),
+							datasets: [
+								createLineDataset('Avg Response Time (ms)', data.map(d => d.avg_response_time), colors.primary)
+							]
+						},
+						options: createChartOptions(0)
+					});
+				} catch (error) {
+					console.error('Failed to load response times chart:', error);
+				}
+			}
+
+			loadChart();
+			document.body.addEventListener('dashboard:settings-changed', loadChart);
+			document.body.addEventListener('dashboard:reset-zoom', () => {
+				if (window.chartInstances[canvasId] && window.chartInstances[canvasId].resetZoom) {
+					window.chartInstances[canvasId].resetZoom();
+				}
 			});
-		});
+		})();
 	</script>
 }
 
@@ -544,70 +544,70 @@ templ ErrorRatesChartPartial(boxID string, hours int, limit int) {
 			<canvas id={ fmt.Sprintf("chart-error-rates-%s", boxID) }></canvas>
 		</div>
 	</div>
-	<script type="module" data-box-id={ boxID } data-hours={ fmt.Sprintf("%d", hours) } data-limit={ fmt.Sprintf("%d", limit) }>
-		const script = document.currentScript;
-		const boxID = script.dataset.boxId;
-		const hours = parseInt(script.dataset.hours);
-		const limit = parseInt(script.dataset.limit);
+	<script type="module">
+		(async function() {
+			const boxID = { fmt.Sprintf("'%s'", boxID) };
+			const hours = { fmt.Sprintf("%d", hours) };
+			const limit = { fmt.Sprintf("%d", limit) };
 
-		import('/static/js/charts/chart-defaults.js').then(defaults => {
-			import('/static/js/charts/chart-fullscreen.js').then(fullscreen => {
-				const { getChartColors, createIntegerYAxisOptions, createLineDataset, formatTime } = defaults;
-				const { toggleFullscreen } = fullscreen;
+			const defaults = await import('/static/js/charts/chart-defaults.js');
+			const fullscreen = await import('/static/js/charts/chart-fullscreen.js');
 
-				const canvasId = 'chart-error-rates-' + boxID;
-				const cardId = 'card-error-rates-' + boxID;
+			const { getChartColors, createIntegerYAxisOptions, createLineDataset, formatTime } = defaults;
+			const { toggleFullscreen } = fullscreen;
 
-				if (!window.chartInstances) window.chartInstances = {};
+			const canvasId = 'chart-error-rates-' + boxID;
+			const cardId = 'card-error-rates-' + boxID;
 
-				const fullscreenBtn = document.querySelector('.fullscreen-btn-error-rates-' + boxID);
-				if (fullscreenBtn) {
-					fullscreenBtn.addEventListener('click', () => {
-						toggleFullscreen(cardId, () => {
-							if (window.chartInstances && window.chartInstances[canvasId]) {
-								setTimeout(() => window.chartInstances[canvasId].resize(), 100);
-							}
-						});
-					});
-				}
+			if (!window.chartInstances) window.chartInstances = {};
 
-				async function loadChart() {
-					try {
-						const response = await fetch('/api/' + boxID + '/history/stats?hours=' + hours + '&limit=' + limit);
-						const json = await response.json();
-						const data = json.data || [];
-
-						const colors = getChartColors();
-						const ctx = document.getElementById(canvasId);
-						if (!ctx) return;
-
-						if (window.chartInstances[canvasId]) {
-							window.chartInstances[canvasId].destroy();
+			const fullscreenBtn = document.querySelector('.fullscreen-btn-error-rates-' + boxID);
+			if (fullscreenBtn) {
+				fullscreenBtn.addEventListener('click', () => {
+					toggleFullscreen(cardId, () => {
+						if (window.chartInstances && window.chartInstances[canvasId]) {
+							setTimeout(() => window.chartInstances[canvasId].resize(), 100);
 						}
-
-						window.chartInstances[canvasId] = new Chart(ctx.getContext('2d'), {
-							type: 'line',
-							data: {
-								labels: data.map(d => formatTime(d.collected_at)),
-								datasets: [
-									createLineDataset('5xx Errors', data.map(d => d.total_5xx_errors), colors.danger)
-								]
-							},
-							options: createIntegerYAxisOptions()
-						});
-					} catch (error) {
-						console.error('Failed to load error rates chart:', error);
-					}
-				}
-
-				loadChart();
-				document.body.addEventListener('dashboard:settings-changed', loadChart);
-				document.body.addEventListener('dashboard:reset-zoom', () => {
-					if (window.chartInstances[canvasId] && window.chartInstances[canvasId].resetZoom) {
-						window.chartInstances[canvasId].resetZoom();
-					}
+					});
 				});
+			}
+
+			async function loadChart() {
+				try {
+					const response = await fetch('/api/' + boxID + '/history/stats?hours=' + hours + '&limit=' + limit);
+					const json = await response.json();
+					const data = json.data || [];
+
+					const colors = getChartColors();
+					const ctx = document.getElementById(canvasId);
+					if (!ctx) return;
+
+					if (window.chartInstances[canvasId]) {
+						window.chartInstances[canvasId].destroy();
+					}
+
+					window.chartInstances[canvasId] = new Chart(ctx.getContext('2d'), {
+						type: 'line',
+						data: {
+							labels: data.map(d => formatTime(d.collected_at)),
+							datasets: [
+								createLineDataset('5xx Errors', data.map(d => d.total_5xx_errors), colors.danger)
+							]
+						},
+						options: createIntegerYAxisOptions()
+					});
+				} catch (error) {
+					console.error('Failed to load error rates chart:', error);
+				}
+			}
+
+			loadChart();
+			document.body.addEventListener('dashboard:settings-changed', loadChart);
+			document.body.addEventListener('dashboard:reset-zoom', () => {
+				if (window.chartInstances[canvasId] && window.chartInstances[canvasId].resetZoom) {
+					window.chartInstances[canvasId].resetZoom();
+				}
 			});
-		});
+		})();
 	</script>
 }
