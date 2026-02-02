@@ -1208,17 +1208,17 @@ func (d *DB) SetUserSessionToken(userID, sessionToken, ip, userAgent string) err
 }
 
 // ValidateSessionToken checks if the provided session token matches the user's stored token.
-// Returns true if valid, false otherwise. Also updates last activity time.
+// Returns true if valid, false otherwise. Also updates last activity time asynchronously.
 func (d *DB) ValidateSessionToken(userID, sessionToken string) (bool, error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
+	// Use read lock for the validation check (most common path)
+	d.mu.RLock()
 	var storedToken sql.NullString
 	err := d.db.QueryRow(`
-		SELECT session_token 
-		FROM users 
+		SELECT session_token
+		FROM users
 		WHERE id = ?`, userID).Scan(&storedToken)
-	
+	d.mu.RUnlock()
+
 	if err != nil {
 		return false, err
 	}
@@ -1233,14 +1233,17 @@ func (d *DB) ValidateSessionToken(userID, sessionToken string) (bool, error) {
 		return false, nil
 	}
 
-	// Token matches - update last activity
-	now := time.Now()
-	_, err = d.db.Exec(`
-		UPDATE users 
-		SET session_last_activity = ? 
-		WHERE id = ?`, now, userID)
-	
-	return true, err
+	// Token matches - update last activity asynchronously to avoid blocking
+	go func() {
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		_, _ = d.db.Exec(`
+			UPDATE users
+			SET session_last_activity = ?
+			WHERE id = ?`, time.Now(), userID)
+	}()
+
+	return true, nil
 }
 
 // ClearUserSessionToken invalidates a user's session token.

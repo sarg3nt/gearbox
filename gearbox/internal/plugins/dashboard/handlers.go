@@ -54,6 +54,8 @@ func (h *Handlers) OverviewPage(w http.ResponseWriter, r *http.Request) {
 // integrationPathFromName maps an integration name to its URL path.
 func integrationPathFromName(name string) string {
 	switch name {
+	case "haproxy":
+		return "/haproxy"
 	case "metrics":
 		return "/history"
 	case "logs":

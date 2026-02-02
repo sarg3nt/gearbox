@@ -810,6 +810,8 @@ templ Base(title string, user *models.User, currentPath ...string) {
 		<script src="/static/js/utils/api.js" defer></script>
 		<script src="/static/js/common/page-header.js" defer></script>
 		<script src="/static/js/common/box-selector.js" defer></script>
+		<!-- Sortable.js for sidebar nav reordering -->
+		<script type="module" src="/static/js/dashboard/sortable-loader.js"></script>
 	</head>
 	<body class="h-full bg-gray-100 dark:bg-slate-900">
 		@ui.CollapsibleRestoreScript()

@@ -181,77 +181,67 @@ func (m *Manager) Logout(w http.ResponseWriter, r *http.Request) error {
 // GetUser retrieves the authenticated user from the session.
 // OWASP 2026: Validates session token stored in database to prevent session fixation.
 func (m *Manager) GetUser(r *http.Request) (*models.User, error) {
-	m.logger.Info("🔍 GetUser START", "path", r.URL.Path)
-
 	session, err := m.sessionStore.Get(r, sessionName)
 	if err != nil {
-		m.logger.Error("❌ Failed to get session", "error", err)
+		m.logger.Debug("failed to get session", "error", err)
 		return nil, err
 	}
 
 	// Check if user ID is in session (now string/UUID)
 	userID, ok := session.Values[sessionUserIDKey].(string)
 	if !ok || userID == "" {
-		m.logger.Warn("❌ No user ID in session")
 		return nil, fmt.Errorf("not authenticated")
 	}
-	m.logger.Info("👤 User ID from session", "user_id", userID)
 
 	// CRITICAL SECURITY: Validate session token from cookie against database
 	sessionToken, ok := session.Values[sessionTokenKey].(string)
 	if !ok || sessionToken == "" {
-		m.logger.Warn("❌ No session token in cookie", "has_key", ok, "token_empty", sessionToken == "")
+		m.logger.Warn("no session token in cookie", "user_id", userID)
 		return nil, fmt.Errorf("invalid session: missing token")
 	}
-	m.logger.Info("🔑 Session token from cookie", "token_length", len(sessionToken))
 
 	// Check if session has expired (time-based)
 	loginTime, ok := session.Values[sessionLoginKey].(int64)
 	if !ok {
-		m.logger.Warn("❌ No login time in session")
 		return nil, fmt.Errorf("invalid session")
 	}
 
 	if time.Since(time.Unix(loginTime, 0)) > m.timeout {
-		m.logger.Warn("⏰ Session expired", "login_time", time.Unix(loginTime, 0), "timeout", m.timeout)
+		m.logger.Debug("session expired", "user_id", userID)
 		return nil, fmt.Errorf("session expired")
 	}
-	m.logger.Info("⏰ Session time valid", "age", time.Since(time.Unix(loginTime, 0)))
 
 	// Get user from database
 	user, err := m.db.GetUserByID(userID)
 	if err != nil {
-		m.logger.Error("❌ Failed to get user from DB", "error", err, "user_id", userID)
+		m.logger.Error("failed to get user from DB", "error", err, "user_id", userID)
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
 	if user == nil {
-		m.logger.Warn("❌ User not found", "user_id", userID)
+		m.logger.Warn("user not found", "user_id", userID)
 		return nil, fmt.Errorf("user not found")
 	}
-	m.logger.Info("👤 User found in DB", "email", user.Email)
 
 	// CRITICAL SECURITY: Validate session token against database
 	// This prevents old cookies from working after DB wipe or logout
 	valid, err := m.db.ValidateSessionToken(userID, sessionToken)
 	if err != nil {
-		m.logger.Error("❌ Session token validation error", "error", err, "user_id", userID)
+		m.logger.Error("session token validation error", "error", err, "user_id", userID)
 		return nil, fmt.Errorf("session validation failed")
 	}
 
 	if !valid {
-		m.logger.Warn("❌ Session token invalid in DB", "user_id", userID)
+		m.logger.Warn("session token invalid in DB", "user_id", userID)
 		return nil, fmt.Errorf("session invalid: please log in again")
 	}
-	m.logger.Info("✅ Session token validated against DB")
 
 	// Verify user is still active
 	if user.Status != models.UserStatusActive {
-		m.logger.Warn("❌ User not active", "status", user.Status)
+		m.logger.Warn("user not active", "user_id", userID, "status", user.Status)
 		return nil, fmt.Errorf("account is no longer active")
 	}
 
-	m.logger.Info("✅ GetUser COMPLETE", "user_id", user.ID)
 	return user, nil
 }
 
@@ -545,31 +535,25 @@ func (m *Manager) RequirePermission(r *http.Request, component models.Component,
 // CreateSessionForUser creates a session for a user without password validation.
 // This is used for passkey authentication where the user has already been verified.
 func (m *Manager) CreateSessionForUser(w http.ResponseWriter, r *http.Request, user *models.User) error {
-	m.logger.Info("🔐 CreateSessionForUser START", "user_id", user.ID, "email", user.Email)
-
 	// Generate cryptographically secure session token
 	sessionToken, err := GenerateSessionToken()
 	if err != nil {
 		return fmt.Errorf("failed to generate session token: %w", err)
 	}
-	m.logger.Info("🔑 Session token generated", "token_length", len(sessionToken))
 
 	// Store session token in database for server-side validation
 	ip := r.RemoteAddr
 	userAgent := r.UserAgent()
-	m.logger.Info("💾 Storing session token in DB", "user_id", user.ID, "ip", ip)
 	if err := m.db.SetUserSessionToken(user.ID, sessionToken, ip, userAgent); err != nil {
 		m.logger.Error("failed to store session token", "error", err, "user_id", user.ID)
 		return fmt.Errorf("failed to create session: %w", err)
 	}
-	m.logger.Info("✅ Session token stored in DB")
 
 	// Create session cookie
 	session, err := m.sessionStore.Get(r, sessionName)
 	if err != nil {
 		return fmt.Errorf("failed to get session: %w", err)
 	}
-	m.logger.Info("🍪 Session cookie retrieved")
 
 	// Generate CSRF token
 	csrfToken, err := GenerateCSRFToken()
@@ -582,15 +566,14 @@ func (m *Manager) CreateSessionForUser(w http.ResponseWriter, r *http.Request, u
 	session.Values[sessionTokenKey] = sessionToken // CRITICAL: Validated on every request
 	session.Values[sessionLoginKey] = time.Now().Unix()
 	session.Values[csrfTokenKey] = csrfToken
-	m.logger.Info("📝 Session values set", "user_id", user.ID, "has_token", sessionToken != "")
 
 	// Save session
 	if err := session.Save(r, w); err != nil {
-		m.logger.Error("❌ FAILED to save session cookie", "error", err)
+		m.logger.Error("failed to save session cookie", "error", err)
 		return fmt.Errorf("failed to save session: %w", err)
 	}
-	m.logger.Info("✅ CreateSessionForUser COMPLETE - session saved")
 
+	m.logger.Info("session created for user", "user_id", user.ID, "ip", ip)
 	return nil
 }
 

@@ -1256,6 +1256,15 @@ function updateNetworkVisualization(data) {
 }
 
 function createVisualization(newNodeData, newLinkData, width, height) {
+	// Guard: ensure SVG group is initialized before creating visualization
+	if (!g) {
+		initVisualization();
+		if (!g) {
+			console.warn('Cannot create visualization: SVG container not available');
+			return;
+		}
+	}
+
 	// Convert maps to arrays
 	nodes = Array.from(newNodeData.values()).map(d => {
 		const node = { ...d };
@@ -1471,6 +1480,13 @@ function createVisualization(newNodeData, newLinkData, width, height) {
 }
 
 function updateVisualizationData(newNodeData, newLinkData, width, height) {
+	// Guard: if g (SVG group) hasn't been initialized, fall back to full creation
+	if (!g) {
+		isFirstRender = true;
+		createVisualization(newNodeData, newLinkData, width, height);
+		return;
+	}
+
 	// Track what nodes/links exist now
 	const currentNodeIds = new Set(nodes.map(n => n.id));
 	const newNodeIds = new Set(newNodeData.keys());
