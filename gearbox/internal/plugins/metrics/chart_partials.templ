@@ -4,6 +4,67 @@ import (
 	"fmt"
 )
 
+script sessionsRequestsChartScript(boxID string, hours int, limit int) {
+	import { getChartColors, createChartOptions, createLineDataset, formatTime } from '/static/js/charts/chart-defaults.js';
+	import { toggleFullscreen } from '/static/js/charts/chart-fullscreen.js';
+
+	const canvasId = 'chart-sessions-requests-' + boxID;
+	const cardId = 'card-sessions-requests-' + boxID;
+	const serverID = boxID;
+
+	if (!window.chartInstances) window.chartInstances = {};
+
+	// Setup fullscreen button
+	const fullscreenBtn = document.querySelector('.fullscreen-btn-sessions-requests-' + boxID);
+	if (fullscreenBtn) {
+		fullscreenBtn.addEventListener('click', () => {
+			toggleFullscreen(cardId, () => {
+				if (window.chartInstances && window.chartInstances[canvasId]) {
+					setTimeout(() => window.chartInstances[canvasId].resize(), 100);
+				}
+			});
+		});
+	}
+
+	async function loadChart() {
+		try {
+			const response = await fetch(`/api/${serverID}/history/stats?hours=${hours}&limit=${limit}`);
+			const json = await response.json();
+			const data = json.data || [];
+
+			const colors = getChartColors();
+			const ctx = document.getElementById(canvasId);
+			if (!ctx) return;
+
+			if (window.chartInstances[canvasId]) {
+				window.chartInstances[canvasId].destroy();
+			}
+
+			window.chartInstances[canvasId] = new Chart(ctx.getContext('2d'), {
+				type: 'line',
+				data: {
+					labels: data.map(d => formatTime(d.collected_at)),
+					datasets: [
+						createLineDataset('Sessions', data.map(d => d.total_sessions), colors.primary),
+						createLineDataset('Requests (÷1000)', data.map(d => Math.round(d.total_requests / 1000)), colors.secondary)
+					]
+				},
+				options: createChartOptions(0)
+			});
+		} catch (error) {
+			console.error('Failed to load sessions/requests chart:', error);
+		}
+	}
+
+	loadChart();
+	document.body.addEventListener('dashboard:settings-changed', loadChart);
+	document.body.addEventListener('dashboard:reset-zoom', () => {
+		if (window.chartInstances[canvasId] && window.chartInstances[canvasId].resetZoom) {
+			window.chartInstances[canvasId].resetZoom();
+		}
+	});
+}
+
 // SessionsRequestsChartPartial renders a Chart.js time-series chart for sessions and requests.
 templ SessionsRequestsChartPartial(boxID string, hours int, limit int) {
 	<div id={ fmt.Sprintf("card-sessions-requests-%s", boxID) } class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
@@ -19,66 +80,7 @@ templ SessionsRequestsChartPartial(boxID string, hours int, limit int) {
 			<canvas id={ fmt.Sprintf("chart-sessions-requests-%s", boxID) }></canvas>
 		</div>
 	</div>
-	<script type="module">
-		import { getChartColors, createChartOptions, createLineDataset, formatTime } from '/static/js/charts/chart-defaults.js';
-		import { toggleFullscreen } from '/static/js/charts/chart-fullscreen.js';
-
-		const canvasId = { fmt.Sprintf("'chart-sessions-requests-%s'", boxID) };
-		const cardId = { fmt.Sprintf("'card-sessions-requests-%s'", boxID) };
-		const boxID = { fmt.Sprintf("'%s'", boxID) };
-
-		if (!window.chartInstances) window.chartInstances = {};
-
-		// Setup fullscreen button
-		const fullscreenBtn = document.querySelector({ fmt.Sprintf("'.fullscreen-btn-sessions-requests-%s'", boxID) });
-		if (fullscreenBtn) {
-			fullscreenBtn.addEventListener('click', () => {
-				toggleFullscreen(cardId, () => {
-					if (window.chartInstances && window.chartInstances[canvasId]) {
-						setTimeout(() => window.chartInstances[canvasId].resize(), 100);
-					}
-				});
-			});
-		}
-
-		async function loadChart() {
-			try {
-				const response = await fetch({ fmt.Sprintf("`/api/${boxID}/history/stats?hours=%d&limit=%d`", hours, limit) });
-				const json = await response.json();
-				const data = json.data || [];
-
-				const colors = getChartColors();
-				const ctx = document.getElementById(canvasId);
-				if (!ctx) return;
-
-				if (window.chartInstances[canvasId]) {
-					window.chartInstances[canvasId].destroy();
-				}
-
-				window.chartInstances[canvasId] = new Chart(ctx.getContext('2d'), {
-					type: 'line',
-					data: {
-						labels: data.map(d => formatTime(d.collected_at)),
-						datasets: [
-							createLineDataset('Sessions', data.map(d => d.total_sessions), colors.primary),
-							createLineDataset('Requests (÷1000)', data.map(d => Math.round(d.total_requests / 1000)), colors.secondary)
-						]
-					},
-					options: createChartOptions(0)
-				});
-			} catch (error) {
-				console.error('Failed to load sessions/requests chart:', error);
-			}
-		}
-
-		loadChart();
-		document.body.addEventListener('dashboard:settings-changed', loadChart);
-		document.body.addEventListener('dashboard:reset-zoom', () => {
-			if (window.chartInstances[canvasId] && window.chartInstances[canvasId].resetZoom) {
-				window.chartInstances[canvasId].resetZoom();
-			}
-		});
-	</script>
+	@sessionsRequestsChartScript(boxID, hours, limit)
 }
 
 // ServerHealthChartPartial renders a Chart.js time-series chart for server health.
