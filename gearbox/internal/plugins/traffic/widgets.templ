@@ -1,6 +1,10 @@
 package traffic
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/sarg3nt/gearbox/internal/framework/middleware"
+)
 
 
 // TrafficSummaryCardWidget shows 5-card summary of traffic metrics
@@ -118,7 +122,11 @@ templ TrafficFlowVisualizationWidget(serverID string, height int, showControls b
 		</div>
 	</div>
 	<!-- D3.js and visualization script -->
-	<script src="https://d3js.org/d3.v7.min.js"></script>
+	if middleware.UseLocalAssets(ctx) {
+		<script src="/static/js/vendor/d3.v7.min.js"></script>
+	} else {
+		<script src="https://d3js.org/d3.v7.min.js"></script>
+	}
 	<script src="/static/js/traffic/traffic-visualization.js"></script>
 }
 

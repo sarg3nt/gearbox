@@ -72,7 +72,7 @@ func buildCSP() string {
 		// CDNs provide automatic updates and good performance via edge caching
 		directives = []string{
 			"default-src 'self'",
-			"script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://unpkg.com https://cdn.jsdelivr.net",
+			"script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://unpkg.com https://cdn.jsdelivr.net https://d3js.org",
 			"style-src 'self' 'unsafe-inline' https://unpkg.com",
 			"img-src 'self' data: blob:",
 			"font-src 'self' data:",

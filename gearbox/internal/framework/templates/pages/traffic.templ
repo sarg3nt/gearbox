@@ -1,6 +1,7 @@
 package pages
 
 import (
+	"github.com/sarg3nt/gearbox/internal/framework/middleware"
 	"github.com/sarg3nt/gearbox/internal/framework/models"
 	"github.com/sarg3nt/gearbox/internal/framework/templates/layouts"
 	"github.com/sarg3nt/gearbox/internal/framework/templates/pages/traffic"
@@ -26,7 +27,11 @@ templ TrafficPage(user *models.User, servers []models.BoxConfig) {
 			</div>
 		}
 		<!-- D3.js for force-directed graph -->
-		<script src="https://d3js.org/d3.v7.min.js"></script>
+		if middleware.UseLocalAssets(ctx) {
+			<script src="/static/js/vendor/d3.v7.min.js"></script>
+		} else {
+			<script src="https://d3js.org/d3.v7.min.js"></script>
+		}
 		<script src="/static/js/traffic/traffic-visualization.js"></script>
 	}
 }
