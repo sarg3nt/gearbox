@@ -99,6 +99,16 @@ templ Base(title string, user *models.User, currentPath ...string) {
 			<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 		}
 		<style>
+			/* SortableJS sidebar drag styles (single class names required by SortableJS) */
+			.sortable-ghost {
+				@apply bg-blue-50 dark:bg-slate-700;
+			}
+			.sortable-chosen {
+				@apply opacity-50;
+			}
+			.sortable-drag {
+				@apply opacity-75;
+			}
 			/* Base styles */
 			.metric-card {
 				@apply bg-white dark:bg-slate-800 rounded-lg shadow p-6;
@@ -532,13 +542,15 @@ templ Base(title string, user *models.User, currentPath ...string) {
 				}
 
 				// Create new sortable instance
+				// Note: ghostClass/chosenClass/dragClass only accept a single class name
+				// (SortableJS uses classList.add internally). Custom classes are defined in <style>.
 				sidebarSortable = window.Sortable.create(navList, {
 					animation: 200,
 					handle: '.nav-drag-handle',
 					draggable: '.nav-item-draggable',
-					ghostClass: 'bg-blue-50 dark:bg-slate-700',
-					chosenClass: 'opacity-50',
-					dragClass: 'opacity-75',
+					ghostClass: 'sortable-ghost',
+					chosenClass: 'sortable-chosen',
+					dragClass: 'sortable-drag',
 					onEnd: function(evt) {
 						console.log('Item moved from index', evt.oldIndex, 'to', evt.newIndex);
 					}
