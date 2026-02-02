@@ -1207,8 +1207,13 @@ func (d *DB) SetUserSessionToken(userID, sessionToken, ip, userAgent string) err
 	return err
 }
 
+// sessionActivityDebounce is the minimum interval between session_last_activity DB writes per user.
+// This prevents write lock contention on the main mutex during rapid page refreshes.
+const sessionActivityDebounce = 5 * time.Minute
+
 // ValidateSessionToken checks if the provided session token matches the user's stored token.
-// Returns true if valid, false otherwise. Also updates last activity time asynchronously.
+// Returns true if valid, false otherwise. Updates last activity time in a debounced manner
+// to avoid write lock contention that causes backend lockups during rapid requests.
 func (d *DB) ValidateSessionToken(userID, sessionToken string) (bool, error) {
 	// Use read lock for the validation check (most common path)
 	d.mu.RLock()
@@ -1233,17 +1238,41 @@ func (d *DB) ValidateSessionToken(userID, sessionToken string) (bool, error) {
 		return false, nil
 	}
 
-	// Token matches - update last activity asynchronously to avoid blocking
+	// Debounce session_last_activity updates to avoid write lock contention.
+	// Go's sync.RWMutex is write-preferring: a pending Lock() blocks new RLock() callers.
+	// Without debouncing, every auth check spawns a goroutine that calls Lock(), which
+	// blocks all subsequent RLock() calls (including new auth checks), causing cascading lockups.
+	d.updateSessionActivityDebounced(userID)
+
+	return true, nil
+}
+
+// updateSessionActivityDebounced updates session_last_activity at most once per sessionActivityDebounce
+// interval per user. This uses a separate lightweight mutex (not the main DB mutex) to check
+// timing, and only acquires the main write lock when an actual DB write is needed.
+func (d *DB) updateSessionActivityDebounced(userID string) {
+	now := time.Now()
+
+	d.sessionActivityMu.Lock()
+	lastUpdate, exists := d.sessionActivityTimes[userID]
+	if exists && now.Sub(lastUpdate) < sessionActivityDebounce {
+		d.sessionActivityMu.Unlock()
+		return // Skip — updated recently
+	}
+	d.sessionActivityTimes[userID] = now
+	d.sessionActivityMu.Unlock()
+
+	// Perform the actual DB write in a goroutine so it doesn't block the auth response.
+	// This is safe because the debounce check above ensures at most one write per user
+	// per interval, preventing goroutine pileup.
 	go func() {
 		d.mu.Lock()
 		defer d.mu.Unlock()
 		_, _ = d.db.Exec(`
 			UPDATE users
 			SET session_last_activity = ?
-			WHERE id = ?`, time.Now(), userID)
+			WHERE id = ?`, now, userID)
 	}()
-
-	return true, nil
 }
 
 // ClearUserSessionToken invalidates a user's session token.

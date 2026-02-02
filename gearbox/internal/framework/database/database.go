@@ -18,6 +18,12 @@ type DB struct {
 	db     *sql.DB
 	logger *slog.Logger
 	mu     sync.RWMutex
+
+	// sessionActivityMu protects the sessionActivityTimes map.
+	sessionActivityMu sync.Mutex
+	// sessionActivityTimes tracks the last time we updated session_last_activity per user.
+	// Updates are debounced to avoid write lock contention on the main mutex during auth checks.
+	sessionActivityTimes map[string]time.Time
 }
 
 // New creates a new database connection.
@@ -39,8 +45,9 @@ func New(dbPath string, logger *slog.Logger) (*DB, error) {
 	}
 
 	d := &DB{
-		db:     db,
-		logger: logger,
+		db:                   db,
+		logger:               logger,
+		sessionActivityTimes: make(map[string]time.Time),
 	}
 
 	// Initialize user schema FIRST (other tables have foreign key references to users)
