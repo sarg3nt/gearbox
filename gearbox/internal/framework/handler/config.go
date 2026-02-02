@@ -397,11 +397,10 @@ func (h *Handler) BoxGitSettingsPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get git configs for both haproxy and firewall
-	haproxyGitConfig, _ := h.db.GetBoxGitConfig(server.ID, database.ConfigTypeHAProxy)
+	// Get firewall git config (HAProxy git config is on the HAProxy plugin settings page)
 	firewallGitConfig, _ := h.db.GetBoxGitConfig(server.ID, database.ConfigTypeFirewall)
 
-	component := pages.BoxGitSettingsPage(user, server, haproxyGitConfig, firewallGitConfig, "", "")
+	component := pages.BoxGitSettingsPage(user, server, firewallGitConfig, "", "")
 	if err := component.Render(r.Context(), w); err != nil {
 		h.logger.Error("Failed to render git settings page", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -444,38 +443,7 @@ func (h *Handler) BoxGitSettingsSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Save HAProxy git config
-	haproxyConfig := &database.BoxGitConfig{
-		HAProxyBoxID:     server.ID,
-		ConfigType:          database.ConfigTypeHAProxy,
-		GitRepoURL:          r.FormValue("haproxy_git_repo"),
-		GitBranch:           r.FormValue("haproxy_git_branch"),
-		GitFilePath:         r.FormValue("haproxy_git_path"),
-		AutoApplyEnabled:    r.FormValue("haproxy_auto_apply") == "on",
-		SyncIntervalMinutes: 60, // Default, could make configurable
-	}
-
-	// Handle PAT
-	if pat := r.FormValue("haproxy_git_pat"); pat != "" {
-		haproxyConfig.GitPATEncrypted, _ = encryptor.EncryptString(pat)
-	} else {
-		// Keep existing PAT if not provided
-		existing, _ := h.db.GetBoxGitConfig(server.ID, database.ConfigTypeHAProxy)
-		if existing != nil {
-			haproxyConfig.GitPATEncrypted = existing.GitPATEncrypted
-		}
-	}
-
-	if haproxyConfig.GitRepoURL != "" {
-		if err := h.db.SaveBoxGitConfig(haproxyConfig); err != nil {
-			h.logger.Error("Failed to save HAProxy git config", "error", err)
-		}
-	} else {
-		// Clear config if repo URL is empty
-		_ = h.db.DeleteBoxGitConfig(server.ID, database.ConfigTypeHAProxy)
-	}
-
-	// Save Firewall git config
+	// Save Firewall git config (HAProxy git config is saved via the HAProxy plugin settings page)
 	firewallConfig := &database.BoxGitConfig{
 		HAProxyBoxID:     server.ID,
 		ConfigType:          database.ConfigTypeFirewall,

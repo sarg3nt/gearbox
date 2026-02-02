@@ -120,6 +120,13 @@ func (h *Handler) PluginDetailPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No servers configured", http.StatusBadRequest)
 		return
 	}
+
+	// HAProxy has its own dedicated settings page
+	if pluginName == database.PluginHAProxy {
+		h.renderHAProxySettingsPage(w, r, user, boxID)
+		return
+	}
+
 	plugin, err := h.db.GetPlugin(boxID, pluginName)
 	if err != nil {
 		h.logger.Error("failed to get plugin", "plugin", pluginName, "error", err)
@@ -1009,4 +1016,102 @@ func (h *Handler) deployPluginDashboards(pluginName string) error {
 	}
 
 	return nil
+}
+
+// renderHAProxySettingsPage renders the HAProxy-specific plugin settings page.
+func (h *Handler) renderHAProxySettingsPage(w http.ResponseWriter, r *http.Request, user *models.User, boxID string) {
+	successMsg := r.URL.Query().Get("success")
+	errorMsg := r.URL.Query().Get("error")
+
+	var serverName string
+	if serverConfig, exists := h.getServerConfig(boxID); exists {
+		serverName = serverConfig.Name
+	}
+
+	// Look up the BoxDB record to get the database ID for git config lookup
+	server, _ := h.db.GetBoxByBoxID(boxID)
+
+	var haproxyGit *database.BoxGitConfig
+	if server != nil {
+		haproxyGit, _ = h.db.GetBoxGitConfig(server.ID, database.ConfigTypeHAProxy)
+	}
+
+	component := pages.HAProxyPluginSettingsPage(user, boxID, serverName, server, haproxyGit, successMsg, errorMsg)
+	if err := component.Render(r.Context(), w); err != nil {
+		h.logger.Error("Failed to render HAProxy settings template", "error", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	}
+}
+
+// HAProxyGitSettingsSave saves the HAProxy git configuration from the plugin settings page.
+func (h *Handler) HAProxyGitSettingsSave(w http.ResponseWriter, r *http.Request) {
+	user, err := h.authManager.GetUser(r)
+	if err != nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+
+	if !h.authManager.HasPermission(r, models.ComponentPlugins, models.PermissionConfigure) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" {
+		http.Error(w, "No server specified", http.StatusBadRequest)
+		return
+	}
+
+	server, err := h.db.GetBoxByBoxID(boxID)
+	if err != nil || server == nil {
+		http.Error(w, "Server not found", http.StatusNotFound)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	encryptor, err := h.getEncryptor()
+	if err != nil {
+		h.logger.Error("Failed to get encryptor", "error", err)
+		http.Error(w, "Encryption error", http.StatusInternalServerError)
+		return
+	}
+
+	haproxyConfig := &database.BoxGitConfig{
+		HAProxyBoxID:        server.ID,
+		ConfigType:          database.ConfigTypeHAProxy,
+		GitRepoURL:          r.FormValue("haproxy_git_repo"),
+		GitBranch:           r.FormValue("haproxy_git_branch"),
+		GitFilePath:         r.FormValue("haproxy_git_path"),
+		AutoApplyEnabled:    r.FormValue("haproxy_auto_apply") == "on",
+		SyncIntervalMinutes: 60,
+	}
+
+	if pat := r.FormValue("haproxy_git_pat"); pat != "" {
+		haproxyConfig.GitPATEncrypted, _ = encryptor.EncryptString(pat)
+	} else {
+		existing, _ := h.db.GetBoxGitConfig(server.ID, database.ConfigTypeHAProxy)
+		if existing != nil {
+			haproxyConfig.GitPATEncrypted = existing.GitPATEncrypted
+		}
+	}
+
+	if haproxyConfig.GitRepoURL != "" {
+		if err := h.db.SaveBoxGitConfig(haproxyConfig); err != nil {
+			h.logger.Error("Failed to save HAProxy git config", "error", err)
+			redirectURL := fmt.Sprintf("/settings/plugins/haproxy?server=%s&error=%s", url.QueryEscape(boxID), url.QueryEscape("Failed to save git settings"))
+			http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+			return
+		}
+	} else {
+		_ = h.db.DeleteBoxGitConfig(server.ID, database.ConfigTypeHAProxy)
+	}
+
+	h.logAudit(r, user.ID, "haproxy_git_settings_update", fmt.Sprintf("Updated HAProxy git settings for server %s", server.Name))
+
+	redirectURL := fmt.Sprintf("/settings/plugins/haproxy?server=%s&success=%s", url.QueryEscape(boxID), url.QueryEscape("Git settings saved"))
+	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 }

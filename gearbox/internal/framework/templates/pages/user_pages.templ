@@ -842,7 +842,7 @@ templ Settings(user *models.User, perms *models.UserPermissions) {
 				</a>
 			}
 
-			<!-- HAProxy Servers - shown to admins or users with manage_servers permission -->
+			<!-- Boxes - shown to admins or users with manage_servers permission -->
 			if user.IsAdmin() || perms.HasPermission(models.ComponentSettings, models.PermissionManageBoxes) {
 				<a href="/settings/boxes" class="block bg-white dark:bg-slate-800 p-6 rounded-lg shadow hover:shadow-lg transition-shadow">
 					<div class="flex items-center space-x-4">
@@ -852,8 +852,8 @@ templ Settings(user *models.User, perms *models.UserPermissions) {
 							</svg>
 						</div>
 						<div>
-							<h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100">HAProxy Servers</h2>
-							<p class="text-sm text-gray-600 dark:text-gray-400">Manage monitored HAProxy instances</p>
+							<h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100">Boxes</h2>
+							<p class="text-sm text-gray-600 dark:text-gray-400">Manage monitored boxes</p>
 						</div>
 					</div>
 				</a>
