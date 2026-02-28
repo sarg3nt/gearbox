@@ -46,11 +46,6 @@ func (p *Plugin) Initialize(ctx context.Context, deps plugin.Dependencies) error
 		return err
 	}
 
-	// Register historical chart widgets
-	if err := RegisterMetricsChartWidgets(deps.WidgetRegistry); err != nil {
-		return err
-	}
-
 	return nil
 }
 

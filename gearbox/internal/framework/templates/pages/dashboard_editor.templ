@@ -10,65 +10,78 @@ import (
 )
 
 // DashboardEditorPage renders the visual dashboard editor with live widget preview
-templ DashboardEditorPage(dash *dashboard.Dashboard, content templ.Component, widgets []*widget.WidgetDefinition, user *models.User, currentPath string, openPalette bool, boxID string) {
+templ DashboardEditorPage(dash *dashboard.Dashboard, content templ.Component, widgets []*widget.WidgetDefinition, user *models.User, currentPath string, openPalette bool) {
 	@layouts.Base("Edit Dashboard", user, currentPath) {
 		<!-- Widget Palette CSS -->
 		<link rel="stylesheet" href="/static/css/dashboard/palette.css"/>
-
-		<!-- Header content: Editing indicator + Save/Cancel (injected into top bar via JS) -->
-		<div id="page-header-source" class="hidden">
-			<div class="flex items-center gap-2">
-				<svg class="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
-				</svg>
-				<span class="text-sm font-medium text-gray-900 dark:text-gray-100">Editing: { dash.Name }</span>
-			</div>
-			<div class="flex-1"></div>
-			<div class="flex gap-2">
-				<button
-					onclick="saveDashboard()"
-					class="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors"
-				>
-					Save Changes
-				</button>
-				<a
-					href={ templ.SafeURL("/dashboards/" + dash.Slug) }
-					class="px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
-				>
-					Cancel
-				</a>
+		<!-- Edit Mode Indicator -->
+		<div class="mb-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+			<div class="flex items-center justify-between">
+				<div class="flex items-center gap-2">
+					<svg class="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+					</svg>
+					<span class="text-sm font-medium text-blue-900 dark:text-blue-100">Editing: { dash.Name }</span>
+				</div>
+				<div class="flex gap-2">
+					<button
+						onclick="toggleWidgetPalette()"
+						class="px-3 py-1.5 text-sm font-medium text-blue-700 dark:text-blue-300 hover:text-blue-900 dark:hover:text-blue-100 bg-white dark:bg-slate-800 border border-blue-300 dark:border-blue-600 rounded hover:bg-blue-50 dark:hover:bg-slate-700 transition-colors"
+					>
+						<svg class="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+						</svg>
+						Add Widget
+					</button>
+					<button
+						onclick="saveDashboard()"
+						class="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors"
+					>
+						Save Changes
+					</button>
+					<a
+						href={ templ.SafeURL("/dashboards/" + dash.Slug) }
+						class="px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
+					>
+						Cancel
+					</a>
+				</div>
 			</div>
 		</div>
 
-		<!-- Widget Palette Sidebar (replaces nav sidebar in editor mode) -->
-		<aside
-			id="widget-palette-panel"
-			class="fixed left-0 top-0 h-full w-64 bg-white dark:bg-slate-950 z-50 flex flex-col shadow-xl border-r border-gray-200 dark:border-slate-800"
-			style="display: none;"
-		>
-			<!-- Header (matches sidebar height) -->
-			<div class="px-4 h-[56px] flex items-center border-b border-gray-200 dark:border-slate-700 flex-shrink-0">
-				<h3 class="font-bold text-lg text-gray-900 dark:text-gray-100">Widgets</h3>
-			</div>
+		<!-- Widget Palette Panel (collapsible, auto-opened when dashboard is empty) -->
+		<div id="widget-palette-panel" class={ widgetPaletteClass(openPalette) }>
+			<!-- Fixed Header -->
+			<div class="p-4 border-b border-gray-200 dark:border-slate-700 sticky top-0 bg-white dark:bg-slate-900 z-10">
+				<div class="flex items-center justify-between mb-3">
+					<h3 class="font-semibold text-gray-900 dark:text-gray-100">Available Widgets</h3>
+					<button onclick="toggleWidgetPalette()" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+						<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+						</svg>
+					</button>
+				</div>
 
-			<!-- Search and Filter -->
-			<div class="p-3 border-b border-gray-200 dark:border-slate-700 flex-shrink-0">
+				<!-- Search Input -->
 				<input
 					type="text"
 					id="widget-palette-search"
 					placeholder="Search widgets..."
-					class="w-full px-3 py-1.5 mb-2 text-sm border border-gray-300 dark:border-slate-600 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+					class="w-full px-3 py-2 mb-2 text-sm border border-gray-300 dark:border-slate-600 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
 				/>
+
+				<!-- Filter by Plugin -->
 				<select
 					id="widget-palette-plugin-filter"
-					class="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+					class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
 				>
 					<option value="">All Plugins</option>
+					<!-- Populated dynamically by JavaScript -->
 				</select>
 			</div>
 
 			<!-- Scrollable Widget List -->
-			<div id="widget-palette-list" class="p-3 flex-1 overflow-y-auto">
+			<div id="widget-palette-list" class="p-4 max-h-96 overflow-y-auto">
 				<div class="text-center text-gray-500 dark:text-gray-400 py-8">
 					<svg class="w-8 h-8 mx-auto mb-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
@@ -76,14 +89,13 @@ templ DashboardEditorPage(dash *dashboard.Dashboard, content templ.Component, wi
 					<p class="text-sm">Loading widgets...</p>
 				</div>
 			</div>
-		</aside>
+		</div>
 
-		<!-- Dashboard Canvas (full content area) -->
+		<!-- Dashboard Grid with live widgets and edit overlay -->
 		<div
 			id="dashboard-grid-editor"
 			class="relative min-h-[600px] border-2 border-dashed border-blue-300 dark:border-blue-600 rounded-lg p-4 bg-blue-50/30 dark:bg-blue-900/10"
 			data-dashboard-id={ dash.Slug }
-			data-box-id={ boxID }
 		>
 			<!-- Live dashboard content -->
 			<div id="dashboard-live-content" class="dashboard-editor-mode">
@@ -97,7 +109,7 @@ templ DashboardEditorPage(dash *dashboard.Dashboard, content templ.Component, wi
 						<svg class="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
 						</svg>
-						<p class="text-gray-600 dark:text-gray-400">Click a widget from the palette to add it</p>
+						<p class="text-gray-600 dark:text-gray-400">Click "Add Widget" to get started</p>
 					</div>
 				</div>
 			}
@@ -372,42 +384,6 @@ templ WidgetConfigModal() {
 
 // DashboardEditorScript provides the editor JavaScript
 templ DashboardEditorScript(dash *dashboard.Dashboard) {
-	<!-- Editor layout setup: replace nav sidebar with palette, move toolbar to header -->
-	<style>
-	/* Hide sidebar immediately to prevent flash — !important overrides applySidebarState() */
-	#sidebar { display: none !important; }
-	#user-dropdown { display: none !important; }
-	/* Ensure consistent left margin regardless of sidebar collapsed state */
-	#main-content { margin-left: 16rem !important; }
-	header { left: 16rem !important; }
-	</style>
-	<script>
-	(function() {
-		function setupEditorLayout() {
-			// Show the widget palette in the sidebar's place
-			var palette = document.getElementById('widget-palette-panel');
-			if (palette) {
-				palette.style.display = 'flex';
-			}
-
-			// Move header content into top bar
-			var source = document.getElementById('page-header-source');
-			var target = document.getElementById('header-page-content');
-			if (source && target) {
-				while (source.firstChild) {
-					target.appendChild(source.firstChild);
-				}
-			}
-		}
-
-		// Run immediately if DOM is ready, otherwise wait
-		if (document.readyState === 'loading') {
-			document.addEventListener('DOMContentLoaded', setupEditorLayout);
-		} else {
-			setupEditorLayout();
-		}
-	})();
-	</script>
 	<!-- Load widget palette logic -->
 	<script src="/static/js/dashboard/palette.js" defer></script>
 	<!-- Load dashboard editor logic -->
@@ -415,6 +391,13 @@ templ DashboardEditorScript(dash *dashboard.Dashboard) {
 }
 
 // Helper functions
+
+func widgetPaletteClass(openPalette bool) string {
+	if openPalette {
+		return "mb-4 bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg shadow-lg"
+	}
+	return "hidden mb-4 bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg shadow-lg"
+}
 
 func getWidgetStyle(pos dashboard.WidgetPosition) string {
 	return fmt.Sprintf("grid-column: span %d;", pos.Width)

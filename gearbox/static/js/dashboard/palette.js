@@ -1,7 +1,6 @@
 /**
  * Widget Palette Management
- * Handles loading, filtering, and displaying widgets from enabled plugins.
- * Widgets are added to the dashboard by clicking them in the palette.
+ * Handles loading, filtering, and displaying widgets from enabled plugins
  */
 
 // State
@@ -186,6 +185,52 @@ function renderWidgets() {
         const categoryDiv = createCategorySection(category, categories[category]);
         paletteList.appendChild(categoryDiv);
     });
+
+    // Initialize Sortable for palette after rendering
+    initializePaletteSortable();
+}
+
+/**
+ * Initialize Sortable.js for the widget palette
+ */
+function initializePaletteSortable() {
+    // Wait for Sortable to be available
+    if (typeof window.Sortable === 'undefined') {
+        console.warn('Sortable not loaded yet, skipping palette sortable initialization');
+        return;
+    }
+
+    // Get all widget lists in the palette
+    const widgetLists = document.querySelectorAll('.palette-widget-list');
+
+    widgetLists.forEach(list => {
+        // Skip if already initialized
+        if (list.sortableInstance) {
+            return;
+        }
+
+        const sortable = window.Sortable.create(list, {
+            group: {
+                name: 'widget-palette',
+                pull: 'clone',
+                put: false
+            },
+            sort: false,
+            animation: 150,
+            dragClass: 'palette-widget-dragging',
+            ghostClass: 'palette-widget-ghost',
+            onEnd: function() {
+                // Reset any styling changes after drag
+                const cards = list.querySelectorAll('.palette-widget-card');
+                cards.forEach(card => {
+                    card.style.opacity = '1';
+                });
+            }
+        });
+
+        // Store instance reference
+        list.sortableInstance = sortable;
+    });
 }
 
 /**
@@ -257,22 +302,21 @@ function formatCategoryName(category) {
 }
 
 /**
- * Create a widget card element (click to add)
+ * Create a widget card element
  * @param {Object} widget - Widget data
  * @returns {HTMLElement} Widget card element
  */
 function createWidgetCard(widget) {
     const card = document.createElement('div');
     card.className = 'palette-widget-card';
-    card.style.cursor = 'pointer';
+    card.draggable = true;
     card.dataset.widgetType = widget.type;
     card.dataset.widgetName = widget.name;
     card.dataset.widgetPlugin = widget.plugin_name;
 
-    // Click to add widget to dashboard
-    card.addEventListener('click', function() {
-        addWidgetToDashboard(widget.type, widget.plugin_name);
-    });
+    // Set up drag events
+    card.addEventListener('dragstart', handleWidgetDragStart);
+    card.addEventListener('dragend', handleWidgetDragEnd);
 
     card.innerHTML = `
         <div class="flex items-start gap-3">
@@ -293,20 +337,6 @@ function createWidgetCard(widget) {
 }
 
 /**
- * Add a widget to the dashboard by type
- * @param {string} widgetType - Widget type identifier
- * @param {string} pluginName - Plugin that provides the widget
- */
-function addWidgetToDashboard(widgetType, pluginName) {
-    // Delegate to editor.js which manages dashboard state
-    if (typeof window.addWidgetFromPalette === 'function') {
-        window.addWidgetFromPalette(widgetType, pluginName);
-    } else {
-        console.error('addWidgetFromPalette not available from editor.js');
-    }
-}
-
-/**
  * Get SVG icon for widget
  * @param {string} iconName - Icon name
  * @returns {string} SVG HTML
@@ -321,6 +351,7 @@ function getWidgetIcon(iconName) {
         `;
     }
 
+    // Icon mapping - you can expand this based on your icon needs
     const icons = {
         'activity': '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>',
         'grid': '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zM14 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"></path></svg>',
@@ -346,10 +377,61 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-// Auto-initialize palette on page load (palette is always visible in editor)
-document.addEventListener('DOMContentLoaded', function() {
+/**
+ * Handle drag start event for widget cards
+ * @param {DragEvent} event - Drag event
+ */
+function handleWidgetDragStart(event) {
+    const widgetType = event.currentTarget.dataset.widgetType;
+    const widgetName = event.currentTarget.dataset.widgetName;
+    const widgetPlugin = event.currentTarget.dataset.widgetPlugin;
+
+    // Store widget data for Sortable.js
+    event.currentTarget.dataset.isNewWidget = 'true';
+
+    // Set drag data for browser drag-drop API
+    event.dataTransfer.effectAllowed = 'copy';
+    event.dataTransfer.setData('text/plain', widgetType);
+    event.dataTransfer.setData('application/x-widget-type', widgetType);
+    event.dataTransfer.setData('application/x-widget-name', widgetName);
+    event.dataTransfer.setData('application/x-widget-plugin', widgetPlugin);
+
+    // Add visual feedback
+    event.currentTarget.style.opacity = '0.5';
+}
+
+/**
+ * Handle drag end event for widget cards
+ * @param {DragEvent} event - Drag event
+ */
+function handleWidgetDragEnd(event) {
+    // Restore opacity
+    event.currentTarget.style.opacity = '1';
+}
+
+/**
+ * Toggle widget palette visibility
+ */
+function toggleWidgetPalette() {
     const panel = document.getElementById('widget-palette-panel');
     if (panel) {
+        panel.classList.toggle('hidden');
+
+        // Load widgets if opening for the first time
+        if (!panel.classList.contains('hidden') && allWidgets.length === 0) {
+            // Get server ID from dashboard context or use default
+            const dashboardElement = document.getElementById('dashboard-grid-editor');
+            const boxID = dashboardElement ? dashboardElement.dataset.boxId : '';
+            initializeWidgetPalette(boxID);
+        }
+    }
+}
+
+// Auto-initialize palette if it's already visible on page load
+// (e.g., when redirected from an empty dashboard with open_palette=1)
+document.addEventListener('DOMContentLoaded', function() {
+    const panel = document.getElementById('widget-palette-panel');
+    if (panel && !panel.classList.contains('hidden')) {
         const dashboardElement = document.getElementById('dashboard-grid-editor');
         const boxID = dashboardElement ? dashboardElement.dataset.boxId : '';
         initializeWidgetPalette(boxID);
@@ -358,3 +440,4 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Export functions for use in other scripts
 window.initializeWidgetPalette = initializeWidgetPalette;
+window.toggleWidgetPalette = toggleWidgetPalette;

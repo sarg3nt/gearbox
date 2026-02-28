@@ -7,12 +7,11 @@ import (
 // DashboardGrid renders a dashboard with widgets in a grid layout
 templ DashboardGrid(layout Layout, widgets []RenderedWidget) {
 	<div class="dashboard-container p-4">
-		<div class="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-6">
-			<!-- Grid layout -->
-			<div
-				class={ getDashboardGridClass(layout) }
-				data-dashboard="true"
-			>
+		<!-- Grid layout -->
+		<div
+			class={ getDashboardGridClass(layout) }
+			data-dashboard="true"
+		>
 			for _, widget := range widgets {
 				<div
 					class={ getWidgetGridItemClass(widget.Position, layout.Columns) }
@@ -25,7 +24,6 @@ templ DashboardGrid(layout Layout, widgets []RenderedWidget) {
 					@widget.Component
 				</div>
 			}
-			</div>
 		</div>
 	</div>
 }
