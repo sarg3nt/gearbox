@@ -4,26 +4,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This repository contains **Gearbox**, a general-purpose monitoring and management platform with a plugin-based architecture and composable widgets.
+This repository contains **Gearbox**, a general-purpose monitoring and management platform with a plugin-based architecture.
 
 ### What is Gearbox?
 
-A plugin-based server monitoring and management platform designed for DevOps. Provides real-time visibility into servers, services, and infrastructure through composable widgets.
+A plugin-based server monitoring and management platform designed for DevOps. Provides real-time visibility into servers, services, and infrastructure through purpose-built plugin pages.
 
 **Architecture:**
 
 - **gearbox-agent** - Go binary installed on monitored servers/workstations to gather data and expose secure API/WebSocket
-- **gearbox** - Web dashboard (port 3000) for monitoring multiple servers with widget-based dashboards
-- **Plugins** - Self-contained modules providing widgets and functionality (HAProxy, Metrics, Logs, Services, Certificates, Traffic, Alerts, OS Updates)
-- **Widgets** - Reusable UI components that display data or provide controls
-- **Dashboards** - YAML-defined pages arranging widgets in grid layouts
+- **gearbox** - Web dashboard (port 3000) for monitoring multiple servers
+- **Plugins** - Self-contained modules providing pages, API handlers, and functionality (HAProxy, Metrics, Logs, Services, Certificates, Traffic, Alerts, OS Updates)
 
 **Key Principles:**
 
-- Plugin-based with composable widgets and components
+- Plugin-based architecture with shared framework components
 - gearbox-agent can run on ANY Linux system (servers, workstations, HAProxy hosts, TrueNAS, Docker hosts)
 - Multi-server support: gearbox talks to many different gearbox-agent instances
-- Configuration via web UI or YAML files (GitOps-ready)
+- Configuration via web UI
 - HAProxy monitoring is ONE plugin, not the core purpose
 
 ## Dual-App Architecture
@@ -43,7 +41,7 @@ When troubleshooting, **ALWAYS check both codebases** and understand which serve
 
 ### Gearbox Dashboard (`gearbox/`)
 
-Web application for monitoring multiple servers. Plugin-based with widget architecture.
+Web application for monitoring multiple servers. Plugin-based architecture.
 
 **Post-Change Workflow:**
 
@@ -58,10 +56,9 @@ cd gearbox && make templ-generate && make build
 **Key directories:**
 
 - `internal/framework/` - Shared services and building blocks
-- `internal/plugins/` - 8 plugins providing 31 widgets total
+- `internal/plugins/` - 8 plugins
 - `internal/framework/templates/` - Templ templates
 - `static/` - JavaScript, CSS, assets
-- `data/dashboards/` - YAML dashboard definitions
 
 ### Gearbox Agent (`gearbox-agent/`)
 
@@ -84,7 +81,7 @@ cd gearbox-agent && make deploy
 
 ## Plugin Architecture
 
-8 plugins provide 31 widgets total: HAProxy, Metrics, Logs, Services, Certificates, Traffic, Alerts, OS Updates. Each plugin is self-contained in `internal/plugins/`. Framework provides shared services in `internal/framework/`.
+8 plugins: HAProxy, Metrics, Logs, Services, Certificates, Traffic, Alerts, OS Updates. Each plugin is self-contained in `internal/plugins/`. Framework provides shared services in `internal/framework/`.
 
 See [docs/plugins.md](docs/plugins.md) for complete plugin architecture documentation.
 
@@ -204,19 +201,12 @@ Store in `docs/` directory using kebab-case naming. Include TOC after main headi
 
 ## Common Development Tasks
 
-### Adding New Widgets
-
-1. Create widget in appropriate plugin directory
-2. Register in plugin's widget registry
-3. Add Templ template for rendering
-4. Update [docs/plugins.md](docs/plugins.md)
-
 ### Adding New Plugins
 
 1. Create directory in `internal/plugins/`
 2. Implement plugin interface
 3. Register in framework plugin system
-4. Add widgets and optional dashboards
+4. Add pages and templates
 5. Update [docs/plugins.md](docs/plugins.md)
 
 ### Modifying Templates (Templ)

@@ -2,16 +2,16 @@
 
 ## What Is Gearbox?
 
-Gearbox is a universal, plugin-based monitoring and management platform for DevOps. It provides real-time visibility into servers, services, and infrastructure through composable widgets arranged on customizable dashboards.
+Gearbox is a universal, plugin-based monitoring and management platform for DevOps. It provides real-time visibility into servers, services, and infrastructure through a plugin-based architecture.
 
 Gearbox is **not** a single-purpose tool. HAProxy monitoring is one plugin among many. The platform monitors any Linux system: bare-metal servers, virtual machines, workstations, Docker hosts, NAS appliances, or anything else running Linux.
 
 ## Design Goals
 
 - **Plugin-based extensibility** -- All monitoring capabilities live in self-contained plugins. The framework provides shared infrastructure; plugins implement features. Adding a new capability means adding a new plugin, not modifying the core.
-- **Composable widget dashboards** -- Users build custom monitoring views by arranging widgets on a grid. Widgets are provided by plugins and consume data through standardized data sources. Dashboards are stored as YAML files, making them version-controllable and GitOps-ready.
-- **Multi-server monitoring** -- A single Gearbox dashboard connects to many agents running on different servers. Every widget and data source is server-aware.
-- **Configuration as code** -- Dashboards, server configurations, and plugin settings can all be managed through YAML files or the web UI. Either path produces the same result.
+- **Plugin-based pages** -- Each plugin provides its own monitoring pages with purpose-built UI. Plugins use shared framework components (charts, tables, cards) for consistent presentation.
+- **Multi-server monitoring** -- A single Gearbox dashboard connects to many agents running on different servers. Every plugin page and data source is server-aware.
+- **Configuration as code** -- Server configurations and plugin settings can be managed through the web UI.
 - **Compile-time safety** -- Plugins are compiled into the binary (similar to Caddy). No runtime plugin loading, no reflection. Interfaces are checked at compile time. Templates use Templ for type-safe HTML generation.
 
 ## Architecture
@@ -20,7 +20,7 @@ Gearbox is **not** a single-purpose tool. HAProxy monitoring is one plugin among
 
 Gearbox consists of two Go applications:
 
-**gearbox** (Dashboard) -- Web application on port 3000. Connects to multiple agents, renders UI, manages dashboards and users. Contains 8 plugins providing 31 widgets.
+**gearbox** (Dashboard) -- Web application on port 3000. Connects to multiple agents, renders UI, and manages users. Contains 8 plugins.
 
 **gearbox-agent** (Agent) -- Lightweight service on port 8405. Runs on each monitored server. Collects data via plugin-based collectors, exposes a REST API, and publishes real-time events over WebSocket. Contains 7 data collection plugins.
 
@@ -33,7 +33,7 @@ Gearbox consists of two Go applications:
 ┌──────────────▼─────────────────────┐
 │     Gearbox Dashboard (:3000)      │
 │                                    │
-│  Plugins → Widgets → Dashboards    │
+│  Plugins → Pages → UI              │
 │  Auth, Sessions, Permissions       │
 │  SQLite database                   │
 └──────┬────────────┬────────────────┘
@@ -54,7 +54,7 @@ Gearbox consists of two Go applications:
 1. **Agent collects** -- Plugin collectors run on intervals, gathering system metrics, service stats, log data, certificate info, and more from the host.
 2. **Agent exposes** -- Collected data is available via REST API endpoints. Changes are broadcast as WebSocket events.
 3. **Dashboard fetches** -- The agent client (80+ methods) calls agent REST APIs over HTTPS with API key authentication.
-4. **Dashboard renders** -- Plugin handlers pass data to Templ components. Widgets render inside dashboard grids.
+4. **Dashboard renders** -- Plugin handlers pass data to Templ components for display.
 5. **Browser updates** -- Real-time events flow from agent → dashboard → browser via WebSocket/SSE for live updates without polling.
 
 ## Plugin System
@@ -63,7 +63,7 @@ Gearbox consists of two Go applications:
 
 Plugins register themselves at compile time via `init()` functions. On startup, the framework initializes each plugin with a `Dependencies` struct containing database access, logger, event hub, authentication, agent client, and configuration.
 
-Each plugin is self-contained: it defines its own routes, handlers, templates, permissions, and widgets. Plugins cannot call each other directly; they communicate through the event bus.
+Each plugin is self-contained: it defines its own routes, handlers, templates, and permissions. Plugins cannot call each other directly; they communicate through the event bus.
 
 ### Feature Flags
 
@@ -105,48 +105,24 @@ type AgentClient interface {
 var _ AgentClient = (*agent.Client)(nil)
 ```
 
-## Widget and Dashboard System
+## UI Architecture
 
-### Widgets
+### Plugin Pages
 
-Widgets are reusable UI components provided by plugins. Each widget has:
+Each plugin provides its own pages with purpose-built UI. Plugins use shared framework components (charts, tables, cards, panels) for consistent presentation. Pages are server-side rendered with Templ and enhanced with HTMX for dynamic updates.
 
-- A **type** identifier (e.g., `line-chart`, `status-card`, `data-table`)
-- A **renderer** function that takes configuration and data, returns a Templ component
-- A **configuration schema** describing the widget's settings
-- An optional **data source** binding
+### Shared Components
 
-The framework provides a library of standard widget types: charts (line, bar, doughnut, pie), cards (status, metric), tables (data table, simple table), streaming widgets (log viewer, terminal), action widgets (buttons, toolbars), and layout widgets (tabs, grids, containers).
+The framework provides reusable UI components that plugins use to build their pages:
 
-### Dashboards
+- **Charts** -- Chart.js-based components for time-series data (CPU, memory, network, etc.)
+- **Cards** -- Status cards, metric cards for at-a-glance information
+- **Tables** -- Data tables for detailed listings
+- **Panels** -- Collapsible containers for organizing content
 
-Dashboards are YAML files defining a page layout with positioned widgets on a 12-column grid:
+### Data Flow to UI
 
-```yaml
-version: "1.0"
-name: "Server Overview"
-layout:
-    columns: 12
-    gap: 4
-widgets:
-    - id: "cpu-chart"
-      type: "line-chart"
-      position: { row: 1, column: 1, width: 6, height: 300 }
-      config:
-        data_source: "metrics.cpu"
-        title: "CPU Usage"
-```
-
-Dashboards come in two forms:
-
-- **User dashboards** -- Created through the web UI, stored as `{slug}.yaml`
-- **Plugin dashboards** -- Predefined templates from plugins, stored as `plugin-{name}-{slug}.yaml`
-
-Dashboards can define top-bar controls (filters, server selectors, refresh buttons) that affect all widgets on the page.
-
-### Data Sources
-
-Plugins expose data through standardized `DataSource` interfaces with `Fetch` (on-demand) and `Subscribe` (real-time streaming) methods. Widgets bind to data sources by name, decoupling data collection from presentation.
+Plugins expose API endpoints that return HTML partials (for HTMX) or JSON (for JavaScript). Pages use HTMX polling or SSE for real-time updates without full page reloads.
 
 ## Technology Stack
 
@@ -164,7 +140,6 @@ Plugins expose data through standardized `DataSource` interfaces with `Fetch` (o
 - **Tailwind CSS** -- Utility-first styling
 - **Alpine.js** -- Lightweight reactivity for interactive components
 - **Chart.js** -- Data visualization
-- **SortableJS** -- Drag-and-drop widget arrangement
 - Server-side rendered HTML with progressive enhancement (no SPA framework)
 
 ## Security Model

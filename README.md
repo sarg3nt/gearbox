@@ -7,15 +7,14 @@
 
 ## Overview
 
-Gearbox is a general-purpose monitoring and management platform with a plugin-based architecture and composable widgets. It uses gearbox-agent (a separate Go binary) installed on servers and workstations to gather data and act as a secure agent and controller.
+Gearbox is a general-purpose monitoring and management platform with a plugin-based architecture. It uses gearbox-agent (a separate Go binary) installed on servers and workstations to gather data and act as a secure agent and controller.
 
 **Key Capabilities:**
 
 - Monitor multiple servers/workstations from a single dashboard
-- Plugin-based feature system with composable widgets
+- Plugin-based feature system
 - Real-time updates via WebSocket
-- YAML-defined dashboards (GitOps-ready)
-- Web UI or YAML file configuration
+- Web UI configuration
 - Auto-discovery of services on monitored hosts
 
 **IMPORTANT:** Gearbox is NOT an HAProxy-specific tool. It is a universal monitoring platform. HAProxy monitoring is just one plugin among many.
@@ -27,7 +26,7 @@ Gearbox is a general-purpose monitoring and management platform with a plugin-ba
 - Installing the Gearbox dashboard and agent
 - Generating and configuring API keys
 - Adding your first monitored server
-- Enabling plugins and creating dashboards
+- Enabling plugins
 
 The guide includes detailed examples, troubleshooting tips, and best practices for production deployments.
 
@@ -94,8 +93,7 @@ See [gearbox-agent/README.md](gearbox-agent/README.md) for installation options 
 - Web dashboard application
 - Runs on port 3000
 - Connects to multiple gearbox-agent instances
-- Plugin-based features with widget system
-- YAML-defined dashboards
+- Plugin-based features
 
 ### Data Flow
 
@@ -106,9 +104,7 @@ Monitored Server → gearbox-agent (collects data) → API/WebSocket → gearbox
 ### Plugin Architecture
 
 ```text
-Plugin = Collection of Widgets + Optional Predefined Dashboard(s)
-Widget = Reusable UI component built with framework building blocks
-Dashboard = Named page containing arranged widgets (YAML-defined)
+Plugin = Self-contained feature module with pages, API handlers, and templates
 Framework = Shared services and building blocks
 ```
 
@@ -123,25 +119,25 @@ Framework = Shared services and building blocks
 
 **Plugins provide:**
 
-- Widgets (reusable UI components)
-- Optional predefined dashboards
+- Pages and routes
+- API handlers
 - Domain-specific logic
 - Self-contained functionality
 
 ### Current Plugins
 
-| Plugin | Widgets | Purpose |
-|--------|---------|---------|
-| HAProxy | 5 | HAProxy monitoring and stats |
-| Metrics | 7 | System metrics (CPU, memory, disk, network, load, uptime) |
-| Services | 3 | Systemd service monitoring |
-| Certificates | 3 | TLS certificate tracking |
-| Logs | 1 | Log aggregation and viewing |
-| Traffic | 4 | Traffic analysis and visualization |
-| Alerts | 5 | Alert management and rules |
-| OS Updates | 3 | Package update monitoring |
+| Plugin       | Purpose                                                   |
+|--------------|-----------------------------------------------------------|
+| HAProxy      | HAProxy monitoring and stats                              |
+| Metrics      | System metrics (CPU, memory, disk, network, load, uptime) |
+| Services     | Systemd service monitoring                                |
+| Certificates | TLS certificate tracking                                  |
+| Logs         | Log aggregation and viewing                               |
+| Traffic      | Traffic analysis and visualization                        |
+| Alerts       | Alert management and rules                                |
+| OS Updates   | Package update monitoring                                 |
 
-**Total:** 8 plugins, 31 widgets
+**Total:** 8 plugins
 
 ## Development Workflow
 
@@ -167,7 +163,6 @@ cd gearbox && make dev
 - `internal/plugins/` - Feature plugins
 - `internal/templates/` - Templ templates
 - `static/` - JavaScript, CSS, assets
-- `data/dashboards/` - YAML dashboard definitions
 
 ### Gearbox Agent
 
@@ -187,23 +182,6 @@ cd gearbox-agent && make build
 - `cmd/gearbox-agent/` - Entry point
 
 ## Configuration
-
-### Dashboard Configuration
-
-Dashboards are YAML files in `gearbox/data/dashboards/`:
-
-```yaml
-name: "System Overview"
-description: "System metrics and status"
-editable: true
-plugin: ""
-widgets:
-  - id: "cpu-usage"
-    type: "metrics-cpu-graph"
-    title: "CPU Usage"
-    position: { x: 0, y: 0 }
-    size: { width: 6, height: "auto" }
-```
 
 ### Agent Configuration
 
@@ -227,7 +205,7 @@ One gearbox dashboard can monitor many servers:
 1. Install gearbox-agent on each server to monitor
 2. Configure server in gearbox via Settings > Servers
 3. Enable desired plugins for each server
-4. Dashboards display data from selected server
+4. Plugin pages display data from selected server
 
 ## Documentation
 
@@ -253,7 +231,6 @@ One gearbox dashboard can monitor many servers:
 - Container and stack management (GitOps-focused Portainer alternative)
 - Multi-server orchestration
 - Infrastructure-as-code integration
-- Dashboard export/import and git sync
 - Additional plugins for databases, web servers, etc.
 
 ## Contributing

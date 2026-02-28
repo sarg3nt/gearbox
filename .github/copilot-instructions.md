@@ -2,12 +2,12 @@
 
 ## Project Overview
 
-**Gearbox** is a general-purpose monitoring and management platform with a plugin-based architecture and composable widgets. It consists of two Go applications:
+**Gearbox** is a general-purpose monitoring and management platform with a plugin-based architecture. It consists of two Go applications:
 
 1. **gearbox** - Web dashboard (port 3000)
 2. **gearbox-agent** - Agent running on monitored servers (port 8405)
 
-**Key Principle**: This is a plugin-based architecture. The framework provides shared services, and plugins provide widgets and functionality.
+**Key Principle**: This is a plugin-based architecture. The framework provides shared services, and plugins provide functionality.
 
 ## Architecture
 
@@ -35,8 +35,7 @@ Monitored Server → gearbox-agent (collects) → API/WebSocket → gearbox (dis
 
 **Plugins** (gearbox/internal/plugins/):
 - Self-contained feature modules
-- Provide widgets (reusable UI components)
-- Optional predefined dashboards
+- Provide pages and API handlers
 - Domain-specific logic
 
 Current plugins: HAProxy, Metrics, Services, Certificates, Logs, Traffic, Alerts, OS Updates
@@ -62,7 +61,6 @@ cd gearbox && make dev
 - `internal/plugins/` - Feature plugins
 - `internal/framework/templates/` - Templ templates
 - `static/` - JavaScript, CSS, assets
-- `data/dashboards/` - YAML dashboard definitions
 
 ### Gearbox Agent (gearbox-agent/)
 
@@ -81,19 +79,12 @@ cd gearbox-agent && make deploy
 
 ## Code Guidelines
 
-### Adding New Widgets
-
-1. Create widget in appropriate plugin directory
-2. Register in plugin's widget registry
-3. Add Templ template for rendering
-4. Update plugin documentation
-
 ### Adding New Plugins
 
 1. Create directory in `internal/plugins/`
 2. Implement plugin interface
 3. Register in framework plugin system
-4. Add widgets and optional dashboards
+4. Add pages and templates
 5. Update docs/plugins.md
 
 ### Template System (Templ)
@@ -124,13 +115,6 @@ make test
 ```
 
 ## Common Tasks
-
-### Adding a Dashboard Widget
-
-1. Create widget component in plugin
-2. Add Templ template
-3. Register in widget palette
-4. Add to dashboard YAML or via UI
 
 ### Modifying API Endpoints
 
@@ -166,7 +150,7 @@ make test
 - Keep plugins self-contained
 - Use framework services (don't duplicate functionality)
 - Follow plugin architecture patterns
-- Document new widgets in docs/plugins.md
+- Document new plugins in docs/plugins.md
 
 ## Documentation
 
@@ -207,4 +191,4 @@ make test
 - Event bus for decoupled communication
 - Database connection pooling
 - Efficient template rendering
-- Widget-level updates (not full page reloads)
+- Partial updates via HTMX (not full page reloads)

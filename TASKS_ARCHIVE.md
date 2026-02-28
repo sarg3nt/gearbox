@@ -12,22 +12,8 @@
 
 ---
 
-## Plugin-to-Widget Architecture Migration ✅
+## Plugin-to-Widget Architecture Migration (REVERTED)
 
-**Status:** COMPLETE - All Phases 1-14 Done (2026-01-30)
+**Status:** REVERTED (2026-02-28)
 
-**Key Achievements:**
-
-1. ✅ Core infrastructure (widget system, dashboard storage, building blocks)
-2. ✅ HAProxy plugin conversion (proof-of-concept)
-3. ✅ 7 additional plugins converted (Alerts, Metrics, Services, Certificates, Traffic, Logs, OS Updates)
-4. ✅ Dashboard management system (CRUD, export/import, reset)
-5. ✅ Auto-discovery system framework
-
-**Progress:** 8 of 8 plugins converted (100%), 31 widgets created
-
-**Build Status:**
-
-- ✅ Gearbox: Builds successfully
-- ✅ Gearbox-Agent: Builds successfully
-- ✅ Templ: 147 templates generated
+**Summary:** Widget-based dashboard architecture was implemented but later reverted in favor of simpler plugin-based pages. The approach was over-engineered for the project's needs. Reusable components (chart partials, metrics partials, services partials, API endpoints) were retained as standalone pieces.
