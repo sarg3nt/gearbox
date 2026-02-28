@@ -2,10 +2,6 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Model Preference
-
-**Default Model:** Use Claude Sonnet (not Opus) for all tasks unless specifically requested otherwise by the user. Sonnet provides the optimal balance of speed, cost, and capability for typical development tasks.
-
 ## Project Overview
 
 This repository contains **Gearbox**, a general-purpose monitoring and management platform with a plugin-based architecture and composable widgets.
