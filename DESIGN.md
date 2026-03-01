@@ -20,7 +20,7 @@ Gearbox is **not** a single-purpose tool. HAProxy monitoring is one plugin among
 
 Gearbox consists of two Go applications:
 
-**gearbox** (Dashboard) -- Web application on port 3000. Connects to multiple agents, renders UI, and manages users. Contains 8 plugins.
+**gearbox** (Dashboard) -- Web application on port 3000. Connects to multiple agents, renders UI, and manages users. Contains 7 plugins.
 
 **gearbox-agent** (Agent) -- Lightweight service on port 8405. Runs on each monitored server. Collects data via plugin-based collectors, exposes a REST API, and publishes real-time events over WebSocket. Contains 7 data collection plugins.
 
@@ -69,12 +69,11 @@ Each plugin is self-contained: it defines its own routes, handlers, templates, a
 
 Plugins progress through a state machine: `disabled` → `alpha` → `beta` → `production`. Alpha and beta plugins must be explicitly enabled by the user. Production plugins are enabled by default. The `disabled` state excludes the plugin from the build entirely.
 
-### Dashboard Plugins (8)
+### Dashboard Plugins (7)
 
 | Plugin       | Purpose                                      |
 |--------------|----------------------------------------------|
-| Dashboard    | Main overview and status grid                |
-| HAProxy      | HAProxy backend/frontend/server monitoring   |
+| HAProxy      | HAProxy overview, status grid, and backend/frontend/server monitoring |
 | Metrics      | Historical CPU, memory, disk, network charts |
 | Services     | Systemd service monitoring and control       |
 | Certificates | TLS certificate expiration tracking          |

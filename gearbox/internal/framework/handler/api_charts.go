@@ -171,10 +171,24 @@ func (h *Handler) APIChartsErrorRatesHandler(w http.ResponseWriter, r *http.Requ
 	}
 }
 
-// Helper function to parse integer query parameters with defaults
+// Helper function to parse integer query parameters with defaults and upper bounds.
 func parseIntQueryParam(r *http.Request, param string, defaultValue int) int {
+	const maxHours = 168  // 7 days
+	const maxLimit = 5000 // max data points
+
 	if valueStr := r.URL.Query().Get(param); valueStr != "" {
 		if value, err := strconv.Atoi(valueStr); err == nil && value > 0 {
+			// Clamp to upper bounds
+			switch param {
+			case "hours":
+				if value > maxHours {
+					value = maxHours
+				}
+			case "limit":
+				if value > maxLimit {
+					value = maxLimit
+				}
+			}
 			return value
 		}
 	}

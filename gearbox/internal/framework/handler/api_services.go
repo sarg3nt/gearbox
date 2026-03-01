@@ -194,34 +194,6 @@ func (h *Handler) APIServicesOverviewHandler(w http.ResponseWriter, r *http.Requ
 	}
 }
 
-// APIServicesListHTMLHandler returns an HTML fragment with the services list.
-// Used by the services-list widget via HTMX.
-func (h *Handler) APIServicesListHTMLHandler(w http.ResponseWriter, r *http.Request) {
-	if !h.authManager.HasPermission(r, models.ComponentServices, models.PermissionView) {
-		http.Error(w, "Forbidden", http.StatusForbidden)
-		return
-	}
-
-	boxID := chi.URLParam(r, "boxID")
-	if boxID == "" {
-		http.Error(w, "Server ID required", http.StatusBadRequest)
-		return
-	}
-
-	servicesResp, err := h.fetchServicesFromAgent(boxID)
-	if err != nil {
-		h.logger.Error("Failed to fetch services for list", "box_id", boxID, "error", err)
-		http.Error(w, "Failed to fetch services", http.StatusInternalServerError)
-		return
-	}
-
-	component := services.ServicesListPartial(servicesResp.Services)
-	if err := component.Render(r.Context(), w); err != nil {
-		h.logger.Error("Failed to render services list partial", "error", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-	}
-}
-
 // APIServicesFailedHandler returns an HTML fragment with failed services.
 // Used by the failed-services-alert widget via HTMX.
 func (h *Handler) APIServicesFailedHandler(w http.ResponseWriter, r *http.Request) {
