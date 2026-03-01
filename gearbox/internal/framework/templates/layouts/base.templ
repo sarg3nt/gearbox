@@ -27,12 +27,12 @@ func getPath(paths []string) string {
 // Returns true if there are no servers configured (initial setup state)
 func shouldHideSidebar(ctx context.Context, currentPath string) bool {
 	// Check if gear status is in context - if not, we're in initial setup
-	_, hasPluginStatus := auth.GetGearStatusFromContext(ctx)
-	_, hasPluginOrder := auth.GetGearOrderFromContext(ctx)
+	_, hasGearStatus := auth.GetGearStatusFromContext(ctx)
+	_, hasGearOrder := auth.GetGearOrderFromContext(ctx)
 
 	// If neither gear status nor order is set, we're in initial setup (no servers)
 	// Hide the sidebar to provide a cleaner first-time experience
-	return !hasPluginStatus && !hasPluginOrder
+	return !hasGearStatus && !hasGearOrder
 }
 
 templ Base(title string, user *models.User, currentPath ...string) {
