@@ -12,8 +12,8 @@ import (
 )
 
 // Note: The following page handlers have been migrated to plugins and removed:
-// - OverviewPage -> plugins/dashboard
-// - StatusGridPage -> plugins/dashboard
+// - OverviewPage -> plugins/haproxy
+// - StatusGridPage -> plugins/haproxy
 // - LogsPage -> plugins/logs
 // - HistoryPage -> plugins/metrics
 // - ServicesPage -> plugins/services

@@ -41,11 +41,6 @@ func (p *Plugin) Initialize(ctx context.Context, deps plugin.Dependencies) error
 
 	p.handlers = NewHandlers(deps)
 
-	// Register services widgets with the widget registry
-	if err := RegisterServicesWidgets(deps.WidgetRegistry); err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -83,99 +78,6 @@ func (p *Plugin) Permissions() []plugin.PermissionDef {
 			Component:   "services",
 			Actions:     []string{"view", "control"},
 			Description: "View and control system services",
-		},
-	}
-}
-
-// Widgets returns the widget definitions provided by this plugin.
-func (p *Plugin) Widgets() []plugin.WidgetDefinition {
-	// Widget definitions are registered in widgets.go via RegisterServicesWidgets
-	// This method is for the DashboardPlugin interface
-	return []plugin.WidgetDefinition{}
-}
-
-// PredefinedDashboards returns predefined dashboard templates.
-func (p *Plugin) PredefinedDashboards() []plugin.DashboardDefinition {
-	return []plugin.DashboardDefinition{
-		{
-			Name:           "Services",
-			Description:    "System services monitoring with overview, failed services alert, and full service list",
-			Slug:           "services",
-			Icon:           "cog",
-			DefaultEnabled: true,
-			YAML: `version: "1.0"
-name: Services
-description: System services monitoring dashboard
-created_by: plugin:services
-plugin_name: services
-editable: false
-layout:
-  columns: 12
-  gap: 4
-widgets:
-  - id: services-overview-1
-    type: services-overview-card
-    position:
-      row: 1
-      column: 1
-      width: 4
-      height: 2
-    config:
-      server_id: ""
-      refresh_seconds: 30
-  - id: failed-services-1
-    type: failed-services-alert
-    position:
-      row: 1
-      column: 5
-      width: 8
-      height: 2
-    config:
-      server_id: ""
-      refresh_seconds: 30
-      hide_when_empty: false
-  - id: services-list-1
-    type: services-list
-    position:
-      row: 2
-      column: 1
-      width: 12
-      height: 10
-    config:
-      server_id: ""
-      refresh_seconds: 30
-      show_filters: true
-`,
-		},
-	}
-}
-
-// DataSources returns data sources exposed by this plugin.
-func (p *Plugin) DataSources() []plugin.DataSourceDefinition {
-	return []plugin.DataSourceDefinition{
-		{
-			Name:        "services.all",
-			Description: "All system services",
-			Schema: plugin.DataSourceSchema{
-				Type:        "array",
-				Description: "Array of service status objects",
-			},
-		},
-		{
-			Name:        "services.overview",
-			Description: "Services overview summary",
-			Schema: plugin.DataSourceSchema{
-				Type:        "object",
-				Description: "Summary counts of running, stopped, and failed services",
-			},
-		},
-		{
-			Name:        "services.failed",
-			Description: "Failed services",
-			Schema: plugin.DataSourceSchema{
-				Type:        "array",
-				Description: "Array of failed service objects",
-			},
 		},
 	}
 }

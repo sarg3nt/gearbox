@@ -1,11 +1,14 @@
 package agent
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -48,6 +51,41 @@ func NewClientWithTimeout(baseURL, apiKey string, timeout time.Duration) *Client
 
 	transport := &http.Transport{
 		TLSClientConfig: tlsConfig,
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			dialer := &net.Dialer{
+				Timeout:   10 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}
+
+			// Retry up to 3 times on "no route to host" errors.
+			// macOS with multiple NICs on the same subnet can have
+			// intermittent routing failures due to IFSCOPE route expiry.
+			var lastErr error
+			for attempt := range 3 {
+				conn, err := dialer.DialContext(ctx, network, addr)
+				if err == nil {
+					if attempt > 0 {
+						log.Printf("[agent-client] dial succeeded on attempt %d for %s", attempt+1, addr)
+					}
+					return conn, nil
+				}
+				lastErr = err
+
+				// Only retry on "no route to host" errors
+				if !strings.Contains(err.Error(), "no route to host") {
+					return nil, err
+				}
+				log.Printf("[agent-client] dial attempt %d failed for %s: %v, retrying...", attempt+1, addr, err)
+
+				// Brief pause before retry to allow route refresh
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-time.After(500 * time.Millisecond):
+				}
+			}
+			return nil, lastErr
+		},
 	}
 
 	return &Client{

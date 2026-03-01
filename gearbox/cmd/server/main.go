@@ -28,14 +28,10 @@ import (
 	"github.com/sarg3nt/gearbox/internal/framework/handler"
 	gbmiddleware "github.com/sarg3nt/gearbox/internal/framework/middleware"
 	"github.com/sarg3nt/gearbox/internal/framework/models"
-	"github.com/sarg3nt/gearbox/internal/framework/dashboard"
-	"github.com/sarg3nt/gearbox/internal/framework/widget"
-	"github.com/sarg3nt/gearbox/internal/framework/widget/widgets"
 
 	// Import plugins - blank identifier triggers init() registration
 	_ "github.com/sarg3nt/gearbox/internal/plugins/alerts"
 	_ "github.com/sarg3nt/gearbox/internal/plugins/certificates"
-	_ "github.com/sarg3nt/gearbox/internal/plugins/dashboard"
 	_ "github.com/sarg3nt/gearbox/internal/plugins/haproxy"
 	_ "github.com/sarg3nt/gearbox/internal/plugins/logs"
 	_ "github.com/sarg3nt/gearbox/internal/plugins/metrics"
@@ -352,37 +348,6 @@ func main() {
 	h.SetWebSocketManager(wsManager)
 	logger.Info("HTTP handlers initialized")
 
-	// Initialize dashboard handler
-	dashboardStorage, err := dashboard.NewStorage("data", logger)
-	if err != nil {
-		log.Fatalf("Failed to initialize dashboard storage: %v", err)
-	}
-	h.SetDashboardStorage(dashboardStorage)
-
-	// Continue with dashboard storage setup
-	err = dashboardStorage.CreateDefaultDashboard()
-	if err != nil {
-		log.Fatalf("Failed to initialize dashboard storage: %v", err)
-	}
-	widgetRegistry := widget.NewRegistry(logger)
-	dataSourceRegistry := widget.NewDataSourceRegistry(logger)
-
-	// Register core widgets
-	if err := widgets.RegisterCoreWidgets(widgetRegistry); err != nil {
-		log.Fatalf("Failed to register core widgets: %v", err)
-	}
-
-	dashboardHandler := handler.NewDashboardHandler(
-		dashboardStorage,
-		widgetRegistry,
-		dataSourceRegistry,
-		db,
-		logger,
-		"", // serverID - can be set per request
-		"", // userID - can be set per request
-	)
-	logger.Info("dashboard handler initialized")
-
 	// Initialize plugin system
 	logger.Info("initializing plugin system",
 		"plugin_count", len(plugin.All()))
@@ -399,7 +364,6 @@ func main() {
 		Auth:           authAdapter,
 		Servers:        serverAdapter,
 		HTTPClient:     http.DefaultClient,
-		WidgetRegistry: widgetRegistry,
 		Config:         make(map[string]any),
 	}
 
@@ -609,11 +573,8 @@ func main() {
 			r.Get("/backup", h.BackupPage)
 		})
 
-		// Dashboard routes
-		dashboardHandler.RegisterRoutes(r)
-
 		// Plugin-registered routes
-		// Plugins handle: / (dashboard), /status-grid (dashboard), /logs (logs),
+		// Plugins handle: / (haproxy overview), /status-grid (haproxy), /logs (logs),
 		// /services (services), /history (metrics), /certificates (certificates),
 		// /traffic (traffic), /alerts (alerts)
 		pluginManager.RegisterRoutes(r)

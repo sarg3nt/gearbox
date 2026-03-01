@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/sarg3nt/gearbox/internal/framework/collector"
-	"github.com/sarg3nt/gearbox/internal/framework/dashboard"
 	"github.com/sarg3nt/gearbox/internal/framework/database"
 	"github.com/sarg3nt/gearbox/internal/framework/auth"
 	"github.com/sarg3nt/gearbox/internal/framework/events"
@@ -31,7 +30,6 @@ type Handler struct {
 	eventHub         *events.Hub
 	wsManager        *collector.WebSocketManager
 	geoipClient      *geoip.Client
-	dashboardStorage *dashboard.Storage
 
 	// Config redactor for hiding sensitive values (e.g., stats auth passwords)
 	configRedactor *ConfigRedactor
@@ -113,11 +111,6 @@ func (h *Handler) SetEventHub(hub *events.Hub) {
 // SetWebSocketManager sets the WebSocket manager for Agent connections.
 func (h *Handler) SetWebSocketManager(mgr *collector.WebSocketManager) {
 	h.wsManager = mgr
-}
-
-// SetDashboardStorage sets the dashboard storage for deploying plugin dashboards.
-func (h *Handler) SetDashboardStorage(storage *dashboard.Storage) {
-	h.dashboardStorage = storage
 }
 
 // getWebAuthnManager returns the WebAuthn manager.
