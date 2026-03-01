@@ -20,7 +20,7 @@ import (
 	"github.com/sarg3nt/gearbox/internal/framework/auth"
 	"github.com/sarg3nt/gearbox/internal/framework/config"
 	"github.com/sarg3nt/gearbox/internal/framework/events"
-	"github.com/sarg3nt/gearbox/internal/framework/plugin"
+	"github.com/sarg3nt/gearbox/internal/framework/gear"
 	"github.com/sarg3nt/gearbox/internal/framework/services"
 	"github.com/sarg3nt/gearbox/internal/framework/services/alerts"
 	"github.com/sarg3nt/gearbox/internal/framework/services/crypto"
@@ -29,14 +29,14 @@ import (
 	gbmiddleware "github.com/sarg3nt/gearbox/internal/framework/middleware"
 	"github.com/sarg3nt/gearbox/internal/framework/models"
 
-	// Import plugins - blank identifier triggers init() registration
-	_ "github.com/sarg3nt/gearbox/internal/plugins/alerts"
-	_ "github.com/sarg3nt/gearbox/internal/plugins/certificates"
-	_ "github.com/sarg3nt/gearbox/internal/plugins/haproxy"
-	_ "github.com/sarg3nt/gearbox/internal/plugins/logs"
-	_ "github.com/sarg3nt/gearbox/internal/plugins/metrics"
-	_ "github.com/sarg3nt/gearbox/internal/plugins/services"
-	_ "github.com/sarg3nt/gearbox/internal/plugins/traffic"
+	// Import gears - blank identifier triggers init() registration
+	_ "github.com/sarg3nt/gearbox/internal/gears/alerts"
+	_ "github.com/sarg3nt/gearbox/internal/gears/certificates"
+	_ "github.com/sarg3nt/gearbox/internal/gears/haproxy"
+	_ "github.com/sarg3nt/gearbox/internal/gears/logs"
+	_ "github.com/sarg3nt/gearbox/internal/gears/metrics"
+	_ "github.com/sarg3nt/gearbox/internal/gears/services"
+	_ "github.com/sarg3nt/gearbox/internal/gears/traffic"
 )
 
 var (
@@ -348,16 +348,16 @@ func main() {
 	h.SetWebSocketManager(wsManager)
 	logger.Info("HTTP handlers initialized")
 
-	// Initialize plugin system
-	logger.Info("initializing plugin system",
-		"plugin_count", len(plugin.All()))
+	// Initialize gear system
+	logger.Info("initializing gear system",
+		"gear_count", len(gear.All()))
 
-	// Create plugin dependencies
+	// Create gear dependencies
 	authAdapter := services.NewAuthAdapter(authManager)
 	eventsAdapter := services.NewEventsAdapter(eventHub)
 	serverAdapter := services.NewServerAdapter(db, encryptor, servers, logger)
 
-	pluginDeps := plugin.Dependencies{
+	gearDeps := gear.Dependencies{
 		DB:             db.GetDB(), // Get the underlying *sql.DB
 		Logger:         logger,
 		EventHub:       eventsAdapter,
@@ -367,19 +367,19 @@ func main() {
 		Config:         make(map[string]any),
 	}
 
-	// Create plugin manager (no store for now - will add database-backed store later)
-	pluginManager := plugin.NewManager(pluginDeps, nil, logger)
+	// Create gear manager (no store for now - will add database-backed store later)
+	gearManager := gear.NewManager(gearDeps, nil, logger)
 
-	// Initialize all plugins
-	if err := pluginManager.InitializeAll(context.Background()); err != nil {
-		log.Fatalf("Failed to initialize plugins: %v", err)
+	// Initialize all gears
+	if err := gearManager.InitializeAll(context.Background()); err != nil {
+		log.Fatalf("Failed to initialize gears: %v", err)
 	}
 
-	// Start all plugins
-	if err := pluginManager.StartAll(context.Background()); err != nil {
-		log.Fatalf("Failed to start plugins: %v", err)
+	// Start all gears
+	if err := gearManager.StartAll(context.Background()); err != nil {
+		log.Fatalf("Failed to start gears: %v", err)
 	}
-	logger.Info("plugin system initialized")
+	logger.Info("gear system initialized")
 
 	// Initialize WebAuthn for passkey support
 	if cfg.WebAuthnRPID != "" && cfg.WebAuthnRPID != "localhost" {
@@ -561,25 +561,25 @@ func main() {
 			// Disabled entities management (requires ComponentBackends/PermissionManage - checked in handler)
 			r.Get("/admin/disabled-entities", h.AdminDisabledEntitiesPage)
 
-			// Plugins management (requires ComponentPlugins/PermissionManage - checked in handlers)
-			r.Get("/plugins", h.PluginsPage)
-			r.Post("/plugins/haproxy/git", h.HAProxyGitSettingsSave)
-			r.Get("/plugins/{name}", h.PluginDetailPage)
-			r.Post("/plugins/{name}", h.PluginUpdatePost)
-			r.Post("/plugins/{name}/toggle", h.PluginTogglePost)
-			r.Get("/plugins/alerts/rules", h.AlertRulesPage)
+			// Gears management (requires ComponentGears/PermissionManage - checked in handlers)
+			r.Get("/gears", h.GearsPage)
+			r.Post("/gears/haproxy/git", h.HAProxyGitSettingsSave)
+			r.Get("/gears/{name}", h.GearDetailPage)
+			r.Post("/gears/{name}", h.GearUpdatePost)
+			r.Post("/gears/{name}/toggle", h.GearTogglePost)
+			r.Get("/gears/alerts/rules", h.AlertRulesPage)
 
 			// Database Backup management (admin only - checked in handlers)
 			r.Get("/backup", h.BackupPage)
 		})
 
-		// Plugin-registered routes
-		// Plugins handle: / (haproxy overview), /status-grid (haproxy), /logs (logs),
+		// Gear-registered routes
+		// Gears handle: / (haproxy overview), /status-grid (haproxy), /logs (logs),
 		// /services (services), /history (metrics), /certificates (certificates),
 		// /traffic (traffic), /alerts (alerts)
-		pluginManager.RegisterRoutes(r)
+		gearManager.RegisterRoutes(r)
 
-		// Page routes (non-plugin)
+		// Page routes (non-gear)
 		r.Get("/os-updates", h.OSUpdatesPage)
 		r.Get("/box/{boxID}/frontend/{name}", h.FrontendDetailPage)
 		r.Get("/box/{boxID}/backend/{name}", h.BackendDetailPage)
@@ -653,9 +653,9 @@ func main() {
 			r.Get("/{boxID}/traffic/network", h.APITrafficNetworkHandler)
 
 			// Integrations API
-			r.Get("/plugins", h.APIPluginsHandler)
-			r.Get("/plugins/status", h.APIPluginStatusHandler)
-			r.Post("/plugins/sort-order", h.APIUpdatePluginSortOrder)
+			r.Get("/gears", h.APIGearsHandler)
+			r.Get("/gears/status", h.APIGearStatusHandler)
+			r.Post("/gears/sort-order", h.APIUpdateGearSortOrder)
 
 			// Database Backup API (admin only - checked in handlers)
 			r.Post("/backup/create", h.APICreateBackup)
@@ -784,7 +784,7 @@ func main() {
 
 	// Stop plugins
 	logger.Info("stopping plugins...")
-	if err := pluginManager.StopAll(context.Background()); err != nil {
+	if err := gearManager.StopAll(context.Background()); err != nil {
 		logger.Warn("error stopping plugins", "error", err)
 	}
 

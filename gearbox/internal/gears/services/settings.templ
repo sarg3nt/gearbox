@@ -1,0 +1,28 @@
+package services
+
+import "github.com/sarg3nt/gearbox/internal/framework/templates/components"
+
+// servicesSettingsComponent renders the services gear settings page.
+templ servicesSettingsComponent(config map[string]any) {
+	{{ autoRefresh := getConfigBool(config, "auto_refresh", true) }}
+	{{ refreshInterval := getConfigInt(config, "refresh_interval", 5) }}
+	@components.SettingsSection("Services Settings", "Configure service monitoring options.") {
+		@components.SettingsCheckbox(
+			"auto_refresh",
+			"Enable auto-refresh",
+			"When enabled, service status will refresh automatically.",
+			autoRefresh,
+		)
+		@components.SettingsSelect(
+			"refresh_interval",
+			"Refresh Interval (seconds)",
+			"How often to refresh service status.",
+			[]components.SelectOption{
+				{Value: "5", Label: "5 seconds", Selected: refreshInterval == 5},
+				{Value: "10", Label: "10 seconds", Selected: refreshInterval == 10},
+				{Value: "30", Label: "30 seconds", Selected: refreshInterval == 30},
+				{Value: "60", Label: "60 seconds", Selected: refreshInterval == 60},
+			},
+		)
+	}
+}

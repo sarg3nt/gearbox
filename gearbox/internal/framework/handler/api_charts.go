@@ -6,7 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sarg3nt/gearbox/internal/framework/models"
-	"github.com/sarg3nt/gearbox/internal/plugins/metrics"
+	"github.com/sarg3nt/gearbox/internal/gears/metrics"
 )
 
 // APIChartsSessionsRequestsHandler returns an HTML fragment with Sessions & Requests chart.

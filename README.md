@@ -7,17 +7,17 @@
 
 ## Overview
 
-Gearbox is a general-purpose monitoring and management platform with a plugin-based architecture. It uses gearbox-agent (a separate Go binary) installed on servers and workstations to gather data and act as a secure agent and controller.
+Gearbox is a general-purpose monitoring and management platform with a gear-based architecture. It uses gearbox-agent (a separate Go binary) installed on servers and workstations to gather data and act as a secure agent and controller.
 
 **Key Capabilities:**
 
 - Monitor multiple servers/workstations from a single dashboard
-- Plugin-based feature system
+- Gear-based feature system
 - Real-time updates via WebSocket
 - Web UI configuration
 - Auto-discovery of services on monitored hosts
 
-**IMPORTANT:** Gearbox is NOT an HAProxy-specific tool. It is a universal monitoring platform. HAProxy monitoring is just one plugin among many.
+**IMPORTANT:** Gearbox is NOT an HAProxy-specific tool. It is a universal monitoring platform. HAProxy monitoring is just one gear among many.
 
 ## 🚀 Getting Started
 
@@ -26,7 +26,7 @@ Gearbox is a general-purpose monitoring and management platform with a plugin-ba
 - Installing the Gearbox dashboard and agent
 - Generating and configuring API keys
 - Adding your first monitored server
-- Enabling plugins
+- Enabling gears
 
 The guide includes detailed examples, troubleshooting tips, and best practices for production deployments.
 
@@ -84,7 +84,7 @@ See [gearbox-agent/README.md](gearbox-agent/README.md) for installation options 
 
 - Go binary installed on monitored servers/workstations
 - Runs on port 8405 (HTTPS)
-- Plugin-based collectors auto-discover services
+- Gear-based collectors auto-discover services
 - Exposes REST API and WebSocket
 - Works on ANY Linux system
 
@@ -93,7 +93,7 @@ See [gearbox-agent/README.md](gearbox-agent/README.md) for installation options 
 - Web dashboard application
 - Runs on port 3000
 - Connects to multiple gearbox-agent instances
-- Plugin-based features
+- Gear-based features
 
 ### Data Flow
 
@@ -101,10 +101,10 @@ See [gearbox-agent/README.md](gearbox-agent/README.md) for installation options 
 Monitored Server → gearbox-agent (collects data) → API/WebSocket → gearbox dashboard → Browser
 ```
 
-### Plugin Architecture
+### Gear Architecture
 
 ```text
-Plugin = Self-contained feature module with pages, API handlers, and templates
+Gear = Self-contained feature module with pages, API handlers, and templates
 Framework = Shared services and building blocks
 ```
 
@@ -117,16 +117,16 @@ Framework = Shared services and building blocks
 - Shared UI components (graphs, tables, panels, cards)
 - Template system (Templ)
 
-**Plugins provide:**
+**Gears provide:**
 
 - Pages and routes
 - API handlers
 - Domain-specific logic
 - Self-contained functionality
 
-### Current Plugins
+### Current Gears
 
-| Plugin       | Purpose                                                   |
+| Gear         | Purpose                                                   |
 |--------------|-----------------------------------------------------------|
 | HAProxy      | HAProxy monitoring and stats                              |
 | Metrics      | System metrics (CPU, memory, disk, network, load, uptime) |
@@ -137,7 +137,7 @@ Framework = Shared services and building blocks
 | Alerts       | Alert management and rules                                |
 | OS Updates   | Package update monitoring                                 |
 
-**Total:** 8 plugins
+**Total:** 8 gears
 
 ## Development Workflow
 
@@ -160,7 +160,7 @@ cd gearbox && make dev
 **Key directories:**
 
 - `internal/framework/` - Shared infrastructure
-- `internal/plugins/` - Feature plugins
+- `internal/gears/` - Feature gears
 - `internal/templates/` - Templ templates
 - `static/` - JavaScript, CSS, assets
 
@@ -178,7 +178,7 @@ cd gearbox-agent && make build
 
 - `internal/api/` - REST API handlers
 - `internal/collector/` - Data collection
-- `internal/plugins/` - Agent-side plugins
+- `internal/gears/` - Agent-side gears
 - `cmd/gearbox-agent/` - Entry point
 
 ## Configuration
@@ -204,8 +204,8 @@ One gearbox dashboard can monitor many servers:
 
 1. Install gearbox-agent on each server to monitor
 2. Configure server in gearbox via Settings > Servers
-3. Enable desired plugins for each server
-4. Plugin pages display data from selected server
+3. Enable desired gears for each server
+4. Gear pages display data from selected server
 
 ## Documentation
 
@@ -213,7 +213,7 @@ One gearbox dashboard can monitor many servers:
 
 - [README.md](README.md) - This file (overview and quick start)
 - [CLAUDE.md](CLAUDE.md) - Development guidance for Claude Code
-- [docs/plugins.md](docs/plugins.md) - Complete plugin architecture documentation
+- [docs/gears.md](docs/gears.md) - Complete gear architecture documentation
 - [TASKS.md](TASKS.md) - Active development tasks
 - [gearbox/docs/development.md](gearbox/docs/development.md) - Local development guide
 
@@ -231,7 +231,7 @@ One gearbox dashboard can monitor many servers:
 - Container and stack management (GitOps-focused Portainer alternative)
 - Multi-server orchestration
 - Infrastructure-as-code integration
-- Additional plugins for databases, web servers, etc.
+- Additional gears for databases, web servers, etc.
 
 ## Contributing
 

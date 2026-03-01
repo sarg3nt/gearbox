@@ -129,21 +129,21 @@ func GetUserFromContext(ctx context.Context) (*models.User, bool) {
 	return user, ok
 }
 
-// SetPluginStatus adds integration status to the context.
-func SetPluginStatus(ctx context.Context, status map[string]bool) context.Context {
+// SetGearStatus adds integration status to the context.
+func SetGearStatus(ctx context.Context, status map[string]bool) context.Context {
 	return context.WithValue(ctx, integrationStatusContextKey, status)
 }
 
-// GetPluginStatusFromContext retrieves integration status from the context.
-func GetPluginStatusFromContext(ctx context.Context) (map[string]bool, bool) {
+// GetGearStatusFromContext retrieves integration status from the context.
+func GetGearStatusFromContext(ctx context.Context) (map[string]bool, bool) {
 	status, ok := ctx.Value(integrationStatusContextKey).(map[string]bool)
 	return status, ok
 }
 
-// IsPluginEnabledFromContext checks if a specific integration is enabled from context.
+// IsGearEnabledFromContext checks if a specific integration is enabled from context.
 // Returns true if the integration is enabled or if the status is not in context (fail open).
-func IsPluginEnabledFromContext(ctx context.Context, name string) bool {
-	status, ok := GetPluginStatusFromContext(ctx)
+func IsGearEnabledFromContext(ctx context.Context, name string) bool {
+	status, ok := GetGearStatusFromContext(ctx)
 	if !ok {
 		// If no status in context, assume enabled (fail open)
 		return true
@@ -161,8 +161,8 @@ func SetIntegrationOrder(ctx context.Context, integrations []SidebarIntegration)
 	return context.WithValue(ctx, integrationOrderContextKey, integrations)
 }
 
-// GetPluginOrderFromContext retrieves ordered integrations from the context.
-func GetPluginOrderFromContext(ctx context.Context) ([]SidebarIntegration, bool) {
+// GetGearOrderFromContext retrieves ordered integrations from the context.
+func GetGearOrderFromContext(ctx context.Context) ([]SidebarIntegration, bool) {
 	integrations, ok := ctx.Value(integrationOrderContextKey).([]SidebarIntegration)
 	return integrations, ok
 }

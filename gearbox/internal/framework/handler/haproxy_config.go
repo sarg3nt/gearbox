@@ -138,7 +138,7 @@ func (h *Handler) HAProxyBoxCreatePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Redirect to plugins page so user can enable plugins for this new server
-	http.Redirect(w, r, "/settings/plugins?server="+url.QueryEscape(server.BoxID), http.StatusSeeOther)
+	http.Redirect(w, r, "/settings/gears?server="+url.QueryEscape(server.BoxID), http.StatusSeeOther)
 }
 
 // HAProxyBoxEditPage shows the form for editing a server.

@@ -5,7 +5,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sarg3nt/gearbox/internal/framework/models"
-	"github.com/sarg3nt/gearbox/internal/plugins/metrics"
+	"github.com/sarg3nt/gearbox/internal/gears/metrics"
 )
 
 // APIMetricsCPUHandler returns an HTML fragment with CPU usage for the dashboard widget.

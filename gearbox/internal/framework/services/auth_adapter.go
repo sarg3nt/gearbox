@@ -7,11 +7,11 @@ import (
 	"net/http"
 
 	"github.com/sarg3nt/gearbox/internal/framework/auth"
-	"github.com/sarg3nt/gearbox/internal/framework/plugin"
+	"github.com/sarg3nt/gearbox/internal/framework/gear"
 	"github.com/sarg3nt/gearbox/internal/framework/models"
 )
 
-// AuthAdapter wraps the auth.Manager to implement plugin.AuthChecker.
+// AuthAdapter wraps the auth.Manager to implement gear.AuthChecker.
 type AuthAdapter struct {
 	manager *auth.Manager
 }
@@ -27,13 +27,13 @@ func (a *AuthAdapter) IsAuthenticated(r *http.Request) bool {
 }
 
 // GetUser retrieves the authenticated user from the request.
-func (a *AuthAdapter) GetUser(r *http.Request) *plugin.User {
+func (a *AuthAdapter) GetUser(r *http.Request) *gear.User {
 	user, err := a.manager.GetUser(r)
 	if err != nil || user == nil {
 		return nil
 	}
 
-	return &plugin.User{
+	return &gear.User{
 		ID:        user.ID,
 		Email:     user.Email,
 		FirstName: user.FirstName,
@@ -64,20 +64,20 @@ func (a *AuthAdapter) GetUserPermissions(r *http.Request) (*models.UserPermissio
 	return a.manager.GetUserPermissions(r)
 }
 
-// GetPluginUserPermissions implements plugin.FullAuthChecker.
+// GetGearUserPermissions implements gear.FullAuthChecker.
 // Returns the user's permissions in the plugin-defined format.
-func (a *AuthAdapter) GetPluginUserPermissions(r *http.Request) (*plugin.UserPermissions, error) {
+func (a *AuthAdapter) GetGearUserPermissions(r *http.Request) (*gear.UserPermissions, error) {
 	modelPerms, err := a.manager.GetUserPermissions(r)
 	if err != nil {
 		return nil, err
 	}
 	if modelPerms == nil {
-		return &plugin.UserPermissions{Permissions: make(map[string]map[string]bool)}, nil
+		return &gear.UserPermissions{Permissions: make(map[string]map[string]bool)}, nil
 	}
 
-	// Convert models.UserPermissions to plugin.UserPermissions
+	// Convert models.UserPermissions to gear.UserPermissions
 	// models uses map[Component][]Permission, plugin uses map[string]map[string]bool
-	perms := &plugin.UserPermissions{
+	perms := &gear.UserPermissions{
 		Permissions: make(map[string]map[string]bool),
 	}
 
@@ -96,15 +96,15 @@ func (a *AuthAdapter) GetPluginUserPermissions(r *http.Request) (*plugin.UserPer
 	return perms, nil
 }
 
-// GetFullUser implements plugin.FullAuthChecker.
+// GetFullUser implements gear.FullAuthChecker.
 // Returns the complete user model from the request context.
-func (a *AuthAdapter) GetFullUser(r *http.Request) *plugin.FullUser {
+func (a *AuthAdapter) GetFullUser(r *http.Request) *gear.FullUser {
 	user, err := a.manager.GetUser(r)
 	if err != nil || user == nil {
 		return nil
 	}
 
-	return &plugin.FullUser{
+	return &gear.FullUser{
 		ID:                 user.ID,
 		Email:              user.Email,
 		FirstName:          user.FirstName,
@@ -114,8 +114,8 @@ func (a *AuthAdapter) GetFullUser(r *http.Request) *plugin.FullUser {
 	}
 }
 
-// Ensure AuthAdapter implements plugin.AuthChecker and plugin.FullAuthChecker.
+// Ensure AuthAdapter implements gear.AuthChecker and gear.FullAuthChecker.
 var (
-	_ plugin.AuthChecker     = (*AuthAdapter)(nil)
-	_ plugin.FullAuthChecker = (*AuthAdapter)(nil)
+	_ gear.AuthChecker     = (*AuthAdapter)(nil)
+	_ gear.FullAuthChecker = (*AuthAdapter)(nil)
 )

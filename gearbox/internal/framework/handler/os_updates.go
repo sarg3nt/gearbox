@@ -27,7 +27,7 @@ func (h *Handler) OSUpdatesPage(w http.ResponseWriter, r *http.Request) {
 		boxID = h.getDefaultServerID()
 	}
 
-	enabled, _ := h.db.IsPluginEnabled(boxID, database.PluginOSUpdates)
+	enabled, _ := h.db.IsGearEnabled(boxID, database.GearOSUpdates)
 	if !enabled {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return

@@ -1,0 +1,959 @@
+// Package updates provides OS update management as a gear.
+package updates
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"strconv"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/sarg3nt/gearbox-agent/internal/framework/events"
+	"github.com/sarg3nt/gearbox-agent/internal/framework/gear"
+)
+
+func init() {
+	gear.Register(&Gear{})
+}
+
+// Plugin provides OS update and package management functionality.
+type Gear struct {
+	gear.BaseGear
+	collector *UpdatesCollector
+	aptRunner *AptRunner
+	eventBus  *events.Bus
+}
+
+// Info returns plugin metadata.
+func (p *Gear) Info() gear.Info {
+	return gear.Info{
+		Name:        "updates",
+		DisplayName: "OS Updates",
+		Description: "Manages OS updates, packages, snapshots, and unattended-upgrades",
+		Version:     "1.0.0",
+		Category:    "system",
+		Core:        false,
+	}
+}
+
+// Initialize sets up the gear.
+func (p *Gear) Initialize(ctx context.Context, deps gear.Dependencies) error {
+	if err := p.BaseGear.Initialize(ctx, deps); err != nil {
+		return err
+	}
+
+	p.collector = NewUpdatesCollector()
+	p.eventBus = deps.EventBus
+	if p.eventBus != nil {
+		p.aptRunner = NewAptRunner(p.eventBus)
+	}
+	return nil
+}
+
+// Start is a no-op for this gear.
+func (p *Gear) Start(ctx context.Context) error {
+	return nil
+}
+
+// Stop cleans up resources.
+func (p *Gear) Stop(ctx context.Context) error {
+	return nil
+}
+
+// RegisterRoutes registers HTTP API routes.
+func (p *Gear) RegisterRoutes(r chi.Router) {
+	// Update status and actions
+	r.Get("/api/v1/system/updates", p.handleStatus)
+	r.Get("/api/v1/system/updates/list", p.handleListUpgradable)
+	r.Post("/api/v1/system/updates/check", p.handleTriggerCheck)
+	r.Post("/api/v1/system/updates/install", p.handleInstallUpdates)
+	r.Get("/api/v1/system/updates/history", p.handleHistory)
+	r.Get("/api/v1/system/updates/reboot-required", p.handleRebootRequired)
+	r.Post("/api/v1/system/updates/reboot", p.handleScheduleReboot)
+	r.Delete("/api/v1/system/updates/reboot", p.handleCancelReboot)
+
+	// Snapshots
+	r.Get("/api/v1/system/updates/snapshots", p.handleListSnapshots)
+	r.Post("/api/v1/system/updates/snapshots", p.handleCreateSnapshot)
+	r.Post("/api/v1/system/updates/snapshots/restore", p.handleRestoreSnapshot)
+	r.Delete("/api/v1/system/updates/snapshots/{id}", p.handleDeleteSnapshot)
+
+	// Package management
+	r.Get("/api/v1/system/packages/search", p.handleSearchPackages)
+	r.Post("/api/v1/system/packages/install", p.handleInstallPackage)
+	r.Post("/api/v1/system/packages/remove", p.handleRemovePackage)
+
+	// Pipx
+	r.Get("/api/v1/system/pipx", p.handlePipxStatus)
+	r.Post("/api/v1/system/pipx/install", p.handlePipxInstall)
+	r.Post("/api/v1/system/pipx/uninstall", p.handlePipxUninstall)
+	r.Post("/api/v1/system/pipx/upgrade", p.handlePipxUpgrade)
+	r.Post("/api/v1/system/pipx/upgrade-all", p.handlePipxUpgradeAll)
+
+	// Unattended-upgrades
+	r.Get("/api/v1/system/updates/unattended", p.handleUnattendedConfig)
+	r.Post("/api/v1/system/updates/unattended", p.handleConfigureUnattended)
+
+	// Operations
+	r.Get("/api/v1/system/updates/operations", p.handleListOperations)
+	r.Get("/api/v1/system/updates/operation/{id}", p.handleGetOperation)
+	r.Delete("/api/v1/system/updates/operation/{id}", p.handleCancelOperation)
+}
+
+// EventTypes returns the events this plugin publishes.
+func (p *Gear) EventTypes() []gear.EventType {
+	return []gear.EventType{
+		{
+			Name:        "apt.output",
+			Description: "Published when apt produces output during streaming operations",
+			Payload:     "operation_id, line, stream (stdout/stderr)",
+		},
+		{
+			Name:        "apt.completed",
+			Description: "Published when an apt operation completes",
+			Payload:     "operation_id, status, exit_code, error",
+		},
+	}
+}
+
+// Response types
+
+// UpdateStatusResponse represents the current update status.
+type UpdateStatusResponse struct {
+	Available        bool   `json:"available"`
+	TotalUpdates     int    `json:"total_updates"`
+	SecurityUpdates  int    `json:"security_updates"`
+	RebootRequired   bool   `json:"reboot_required"`
+	LastCheck        string `json:"last_check"`
+	UnattendedActive bool   `json:"unattended_active"`
+}
+
+// PackageListResponse represents a list of packages.
+type PackageListResponse struct {
+	Packages []Package `json:"packages"`
+	Count    int              `json:"count"`
+}
+
+// InstallUpdatesRequest represents a request to install updates.
+type InstallUpdatesRequest struct {
+	Packages       []string `json:"packages"`
+	SecurityOnly   bool     `json:"security_only"`
+	CreateSnapshot bool     `json:"create_snapshot"`
+}
+
+// InstallUpdatesResponse represents the result of installing updates.
+type InstallUpdatesResponse struct {
+	Success    bool     `json:"success"`
+	Message    string   `json:"message"`
+	Packages   []string `json:"packages"`
+	SnapshotID string   `json:"snapshot_id,omitempty"`
+}
+
+// StreamingInstallResponse represents the response for streaming install.
+type StreamingInstallResponse struct {
+	OperationID string `json:"operation_id"`
+	Status      string `json:"status"`
+	Message     string `json:"message"`
+}
+
+// UpdateHistoryResponse represents package update history.
+type UpdateHistoryResponse struct {
+	History []UpdateHistoryEntry `json:"history"`
+	Count   int                         `json:"count"`
+}
+
+// RebootRequiredResponse represents reboot status.
+type RebootRequiredResponse struct {
+	Required bool     `json:"required"`
+	Packages []string `json:"packages"`
+}
+
+// ScheduleRebootRequest represents a reboot scheduling request.
+type ScheduleRebootRequest struct {
+	When string `json:"when"`
+}
+
+// ScheduleRebootResponse represents reboot scheduling result.
+type ScheduleRebootResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
+// SnapshotsResponse represents available snapshots.
+type SnapshotsResponse struct {
+	Snapshots []AptSnapshot `json:"snapshots"`
+	Count     int                  `json:"count"`
+}
+
+// CreateSnapshotRequest represents a snapshot creation request.
+type CreateSnapshotRequest struct {
+	Reason string `json:"reason"`
+}
+
+// CreateSnapshotResponse represents snapshot creation result.
+type CreateSnapshotResponse struct {
+	Success  bool                `json:"success"`
+	Message  string              `json:"message"`
+	Snapshot *AptSnapshot `json:"snapshot,omitempty"`
+}
+
+// RestoreSnapshotRequest represents a snapshot restore request.
+type RestoreSnapshotRequest struct {
+	SnapshotID string `json:"snapshot_id"`
+}
+
+// RestoreSnapshotResponse represents snapshot restore result.
+type RestoreSnapshotResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
+// PackageSearchResponse represents package search results.
+type PackageSearchResponse struct {
+	Packages []InstalledPackage `json:"packages"`
+	Count    int                       `json:"count"`
+}
+
+// InstallPackageRequest represents a package installation request.
+type InstallPackageRequest struct {
+	Name string `json:"name"`
+}
+
+// InstallPackageResponse represents package installation result.
+type InstallPackageResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+	Package string `json:"package"`
+}
+
+// RemovePackageRequest represents a package removal request.
+type RemovePackageRequest struct {
+	Name  string `json:"name"`
+	Purge bool   `json:"purge"`
+}
+
+// PipxStatusResponse represents pipx availability status.
+type PipxStatusResponse struct {
+	Available bool                 `json:"available"`
+	Packages  []PipxPackage `json:"packages,omitempty"`
+	Count     int                  `json:"count"`
+}
+
+// PipxPackageRequest represents a pipx package operation request.
+type PipxPackageRequest struct {
+	Name string `json:"name"`
+}
+
+// PipxPackageResponse represents a pipx operation result.
+type PipxPackageResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+	Package string `json:"package"`
+}
+
+// UnattendedConfigResponse represents unattended-upgrades configuration.
+type UnattendedConfigResponse struct {
+	Enabled     bool `json:"enabled"`
+	AutoUpdate  bool `json:"auto_update"`
+	AutoUpgrade bool `json:"auto_upgrade"`
+	AutoReboot  bool `json:"auto_reboot"`
+	MailOnError bool `json:"mail_on_error"`
+}
+
+// ConfigureUnattendedRequest represents unattended-upgrades configuration request.
+type ConfigureUnattendedRequest struct {
+	Enabled    bool `json:"enabled"`
+	AutoReboot bool `json:"auto_reboot"`
+}
+
+// OperationsListResponse represents a list of apt operations.
+type OperationsListResponse struct {
+	Operations []OperationStatusResponse `json:"operations"`
+	Count      int                       `json:"count"`
+}
+
+// OperationStatusResponse represents the status of an apt operation.
+type OperationStatusResponse struct {
+	ID           string   `json:"id"`
+	Type         string   `json:"type"`
+	Status       string   `json:"status"`
+	StartedAt    string   `json:"started_at"`
+	CompletedAt  *string  `json:"completed_at,omitempty"`
+	ExitCode     int      `json:"exit_code"`
+	Packages     []string `json:"packages,omitempty"`
+	SecurityOnly bool     `json:"security_only,omitempty"`
+	Error        string   `json:"error,omitempty"`
+}
+
+// HTTP Handlers
+
+func (p *Gear) handleStatus(w http.ResponseWriter, r *http.Request) {
+	info, err := p.collector.CheckUpdates()
+	if err != nil {
+		http.Error(w, "Failed to check updates: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := UpdateStatusResponse{
+		Available:        info.Available,
+		TotalUpdates:     info.TotalUpdates,
+		SecurityUpdates:  info.SecurityUpdates,
+		RebootRequired:   info.RebootRequired,
+		LastCheck:        info.LastCheck.Format("2006-01-02T15:04:05Z07:00"),
+		UnattendedActive: info.UnattendedActive,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (p *Gear) handleListUpgradable(w http.ResponseWriter, r *http.Request) {
+	packages, err := p.collector.ListUpgradable()
+	if err != nil {
+		http.Error(w, "Failed to list upgradable packages: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := PackageListResponse{
+		Packages: packages,
+		Count:    len(packages),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (p *Gear) handleTriggerCheck(w http.ResponseWriter, r *http.Request) {
+	streaming := r.URL.Query().Get("stream") == "true"
+
+	if streaming && p.aptRunner != nil {
+		p.Logger().Info("Triggering streaming apt update check")
+
+		operationID, err := p.aptRunner.StartCheck()
+		if err != nil {
+			http.Error(w, "Failed to start update check: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		resp := StreamingInstallResponse{
+			OperationID: operationID,
+			Status:      "started",
+			Message:     "Update check started. Watch apt.output events for progress.",
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+
+	p.Logger().Info("Triggering apt update check (sync mode)")
+
+	if err := p.collector.TriggerUpdateCheck(); err != nil {
+		p.Logger().Error("apt update failed", "error", err)
+		http.Error(w, "Failed to trigger update check: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	p.handleStatus(w, r)
+}
+
+func (p *Gear) handleInstallUpdates(w http.ResponseWriter, r *http.Request) {
+	var req InstallUpdatesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	streaming := r.URL.Query().Get("stream") == "true"
+
+	if streaming && p.aptRunner != nil {
+		p.Logger().Info("Starting streaming install", "security_only", req.SecurityOnly, "packages", req.Packages)
+
+		operationID, err := p.aptRunner.StartInstall(req.SecurityOnly, req.Packages, req.CreateSnapshot)
+		if err != nil {
+			http.Error(w, "Failed to start installation: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		resp := StreamingInstallResponse{
+			OperationID: operationID,
+			Status:      "started",
+			Message:     "Update installation started. Watch apt.output events for progress.",
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+
+	resp := InstallUpdatesResponse{Success: true}
+
+	if req.CreateSnapshot {
+		snapshot, err := p.collector.CreateSnapshot("pre-update")
+		if err != nil {
+			p.Logger().Warn("Failed to create snapshot", "error", err)
+		} else {
+			resp.SnapshotID = snapshot.ID
+		}
+	}
+
+	p.Logger().Info("Installing updates (sync mode)", "security_only", req.SecurityOnly, "packages", req.Packages)
+
+	packages, err := p.collector.InstallUpdates(req.SecurityOnly, req.Packages)
+	if err != nil {
+		p.Logger().Error("Failed to install updates", "error", err)
+		resp.Success = false
+		resp.Message = err.Error()
+	} else {
+		resp.Packages = packages
+		resp.Message = "Updates installed successfully"
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (p *Gear) handleHistory(w http.ResponseWriter, r *http.Request) {
+	limit := 50
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+			limit = l
+		}
+	}
+
+	history, err := p.collector.GetUpdateHistory(limit)
+	if err != nil {
+		http.Error(w, "Failed to get update history: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := UpdateHistoryResponse{
+		History: history,
+		Count:   len(history),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (p *Gear) handleRebootRequired(w http.ResponseWriter, r *http.Request) {
+	packages, _ := p.collector.GetRebootRequiredPackages()
+
+	resp := RebootRequiredResponse{
+		Required: len(packages) > 0,
+		Packages: packages,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (p *Gear) handleScheduleReboot(w http.ResponseWriter, r *http.Request) {
+	var req ScheduleRebootRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	p.Logger().Info("Scheduling reboot", "when", req.When)
+
+	if err := p.collector.ScheduleReboot(req.When); err != nil {
+		http.Error(w, "Failed to schedule reboot: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := ScheduleRebootResponse{
+		Success: true,
+		Message: "Reboot scheduled",
+	}
+	if req.When == "" {
+		resp.Message = "Immediate reboot initiated"
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (p *Gear) handleCancelReboot(w http.ResponseWriter, r *http.Request) {
+	p.Logger().Info("Cancelling scheduled reboot")
+
+	if err := p.collector.CancelReboot(); err != nil {
+		http.Error(w, "Failed to cancel reboot: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := ScheduleRebootResponse{
+		Success: true,
+		Message: "Scheduled reboot cancelled",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// Snapshot handlers
+
+func (p *Gear) handleListSnapshots(w http.ResponseWriter, r *http.Request) {
+	snapshots, err := p.collector.ListSnapshots()
+	if err != nil {
+		http.Error(w, "Failed to list snapshots: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := SnapshotsResponse{
+		Snapshots: snapshots,
+		Count:     len(snapshots),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (p *Gear) handleCreateSnapshot(w http.ResponseWriter, r *http.Request) {
+	var req CreateSnapshotRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		req.Reason = "manual"
+	}
+	if req.Reason == "" {
+		req.Reason = "manual"
+	}
+
+	p.Logger().Info("Creating package snapshot", "reason", req.Reason)
+
+	snapshot, err := p.collector.CreateSnapshot(req.Reason)
+	if err != nil {
+		http.Error(w, "Failed to create snapshot: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := CreateSnapshotResponse{
+		Success:  true,
+		Message:  "Snapshot created",
+		Snapshot: snapshot,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (p *Gear) handleRestoreSnapshot(w http.ResponseWriter, r *http.Request) {
+	var req RestoreSnapshotRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.SnapshotID == "" {
+		http.Error(w, "snapshot_id is required", http.StatusBadRequest)
+		return
+	}
+
+	p.Logger().Warn("Restoring package snapshot", "snapshot_id", req.SnapshotID)
+
+	if err := p.collector.RestoreSnapshot(req.SnapshotID); err != nil {
+		http.Error(w, "Failed to restore snapshot: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := RestoreSnapshotResponse{
+		Success: true,
+		Message: "Snapshot restored successfully",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (p *Gear) handleDeleteSnapshot(w http.ResponseWriter, r *http.Request) {
+	snapshotID := chi.URLParam(r, "id")
+	if snapshotID == "" {
+		http.Error(w, "snapshot_id is required", http.StatusBadRequest)
+		return
+	}
+
+	p.Logger().Info("Deleting package snapshot", "snapshot_id", snapshotID)
+
+	if err := p.collector.DeleteSnapshot(snapshotID); err != nil {
+		http.Error(w, "Failed to delete snapshot: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := RestoreSnapshotResponse{
+		Success: true,
+		Message: "Snapshot deleted",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// Package management handlers
+
+func (p *Gear) handleSearchPackages(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query().Get("query")
+	if query == "" {
+		http.Error(w, "query parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	limit := 50
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+			limit = l
+		}
+	}
+
+	packages, err := p.collector.SearchPackages(query, limit)
+	if err != nil {
+		http.Error(w, "Failed to search packages: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := PackageSearchResponse{
+		Packages: packages,
+		Count:    len(packages),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (p *Gear) handleInstallPackage(w http.ResponseWriter, r *http.Request) {
+	var req InstallPackageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.Name == "" {
+		http.Error(w, "package name is required", http.StatusBadRequest)
+		return
+	}
+
+	p.Logger().Info("Installing package", "name", req.Name)
+
+	if err := p.collector.InstallPackage(req.Name); err != nil {
+		http.Error(w, "Failed to install package: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := InstallPackageResponse{
+		Success: true,
+		Message: "Package installed successfully",
+		Package: req.Name,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (p *Gear) handleRemovePackage(w http.ResponseWriter, r *http.Request) {
+	var req RemovePackageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.Name == "" {
+		http.Error(w, "package name is required", http.StatusBadRequest)
+		return
+	}
+
+	p.Logger().Info("Removing package", "name", req.Name, "purge", req.Purge)
+
+	if err := p.collector.RemovePackage(req.Name, req.Purge); err != nil {
+		http.Error(w, "Failed to remove package: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := InstallPackageResponse{
+		Success: true,
+		Message: "Package removed successfully",
+		Package: req.Name,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// Pipx handlers
+
+func (p *Gear) handlePipxStatus(w http.ResponseWriter, r *http.Request) {
+	resp := PipxStatusResponse{
+		Available: p.collector.IsPipxAvailable(),
+	}
+
+	if resp.Available {
+		packages, err := p.collector.ListPipxPackages()
+		if err == nil {
+			resp.Packages = packages
+			resp.Count = len(packages)
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (p *Gear) handlePipxInstall(w http.ResponseWriter, r *http.Request) {
+	var req PipxPackageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.Name == "" {
+		http.Error(w, "package name is required", http.StatusBadRequest)
+		return
+	}
+
+	p.Logger().Info("Installing pipx package", "name", req.Name)
+
+	if err := p.collector.InstallPipxPackage(req.Name); err != nil {
+		http.Error(w, "Failed to install pipx package: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := PipxPackageResponse{
+		Success: true,
+		Message: "Package installed successfully",
+		Package: req.Name,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (p *Gear) handlePipxUninstall(w http.ResponseWriter, r *http.Request) {
+	var req PipxPackageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.Name == "" {
+		http.Error(w, "package name is required", http.StatusBadRequest)
+		return
+	}
+
+	p.Logger().Info("Uninstalling pipx package", "name", req.Name)
+
+	if err := p.collector.UninstallPipxPackage(req.Name); err != nil {
+		http.Error(w, "Failed to uninstall pipx package: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := PipxPackageResponse{
+		Success: true,
+		Message: "Package uninstalled successfully",
+		Package: req.Name,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (p *Gear) handlePipxUpgrade(w http.ResponseWriter, r *http.Request) {
+	var req PipxPackageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.Name == "" {
+		http.Error(w, "package name is required", http.StatusBadRequest)
+		return
+	}
+
+	p.Logger().Info("Upgrading pipx package", "name", req.Name)
+
+	if err := p.collector.UpgradePipxPackage(req.Name); err != nil {
+		http.Error(w, "Failed to upgrade pipx package: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := PipxPackageResponse{
+		Success: true,
+		Message: "Package upgraded successfully",
+		Package: req.Name,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (p *Gear) handlePipxUpgradeAll(w http.ResponseWriter, r *http.Request) {
+	p.Logger().Info("Upgrading all pipx packages")
+
+	if err := p.collector.UpgradeAllPipxPackages(); err != nil {
+		http.Error(w, "Failed to upgrade all pipx packages: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := PipxPackageResponse{
+		Success: true,
+		Message: "All packages upgraded successfully",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// Unattended-upgrades handlers
+
+func (p *Gear) handleUnattendedConfig(w http.ResponseWriter, r *http.Request) {
+	config, _ := p.collector.GetUnattendedUpgradesConfig()
+
+	resp := UnattendedConfigResponse{}
+	if v, ok := config["enabled"].(bool); ok {
+		resp.Enabled = v
+	}
+	if v, ok := config["auto_update"].(bool); ok {
+		resp.AutoUpdate = v
+	}
+	if v, ok := config["auto_upgrade"].(bool); ok {
+		resp.AutoUpgrade = v
+	}
+	if v, ok := config["auto_reboot"].(bool); ok {
+		resp.AutoReboot = v
+	}
+	if v, ok := config["mail_on_error"].(bool); ok {
+		resp.MailOnError = v
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (p *Gear) handleConfigureUnattended(w http.ResponseWriter, r *http.Request) {
+	var req ConfigureUnattendedRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	p.Logger().Info("Configuring unattended-upgrades", "enabled", req.Enabled, "auto_reboot", req.AutoReboot)
+
+	if err := p.collector.ConfigureUnattendedUpgrades(req.Enabled, req.AutoReboot); err != nil {
+		http.Error(w, "Failed to configure unattended-upgrades: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	p.handleUnattendedConfig(w, r)
+}
+
+// Operations handlers
+
+func (p *Gear) handleListOperations(w http.ResponseWriter, r *http.Request) {
+	if p.aptRunner == nil {
+		resp := OperationsListResponse{
+			Operations: []OperationStatusResponse{},
+			Count:      0,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+
+	ops := p.aptRunner.ListOperations()
+	operations := make([]OperationStatusResponse, 0, len(ops))
+	for _, op := range ops {
+		opResp := OperationStatusResponse{
+			ID:           op.ID,
+			Type:         op.Type,
+			Status:       op.Status,
+			StartedAt:    op.StartedAt.Format("2006-01-02T15:04:05Z07:00"),
+			ExitCode:     op.ExitCode,
+			Packages:     op.Packages,
+			SecurityOnly: op.SecurityOnly,
+			Error:        op.Error,
+		}
+		if op.CompletedAt != nil {
+			completedAt := op.CompletedAt.Format("2006-01-02T15:04:05Z07:00")
+			opResp.CompletedAt = &completedAt
+		}
+		operations = append(operations, opResp)
+	}
+
+	resp := OperationsListResponse{
+		Operations: operations,
+		Count:      len(operations),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (p *Gear) handleGetOperation(w http.ResponseWriter, r *http.Request) {
+	operationID := chi.URLParam(r, "id")
+	if operationID == "" {
+		http.Error(w, "operation_id is required", http.StatusBadRequest)
+		return
+	}
+
+	if p.aptRunner == nil {
+		http.Error(w, "Streaming operations not available", http.StatusNotImplemented)
+		return
+	}
+
+	op, ok := p.aptRunner.GetOperation(operationID)
+	if !ok {
+		http.Error(w, "Operation not found", http.StatusNotFound)
+		return
+	}
+
+	resp := OperationStatusResponse{
+		ID:           op.ID,
+		Type:         op.Type,
+		Status:       op.Status,
+		StartedAt:    op.StartedAt.Format("2006-01-02T15:04:05Z07:00"),
+		ExitCode:     op.ExitCode,
+		Packages:     op.Packages,
+		SecurityOnly: op.SecurityOnly,
+		Error:        op.Error,
+	}
+
+	if op.CompletedAt != nil {
+		completedAt := op.CompletedAt.Format("2006-01-02T15:04:05Z07:00")
+		resp.CompletedAt = &completedAt
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (p *Gear) handleCancelOperation(w http.ResponseWriter, r *http.Request) {
+	operationID := chi.URLParam(r, "id")
+	if operationID == "" {
+		http.Error(w, "operation_id is required", http.StatusBadRequest)
+		return
+	}
+
+	if p.aptRunner == nil {
+		http.Error(w, "Streaming operations not available", http.StatusNotImplemented)
+		return
+	}
+
+	if p.aptRunner.CancelOperation(operationID) {
+		p.Logger().Info("Cancelled apt operation", "operation_id", operationID)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "cancelled"})
+	} else {
+		http.Error(w, "Operation not found or not running", http.StatusNotFound)
+	}
+}
+
+// GetUpdatesCollector returns the updates collector for use by other components.
+func (p *Gear) GetUpdatesCollector() *UpdatesCollector {
+	return p.collector
+}
+
+// GetAptRunner returns the apt runner for use by other components.
+func (p *Gear) GetAptRunner() *AptRunner {
+	return p.aptRunner
+}
+
+// Ensure plugin implements required interfaces.
+var _ gear.Gear = (*Gear)(nil)

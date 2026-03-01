@@ -37,17 +37,17 @@ import (
 	"github.com/sarg3nt/gearbox-agent/internal/framework/crypto"
 	"github.com/sarg3nt/gearbox-agent/internal/framework/events"
 	"github.com/sarg3nt/gearbox-agent/internal/framework/middleware"
-	"github.com/sarg3nt/gearbox-agent/internal/framework/plugin"
+	"github.com/sarg3nt/gearbox-agent/internal/framework/gear"
 	"github.com/sarg3nt/gearbox-agent/internal/framework/services/sync"
 
 	// Import plugins - blank identifier triggers init() registration
-	_ "github.com/sarg3nt/gearbox-agent/internal/plugins/certs"
-	_ "github.com/sarg3nt/gearbox-agent/internal/plugins/haproxy"
-	_ "github.com/sarg3nt/gearbox-agent/internal/plugins/logs"
-	_ "github.com/sarg3nt/gearbox-agent/internal/plugins/metrics"
-	_ "github.com/sarg3nt/gearbox-agent/internal/plugins/security"
-	_ "github.com/sarg3nt/gearbox-agent/internal/plugins/traffic"
-	_ "github.com/sarg3nt/gearbox-agent/internal/plugins/updates"
+	_ "github.com/sarg3nt/gearbox-agent/internal/gears/certs"
+	_ "github.com/sarg3nt/gearbox-agent/internal/gears/haproxy"
+	_ "github.com/sarg3nt/gearbox-agent/internal/gears/logs"
+	_ "github.com/sarg3nt/gearbox-agent/internal/gears/metrics"
+	_ "github.com/sarg3nt/gearbox-agent/internal/gears/security"
+	_ "github.com/sarg3nt/gearbox-agent/internal/gears/traffic"
+	_ "github.com/sarg3nt/gearbox-agent/internal/gears/updates"
 )
 
 var (
@@ -350,10 +350,10 @@ func main() {
 	server := api.NewServer(serverCfg)
 
 	// Initialize plugin system
-	logger.Info("Initializing plugin system", "registered_plugins", plugin.Count())
+	logger.Info("Initializing gear system", "registered_gears", gear.Count())
 
 	// Create plugin dependencies
-	pluginDeps := plugin.Dependencies{
+	gearDeps := gear.Dependencies{
 		Logger:               logger,
 		EventBus:             eventBus,
 		HTTPClient:           http.DefaultClient,
@@ -368,17 +368,17 @@ func main() {
 	}
 
 	// Create plugin manager
-	pluginManager := plugin.NewManager(pluginDeps, logger)
+	gearManager := gear.NewManager(gearDeps, logger)
 
 	// Initialize all plugins
 	ctx := context.Background()
-	if err := pluginManager.InitializeAll(ctx); err != nil {
+	if err := gearManager.InitializeAll(ctx); err != nil {
 		logger.Error("Failed to initialize plugins", "error", err)
 		os.Exit(1)
 	}
 
 	// Start all plugins
-	if err := pluginManager.StartAll(ctx); err != nil {
+	if err := gearManager.StartAll(ctx); err != nil {
 		logger.Error("Failed to start plugins", "error", err)
 		os.Exit(1)
 	}
@@ -390,11 +390,11 @@ func main() {
 		r.Use(middleware.RateLimitMiddleware(rateLimiter))
 		r.Use(middleware.APIKeyAuth(server.APIKey(), logger))
 	})
-	pluginManager.RegisterRoutes(pluginRouter)
+	gearManager.RegisterRoutes(pluginRouter)
 
 	logger.Info("Plugin system initialized",
-		"plugins", plugin.Names(),
-		"services", plugin.GetAllMonitoredServices(),
+		"plugins", gear.Names(),
+		"services", gear.GetAllMonitoredServices(),
 	)
 
 	// Channel to signal server startup failure
@@ -510,7 +510,7 @@ func main() {
 	// Stop plugins
 	logger.Info("Stopping plugins...")
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	if err := pluginManager.StopAll(shutdownCtx); err != nil {
+	if err := gearManager.StopAll(shutdownCtx); err != nil {
 		logger.Warn("Error stopping plugins", "error", err)
 	}
 	shutdownCancel()

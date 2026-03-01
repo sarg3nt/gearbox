@@ -60,9 +60,9 @@ func New(dbPath string, logger *slog.Logger) (*DB, error) {
 		return nil, fmt.Errorf("failed to initialize schema: %w", err)
 	}
 
-	// Initialize plugins schema (depends on users table existing)
-	if err := d.initPluginsSchema(); err != nil {
-		return nil, fmt.Errorf("failed to initialize plugins schema: %w", err)
+	// Initialize gears schema (depends on users table existing)
+	if err := d.initGearsSchema(); err != nil {
+		return nil, fmt.Errorf("failed to initialize gears schema: %w", err)
 	}
 
 	// Initialize permissions schema (depends on users table existing)
@@ -106,7 +106,7 @@ func (d *DB) Close() error {
 }
 
 // GetDB returns the underlying *sql.DB connection.
-// This is primarily used by the plugin system for direct database access.
+// This is primarily used by the gear system for direct database access.
 func (d *DB) GetDB() *sql.DB {
 	return d.db
 }

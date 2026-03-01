@@ -2,10 +2,10 @@ package services
 
 import (
 	"github.com/sarg3nt/gearbox/internal/framework/events"
-	"github.com/sarg3nt/gearbox/internal/framework/plugin"
+	"github.com/sarg3nt/gearbox/internal/framework/gear"
 )
 
-// EventsAdapter wraps the events.Hub to implement plugin.EventPublisher.
+// EventsAdapter wraps the events.Hub to implement gear.EventPublisher.
 type EventsAdapter struct {
 	hub *events.Hub
 }
@@ -16,8 +16,8 @@ func NewEventsAdapter(hub *events.Hub) *EventsAdapter {
 }
 
 // Publish broadcasts an event to all subscribers.
-func (e *EventsAdapter) Publish(event plugin.Event) {
-	// Convert plugin.Event to events.Event
+func (e *EventsAdapter) Publish(event gear.Event) {
+	// Convert gear.Event to events.Event
 	hubEvent := events.Event{
 		Type:     events.EventType(event.Type),
 		ServerID: event.ServerID,
@@ -28,7 +28,7 @@ func (e *EventsAdapter) Publish(event plugin.Event) {
 
 // Subscribe registers a handler for events of a specific type.
 // Returns a function to unsubscribe.
-func (e *EventsAdapter) Subscribe(eventType string, handler func(plugin.Event)) func() {
+func (e *EventsAdapter) Subscribe(eventType string, handler func(gear.Event)) func() {
 	// Create a unique subscriber ID
 	sub := e.hub.Subscribe(eventType, "")
 
@@ -45,7 +45,7 @@ func (e *EventsAdapter) Subscribe(eventType string, handler func(plugin.Event)) 
 				}
 				// Only forward events of the requested type
 				if string(hubEvent.Type) == eventType {
-					handler(plugin.Event{
+					handler(gear.Event{
 						Type:     string(hubEvent.Type),
 						ServerID: hubEvent.ServerID,
 						Data:     hubEvent.Data,
@@ -62,5 +62,5 @@ func (e *EventsAdapter) Subscribe(eventType string, handler func(plugin.Event)) 
 	}
 }
 
-// Ensure EventsAdapter implements plugin.EventPublisher
-var _ plugin.EventPublisher = (*EventsAdapter)(nil)
+// Ensure EventsAdapter implements gear.EventPublisher
+var _ gear.EventPublisher = (*EventsAdapter)(nil)
