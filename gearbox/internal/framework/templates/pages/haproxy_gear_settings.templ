@@ -1,0 +1,262 @@
+package pages
+
+import (
+	"fmt"
+	"github.com/sarg3nt/gearbox/internal/framework/database"
+	"github.com/sarg3nt/gearbox/internal/framework/models"
+	"github.com/sarg3nt/gearbox/internal/framework/templates/layouts"
+	"github.com/sarg3nt/gearbox/internal/framework/ui"
+)
+
+// HAProxyGearSettingsPage renders the HAProxy gear settings page.
+// This page provides access to HAProxy-specific configuration like disabled entities,
+// config editor, and git-based configuration management.
+templ HAProxyGearSettingsPage(user *models.User, serverID string, serverName string, server *database.BoxDB, haproxyGit *database.BoxGitConfig, successMsg, errorMsg string) {
+	@layouts.Base("HAProxy Settings", user, "/settings") {
+		<!-- Hidden container for page header content - will be moved to main header via JS -->
+		<div id="page-header-source" class="hidden">
+			<div class="flex items-center">
+				<h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">
+					HAProxy Settings
+					if serverName != "" {
+						<span class="text-gray-400 dark:text-gray-500 mx-2">:</span>
+						<span class="text-gray-600 dark:text-gray-300">{ serverName }</span>
+					}
+				</h2>
+			</div>
+			<div class="flex-1"></div>
+			<a href={ templ.SafeURL("/settings/gears?server=" + serverID) } class="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center">
+				<svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+				</svg>
+				Back to Gears
+			</a>
+		</div>
+
+		<div class="max-w-4xl mx-auto px-4 py-8">
+			if successMsg != "" {
+				@ui.ToastOnLoad(successMsg, "success")
+			}
+
+			if errorMsg != "" {
+				@ui.ToastOnLoad(errorMsg, "error")
+			}
+
+			<div class="space-y-6">
+				<!-- Quick Actions -->
+				<div class="bg-white dark:bg-slate-800 rounded-lg shadow p-6">
+					<h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">HAProxy Management</h3>
+					<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+						<!-- Disabled Entities -->
+						<a
+							href="/settings/admin/disabled-entities"
+							class="flex items-center gap-4 p-4 border border-gray-200 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
+						>
+							<div class="w-10 h-10 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg flex items-center justify-center flex-shrink-0">
+								<svg class="w-5 h-5 text-yellow-600 dark:text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path>
+								</svg>
+							</div>
+							<div>
+								<div class="text-sm font-medium text-gray-900 dark:text-white">Disabled Entities</div>
+								<div class="text-xs text-gray-500 dark:text-gray-400">Manage disabled backends, frontends, and servers</div>
+							</div>
+						</a>
+						<!-- HAProxy Config Editor -->
+						if server != nil {
+							<a
+								href={ templ.SafeURL(fmt.Sprintf("/config/haproxy/%s", server.BoxID)) }
+								class="flex items-center gap-4 p-4 border border-gray-200 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
+							>
+								<div class="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center flex-shrink-0">
+									<svg class="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+									</svg>
+								</div>
+								<div>
+									<div class="text-sm font-medium text-gray-900 dark:text-white">Config Editor</div>
+									<div class="text-xs text-gray-500 dark:text-gray-400">View and edit HAProxy configuration</div>
+								</div>
+							</a>
+						}
+					</div>
+				</div>
+
+				<!-- HAProxy Git Configuration -->
+				if server != nil {
+					<div class="bg-white dark:bg-slate-800 rounded-lg shadow p-6">
+						<h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
+							<svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path>
+							</svg>
+							Git-Based Configuration
+						</h3>
+						<div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-4">
+							<p class="text-xs text-blue-700 dark:text-blue-300">
+								Configure a git repository to pull HAProxy configuration.
+								When auto-apply is enabled, changes from git will be automatically applied after validation.
+								When disabled, changes will be available for manual review before applying.
+							</p>
+						</div>
+						<form method="POST" action={ templ.SafeURL(fmt.Sprintf("/settings/gears/haproxy/git?server=%s", serverID)) } class="space-y-4" autocomplete="off">
+							<div>
+								<label for="haproxy_git_repo" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+									Git Repository URL
+								</label>
+								<input
+									type="url"
+									id="haproxy_git_repo"
+									name="haproxy_git_repo"
+									value={ getHAProxyGitRepoURL(haproxyGit) }
+									placeholder="https://github.com/user/repo.git"
+									autocomplete="off"
+									class="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+								/>
+								<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+									Leave empty to disable git-based config management for HAProxy
+								</p>
+							</div>
+
+							<div class="grid grid-cols-2 gap-4">
+								<div>
+									<label for="haproxy_git_branch" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+										Branch
+									</label>
+									<input
+										type="text"
+										id="haproxy_git_branch"
+										name="haproxy_git_branch"
+										value={ getHAProxyGitBranch(haproxyGit) }
+										placeholder="main"
+										autocomplete="off"
+										class="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+									/>
+								</div>
+								<div>
+									<label for="haproxy_git_path" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+										File Path in Repository
+									</label>
+									<input
+										type="text"
+										id="haproxy_git_path"
+										name="haproxy_git_path"
+										value={ getHAProxyGitFilePath(haproxyGit) }
+										placeholder="haproxy/haproxy.cfg"
+										autocomplete="off"
+										class="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+									/>
+								</div>
+							</div>
+
+							<div>
+								<label for="haproxy_git_pat" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+									Personal Access Token (for private repos)
+								</label>
+								<input
+									type="password"
+									id="haproxy_git_pat"
+									name="haproxy_git_pat"
+									placeholder={ getHAProxyPatPlaceholder(haproxyGit) }
+									autocomplete="new-password"
+									class="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+								/>
+								<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+									Leave empty to keep existing token or for public repositories
+								</p>
+							</div>
+
+							<div class="flex items-center gap-3">
+								<input
+									type="checkbox"
+									id="haproxy_auto_apply"
+									name="haproxy_auto_apply"
+									if haproxyGit != nil && haproxyGit.AutoApplyEnabled {
+										checked
+									}
+									class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+								/>
+								<label for="haproxy_auto_apply" class="text-sm text-gray-700 dark:text-gray-300">
+									Auto-apply valid configurations from git
+								</label>
+							</div>
+
+							if haproxyGit != nil && haproxyGit.LastSyncAt != nil {
+								<div class="pt-4 border-t border-gray-200 dark:border-slate-700">
+									<p class="text-sm text-gray-600 dark:text-gray-400">
+										<span class="font-medium">Last sync:</span> { haproxyGit.LastSyncAt.Format("2006-01-02 15:04:05") }
+										if haproxyGit.LastSyncStatus != "" {
+											<span class={ "ml-2 px-2 py-0.5 rounded text-xs",
+												templ.KV("bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300", haproxyGit.LastSyncStatus == "success"),
+												templ.KV("bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300", haproxyGit.LastSyncStatus == "pending_review"),
+												templ.KV("bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300", haproxyGit.LastSyncStatus == "failed") }>
+												{ haproxyGit.LastSyncStatus }
+											</span>
+										}
+									</p>
+									if haproxyGit.LastSyncError != "" {
+										<p class="mt-1 text-xs text-red-600 dark:text-red-400">{ haproxyGit.LastSyncError }</p>
+									}
+								</div>
+							}
+
+							<div class="flex justify-end pt-2">
+								<button
+									type="submit"
+									class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+								>
+									Save Git Settings
+								</button>
+							</div>
+						</form>
+					</div>
+				}
+			</div>
+
+			<script>
+			function setupPageHeader() {
+				const source = document.getElementById('page-header-source');
+				const target = document.getElementById('header-page-content');
+				if (source && target) {
+					while (source.firstChild) {
+						target.appendChild(source.firstChild);
+					}
+					source.remove();
+				}
+			}
+			document.addEventListener('DOMContentLoaded', setupPageHeader);
+			</script>
+		</div>
+	}
+}
+
+// Helper functions for HAProxy git config (prefixed to avoid conflicts with server_git_settings.templ)
+func getHAProxyGitRepoURL(config *database.BoxGitConfig) string {
+	if config == nil {
+		return ""
+	}
+	return config.GitRepoURL
+}
+
+func getHAProxyGitBranch(config *database.BoxGitConfig) string {
+	if config == nil {
+		return "main"
+	}
+	if config.GitBranch == "" {
+		return "main"
+	}
+	return config.GitBranch
+}
+
+func getHAProxyGitFilePath(config *database.BoxGitConfig) string {
+	if config == nil {
+		return ""
+	}
+	return config.GitFilePath
+}
+
+func getHAProxyPatPlaceholder(config *database.BoxGitConfig) string {
+	if config != nil && len(config.GitPATEncrypted) > 0 {
+		return "(configured - leave empty to keep)"
+	}
+	return "ghp_xxxx..."
+}

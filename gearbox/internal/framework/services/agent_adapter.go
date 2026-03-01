@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 
 	"github.com/sarg3nt/gearbox/internal/framework/agent"
-	"github.com/sarg3nt/gearbox/internal/framework/plugin"
+	"github.com/sarg3nt/gearbox/internal/framework/gear"
 )
 
-// AgentAdapter wraps the agent.Client to implement plugin.AgentClient.
+// AgentAdapter wraps the agent.Client to implement gear.AgentClient.
 // It provides a simplified interface for plugins to interact with the HAProxy agent.
 type AgentAdapter struct {
 	client *agent.Client
@@ -85,7 +85,7 @@ func (a *AgentAdapter) Get(path string, result any) error {
 		return copyToResult(summary, result)
 	default:
 		// For other paths, return an error suggesting to use specific methods
-		return &plugin.PluginError{
+		return &gear.GearError{
 			Code:    "unsupported_path",
 			Message: "path not supported by adapter, use GetClient() for direct access",
 		}
@@ -97,7 +97,7 @@ func (a *AgentAdapter) Get(path string, result any) error {
 // Results are unmarshaled into the provided result interface.
 func (a *AgentAdapter) Post(path string, body, result any) error {
 	// For POST requests, recommend using specific methods
-	return &plugin.PluginError{
+	return &gear.GearError{
 		Code:    "use_specific_method",
 		Message: "POST not supported by adapter, use GetClient() for direct access",
 	}
@@ -106,7 +106,7 @@ func (a *AgentAdapter) Post(path string, body, result any) error {
 // Delete performs a DELETE request to the agent API.
 func (a *AgentAdapter) Delete(path string, result any) error {
 	// For DELETE requests, recommend using specific methods
-	return &plugin.PluginError{
+	return &gear.GearError{
 		Code:    "use_specific_method",
 		Message: "DELETE not supported by adapter, use GetClient() for direct access",
 	}
@@ -128,5 +128,5 @@ func copyToResult(source, result any) error {
 	return json.Unmarshal(data, result)
 }
 
-// Ensure AgentAdapter implements plugin.AgentClient
-var _ plugin.AgentClient = (*AgentAdapter)(nil)
+// Ensure AgentAdapter implements gear.AgentClient
+var _ gear.AgentClient = (*AgentAdapter)(nil)

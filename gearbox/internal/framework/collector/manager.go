@@ -194,7 +194,7 @@ func (m *Manager) persistHistory() {
 	}
 
 	// Check if metrics integration is enabled and if store_history is enabled
-	metricsEnabled, err := m.db.IsPluginEnabled(m.serverID, "metrics")
+	metricsEnabled, err := m.db.IsGearEnabled(m.serverID, "metrics")
 	if err != nil {
 		m.logger.Error("failed to check metrics integration status",
 			"server_id", m.serverID,

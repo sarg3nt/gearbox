@@ -199,7 +199,7 @@ func (h *Handler) InjectIntegrationStatus(next http.Handler) http.Handler {
 		boxID := h.getDefaultServerID()
 		if boxID != "" {
 			// Get integrations with their enabled status and sort order
-			integrations, err := h.db.GetPlugins(boxID)
+			integrations, err := h.db.GetGears(boxID)
 			if err != nil {
 				h.logger.Error("failed to get integrations for sidebar", "error", err)
 				// Continue without status - sidebar will show all items (fail open)
@@ -223,14 +223,14 @@ func (h *Handler) InjectIntegrationStatus(next http.Handler) http.Handler {
 				}
 			}
 
-			ctx = auth.SetPluginStatus(ctx, status)
+			ctx = auth.SetGearStatus(ctx, status)
 			ctx = auth.SetIntegrationOrder(ctx, orderedIntegrations)
 			next.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
 
-		// No server configured - explicitly disable all plugins in navigation
-		// This provides a clean initial setup experience without plugin clutter
+		// No server configured - explicitly disable all gears in navigation
+		// This provides a clean initial setup experience without gear clutter
 		status := map[string]bool{
 			"metrics":      false,
 			"logs":         false,
@@ -240,7 +240,7 @@ func (h *Handler) InjectIntegrationStatus(next http.Handler) http.Handler {
 			"alerts":       false,
 			"os_updates":   false,
 		}
-		ctx = auth.SetPluginStatus(ctx, status)
+		ctx = auth.SetGearStatus(ctx, status)
 		ctx = auth.SetIntegrationOrder(ctx, []auth.SidebarIntegration{})
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

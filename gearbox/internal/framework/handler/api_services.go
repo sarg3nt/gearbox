@@ -11,7 +11,7 @@ import (
 	"github.com/sarg3nt/gearbox/internal/framework/database"
 	apperrors "github.com/sarg3nt/gearbox/internal/framework/errors"
 	"github.com/sarg3nt/gearbox/internal/framework/models"
-	"github.com/sarg3nt/gearbox/internal/plugins/services"
+	"github.com/sarg3nt/gearbox/internal/gears/services"
 )
 
 // APIServicesConfigHandler returns the services integration config for a server.
@@ -29,7 +29,7 @@ func (h *Handler) APIServicesConfigHandler(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Ensure default integrations exist for this server
-	if err := h.db.EnsureServerPlugins(boxID); err != nil {
+	if err := h.db.EnsureServerGears(boxID); err != nil {
 		h.logger.Error("Failed to ensure server integrations", "error", err)
 	}
 

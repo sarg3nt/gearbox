@@ -686,7 +686,7 @@ templ AlertsPage(user *models.User, servers []models.BoxConfig, perms *models.Us
 				// Update rules card link
 				var rulesCardLink = document.getElementById('rules-card-link');
 				if (rulesCardLink) {
-					rulesCardLink.href = '/settings/plugins/alerts/rules?server=' + currentServerID;
+					rulesCardLink.href = '/settings/gears/alerts/rules?server=' + currentServerID;
 				}
 			} catch (err) {
 				console.error('Failed to load rules:', err);

@@ -2,7 +2,7 @@
 
 A Go service that runs on monitored servers and workstations to provide:
 
-1. **Plugin-based data collection** - Gathers system metrics, service stats, logs, and security data
+1. **Gear-based data collection** - Gathers system metrics, service stats, logs, and security data
 2. **Secure REST API** - Exposes collected data over HTTPS with API key authentication
 3. **Real-time events** - WebSocket endpoint for live updates to Gearbox dashboard
 4. **Auto-discovery** - Detects installed services and enables relevant collectors

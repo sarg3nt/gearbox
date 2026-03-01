@@ -4,25 +4,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This repository contains **Gearbox**, a general-purpose monitoring and management platform with a plugin-based architecture.
+This repository contains **Gearbox**, a general-purpose monitoring and management platform with a gear-based architecture.
 
 ### What is Gearbox?
 
-A plugin-based server monitoring and management platform designed for DevOps. Provides real-time visibility into servers, services, and infrastructure through purpose-built plugin pages.
+A gear-based server monitoring and management platform designed for DevOps. Provides real-time visibility into servers, services, and infrastructure through purpose-built gear pages.
 
 **Architecture:**
 
 - **gearbox-agent** - Go binary installed on monitored servers/workstations to gather data and expose secure API/WebSocket
 - **gearbox** - Web dashboard (port 3000) for monitoring multiple servers
-- **Plugins** - Self-contained modules providing pages, API handlers, and functionality (HAProxy, Metrics, Logs, Services, Certificates, Traffic, Alerts, OS Updates)
+- **Gears** - Self-contained modules providing pages, API handlers, and functionality (HAProxy, Metrics, Logs, Services, Certificates, Traffic, Alerts, OS Updates)
 
 **Key Principles:**
 
-- Plugin-based architecture with shared framework components
+- Gear-based architecture with shared framework components
 - gearbox-agent can run on ANY Linux system (servers, workstations, HAProxy hosts, TrueNAS, Docker hosts)
 - Multi-server support: gearbox talks to many different gearbox-agent instances
 - Configuration via web UI
-- HAProxy monitoring is ONE plugin, not the core purpose
+- HAProxy monitoring is ONE gear, not the core purpose
 
 ## Dual-App Architecture
 
@@ -41,7 +41,7 @@ When troubleshooting, **ALWAYS check both codebases** and understand which serve
 
 ### Gearbox Dashboard (`gearbox/`)
 
-Web application for monitoring multiple servers. Plugin-based architecture.
+Web application for monitoring multiple servers. Gear-based architecture.
 
 **Post-Change Workflow:**
 
@@ -56,13 +56,13 @@ cd gearbox && make templ-generate && make build
 **Key directories:**
 
 - `internal/framework/` - Shared services and building blocks
-- `internal/plugins/` - 8 plugins
+- `internal/gears/` - 8 gears
 - `internal/framework/templates/` - Templ templates
 - `static/` - JavaScript, CSS, assets
 
 ### Gearbox Agent (`gearbox-agent/`)
 
-Runs on monitored servers and workstations. Plugin-based collectors auto-discover services (HAProxy, Docker, systemd services).
+Runs on monitored servers and workstations. Gear-based collectors auto-discover services (HAProxy, Docker, systemd services).
 
 **Building and Deploying:**
 
@@ -75,15 +75,15 @@ cd gearbox-agent && make deploy
 **Key directories:**
 
 - `internal/api/` - REST API handlers
-- `internal/plugins/` - Agent-side plugin collectors
+- `internal/gears/` - Agent-side gear collectors
 - `internal/framework/` - Shared agent framework
 - `cmd/gearbox-agent/` - Entry point
 
-## Plugin Architecture
+## Gear Architecture
 
-8 plugins: HAProxy, Metrics, Logs, Services, Certificates, Traffic, Alerts, OS Updates. Each plugin is self-contained in `internal/plugins/`. Framework provides shared services in `internal/framework/`.
+8 gears: HAProxy, Metrics, Logs, Services, Certificates, Traffic, Alerts, OS Updates. Each gear is self-contained in `internal/gears/`. Framework provides shared services in `internal/framework/`.
 
-See [docs/plugins.md](docs/plugins.md) for complete plugin architecture documentation.
+See [docs/gears.md](docs/gears.md) for complete gear architecture documentation.
 
 ## GitHub-Driven Workflow
 
@@ -166,15 +166,15 @@ TASKS.md is a **scratch pad only** — not a tracking system. The GitHub Project
 - Run `make dev` in gearbox (user typically has this running already)
 - Edit generated `*_templ.go` files directly
 - Skip running `make templ-generate` after template changes
-- Add business logic to framework (belongs in plugins)
+- Add business logic to framework (belongs in gears)
 - Hardcode server-specific values (use multi-server config)
 
 ### ALWAYS
 
 - Run `make templ-generate && make build` after template changes in gearbox
-- Keep plugins self-contained
+- Keep gears self-contained
 - Use framework services (don't duplicate functionality)
-- Follow plugin architecture patterns
+- Follow gear architecture patterns
 - Inform user before running `make deploy` for agent
 - Validate HAProxy config with `haproxy -c` before reload (if applicable)
 
@@ -201,13 +201,13 @@ Store in `docs/` directory using kebab-case naming. Include TOC after main headi
 
 ## Common Development Tasks
 
-### Adding New Plugins
+### Adding New Gears
 
-1. Create directory in `internal/plugins/`
-2. Implement plugin interface
-3. Register in framework plugin system
+1. Create directory in `internal/gears/`
+2. Implement gear interface
+3. Register in framework gear system
 4. Add pages and templates
-5. Update [docs/plugins.md](docs/plugins.md)
+5. Update [docs/gears.md](docs/gears.md)
 
 ### Modifying Templates (Templ)
 
@@ -239,7 +239,7 @@ Store in `docs/` directory using kebab-case naming. Include TOC after main headi
 
 - **[README.md](README.md)**: Project overview and quick start - SOURCE OF TRUTH
 - **[CLAUDE.md](CLAUDE.md)**: This file (development guidance)
-- **[docs/plugins.md](docs/plugins.md)**: Complete plugin architecture documentation
+- **[docs/gears.md](docs/gears.md)**: Complete gear architecture documentation
 - **[TASKS.md](TASKS.md)**: Scratch pad for describing upcoming work
 - **[gearbox/docs/development.md](gearbox/docs/development.md)**: Local development guide
 

@@ -7,7 +7,7 @@ import (
 )
 
 // BoxGitSettingsPage renders the git settings page for a server.
-// Currently handles firewall git configuration. HAProxy git config is on the HAProxy plugin settings page.
+// Currently handles firewall git configuration. HAProxy git config is on the HAProxy gear settings page.
 templ BoxGitSettingsPage(user *models.User, server *database.BoxDB, firewallGit *database.BoxGitConfig, successMsg, errorMsg string) {
 	@layouts.Base("Git Settings", user, "/settings") {
 		<!-- Hidden container for page header content -->

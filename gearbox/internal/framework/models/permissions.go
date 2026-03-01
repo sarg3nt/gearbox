@@ -18,7 +18,7 @@ const (
 	ComponentLogs             Component = "logs"
 	ComponentServices         Component = "services"
 	ComponentMetrics          Component = "metrics"
-	ComponentPlugins          Component = "plugins"
+	ComponentGears          Component = "gears"
 	ComponentSettings         Component = "settings"
 	ComponentUsers            Component = "users"
 	ComponentHAProxyConfig    Component = "haproxy_config"   // HAProxy configuration editing
@@ -183,7 +183,7 @@ func GetPermissionTemplates() []PermissionTemplate {
 				ComponentLogs:             {PermissionView, PermissionConfigure},
 				ComponentServices:         {PermissionView, PermissionConfigure},
 				ComponentMetrics:          {PermissionView, PermissionConfigure},
-				ComponentPlugins:          {PermissionManage},
+				ComponentGears:          {PermissionManage},
 			},
 		},
 		{
@@ -205,7 +205,7 @@ func AllComponents() []Component {
 		ComponentLogs,
 		ComponentServices,
 		ComponentMetrics,
-		ComponentPlugins,
+		ComponentGears,
 		ComponentSettings,
 		ComponentUsers,
 		ComponentHAProxyConfig,
@@ -225,7 +225,7 @@ func GetComponentDisplayName(c Component) string {
 		ComponentLogs:             "Logs",
 		ComponentServices:         "Services",
 		ComponentMetrics:          "Metrics",
-		ComponentPlugins:          "Plugins",
+		ComponentGears:          "Gears",
 		ComponentSettings:         "Settings",
 		ComponentUsers:            "User Management",
 		ComponentHAProxyConfig:    "HAProxy Configuration",
@@ -338,9 +338,9 @@ func GetAvailablePermissionsForComponent(c Component) []Permission {
 			PermissionView,      // View metrics/history page and data
 			PermissionConfigure, // Configure metrics storage settings
 		}
-	case ComponentPlugins:
+	case ComponentGears:
 		return []Permission{
-			PermissionManage, // Enable/disable plugins from the list
+			PermissionManage, // Enable/disable gears from the list
 		}
 	case ComponentSecurity:
 		return []Permission{

@@ -397,7 +397,7 @@ func (h *Handler) BoxGitSettingsPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get firewall git config (HAProxy git config is on the HAProxy plugin settings page)
+	// Get firewall git config (HAProxy git config is on the HAProxy gear settings page)
 	firewallGitConfig, _ := h.db.GetBoxGitConfig(server.ID, database.ConfigTypeFirewall)
 
 	component := pages.BoxGitSettingsPage(user, server, firewallGitConfig, "", "")
@@ -443,7 +443,7 @@ func (h *Handler) BoxGitSettingsSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Save Firewall git config (HAProxy git config is saved via the HAProxy plugin settings page)
+	// Save Firewall git config (HAProxy git config is saved via the HAProxy gear settings page)
 	firewallConfig := &database.BoxGitConfig{
 		HAProxyBoxID:     server.ID,
 		ConfigType:          database.ConfigTypeFirewall,

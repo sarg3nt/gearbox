@@ -2,12 +2,12 @@
 
 ## Project Overview
 
-**Gearbox** is a general-purpose monitoring and management platform with a plugin-based architecture. It consists of two Go applications:
+**Gearbox** is a general-purpose monitoring and management platform with a gear-based architecture. It consists of two Go applications:
 
 1. **gearbox** - Web dashboard (port 3000)
 2. **gearbox-agent** - Agent running on monitored servers (port 8405)
 
-**Key Principle**: This is a plugin-based architecture. The framework provides shared services, and plugins provide functionality.
+**Key Principle**: This is a gear-based architecture. The framework provides shared services, and plugins provide functionality.
 
 ## Architecture
 
@@ -23,7 +23,7 @@ gearbox-agent/    - Agent binary for monitored servers
 Monitored Server → gearbox-agent (collects) → API/WebSocket → gearbox (displays) → Browser
 ```
 
-### Plugin Architecture
+### Gear Architecture
 
 **Framework** (gearbox/internal/framework/):
 - Agent client (WebSocket/REST communication)
@@ -33,7 +33,7 @@ Monitored Server → gearbox-agent (collects) → API/WebSocket → gearbox (dis
 - Shared UI components (graphs, tables, panels)
 - Template system (Templ)
 
-**Plugins** (gearbox/internal/plugins/):
+**Plugins** (gearbox/internal/gears/):
 - Self-contained feature modules
 - Provide pages and API handlers
 - Domain-specific logic
@@ -58,7 +58,7 @@ cd gearbox && make dev
 
 **Key directories:**
 - `internal/framework/` - Core framework services
-- `internal/plugins/` - Feature plugins
+- `internal/gears/` - Feature plugins
 - `internal/framework/templates/` - Templ templates
 - `static/` - JavaScript, CSS, assets
 
@@ -73,19 +73,19 @@ cd gearbox-agent && make deploy
 
 **Key directories:**
 - `internal/api/` - REST API handlers
-- `internal/plugins/` - Agent-side plugin collectors
+- `internal/gears/` - Agent-side plugin collectors
 - `internal/framework/` - Shared agent framework
 - `cmd/gearbox-agent/` - Entry point
 
 ## Code Guidelines
 
-### Adding New Plugins
+### Adding New Gears
 
-1. Create directory in `internal/plugins/`
-2. Implement plugin interface
-3. Register in framework plugin system
+1. Create directory in `internal/gears/`
+2. Implement gear interface
+3. Register in framework gear system
 4. Add pages and templates
-5. Update docs/plugins.md
+5. Update docs/gears.md
 
 ### Template System (Templ)
 
@@ -141,23 +141,23 @@ make test
 - Run `make dev` when user already has it running
 - Edit generated `*_templ.go` files directly
 - Skip running `make templ-generate` after template changes
-- Add business logic to framework (belongs in plugins)
+- Add business logic to framework (belongs in gears)
 - Hardcode server-specific values (use multi-server config)
 
 ### ALWAYS
 
 - Run `make templ-generate && make build` after template changes
-- Keep plugins self-contained
+- Keep gears self-contained
 - Use framework services (don't duplicate functionality)
-- Follow plugin architecture patterns
-- Document new plugins in docs/plugins.md
+- Follow gear architecture patterns
+- Document new plugins in docs/gears.md
 
 ## Documentation
 
 **Primary sources:**
 - [README.md](../README.md) - Project overview
 - [CLAUDE.md](../CLAUDE.md) - Development guidance
-- [docs/plugins.md](../docs/plugins.md) - Plugin architecture
+- [docs/gears.md](../docs/gears.md) - Plugin architecture
 - [gearbox/docs/development.md](../gearbox/docs/development.md) - Local setup
 - [gearbox-agent/README.md](../gearbox-agent/README.md) - Agent overview
 

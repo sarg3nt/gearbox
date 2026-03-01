@@ -6,11 +6,11 @@ import (
 
 	"github.com/sarg3nt/gearbox/internal/framework/services/crypto"
 	"github.com/sarg3nt/gearbox/internal/framework/database"
-	"github.com/sarg3nt/gearbox/internal/framework/plugin"
+	"github.com/sarg3nt/gearbox/internal/framework/gear"
 	"github.com/sarg3nt/gearbox/internal/framework/models"
 )
 
-// ServerAdapter wraps database access to implement plugin.ServerRegistry.
+// ServerAdapter wraps database access to implement gear.ServerRegistry.
 type ServerAdapter struct {
 	db        *database.DB
 	encryptor *crypto.Encryptor
@@ -29,19 +29,19 @@ func NewServerAdapter(db *database.DB, encryptor *crypto.Encryptor, fallback []m
 }
 
 // GetEnabledBoxes returns all boxes that are currently enabled.
-func (a *ServerAdapter) GetEnabledBoxes() []plugin.ServerConfig {
+func (a *ServerAdapter) GetEnabledBoxes() []gear.ServerConfig {
 	dbServers, err := a.db.GetEnabledBoxes()
 	if err != nil {
 		a.logger.Error("failed to get enabled boxes from database", "error", err)
 		return a.fallbackServers()
 	}
 
-	var servers []plugin.ServerConfig
+	var servers []gear.ServerConfig
 	for _, dbServer := range dbServers {
 		apiKey, _ := a.encryptor.DecryptString(dbServer.APIKeyEncrypted)
 		serverConfig := dbServer.ToBoxConfig(apiKey)
 		if serverConfig.UsesAgentAPI() {
-			servers = append(servers, plugin.ServerConfig{
+			servers = append(servers, gear.ServerConfig{
 				ID:       serverConfig.ID,
 				Name:     serverConfig.Name,
 				AgentURL: serverConfig.AgentURL,
@@ -52,7 +52,7 @@ func (a *ServerAdapter) GetEnabledBoxes() []plugin.ServerConfig {
 }
 
 // GetServer returns a specific server by ID.
-func (a *ServerAdapter) GetServer(id string) (*plugin.ServerConfig, bool) {
+func (a *ServerAdapter) GetServer(id string) (*gear.ServerConfig, bool) {
 	servers := a.GetEnabledBoxes()
 	for _, srv := range servers {
 		if srv.ID == id {
@@ -62,9 +62,9 @@ func (a *ServerAdapter) GetServer(id string) (*plugin.ServerConfig, bool) {
 	return nil, false
 }
 
-// IsPluginEnabled checks if a specific integration/plugin is enabled for a server.
-func (a *ServerAdapter) IsPluginEnabled(serverID, integration string) bool {
-	enabled, err := a.db.IsPluginEnabled(serverID, integration)
+// IsGearEnabled checks if a specific integration/plugin is enabled for a server.
+func (a *ServerAdapter) IsGearEnabled(serverID, integration string) bool {
+	enabled, err := a.db.IsGearEnabled(serverID, integration)
 	if err != nil {
 		a.logger.Error("failed to check integration status", "server", serverID, "integration", integration, "error", err)
 		return true // Default to enabled on error
@@ -72,11 +72,11 @@ func (a *ServerAdapter) IsPluginEnabled(serverID, integration string) bool {
 	return enabled
 }
 
-// fallbackServers converts static server configs to plugin.ServerConfig.
-func (a *ServerAdapter) fallbackServers() []plugin.ServerConfig {
-	var servers []plugin.ServerConfig
+// fallbackServers converts static server configs to gear.ServerConfig.
+func (a *ServerAdapter) fallbackServers() []gear.ServerConfig {
+	var servers []gear.ServerConfig
 	for _, srv := range a.fallback {
-		servers = append(servers, plugin.ServerConfig{
+		servers = append(servers, gear.ServerConfig{
 			ID:       srv.ID,
 			Name:     srv.Name,
 			AgentURL: srv.AgentURL,
@@ -105,13 +105,13 @@ func (a *ServerAdapter) GetEnabledServersAsModels() []models.BoxConfig {
 	return servers
 }
 
-// GetFullServers implements plugin.FullServerRegistry.
+// GetFullServers implements gear.FullServerRegistry.
 // Returns servers in the plugin-defined FullServerConfig format.
-func (a *ServerAdapter) GetFullServers() []plugin.FullServerConfig {
+func (a *ServerAdapter) GetFullServers() []gear.FullServerConfig {
 	modelServers := a.GetEnabledServersAsModels()
-	result := make([]plugin.FullServerConfig, 0, len(modelServers))
+	result := make([]gear.FullServerConfig, 0, len(modelServers))
 	for _, srv := range modelServers {
-		result = append(result, plugin.FullServerConfig{
+		result = append(result, gear.FullServerConfig{
 			ID:       srv.ID,
 			Name:     srv.Name,
 			AgentURL: srv.AgentURL,
@@ -122,8 +122,8 @@ func (a *ServerAdapter) GetFullServers() []plugin.FullServerConfig {
 	return result
 }
 
-// Ensure ServerAdapter implements plugin.ServerRegistry and plugin.FullServerRegistry.
+// Ensure ServerAdapter implements gear.ServerRegistry and gear.FullServerRegistry.
 var (
-	_ plugin.ServerRegistry     = (*ServerAdapter)(nil)
-	_ plugin.FullServerRegistry = (*ServerAdapter)(nil)
+	_ gear.ServerRegistry     = (*ServerAdapter)(nil)
+	_ gear.FullServerRegistry = (*ServerAdapter)(nil)
 )

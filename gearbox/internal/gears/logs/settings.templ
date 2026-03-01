@@ -1,0 +1,28 @@
+package logs
+
+import "github.com/sarg3nt/gearbox/internal/framework/templates/components"
+
+// logsSettingsComponent renders the logs gear settings page.
+templ logsSettingsComponent(config map[string]any) {
+	{{ defaultLines := getConfigInt(config, "default_lines", 100) }}
+	{{ autoRefresh := getConfigBool(config, "auto_refresh", true) }}
+	@components.SettingsSection("Log Settings", "Configure default settings for log viewing.") {
+		@components.SettingsSelect(
+			"default_lines",
+			"Default Lines",
+			"Number of log lines to load by default.",
+			[]components.SelectOption{
+				{Value: "50", Label: "50 lines", Selected: defaultLines == 50},
+				{Value: "100", Label: "100 lines", Selected: defaultLines == 100},
+				{Value: "200", Label: "200 lines", Selected: defaultLines == 200},
+				{Value: "500", Label: "500 lines", Selected: defaultLines == 500},
+			},
+		)
+		@components.SettingsCheckbox(
+			"auto_refresh",
+			"Enable real-time log streaming",
+			"When enabled, new log entries will appear automatically.",
+			autoRefresh,
+		)
+	}
+}

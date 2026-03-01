@@ -37,7 +37,7 @@ templ AlertRulesPage(user *models.User, serverID string, serverName string, serv
 				</h2>
 			</div>
 			<div class="flex-1"></div>
-			<a href={ templ.SafeURL("/settings/plugins/alerts?server=" + serverID) } class="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center">
+			<a href={ templ.SafeURL("/settings/gears/alerts?server=" + serverID) } class="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center">
 				<svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
 				</svg>
@@ -257,7 +257,7 @@ templ AlertRulesPage(user *models.User, serverID string, serverName string, serv
 		let rulesData = [];
 
 		function switchServer(serverID) {
-			window.location.href = '/settings/plugins/alerts/rules?server=' + encodeURIComponent(serverID);
+			window.location.href = '/settings/gears/alerts/rules?server=' + encodeURIComponent(serverID);
 		}
 
 		function setupPageHeader() {

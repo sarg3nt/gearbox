@@ -26,11 +26,11 @@ func getPath(paths []string) string {
 // shouldHideSidebar determines if the sidebar should be hidden based on context
 // Returns true if there are no servers configured (initial setup state)
 func shouldHideSidebar(ctx context.Context, currentPath string) bool {
-	// Check if plugin status is in context - if not, we're in initial setup
-	_, hasPluginStatus := auth.GetPluginStatusFromContext(ctx)
-	_, hasPluginOrder := auth.GetPluginOrderFromContext(ctx)
+	// Check if gear status is in context - if not, we're in initial setup
+	_, hasPluginStatus := auth.GetGearStatusFromContext(ctx)
+	_, hasPluginOrder := auth.GetGearOrderFromContext(ctx)
 
-	// If neither plugin status nor order is set, we're in initial setup (no servers)
+	// If neither gear status nor order is set, we're in initial setup (no servers)
 	// Hide the sidebar to provide a cleaner first-time experience
 	return !hasPluginStatus && !hasPluginOrder
 }
@@ -563,20 +563,20 @@ templ Base(title string, user *models.User, currentPath ...string) {
 
 			function saveSidebarOrder() {
 				const navItems = document.querySelectorAll('.nav-item-draggable');
-				// API expects a flat map: {"pluginName": sortIndex, ...}
+				// API expects a flat map: {"gearName": sortIndex, ...}
 				const orders = {};
 
 				navItems.forEach((item, index) => {
-					const pluginName = item.dataset.pluginName;
-					if (pluginName) {
-						orders[pluginName] = index;
+					const gearName = item.dataset.gearName;
+					if (gearName) {
+						orders[gearName] = index;
 					}
 				});
 
 				console.log('Saving sidebar order:', orders);
 
 				// Build URL — server param is optional, API defaults to first enabled server
-				let url = '/api/plugins/sort-order';
+				let url = '/api/gears/sort-order';
 				const serverID = window.ServerSelector ? window.ServerSelector.getSelectedServer() : null;
 				if (serverID) {
 					url += `?server=${encodeURIComponent(serverID)}`;
@@ -1493,8 +1493,8 @@ templ SidebarLinkWithBadge(href string, label string, icon templ.Component, curr
 }
 
 // SidebarLinkDraggable renders a sidebar link with drag-and-drop support for reordering.
-templ SidebarLinkDraggable(href string, label string, icon templ.Component, currentPath string, pluginName string) {
-	<li class="nav-item-draggable" data-plugin-name={ pluginName }>
+templ SidebarLinkDraggable(href string, label string, icon templ.Component, currentPath string, gearName string) {
+	<li class="nav-item-draggable" data-gear-name={ gearName }>
 		if isActivePath(href, currentPath) {
 			<a href={ templ.SafeURL(href) } draggable="false" class="nav-link flex items-center space-x-3 px-4 py-3 bg-blue-50 dark:bg-slate-700 border-l-4 border-blue-600 dark:border-blue-400 text-blue-700 dark:text-blue-300 transition-colors">
 				<!-- Drag handle (hidden by default, shown in edit mode) -->
@@ -1532,8 +1532,8 @@ templ SidebarLinkDraggable(href string, label string, icon templ.Component, curr
 }
 
 // SidebarLinkDraggableWithBadge renders a draggable sidebar link with a notification badge.
-templ SidebarLinkDraggableWithBadge(href string, label string, icon templ.Component, currentPath string, pluginName string, badgeID string) {
-	<li class="nav-item-draggable" data-plugin-name={ pluginName }>
+templ SidebarLinkDraggableWithBadge(href string, label string, icon templ.Component, currentPath string, gearName string, badgeID string) {
+	<li class="nav-item-draggable" data-gear-name={ gearName }>
 		if isActivePath(href, currentPath) {
 			<a href={ templ.SafeURL(href) } draggable="false" class="nav-link flex items-center space-x-3 px-4 py-3 bg-blue-50 dark:bg-slate-700 border-l-4 border-blue-600 dark:border-blue-400 text-blue-700 dark:text-blue-300 transition-colors">
 				<!-- Drag handle (hidden by default, shown in edit mode) -->
@@ -1579,7 +1579,7 @@ templ SidebarLinkDraggableWithBadge(href string, label string, icon templ.Compon
 // SidebarLinkWithIntegration renders a sidebar link only if the integration is enabled.
 // Uses server-side context to determine visibility - disabled integrations are not rendered at all.
 templ SidebarLinkWithIntegration(href string, label string, icon templ.Component, currentPath string, integration string) {
-	if auth.IsPluginEnabledFromContext(ctx, integration) {
+	if auth.IsGearEnabledFromContext(ctx, integration) {
 		<li>
 			if isActivePath(href, currentPath) {
 				<a href={ templ.SafeURL(href) } class="flex items-center space-x-3 px-4 py-3 bg-blue-50 dark:bg-slate-700 border-l-4 border-blue-600 dark:border-blue-400 text-blue-700 dark:text-blue-300 transition-colors">
@@ -1596,9 +1596,9 @@ templ SidebarLinkWithIntegration(href string, label string, icon templ.Component
 	}
 }
 
-// hasAnyEnabledIntegration checks if any integration (plugin) is enabled in the current context.
+// hasAnyEnabledIntegration checks if any integration (gear) is enabled in the current context.
 func hasAnyEnabledIntegration(ctx context.Context) bool {
-	integrations, ok := auth.GetPluginOrderFromContext(ctx)
+	integrations, ok := auth.GetGearOrderFromContext(ctx)
 	if !ok {
 		return false
 	}
@@ -1637,7 +1637,7 @@ func integrationPath(name string) string {
 // firstEnabledIntegrationPath returns the URL path for the first enabled integration.
 // Returns "/" if no integrations are enabled.
 func firstEnabledIntegrationPath(ctx context.Context) string {
-	integrations, ok := auth.GetPluginOrderFromContext(ctx)
+	integrations, ok := auth.GetGearOrderFromContext(ctx)
 	if !ok {
 		return "/"
 	}
@@ -1672,7 +1672,7 @@ func canViewIntegration(ctx context.Context, integrationName string) bool {
 // Falls back to default order if no custom order is stored.
 // Links are only shown if the integration is enabled AND the user has View permission.
 templ OrderedIntegrationLinks(currentPath string) {
-	if integrations, ok := auth.GetPluginOrderFromContext(ctx); ok {
+	if integrations, ok := auth.GetGearOrderFromContext(ctx); ok {
 		if len(integrations) > 0 {
 			// Show ordered integrations from database
 			for _, integration := range integrations {

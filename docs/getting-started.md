@@ -4,7 +4,7 @@ Welcome to Gearbox! This guide will walk you through setting up your first monit
 
 ## Overview
 
-Gearbox is a plugin-based server monitoring and management platform that consists of two components:
+Gearbox is a gear-based server monitoring and management platform that consists of two components:
 
 - **Gearbox Dashboard** - Web interface for monitoring multiple servers (port 3000)
 - **Gearbox Agent** - Lightweight service installed on each Box you want to monitor (port 8405)
@@ -159,12 +159,12 @@ The agent will start on port 8405 and begin collecting system metrics.
 3. Click **Test Connection** to verify connectivity
 4. Click **Add Server** to save
 
-### Step 7: Enable Plugins
+### Step 7: Enable Gears
 
 After adding your first Box:
 
-1. Navigate to **Settings > Plugins**
-2. Enable the plugins you want to use:
+1. Navigate to **Settings > Gears**
+2. Enable the gears you want to use:
    - **HAProxy** - HAProxy monitoring and statistics
    - **Metrics** - System metrics visualization
    - **Services** - Service management and monitoring
@@ -174,7 +174,7 @@ After adding your first Box:
    - **Alerts** - Alert management
    - **OS Updates** - OS package updates
 
-When you enable a plugin, its page will be added to the navigation.
+When you enable a gear, its page will be added to the navigation.
 
 ## Running as a System Service
 
@@ -218,7 +218,7 @@ Gearbox Agent automatically discovers services running on your Box:
 - **Docker** - Discovers Docker containers and images
 - **System Services** - Monitors systemd services
 
-No manual configuration required! Just enable the relevant plugins in the dashboard.
+No manual configuration required! Just enable the relevant gears in the dashboard.
 
 ## Security Considerations
 
@@ -245,7 +245,7 @@ No manual configuration required! Just enable the relevant plugins in the dashbo
 ### No Data Showing
 
 - Wait 30-60 seconds for the first data collection cycle
-- Verify the plugin is enabled in **Settings > Plugins**
+- Verify the gear is enabled in **Settings > Gears**
 - Check that the service you're trying to monitor is actually running on the Box
 - Review agent logs for collection errors
 
@@ -258,13 +258,13 @@ No manual configuration required! Just enable the relevant plugins in the dashbo
 
 - **Documentation**: [GitHub Repository](https://github.com/sarg3nt/gearbox)
 - **Issues**: [Report a Bug](https://github.com/sarg3nt/gearbox/issues)
-- **Architecture**: See [docs/plugins.md](plugins.md) for plugin architecture details
+- **Architecture**: See [docs/gears.md](gears.md) for gear architecture details
 
 ## What's Next?
 
 Now that you have Gearbox running, explore:
 
-1. **Plugin Development**: Build your own monitoring plugins
+1. **Gear Development**: Build your own monitoring gears
 2. **Advanced Configuration**: Explore environment variables and configuration options
 
 Happy monitoring! 📊
