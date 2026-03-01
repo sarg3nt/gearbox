@@ -810,21 +810,6 @@ templ Settings(user *models.User, perms *models.UserPermissions) {
 					</div>
 				</a>
 
-			<!-- Dashboards -->
-			<a href="/settings/dashboards" class="block bg-white dark:bg-slate-800 p-6 rounded-lg shadow hover:shadow-lg transition-shadow">
-				<div class="flex items-center space-x-4">
-					<div class="w-12 h-12 bg-indigo-100 dark:bg-indigo-900 rounded-lg flex items-center justify-center">
-						<svg class="w-6 h-6 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"></path>
-						</svg>
-					</div>
-					<div>
-						<h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100">Dashboards</h2>
-						<p class="text-sm text-gray-600 dark:text-gray-400">Manage custom dashboards and widgets</p>
-					</div>
-				</div>
-			</a>
-
 			<!-- User Management - shown to admins or users with approve_users permission -->
 			if user.IsAdmin() || perms.HasPermission(models.ComponentUsers, models.PermissionApproveUsers) {
 				<a href="/settings/users" class="block bg-white dark:bg-slate-800 p-6 rounded-lg shadow hover:shadow-lg transition-shadow">

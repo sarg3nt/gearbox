@@ -4,8 +4,6 @@ import (
 	"database/sql"
 	"log/slog"
 	"net/http"
-
-	"github.com/sarg3nt/gearbox/internal/framework/widget"
 )
 
 // Dependencies contains services provided by the framework to plugins.
@@ -32,9 +30,6 @@ type Dependencies struct {
 
 	// HTTPClient is a pre-configured HTTP client for external requests.
 	HTTPClient *http.Client
-
-	// WidgetRegistry is the global widget registry for registering plugin widgets.
-	WidgetRegistry *widget.Registry
 
 	// Config contains the plugin's configuration from the database.
 	// This is loaded from the integrations/plugins table.

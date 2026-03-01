@@ -41,11 +41,6 @@ func (p *Plugin) Initialize(ctx context.Context, deps plugin.Dependencies) error
 
 	p.handlers = NewHandlers(deps)
 
-	// Register logs widgets with the widget registry
-	if err := RegisterLogsWidgets(deps.WidgetRegistry); err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -83,63 +78,6 @@ func (p *Plugin) Permissions() []plugin.PermissionDef {
 			Component:   "logs",
 			Actions:     []string{"view", "configure"},
 			Description: "View system and HAProxy logs",
-		},
-	}
-}
-
-// Widgets returns the widget definitions provided by this plugin.
-func (p *Plugin) Widgets() []plugin.WidgetDefinition {
-	// Widget definitions are registered in widgets.go via RegisterLogsWidgets
-	// This method is for the DashboardPlugin interface
-	return []plugin.WidgetDefinition{}
-}
-
-// PredefinedDashboards returns predefined dashboard templates.
-func (p *Plugin) PredefinedDashboards() []plugin.DashboardDefinition {
-	return []plugin.DashboardDefinition{
-		{
-			Name:           "System Logs",
-			Description:    "Full-featured log viewer with real-time streaming, filtering, and export capabilities",
-			Slug:           "system-logs",
-			Icon:           "document-text",
-			DefaultEnabled: true,
-			YAML: `version: "1.0"
-name: System Logs
-description: Log viewer dashboard with real-time streaming
-created_by: plugin:logs
-plugin_name: logs
-editable: false
-layout:
-  columns: 12
-  gap: 4
-widgets:
-  - id: log-viewer-1
-    type: log-viewer
-    position:
-      row: 1
-      column: 1
-      width: 12
-      height: 12
-    config:
-      server_id: ""
-      default_lines: 100
-      default_source: "haproxy"
-      show_controls: false
-`,
-		},
-	}
-}
-
-// DataSources returns the data source definitions provided by this plugin.
-func (p *Plugin) DataSources() []plugin.DataSourceDefinition {
-	return []plugin.DataSourceDefinition{
-		{
-			Name:        "log-sources",
-			Description: "Available log sources for the server",
-		},
-		{
-			Name:        "log-content",
-			Description: "Log file content with optional filtering and line limits",
 		},
 	}
 }

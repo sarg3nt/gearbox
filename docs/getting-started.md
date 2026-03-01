@@ -174,7 +174,7 @@ After adding your first Box:
    - **Alerts** - Alert management
    - **OS Updates** - OS package updates
 
-When you enable a plugin, its default dashboard will be automatically created and added to the navigation.
+When you enable a plugin, its page will be added to the navigation.
 
 ## Running as a System Service
 
@@ -251,9 +251,7 @@ No manual configuration required! Just enable the relevant plugins in the dashbo
 
 ## Next Steps
 
-- **Customize Dashboards**: Create custom dashboards with your favorite widgets
 - **Configure Alerts**: Set up alert rules for critical metrics
-- **Enable GitOps**: Configure git sync for dashboard definitions
 - **Add More Boxes**: Repeat the process to monitor additional servers
 
 ## Getting Help
@@ -266,9 +264,7 @@ No manual configuration required! Just enable the relevant plugins in the dashbo
 
 Now that you have Gearbox running, explore:
 
-1. **Widget System**: Learn how to create custom widgets
-2. **Plugin Development**: Build your own monitoring plugins
-3. **Dashboard Layouts**: Customize dashboard arrangements
-4. **Advanced Configuration**: Explore environment variables and configuration options
+1. **Plugin Development**: Build your own monitoring plugins
+2. **Advanced Configuration**: Explore environment variables and configuration options
 
 Happy monitoring! 📊

@@ -10,12 +10,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sarg3nt/gearbox/internal/framework/agent"
-	"github.com/sarg3nt/gearbox/internal/framework/dashboard"
 	"github.com/sarg3nt/gearbox/internal/framework/database"
 	"github.com/sarg3nt/gearbox/internal/framework/models"
-	"github.com/sarg3nt/gearbox/internal/framework/plugin"
 	"github.com/sarg3nt/gearbox/internal/framework/templates/pages"
-	"gopkg.in/yaml.v3"
 )
 
 // PluginsPage serves the plugins settings page.
@@ -242,14 +239,6 @@ func (h *Handler) PluginTogglePost(w http.ResponseWriter, r *http.Request) {
 		}
 		http.Redirect(w, r, redirectBase+"&error="+url.QueryEscape("Failed to toggle plugin"), http.StatusSeeOther)
 		return
-	}
-
-	// If plugin was enabled, deploy its predefined dashboards
-	if newEnabled && h.dashboardStorage != nil {
-		if err := h.deployPluginDashboards(pluginName); err != nil {
-			h.logger.Warn("failed to deploy plugin dashboards", "plugin", pluginName, "error", err)
-			// Don't fail the whole operation, just log the warning
-		}
 	}
 
 	// Log the action
@@ -963,59 +952,6 @@ func (h *Handler) APIClearMetricsDataHandler(w http.ResponseWriter, r *http.Requ
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"success": "Metrics data cleared"}) //#nosec G104
-}
-
-// deployPluginDashboards deploys predefined dashboards for a plugin.
-func (h *Handler) deployPluginDashboards(pluginName string) error {
-	// Get the plugin from the registry
-	p, ok := plugin.Get(pluginName)
-	if !ok {
-		return fmt.Errorf("plugin %s not found in registry", pluginName)
-	}
-
-	// Check if plugin implements DashboardPlugin interface
-	dashPlugin, ok := p.(plugin.DashboardPlugin)
-	if !ok {
-		// Plugin doesn't provide dashboards, that's OK
-		return nil
-	}
-
-	// Get predefined dashboards
-	dashboards := dashPlugin.PredefinedDashboards()
-	if len(dashboards) == 0 {
-		return nil
-	}
-
-	// Deploy each dashboard
-	for _, dashDef := range dashboards {
-		// Parse YAML to dashboard struct
-		var dash dashboard.Dashboard
-		if err := yaml.Unmarshal([]byte(dashDef.YAML), &dash); err != nil {
-			h.logger.Error("failed to parse plugin dashboard YAML", "plugin", pluginName, "dashboard", dashDef.Name, "error", err)
-			continue
-		}
-
-		// Set plugin metadata
-		dash.PluginName = &pluginName
-		dash.CreatedBy = "plugin:" + pluginName
-		dash.Editable = false
-
-		// Check if dashboard already exists
-		if h.dashboardStorage.Exists(dashDef.Slug) {
-			h.logger.Info("plugin dashboard already exists, skipping", "plugin", pluginName, "slug", dashDef.Slug)
-			continue
-		}
-
-		// Save the dashboard
-		if err := h.dashboardStorage.Save(&dash); err != nil {
-			h.logger.Error("failed to save plugin dashboard", "plugin", pluginName, "dashboard", dashDef.Name, "error", err)
-			continue
-		}
-
-		h.logger.Info("deployed plugin dashboard", "plugin", pluginName, "dashboard", dashDef.Name, "slug", dashDef.Slug)
-	}
-
-	return nil
 }
 
 // renderHAProxySettingsPage renders the HAProxy-specific plugin settings page.
