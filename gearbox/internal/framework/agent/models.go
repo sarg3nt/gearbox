@@ -729,6 +729,26 @@ type UpdateHistoryResponse struct {
 	Count   int                  `json:"count"`
 }
 
+// UpdateLogEntry represents a persisted update operation log.
+type UpdateLogEntry struct {
+	ID           string   `json:"id"`
+	Type         string   `json:"type"`
+	Status       string   `json:"status"`
+	StartedAt    string   `json:"started_at"`
+	CompletedAt  string   `json:"completed_at,omitempty"`
+	Packages     []string `json:"packages,omitempty"`
+	SecurityOnly bool     `json:"security_only,omitempty"`
+	ExitCode     int      `json:"exit_code"`
+	Error        string   `json:"error,omitempty"`
+	Output       string   `json:"output,omitempty"`
+}
+
+// UpdateLogsResponse represents a list of update logs.
+type UpdateLogsResponse struct {
+	Logs  []UpdateLogEntry `json:"logs"`
+	Count int              `json:"count"`
+}
+
 // RebootRequiredResponse represents reboot status.
 type RebootRequiredResponse struct {
 	Required bool     `json:"required"`
@@ -780,6 +800,23 @@ type RestoreSnapshotRequest struct {
 type RestoreSnapshotResponse struct {
 	Success bool   `json:"success"`
 	Message string `json:"message"`
+}
+
+// PackageChange represents a version change for a single package in a snapshot preview.
+type PackageChange struct {
+	Package        string `json:"package"`
+	CurrentVersion string `json:"current_version"`
+	TargetVersion  string `json:"target_version"`
+}
+
+// SnapshotPreviewResponse represents the changes that would be applied by restoring a snapshot.
+type SnapshotPreviewResponse struct {
+	SnapshotID   string          `json:"snapshot_id"`
+	HasVersions  bool            `json:"has_versions"`
+	Downgrades   []PackageChange `json:"downgrades"`
+	Installs     []string        `json:"installs"`
+	Removals     []string        `json:"removals"`
+	TotalChanges int             `json:"total_changes"`
 }
 
 // InstalledPackage represents a package that can be installed.

@@ -716,6 +716,7 @@ func main() {
 			r.Get("/os-updates/snapshots", h.APIListSnapshotsHandler)
 			r.Post("/os-updates/snapshots", h.APICreateSnapshotHandler)
 			r.Post("/os-updates/snapshots/restore", h.APIRestoreSnapshotHandler)
+			r.Get("/os-updates/snapshots/{id}/preview", h.APIPreviewSnapshotHandler)
 			r.Delete("/os-updates/snapshots/{id}", h.APIDeleteSnapshotHandler)
 			r.Get("/os-updates/packages/search", h.APISearchPackagesHandler)
 			r.Post("/os-updates/packages/install", h.APIInstallPackageHandler)
@@ -726,6 +727,9 @@ func main() {
 			r.Post("/os-updates/pipx/upgrade", h.APIPipxUpgradeHandler)
 			r.Get("/os-updates/unattended", h.APIUnattendedConfigHandler)
 			r.Post("/os-updates/unattended", h.APIConfigureUnattendedHandler)
+			r.Get("/os-updates/operation/{id}", h.APIGetOperationHandler)
+			r.Get("/os-updates/logs", h.APIListUpdateLogsHandler)
+			r.Get("/os-updates/logs/{id}", h.APIGetUpdateLogHandler)
 		})
 	})
 

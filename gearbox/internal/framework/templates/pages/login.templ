@@ -90,6 +90,7 @@ templ Login(errorMessage string, successMessage string, csrfToken string, return
 							required
 							autofocus
 							autocomplete="username"
+							maxlength="254"
 							class="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
 							placeholder="user@example.com"
 						/>
@@ -105,6 +106,7 @@ templ Login(errorMessage string, successMessage string, csrfToken string, return
 							name="password"
 							required
 							autocomplete="current-password"
+							maxlength="128"
 							class="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
 						/>
 					</div>

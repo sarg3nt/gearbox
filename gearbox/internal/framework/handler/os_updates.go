@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/sarg3nt/gearbox/internal/framework/agent"
 	"github.com/sarg3nt/gearbox/internal/framework/auth"
 	"github.com/sarg3nt/gearbox/internal/framework/database"
-	apperrors "github.com/sarg3nt/gearbox/internal/framework/errors"
 	"github.com/sarg3nt/gearbox/internal/framework/models"
 	"github.com/sarg3nt/gearbox/internal/framework/templates/pages"
 )
@@ -146,7 +146,7 @@ func (h *Handler) APIUpdateStatusHandler(w http.ResponseWriter, r *http.Request)
 
 	status, err := client.GetUpdateStatus()
 	if err != nil {
-		apperrors.WriteHTTPError(w, h.logger, apperrors.Internal("get update status", err))
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -174,7 +174,7 @@ func (h *Handler) APIListPackagesHandler(w http.ResponseWriter, r *http.Request)
 
 	packages, err := client.ListUpgradablePackages()
 	if err != nil {
-		apperrors.WriteHTTPError(w, h.logger, apperrors.Internal("list packages", err))
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -209,7 +209,8 @@ func (h *Handler) APITriggerUpdateCheckHandler(w http.ResponseWriter, r *http.Re
 
 	status, err := client.TriggerUpdateCheck()
 	if err != nil {
-		apperrors.WriteHTTPError(w, h.logger, apperrors.Internal("trigger update check", err))
+		h.logger.Error("Failed to trigger update check", "error", err)
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -261,7 +262,7 @@ func (h *Handler) APIInstallUpdatesHandler(w http.ResponseWriter, r *http.Reques
 		// Streaming mode - return operation ID for WebSocket tracking
 		result, err := client.InstallUpdatesStreaming(&req)
 		if err != nil {
-			apperrors.WriteHTTPError(w, h.logger, apperrors.Internal("start update installation", err))
+			h.jsonError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -283,7 +284,7 @@ func (h *Handler) APIInstallUpdatesHandler(w http.ResponseWriter, r *http.Reques
 	// Synchronous mode (backwards compatible)
 	result, err := client.InstallUpdates(&req)
 	if err != nil {
-		apperrors.WriteHTTPError(w, h.logger, apperrors.Internal("install updates", err))
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -327,7 +328,7 @@ func (h *Handler) APIUpdateHistoryHandler(w http.ResponseWriter, r *http.Request
 
 	history, err := client.GetUpdateHistory(limit)
 	if err != nil {
-		apperrors.WriteHTTPError(w, h.logger, apperrors.Internal("get update history", err))
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -355,6 +356,10 @@ func (h *Handler) APIScheduleRebootHandler(w http.ResponseWriter, r *http.Reques
 		h.jsonError(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
+	if len(req.When) > 20 {
+		h.jsonError(w, "when must be 20 characters or less", http.StatusBadRequest)
+		return
+	}
 
 	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
@@ -370,7 +375,7 @@ func (h *Handler) APIScheduleRebootHandler(w http.ResponseWriter, r *http.Reques
 
 	result, err := client.ScheduleReboot(req.When)
 	if err != nil {
-		apperrors.WriteHTTPError(w, h.logger, apperrors.Internal("schedule reboot", err))
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -413,7 +418,7 @@ func (h *Handler) APICancelRebootHandler(w http.ResponseWriter, r *http.Request)
 
 	result, err := client.CancelReboot()
 	if err != nil {
-		apperrors.WriteHTTPError(w, h.logger, apperrors.Internal("cancel reboot", err))
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -442,7 +447,7 @@ func (h *Handler) APIListSnapshotsHandler(w http.ResponseWriter, r *http.Request
 
 	snapshots, err := client.ListSnapshots()
 	if err != nil {
-		apperrors.WriteHTTPError(w, h.logger, apperrors.Internal("list snapshots", err))
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -472,6 +477,10 @@ func (h *Handler) APICreateSnapshotHandler(w http.ResponseWriter, r *http.Reques
 	if req.Reason == "" {
 		req.Reason = "manual"
 	}
+	if len(req.Reason) > 255 {
+		h.jsonError(w, "reason must be 255 characters or less", http.StatusBadRequest)
+		return
+	}
 
 	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
@@ -487,7 +496,7 @@ func (h *Handler) APICreateSnapshotHandler(w http.ResponseWriter, r *http.Reques
 
 	result, err := client.CreateSnapshot(req.Reason)
 	if err != nil {
-		apperrors.WriteHTTPError(w, h.logger, apperrors.Internal("create snapshot", err))
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -521,6 +530,10 @@ func (h *Handler) APIRestoreSnapshotHandler(w http.ResponseWriter, r *http.Reque
 		h.jsonError(w, "snapshot_id is required", http.StatusBadRequest)
 		return
 	}
+	if len(req.SnapshotID) > 100 {
+		h.jsonError(w, "snapshot_id must be 100 characters or less", http.StatusBadRequest)
+		return
+	}
 
 	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
@@ -534,14 +547,19 @@ func (h *Handler) APIRestoreSnapshotHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	result, err := client.RestoreSnapshot(req.SnapshotID)
+	// Always use streaming mode for restore operations
+	result, err := client.RestoreSnapshotStreaming(req.SnapshotID)
 	if err != nil {
-		apperrors.WriteHTTPError(w, h.logger, apperrors.Internal("restore snapshot", err))
+		h.logger.Error("Failed to start snapshot restore", "error", err, "snapshot_id", req.SnapshotID)
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	h.logger.Info("AUDIT: restored package snapshot", "user_id", user.ID, "action", "os_updates_snapshot_restore", "snapshot_id", req.SnapshotID)
-	h.jsonResponseOK(w, result)
+	h.logger.Info("AUDIT: started streaming snapshot restore", "user_id", user.ID, "action", "os_updates_snapshot_restore", "snapshot_id", req.SnapshotID, "operation_id", result.OperationID)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(result) //#nosec G104
 }
 
 // APIDeleteSnapshotHandler handles DELETE /api/os-updates/snapshots/{id}.
@@ -556,7 +574,7 @@ func (h *Handler) APIDeleteSnapshotHandler(w http.ResponseWriter, r *http.Reques
 		boxID = h.getDefaultServerID()
 	}
 
-	snapshotID := r.PathValue("id")
+	snapshotID := chi.URLParam(r, "id")
 	if snapshotID == "" {
 		h.jsonError(w, "snapshot_id is required", http.StatusBadRequest)
 		return
@@ -578,12 +596,47 @@ func (h *Handler) APIDeleteSnapshotHandler(w http.ResponseWriter, r *http.Reques
 
 	result, err := client.DeleteSnapshot(snapshotID)
 	if err != nil {
-		apperrors.WriteHTTPError(w, h.logger, apperrors.Internal("delete snapshot", err))
+		h.logger.Error("Failed to delete snapshot", "error", err, "snapshot_id", snapshotID)
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	h.logger.Info("AUDIT: deleted package snapshot", "user_id", user.ID, "action", "os_updates_snapshot_delete", "snapshot_id", snapshotID)
 	h.jsonResponseOK(w, result)
+}
+
+// APIPreviewSnapshotHandler handles GET /api/os-updates/snapshots/{id}/preview.
+func (h *Handler) APIPreviewSnapshotHandler(w http.ResponseWriter, r *http.Request) {
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" {
+		boxID = h.getDefaultServerID()
+	}
+
+	snapshotID := chi.URLParam(r, "id")
+	if snapshotID == "" {
+		h.jsonError(w, "snapshot_id is required", http.StatusBadRequest)
+		return
+	}
+
+	server, err := h.db.GetBoxByBoxID(boxID)
+	if err != nil || server == nil {
+		h.jsonError(w, "Server not found", http.StatusNotFound)
+		return
+	}
+
+	client, err := h.getAgentClient(server)
+	if err != nil {
+		h.jsonError(w, "Failed to connect to agent", http.StatusServiceUnavailable)
+		return
+	}
+
+	preview, err := client.PreviewSnapshot(snapshotID)
+	if err != nil {
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	h.jsonResponseOK(w, preview)
 }
 
 // APISearchPackagesHandler handles GET /api/os-updates/packages/search.
@@ -620,7 +673,7 @@ func (h *Handler) APISearchPackagesHandler(w http.ResponseWriter, r *http.Reques
 
 	packages, err := client.SearchPackages(query, limit)
 	if err != nil {
-		apperrors.WriteHTTPError(w, h.logger, apperrors.Internal("search packages", err))
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -653,6 +706,10 @@ func (h *Handler) APIInstallPackageHandler(w http.ResponseWriter, r *http.Reques
 		h.jsonError(w, "package name is required", http.StatusBadRequest)
 		return
 	}
+	if len(req.Name) > 200 {
+		h.jsonError(w, "package name must be 200 characters or less", http.StatusBadRequest)
+		return
+	}
 
 	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
@@ -668,7 +725,7 @@ func (h *Handler) APIInstallPackageHandler(w http.ResponseWriter, r *http.Reques
 
 	result, err := client.InstallPackage(req.Name)
 	if err != nil {
-		apperrors.WriteHTTPError(w, h.logger, apperrors.Internal("install package", err))
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -703,6 +760,10 @@ func (h *Handler) APIRemovePackageHandler(w http.ResponseWriter, r *http.Request
 		h.jsonError(w, "package name is required", http.StatusBadRequest)
 		return
 	}
+	if len(req.Name) > 200 {
+		h.jsonError(w, "package name must be 200 characters or less", http.StatusBadRequest)
+		return
+	}
 
 	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
@@ -718,7 +779,7 @@ func (h *Handler) APIRemovePackageHandler(w http.ResponseWriter, r *http.Request
 
 	result, err := client.RemovePackage(req.Name, req.Purge)
 	if err != nil {
-		apperrors.WriteHTTPError(w, h.logger, apperrors.Internal("remove package", err))
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -751,7 +812,7 @@ func (h *Handler) APIPipxStatusHandler(w http.ResponseWriter, r *http.Request) {
 
 	status, err := client.GetPipxStatus()
 	if err != nil {
-		apperrors.WriteHTTPError(w, h.logger, apperrors.Internal("get pipx status", err))
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -784,6 +845,10 @@ func (h *Handler) APIPipxInstallHandler(w http.ResponseWriter, r *http.Request) 
 		h.jsonError(w, "package name is required", http.StatusBadRequest)
 		return
 	}
+	if len(req.Name) > 200 {
+		h.jsonError(w, "package name must be 200 characters or less", http.StatusBadRequest)
+		return
+	}
 
 	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
@@ -799,7 +864,7 @@ func (h *Handler) APIPipxInstallHandler(w http.ResponseWriter, r *http.Request) 
 
 	result, err := client.InstallPipxPackage(req.Name)
 	if err != nil {
-		apperrors.WriteHTTPError(w, h.logger, apperrors.Internal("install pipx package", err))
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -833,6 +898,10 @@ func (h *Handler) APIPipxUninstallHandler(w http.ResponseWriter, r *http.Request
 		h.jsonError(w, "package name is required", http.StatusBadRequest)
 		return
 	}
+	if len(req.Name) > 200 {
+		h.jsonError(w, "package name must be 200 characters or less", http.StatusBadRequest)
+		return
+	}
 
 	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
@@ -848,7 +917,7 @@ func (h *Handler) APIPipxUninstallHandler(w http.ResponseWriter, r *http.Request
 
 	result, err := client.UninstallPipxPackage(req.Name)
 	if err != nil {
-		apperrors.WriteHTTPError(w, h.logger, apperrors.Internal("uninstall pipx package", err))
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -877,6 +946,10 @@ func (h *Handler) APIPipxUpgradeHandler(w http.ResponseWriter, r *http.Request) 
 		h.jsonError(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
+	if len(req.Name) > 200 {
+		h.jsonError(w, "package name must be 200 characters or less", http.StatusBadRequest)
+		return
+	}
 
 	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
@@ -894,15 +967,20 @@ func (h *Handler) APIPipxUpgradeHandler(w http.ResponseWriter, r *http.Request) 
 	if req.Name == "" {
 		// Upgrade all
 		result, err = client.UpgradeAllPipxPackages()
-		h.logger.Info("AUDIT: upgraded all pipx packages", "user_id", user.ID, "action", "os_updates_pipx_upgrade")
 	} else {
 		result, err = client.UpgradePipxPackage(req.Name)
-		h.logger.Info("AUDIT: upgraded pipx package", "user_id", user.ID, "action", "os_updates_pipx_upgrade", "package", req.Name)
 	}
 
 	if err != nil {
-		apperrors.WriteHTTPError(w, h.logger, apperrors.Internal("upgrade pipx package", err))
+		h.logger.Error("Failed to upgrade pipx package(s)", "error", err, "name", req.Name)
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	if req.Name == "" {
+		h.logger.Info("AUDIT: upgraded all pipx packages", "user_id", user.ID, "action", "os_updates_pipx_upgrade")
+	} else {
+		h.logger.Info("AUDIT: upgraded pipx package", "user_id", user.ID, "action", "os_updates_pipx_upgrade", "package", req.Name)
 	}
 
 	h.jsonResponseOK(w, result)
@@ -929,7 +1007,7 @@ func (h *Handler) APIUnattendedConfigHandler(w http.ResponseWriter, r *http.Requ
 
 	config, err := client.GetUnattendedConfig()
 	if err != nil {
-		apperrors.WriteHTTPError(w, h.logger, apperrors.Internal("get unattended config", err))
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -973,7 +1051,7 @@ func (h *Handler) APIConfigureUnattendedHandler(w http.ResponseWriter, r *http.R
 
 	config, err := client.ConfigureUnattended(req.Enabled, req.AutoReboot)
 	if err != nil {
-		apperrors.WriteHTTPError(w, h.logger, apperrors.Internal("configure unattended", err))
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -983,6 +1061,110 @@ func (h *Handler) APIConfigureUnattendedHandler(w http.ResponseWriter, r *http.R
 	}
 	h.logger.Info("AUDIT: configured unattended-upgrades", "user_id", user.ID, "action", "os_updates_unattended_config", "status", status)
 	h.jsonResponseOK(w, config)
+}
+
+// APIGetOperationHandler handles GET /api/os-updates/operation/{id}.
+// Proxies to the agent's operation status endpoint for polling fallback.
+func (h *Handler) APIGetOperationHandler(w http.ResponseWriter, r *http.Request) {
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" {
+		boxID = h.getDefaultServerID()
+	}
+
+	operationID := chi.URLParam(r, "id")
+	if operationID == "" {
+		h.jsonError(w, "operation_id is required", http.StatusBadRequest)
+		return
+	}
+
+	server, err := h.db.GetBoxByBoxID(boxID)
+	if err != nil || server == nil {
+		h.jsonError(w, "Server not found", http.StatusNotFound)
+		return
+	}
+
+	client, err := h.getAgentClient(server)
+	if err != nil {
+		h.jsonError(w, "Failed to connect to agent", http.StatusServiceUnavailable)
+		return
+	}
+
+	status, err := client.GetOperationStatus(operationID)
+	if err != nil {
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	h.jsonResponseOK(w, status)
+}
+
+// APIListUpdateLogsHandler handles GET /api/os-updates/logs.
+func (h *Handler) APIListUpdateLogsHandler(w http.ResponseWriter, r *http.Request) {
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" {
+		boxID = h.getDefaultServerID()
+	}
+
+	limit := 50
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+			limit = l
+		}
+	}
+
+	server, err := h.db.GetBoxByBoxID(boxID)
+	if err != nil || server == nil {
+		h.jsonError(w, "Server not found", http.StatusNotFound)
+		return
+	}
+
+	client, err := h.getAgentClient(server)
+	if err != nil {
+		h.jsonError(w, "Failed to connect to agent", http.StatusServiceUnavailable)
+		return
+	}
+
+	logs, err := client.ListUpdateLogs(limit)
+	if err != nil {
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	h.jsonResponseOK(w, logs)
+}
+
+// APIGetUpdateLogHandler handles GET /api/os-updates/logs/{id}.
+func (h *Handler) APIGetUpdateLogHandler(w http.ResponseWriter, r *http.Request) {
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" {
+		boxID = h.getDefaultServerID()
+	}
+
+	logID := chi.URLParam(r, "id")
+	if logID == "" {
+		h.jsonError(w, "log id is required", http.StatusBadRequest)
+		return
+	}
+
+	server, err := h.db.GetBoxByBoxID(boxID)
+	if err != nil || server == nil {
+		h.jsonError(w, "Server not found", http.StatusNotFound)
+		return
+	}
+
+	client, err := h.getAgentClient(server)
+	if err != nil {
+		h.jsonError(w, "Failed to connect to agent", http.StatusServiceUnavailable)
+		return
+	}
+
+	logEntry, err := client.GetUpdateLog(logID)
+	if err != nil {
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	h.jsonResponseOK(w, logEntry)
 }
 
 // Helper for JSON responses

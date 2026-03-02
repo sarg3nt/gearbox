@@ -25,10 +25,11 @@ Restart=always
 RestartSec=5
 
 # Security hardening
+# Note: ProtectSystem is intentionally not set to "strict" because gearbox-agent
+# needs broad system access for package management (apt install/upgrade),
+# service control, HAProxy config, certificate management, and system reboots.
 NoNewPrivileges=false
-ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/var/lib/gearbox-agent /etc/haproxy /etc/letsencrypt
 
 # Logging
 StandardOutput=journal

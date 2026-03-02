@@ -4,16 +4,22 @@ package updates
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/sarg3nt/gearbox-agent/internal/framework/events"
 )
+
+const updateLogsDir = "/var/lib/gearbox-agent/update-logs"
 
 // AptOperation represents an active or completed apt operation.
 type AptOperation struct {
@@ -29,18 +35,38 @@ type AptOperation struct {
 	cancel       context.CancelFunc
 }
 
+// UpdateLog represents a persisted update operation log.
+type UpdateLog struct {
+	ID           string    `json:"id"`
+	Type         string    `json:"type"`
+	Status       string    `json:"status"`
+	StartedAt    time.Time `json:"started_at"`
+	CompletedAt  string    `json:"completed_at,omitempty"`
+	Packages     []string  `json:"packages,omitempty"`
+	SecurityOnly bool      `json:"security_only,omitempty"`
+	ExitCode     int       `json:"exit_code"`
+	Error        string    `json:"error,omitempty"`
+	Output       string    `json:"output,omitempty"`
+}
+
 // AptRunner manages streaming apt operations.
 type AptRunner struct {
 	eventBus   *events.Bus
 	mu         sync.RWMutex
 	operations map[string]*AptOperation
+	logMu      sync.Mutex
+	logBuffers map[string]*strings.Builder
 }
 
 // NewAptRunner creates a new apt runner.
 func NewAptRunner(eventBus *events.Bus) *AptRunner {
+	// Ensure log directory exists
+	_ = os.MkdirAll(updateLogsDir, 0750)
+
 	runner := &AptRunner{
 		eventBus:   eventBus,
 		operations: make(map[string]*AptOperation),
+		logBuffers: make(map[string]*strings.Builder),
 	}
 
 	// Start cleanup goroutine
@@ -159,10 +185,32 @@ func (r *AptRunner) runAptCheck(ctx context.Context, op *AptOperation) {
 func (r *AptRunner) runAptInstall(ctx context.Context, op *AptOperation, securityOnly bool, packages []string, createSnapshot bool) {
 	defer r.completeOperation(op)
 
-	// Optionally create snapshot first
+	// Optionally create snapshot before installing
 	if createSnapshot {
 		r.publishLine(op.ID, "Creating pre-update snapshot...")
-		// Note: Snapshot creation would go here if implemented
+
+		// Build a descriptive reason for the auto-snapshot
+		var reason string
+		if len(packages) > 0 {
+			if len(packages) <= 3 {
+				reason = fmt.Sprintf("auto: before installing %s", strings.Join(packages, ", "))
+			} else {
+				reason = fmt.Sprintf("auto: before installing %s and %d more", strings.Join(packages[:3], ", "), len(packages)-3)
+			}
+		} else if securityOnly {
+			reason = "auto: before installing security updates"
+		} else {
+			reason = "auto: before installing all updates"
+		}
+
+		collector := NewUpdatesCollector()
+		snapshot, err := collector.CreateSnapshot(reason)
+		if err != nil {
+			r.publishLine(op.ID, fmt.Sprintf("Warning: snapshot creation failed: %v", err))
+		} else {
+			r.publishLine(op.ID, fmt.Sprintf("Snapshot %s created.", snapshot.ID))
+		}
+		r.publishLine(op.ID, "")
 	}
 
 	// Build apt command
@@ -280,8 +328,20 @@ func (r *AptRunner) publishLine(operationID, line string) {
 	r.publishLineWithStream(operationID, line, "stdout")
 }
 
-// publishLineWithStream publishes a single output line with stream type.
+// publishLineWithStream publishes a single output line with stream type
+// and captures it to the persistent log buffer.
 func (r *AptRunner) publishLineWithStream(operationID, line, stream string) {
+	// Capture to log buffer for persistence
+	r.logMu.Lock()
+	buf, ok := r.logBuffers[operationID]
+	if !ok {
+		buf = &strings.Builder{}
+		r.logBuffers[operationID] = buf
+	}
+	buf.WriteString(line)
+	buf.WriteString("\n")
+	r.logMu.Unlock()
+
 	r.eventBus.Publish(events.Event{
 		Type:      events.EventAptOutput,
 		Timestamp: time.Now(),
@@ -294,7 +354,7 @@ func (r *AptRunner) publishLineWithStream(operationID, line, stream string) {
 	})
 }
 
-// completeOperation marks an operation as complete and emits the appropriate event.
+// completeOperation marks an operation as complete, persists the log, and emits the appropriate event.
 func (r *AptRunner) completeOperation(op *AptOperation) {
 	r.mu.Lock()
 	now := time.Now()
@@ -303,6 +363,9 @@ func (r *AptRunner) completeOperation(op *AptOperation) {
 		op.Status = "completed"
 	}
 	r.mu.Unlock()
+
+	// Persist log to disk
+	r.persistLog(op)
 
 	// Emit completion event
 	eventType := events.EventAptCompleted
@@ -330,6 +393,142 @@ func (r *AptRunner) failOperation(op *AptOperation, errorMsg string) {
 	r.mu.Unlock()
 
 	r.publishLine(op.ID, "ERROR: "+errorMsg)
+}
+
+// StartRestore begins a streaming snapshot restore operation.
+func (r *AptRunner) StartRestore(snapshotID string) (string, error) {
+	operationID := uuid.New().String()
+	ctx, cancel := context.WithCancel(context.Background())
+
+	op := &AptOperation{
+		ID:        operationID,
+		Type:      "restore",
+		Status:    "running",
+		StartedAt: time.Now(),
+		cancel:    cancel,
+	}
+
+	r.mu.Lock()
+	r.operations[operationID] = op
+	r.mu.Unlock()
+
+	// Emit started event
+	r.eventBus.Publish(events.Event{
+		Type:      events.EventAptStarted,
+		Timestamp: time.Now(),
+		Data: map[string]any{
+			"operation_id": operationID,
+			"type":         "restore",
+			"snapshot_id":  snapshotID,
+		},
+	})
+
+	// Run restore in background goroutine
+	go r.runRestoreSnapshot(ctx, op, snapshotID)
+
+	return operationID, nil
+}
+
+// runRestoreSnapshot executes snapshot restore and streams output.
+func (r *AptRunner) runRestoreSnapshot(ctx context.Context, op *AptOperation, snapshotID string) {
+	defer r.completeOperation(op)
+
+	snapshotDir := "/var/lib/gearbox-agent/snapshots"
+	snapshotFile := fmt.Sprintf("%s/%s.selections", snapshotDir, snapshotID)
+
+	// Verify snapshot exists
+	if _, err := os.Stat(snapshotFile); err != nil {
+		r.failOperation(op, fmt.Sprintf("snapshot not found: %s", snapshotID))
+		return
+	}
+
+	// Read snapshot selections
+	selectionsData, err := os.ReadFile(snapshotFile) //#nosec G304
+	if err != nil {
+		r.failOperation(op, fmt.Sprintf("failed to read snapshot: %v", err))
+		return
+	}
+
+	r.publishLine(op.ID, fmt.Sprintf("Restoring snapshot %s...", snapshotID))
+	r.publishLine(op.ID, "")
+
+	// Step 1: dpkg --set-selections
+	r.publishLine(op.ID, "Setting package selections...")
+	setCmd := exec.CommandContext(ctx, "dpkg", "--set-selections")
+	setCmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
+	setCmd.Stdin = strings.NewReader(string(selectionsData))
+
+	output, err := setCmd.CombinedOutput()
+	if err != nil {
+		if ctx.Err() == context.Canceled {
+			r.failOperation(op, "operation cancelled")
+			return
+		}
+		errMsg := "dpkg --set-selections failed"
+		if len(output) > 0 {
+			errMsg += ": " + strings.TrimSpace(string(output))
+		}
+		r.failOperation(op, errMsg)
+		return
+	}
+	r.publishLine(op.ID, "Package selections set successfully.")
+	r.publishLine(op.ID, "")
+
+	// Step 2: apt-get dselect-upgrade -y (streamed)
+	r.publishLine(op.ID, "Applying package changes (apt-get dselect-upgrade)...")
+	r.publishLine(op.ID, "")
+
+	upgradeCmd := exec.CommandContext(ctx, "apt-get", "dselect-upgrade", "-y")
+	upgradeCmd.Env = append(os.Environ(),
+		"DEBIAN_FRONTEND=noninteractive",
+		"NEEDRESTART_MODE=a",
+	)
+
+	if err := r.runCommandWithStreaming(ctx, op, upgradeCmd); err != nil {
+		r.failOperation(op, fmt.Sprintf("apt-get dselect-upgrade failed: %v", err))
+		return
+	}
+
+	// Step 3: version-aware downgrade if .versions file exists
+	versionsFile := fmt.Sprintf("%s/%s.versions", snapshotDir, snapshotID)
+	if downgrades := computeDowngrades(versionsFile); len(downgrades) > 0 {
+		r.publishLine(op.ID, "")
+		r.publishLine(op.ID, fmt.Sprintf("Downgrading %d package(s) to snapshot versions...", len(downgrades)))
+		r.publishLine(op.ID, "")
+
+		args := append([]string{"install", "-y", "--allow-downgrades"}, downgrades...)
+		downgradeCmd := exec.CommandContext(ctx, "apt-get", args...)
+		downgradeCmd.Env = append(os.Environ(),
+			"DEBIAN_FRONTEND=noninteractive",
+			"NEEDRESTART_MODE=a",
+		)
+
+		if err := r.runCommandWithStreaming(ctx, op, downgradeCmd); err != nil {
+			// Non-fatal: log but don't fail
+			r.publishLine(op.ID, fmt.Sprintf("Warning: some downgrades failed: %v", err))
+		} else {
+			r.publishLine(op.ID, "Package downgrades applied.")
+		}
+	}
+
+	// Step 4: apt-get update to refresh package cache
+	r.publishLine(op.ID, "")
+	r.publishLine(op.ID, "Refreshing package cache (apt-get update)...")
+	r.publishLine(op.ID, "")
+
+	updateCmd := exec.CommandContext(ctx, "apt-get", "update")
+	updateCmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
+
+	if err := r.runCommandWithStreaming(ctx, op, updateCmd); err != nil {
+		// Non-fatal: log the error but don't fail the whole restore
+		r.publishLine(op.ID, fmt.Sprintf("Warning: apt-get update failed: %v", err))
+	} else {
+		r.publishLine(op.ID, "Package cache refreshed.")
+	}
+
+	r.publishLine(op.ID, "")
+	r.publishLine(op.ID, "Snapshot restored successfully.")
+	op.Status = "completed"
 }
 
 // GetOperation returns an operation by ID.
@@ -388,4 +587,121 @@ func (r *AptRunner) ListOperations() []*AptOperation {
 		ops = append(ops, &opCopy)
 	}
 	return ops
+}
+
+// persistLog writes the operation log to disk as a JSON file.
+func (r *AptRunner) persistLog(op *AptOperation) {
+	r.logMu.Lock()
+	buf := r.logBuffers[op.ID]
+	output := ""
+	if buf != nil {
+		output = buf.String()
+	}
+	delete(r.logBuffers, op.ID)
+	r.logMu.Unlock()
+
+	completedAt := ""
+	if op.CompletedAt != nil {
+		completedAt = op.CompletedAt.Format(time.RFC3339)
+	}
+
+	logEntry := UpdateLog{
+		ID:           op.ID,
+		Type:         op.Type,
+		Status:       op.Status,
+		StartedAt:    op.StartedAt,
+		CompletedAt:  completedAt,
+		Packages:     op.Packages,
+		SecurityOnly: op.SecurityOnly,
+		ExitCode:     op.ExitCode,
+		Error:        op.Error,
+		Output:       output,
+	}
+
+	data, err := json.MarshalIndent(logEntry, "", "  ")
+	if err != nil {
+		return
+	}
+
+	filename := fmt.Sprintf("%s_%s.json", op.StartedAt.Format("20060102-150405"), op.ID[:8])
+	logPath := filepath.Join(updateLogsDir, filename)
+	_ = os.WriteFile(logPath, data, 0640) //#nosec G306
+}
+
+// ListUpdateLogs returns metadata for all persisted update logs, most recent first.
+func (r *AptRunner) ListUpdateLogs(limit int) ([]UpdateLog, error) {
+	entries, err := os.ReadDir(updateLogsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []UpdateLog{}, nil
+		}
+		return nil, fmt.Errorf("failed to read update logs directory: %w", err)
+	}
+
+	var logs []UpdateLog
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+
+		logPath := filepath.Join(updateLogsDir, entry.Name())
+		data, err := os.ReadFile(logPath) //#nosec G304
+		if err != nil {
+			continue
+		}
+
+		var logEntry UpdateLog
+		if err := json.Unmarshal(data, &logEntry); err != nil {
+			continue
+		}
+
+		// Don't include the full output in the list — just metadata
+		logEntry.Output = ""
+		logs = append(logs, logEntry)
+	}
+
+	// Sort by started_at descending (most recent first)
+	sort.Slice(logs, func(i, j int) bool {
+		return logs[i].StartedAt.After(logs[j].StartedAt)
+	})
+
+	if limit > 0 && len(logs) > limit {
+		logs = logs[:limit]
+	}
+
+	return logs, nil
+}
+
+// GetUpdateLog returns a specific update log with full output.
+func (r *AptRunner) GetUpdateLog(id string) (*UpdateLog, error) {
+	entries, err := os.ReadDir(updateLogsDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read update logs directory: %w", err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+
+		// Check if filename contains the ID prefix
+		if !strings.Contains(entry.Name(), id[:8]) {
+			continue
+		}
+
+		logPath := filepath.Join(updateLogsDir, entry.Name())
+		data, err := os.ReadFile(logPath) //#nosec G304
+		if err != nil {
+			return nil, fmt.Errorf("failed to read log file: %w", err)
+		}
+
+		var logEntry UpdateLog
+		if err := json.Unmarshal(data, &logEntry); err != nil {
+			return nil, fmt.Errorf("failed to parse log file: %w", err)
+		}
+
+		return &logEntry, nil
+	}
+
+	return nil, fmt.Errorf("log not found: %s", id)
 }

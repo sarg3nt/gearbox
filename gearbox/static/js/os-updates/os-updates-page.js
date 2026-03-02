@@ -1,4 +1,4 @@
-let currentBoxID = '';
+let currentServerID = '';
 let selectedPackages = new Set();
 let currentOperationID = null;
 let terminalLineCount = 0;
@@ -9,6 +9,25 @@ let totalInstallSize = 0;
 let installedSize = 0;
 let packagesInstalled = 0;
 let totalPackagesToInstall = 0;
+let operationPollInterval = null;
+let operationReceivedSSE = false;
+let isRebooting = false;
+
+// Extract error message from a failed fetch response.
+// Tries to parse JSON { message } or { error }, falls back to status text.
+async function extractErrorMessage(response) {
+	try {
+		const text = await response.text();
+		try {
+			const json = JSON.parse(text);
+			return json.message || json.error || text;
+		} catch {
+			return text || response.statusText;
+		}
+	} catch {
+		return response.statusText || 'Unknown error';
+	}
+}
 
 // Move page header content to main header
 function setupPageHeader() {
@@ -25,10 +44,27 @@ document.addEventListener('DOMContentLoaded', function() {
 	setupPageHeader();
 	const serverInput = document.getElementById('current-server-id');
 	if (serverInput) {
-		currentBoxID = serverInput.value;
+		currentServerID = serverInput.value;
 	}
 
+	// Format snapshot dates in local time
+	document.querySelectorAll('.snapshot-date').forEach(el => {
+		const ts = el.dataset.timestamp;
+		if (ts) {
+			const d = new Date(ts);
+			if (!isNaN(d)) {
+				el.textContent = d.toLocaleString(undefined, {
+					month: 'short', day: 'numeric', year: 'numeric',
+					hour: 'numeric', minute: '2-digit', hour12: true
+				});
+			}
+		}
+	});
+
 	// Bind snapshot button events
+	document.querySelectorAll('.snapshot-preview-btn').forEach(btn => {
+		btn.addEventListener('click', () => previewSnapshot(btn.dataset.snapshotId));
+	});
 	document.querySelectorAll('.snapshot-restore-btn').forEach(btn => {
 		btn.addEventListener('click', () => restoreSnapshot(btn.dataset.snapshotId));
 	});
@@ -50,8 +86,27 @@ document.addEventListener('DOMContentLoaded', function() {
 	});
 
 	// Initialize SSE connection for real-time apt events
-	// Delay slightly to ensure currentBoxID is set
+	// Delay slightly to ensure currentServerID is set
 	setTimeout(initSSE, 100);
+
+	// Auto-check for updates on page load (if user has action permissions)
+	const canAction = document.getElementById('can-action');
+	if (canAction && canAction.value === 'true' && currentServerID) {
+		const autoCheckKey = 'os-updates-auto-checked-' + currentServerID;
+		const lastCheck = parseInt(sessionStorage.getItem(autoCheckKey) || '0');
+		const now = Date.now();
+		if (now - lastCheck > 30000) {
+			sessionStorage.setItem(autoCheckKey, String(now));
+			setTimeout(autoCheckForUpdates, 500);
+		}
+	}
+});
+
+// Cleanup SSE connection on page unload
+window.addEventListener('beforeunload', function() {
+	if (sseConnection) {
+		sseConnection.close();
+	}
 });
 
 // Event handler registration (global functions for terminal modal)
@@ -70,7 +125,7 @@ window.unregisterEventHandler = function(eventType, handler) {
 
 function initSSE() {
 	// Don't initialize without a server ID
-	if (!currentBoxID) {
+	if (!currentServerID) {
 		console.warn('SSE: No server ID available, skipping initialization');
 		return;
 	}
@@ -79,32 +134,74 @@ function initSSE() {
 		sseConnection.close();
 	}
 
-	const sseUrl = `/api/events?server=${currentBoxID}`;
+	updateSSEStatus('connecting');
+
+	const sseUrl = `/api/events?server=${currentServerID}`;
 	sseConnection = new EventSource(sseUrl);
 
 	sseConnection.onopen = function() {
 		console.log('SSE: Connection established');
+		updateSSEStatus('connected');
 	};
 
-	sseConnection.onmessage = function(e) {
+	// Listen for each named event type individually.
+	// The SSE server sends named events (event: apt.output\ndata: ...\n\n)
+	// which do NOT trigger onmessage — they require addEventListener.
+	const sseEventTypes = [
+		'apt.started', 'apt.output', 'apt.completed', 'apt.failed',
+		'server.connected', 'server.disconnected',
+	];
+	sseEventTypes.forEach(eventType => {
+		sseConnection.addEventListener(eventType, function(e) {
+			try {
+				const event = JSON.parse(e.data);
+				const type = event.type || eventType;
+				if (eventHandlers[type]) {
+					eventHandlers[type].forEach(handler => {
+						try {
+							handler(event);
+						} catch (err) {
+							console.error('Error in event handler:', err);
+						}
+					});
+				}
+			} catch (err) {
+				console.error('Failed to parse SSE event:', err);
+			}
+		});
+	});
+
+	// Handle server disconnection (reboot or network issue)
+	sseConnection.addEventListener('server.disconnected', function(e) {
 		try {
 			const event = JSON.parse(e.data);
-			// Dispatch to registered handlers
-			if (eventHandlers[event.type]) {
-				eventHandlers[event.type].forEach(handler => {
-					try {
-						handler(event);
-					} catch (err) {
-						console.error('Error in event handler:', err);
-					}
-				});
+			console.log('SSE: Server disconnected', event.data);
+			// Server went down — assume rebooting so we can detect reconnection
+			isRebooting = true;
+			showRebootingStatus();
+		} catch (err) {
+			console.error('Failed to handle server.disconnected:', err);
+		}
+	});
+
+	// Handle server reconnection after reboot
+	sseConnection.addEventListener('server.connected', function(e) {
+		try {
+			const event = JSON.parse(e.data);
+			console.log('SSE: Server connected', event.data);
+			if (isRebooting) {
+				isRebooting = false;
+				showRebootNotRequiredStatus();
+				showToast('Reboot complete. Server is back online.', 'success');
+				autoCheckForUpdates();
 			}
 		} catch (err) {
-			console.error('Failed to parse SSE event:', err);
+			console.error('Failed to handle server.connected:', err);
 		}
-	};
+	});
 
 	sseConnection.onerror = function(e) {
+		updateSSEStatus('disconnected');
 		// Only log if not a normal page unload
 		if (sseConnection.readyState !== EventSource.CLOSED) {
 			console.warn('SSE: Connection error, will retry...');
@@ -118,8 +215,15 @@ function initSSE() {
 	};
 }
 
-function switchBox(boxID) {
-	window.location.href = '/os-updates?server=' + boxID;
+// Manual refresh triggered by the LiveRefreshButton
+function manualRefresh() {
+	const icon = document.getElementById('refresh-icon');
+	if (icon) icon.classList.add('animate-spin');
+	window.location.reload();
+}
+
+function switchServer(serverID) {
+	window.location.href = '/os-updates?server=' + serverID;
 }
 
 async function refreshPageData() {
@@ -134,21 +238,150 @@ async function checkForUpdates() {
 	}
 
 	try {
-		// This call runs apt update on the server and waits for it to complete
-		const response = await fetch('/api/os-updates/check?server=' + currentBoxID, { method: 'POST' });
-		if (!response.ok) throw new Error('Failed to check for updates');
+		const response = await fetch('/api/os-updates/check?server=' + currentServerID, { method: 'POST' });
+		if (!response.ok) {
+			const errMsg = await extractErrorMessage(response);
+			throw new Error(errMsg);
+		}
 
 		const data = await response.json();
 		showToast('Update check complete. Found ' + data.total_updates + ' updates (' + data.security_updates + ' security).', 'success');
 
-		// Reload page to show updated package list
-		window.location.reload();
+		// Update UI in-place
+		const totalEl = document.getElementById('total-updates');
+		const securityEl = document.getElementById('security-updates');
+		if (totalEl) totalEl.textContent = data.total_updates;
+		if (securityEl) {
+			securityEl.textContent = data.security_updates;
+			if (data.security_updates > 0) {
+				securityEl.className = 'text-2xl font-bold mt-2 text-red-600 dark:text-red-400';
+			} else {
+				securityEl.className = 'text-2xl font-bold mt-2 text-gray-800 dark:text-gray-100';
+			}
+		}
+		await refreshPackageTable();
+
+		if (btn) {
+			btn.disabled = false;
+			btn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> Check for Updates';
+		}
 	} catch (err) {
 		showToast('Failed to check for updates: ' + err.message, 'error');
 		if (btn) {
 			btn.disabled = false;
 			btn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> Check for Updates';
 		}
+	}
+}
+
+async function autoCheckForUpdates() {
+	try {
+		const response = await fetch('/api/os-updates/check?server=' + currentServerID, { method: 'POST' });
+		if (!response.ok) {
+			console.warn('Auto-check for updates failed:', response.status);
+			return;
+		}
+		const data = await response.json();
+
+		// Update status cards in-place
+		const totalEl = document.getElementById('total-updates');
+		const securityEl = document.getElementById('security-updates');
+		if (totalEl) totalEl.textContent = data.total_updates;
+		if (securityEl) {
+			securityEl.textContent = data.security_updates;
+			if (data.security_updates > 0) {
+				securityEl.className = 'text-2xl font-bold mt-2 text-red-600 dark:text-red-400';
+			} else {
+				securityEl.className = 'text-2xl font-bold mt-2 text-gray-800 dark:text-gray-100';
+			}
+		}
+
+		// If package count changed, refresh the package table
+		const currentCount = document.querySelectorAll('.package-row').length;
+		if (data.total_updates !== currentCount) {
+			await refreshPackageTable();
+		}
+	} catch (err) {
+		console.warn('Auto-check for updates error:', err.message);
+	}
+}
+
+function formatBytes(bytes) {
+	if (!bytes || bytes === 0) return '-';
+	const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+	let i = 0;
+	let size = bytes;
+	while (size >= 1024 && i < units.length - 1) {
+		size /= 1024;
+		i++;
+	}
+	return i === 0 ? size + ' B' : size.toFixed(1) + ' ' + units[i];
+}
+
+async function refreshPackageTable() {
+	try {
+		const response = await fetch('/api/os-updates/packages?server=' + currentServerID);
+		if (!response.ok) return;
+		const data = await response.json();
+
+		const tbody = document.getElementById('packages-table');
+		if (!tbody) return;
+
+		const canAction = document.getElementById('can-action');
+		const hasAction = canAction && canAction.value === 'true';
+
+		if (!data.packages || data.packages.length === 0) {
+			tbody.innerHTML = '<tr><td colspan="8" class="px-4 py-8 text-center text-gray-500 dark:text-gray-400">No updates available - system is up to date!</td></tr>';
+			return;
+		}
+
+		selectedPackages.clear();
+		updateSelectedPackagesUI();
+
+		tbody.innerHTML = '';
+		data.packages.forEach(pkg => {
+			const row = document.createElement('tr');
+			row.className = 'package-row hover:bg-gray-50 dark:hover:bg-slate-700 transition-opacity duration-300';
+			row.dataset.packageName = pkg.name;
+			row.dataset.packageSize = pkg.size_bytes || 0;
+
+			let html = '';
+			if (hasAction) {
+				html += '<td class="px-4 py-3"><input type="checkbox" class="package-checkbox w-4 h-4 rounded border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700" data-package="' + escapeHtml(pkg.name) + '"/></td>';
+			}
+			html += '<td class="px-4 py-3 package-status-cell"></td>';
+			html += '<td class="px-4 py-3 text-gray-800 dark:text-gray-200 font-medium package-name-cell">' + escapeHtml(pkg.name) + '</td>';
+			html += '<td class="px-4 py-3 text-gray-600 dark:text-gray-400 font-mono text-xs">' + escapeHtml(pkg.current_version) + '</td>';
+			html += '<td class="px-4 py-3 text-gray-600 dark:text-gray-400 font-mono text-xs">' + escapeHtml(pkg.available_version) + '</td>';
+			if (pkg.is_security_update) {
+				html += '<td class="px-4 py-3"><span class="px-2 py-1 text-xs bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded">Security</span></td>';
+			} else {
+				html += '<td class="px-4 py-3"><span class="px-2 py-1 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded">Standard</span></td>';
+			}
+			html += '<td class="px-4 py-3 text-gray-600 dark:text-gray-400">' + formatBytes(pkg.size_bytes) + '</td>';
+			html += '<td class="px-4 py-3"><button class="package-info-btn p-1.5 rounded hover:bg-gray-100 dark:hover:bg-slate-600 text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"'
+				+ ' data-package-name="' + escapeHtml(pkg.name) + '"'
+				+ ' data-package-current="' + escapeHtml(pkg.current_version) + '"'
+				+ ' data-package-available="' + escapeHtml(pkg.available_version) + '"'
+				+ ' data-package-arch="' + escapeHtml(pkg.architecture || '') + '"'
+				+ ' data-package-repo="' + escapeHtml(pkg.repository || '') + '"'
+				+ ' data-package-size="' + formatBytes(pkg.size_bytes) + '"'
+				+ ' data-package-security="' + (pkg.is_security_update ? 'true' : 'false') + '"'
+				+ ' data-changelog-url="' + escapeHtml(pkg.changelog_url || '') + '"'
+				+ ' title="View package info">'
+				+ '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>'
+				+ '</button></td>';
+
+			row.innerHTML = html;
+			tbody.appendChild(row);
+		});
+
+		// Re-bind package info buttons for new rows
+		tbody.querySelectorAll('.package-info-btn').forEach(btn => {
+			btn.addEventListener('click', () => showPackageInfo(btn));
+		});
+	} catch (err) {
+		console.warn('Failed to refresh package table:', err.message);
 	}
 }
 
@@ -160,14 +393,14 @@ function installAllUpdates() {
 		confirmText: 'Install Updates',
 		onConfirm: async () => {
 			try {
-				const response = await fetch('/api/os-updates/install?server=' + currentBoxID + '&stream=true', {
+				const response = await fetch('/api/os-updates/install?server=' + currentServerID + '&stream=true', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({})
 				});
 				if (!response.ok) {
-					const errorData = await response.json().catch(() => ({}));
-					throw new Error(errorData.error || 'Failed to start update installation');
+					const errMsg = await extractErrorMessage(response);
+					throw new Error(errMsg);
 				}
 				const data = await response.json();
 				if (data.operation_id) {
@@ -191,14 +424,14 @@ function installSecurityUpdates() {
 		confirmText: 'Install Security Updates',
 		onConfirm: async () => {
 			try {
-				const response = await fetch('/api/os-updates/install?server=' + currentBoxID + '&stream=true', {
+				const response = await fetch('/api/os-updates/install?server=' + currentServerID + '&stream=true', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ security_only: true })
 				});
 				if (!response.ok) {
-					const errorData = await response.json().catch(() => ({}));
-					throw new Error(errorData.error || 'Failed to start security updates installation');
+					const errMsg = await extractErrorMessage(response);
+					throw new Error(errMsg);
 				}
 				const data = await response.json();
 				if (data.operation_id) {
@@ -228,14 +461,14 @@ function installSelectedPackages() {
 		confirmText: 'Install',
 		onConfirm: async () => {
 			try {
-				const response = await fetch('/api/os-updates/install?server=' + currentBoxID + '&stream=true', {
+				const response = await fetch('/api/os-updates/install?server=' + currentServerID + '&stream=true', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ packages: packages })
 				});
 				if (!response.ok) {
-					const errorData = await response.json().catch(() => ({}));
-					throw new Error(errorData.error || 'Failed to start package installation');
+					const errMsg = await extractErrorMessage(response);
+					throw new Error(errMsg);
 				}
 				const data = await response.json();
 				if (data.operation_id) {
@@ -304,17 +537,113 @@ function filterPackages(query) {
 
 async function createSnapshot(reason) {
 	try {
-		const response = await fetch('/api/os-updates/snapshots?server=' + currentBoxID, {
+		const response = await fetch('/api/os-updates/snapshots?server=' + currentServerID, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ reason: reason })
 		});
-		if (!response.ok) throw new Error('Failed to create snapshot');
+		if (!response.ok) {
+			const errMsg = await extractErrorMessage(response);
+			throw new Error(errMsg);
+		}
 		showToast('Snapshot created', 'success');
 		setTimeout(() => window.location.reload(), 1000);
 	} catch (err) {
 		showToast('Failed to create snapshot: ' + err.message, 'error');
 	}
+}
+
+function createManualSnapshot() {
+	showConfirmModal({
+		title: 'Create Snapshot',
+		message: 'Create a snapshot of the current package state? You can add an optional description.',
+		type: 'info',
+		confirmText: 'Create Snapshot',
+		showInput: true,
+		inputPlaceholder: 'e.g. Before nginx upgrade',
+		inputMaxLength: 255,
+		onConfirm: async (inputVal) => {
+			const description = (inputVal || '').trim();
+			const reason = description || 'manual';
+			await createSnapshot(reason);
+		}
+	});
+}
+
+async function previewSnapshot(snapshotID) {
+	const modal = document.getElementById('preview-modal');
+	const title = document.getElementById('preview-title');
+	const content = document.getElementById('preview-content');
+
+	if (!modal || !content) return;
+
+	title.textContent = 'Snapshot Preview — ' + snapshotID;
+	content.innerHTML = '<div class="flex items-center justify-center py-8"><svg class="animate-spin h-6 w-6 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span class="ml-2 text-gray-500 dark:text-gray-400">Loading preview...</span></div>';
+	modal.classList.remove('hidden');
+
+	try {
+		const response = await fetch('/api/os-updates/snapshots/' + encodeURIComponent(snapshotID) + '/preview?server=' + currentServerID);
+		if (!response.ok) {
+			const errMsg = await extractErrorMessage(response);
+			throw new Error(errMsg);
+		}
+		const data = await response.json();
+		content.innerHTML = renderPreviewContent(data);
+	} catch (err) {
+		content.innerHTML = '<div class="text-center py-8"><p class="text-red-500">Failed to load preview: ' + escapeHtml(err.message) + '</p></div>';
+	}
+}
+
+function renderPreviewContent(data) {
+	if (!data.has_versions && (!data.installs || data.installs.length === 0) && (!data.removals || data.removals.length === 0)) {
+		return '<div class="text-center py-8 text-gray-500 dark:text-gray-400"><p class="text-lg mb-2">No version data available</p><p class="text-sm">This snapshot was created before version tracking was added. Create a new snapshot to get version-aware previews.</p></div>';
+	}
+
+	if (data.total_changes === 0) {
+		return '<div class="text-center py-8 text-gray-500 dark:text-gray-400"><p class="text-lg">No changes needed</p><p class="text-sm mt-1">The current system state matches this snapshot.</p></div>';
+	}
+
+	let html = '<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">' + data.total_changes + ' change(s) would be applied:</p>';
+
+	if (data.downgrades && data.downgrades.length > 0) {
+		html += '<div class="mb-4"><h4 class="text-sm font-semibold text-yellow-600 dark:text-yellow-400 mb-2">Downgrades (' + data.downgrades.length + ')</h4>';
+		html += '<div class="bg-gray-50 dark:bg-slate-700/50 rounded-lg overflow-hidden"><table class="w-full text-sm"><thead><tr class="border-b border-gray-200 dark:border-slate-600"><th class="px-3 py-2 text-left text-gray-500 dark:text-gray-400 font-medium">Package</th><th class="px-3 py-2 text-left text-gray-500 dark:text-gray-400 font-medium">Current</th><th class="px-3 py-2 text-center text-gray-400">→</th><th class="px-3 py-2 text-left text-gray-500 dark:text-gray-400 font-medium">Snapshot</th></tr></thead><tbody>';
+		data.downgrades.forEach(function(d) {
+			html += '<tr class="border-b border-gray-100 dark:border-slate-600/50"><td class="px-3 py-1.5 text-gray-800 dark:text-gray-200 font-mono text-xs">' + escapeHtml(d.package) + '</td><td class="px-3 py-1.5 text-red-600 dark:text-red-400 font-mono text-xs">' + escapeHtml(d.current_version) + '</td><td class="px-3 py-1.5 text-center text-gray-400">→</td><td class="px-3 py-1.5 text-green-600 dark:text-green-400 font-mono text-xs">' + escapeHtml(d.target_version) + '</td></tr>';
+		});
+		html += '</tbody></table></div></div>';
+	}
+
+	if (data.installs && data.installs.length > 0) {
+		html += '<div class="mb-4"><h4 class="text-sm font-semibold text-green-600 dark:text-green-400 mb-2">Would be installed (' + data.installs.length + ')</h4>';
+		html += '<div class="flex flex-wrap gap-1">';
+		data.installs.forEach(function(pkg) {
+			html += '<span class="px-2 py-0.5 text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded font-mono">' + escapeHtml(pkg) + '</span>';
+		});
+		html += '</div></div>';
+	}
+
+	if (data.removals && data.removals.length > 0) {
+		html += '<div class="mb-4"><h4 class="text-sm font-semibold text-red-600 dark:text-red-400 mb-2">Would be removed (' + data.removals.length + ')</h4>';
+		html += '<div class="flex flex-wrap gap-1">';
+		data.removals.forEach(function(pkg) {
+			html += '<span class="px-2 py-0.5 text-xs bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded font-mono">' + escapeHtml(pkg) + '</span>';
+		});
+		html += '</div></div>';
+	}
+
+	return html;
+}
+
+function hidePreviewModal() {
+	const modal = document.getElementById('preview-modal');
+	if (modal) modal.classList.add('hidden');
+}
+
+function escapeHtml(str) {
+	const div = document.createElement('div');
+	div.appendChild(document.createTextNode(str));
+	return div.innerHTML;
 }
 
 function restoreSnapshot(snapshotID) {
@@ -325,14 +654,23 @@ function restoreSnapshot(snapshotID) {
 		confirmText: 'Restore',
 		onConfirm: async () => {
 			try {
-				const response = await fetch('/api/os-updates/snapshots/restore?server=' + currentBoxID, {
+				const response = await fetch('/api/os-updates/snapshots/restore?server=' + currentServerID, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ snapshot_id: snapshotID })
 				});
-				if (!response.ok) throw new Error('Failed to restore snapshot');
-				showToast('Snapshot restored', 'success');
-				setTimeout(() => window.location.reload(), 3000);
+				if (!response.ok) {
+					const errMsg = await extractErrorMessage(response);
+					throw new Error(errMsg);
+				}
+				const data = await response.json();
+				if (data.operation_id) {
+					openTerminalModal(data.operation_id, 'Restoring Snapshot', false);
+				} else {
+					showToast('Snapshot restored successfully. Reloading...', 'success', {
+						onClose: () => window.location.reload()
+					});
+				}
 			} catch (err) {
 				showToast('Failed to restore snapshot: ' + err.message, 'error');
 			}
@@ -347,15 +685,102 @@ function deleteSnapshot(snapshotID) {
 		type: 'danger',
 		confirmText: 'Delete',
 		onConfirm: async () => {
+			// Show loading indicator on the delete button
+			const deleteBtn = document.querySelector('.snapshot-delete-btn[data-snapshot-id="' + snapshotID + '"]');
+			if (deleteBtn) {
+				deleteBtn.disabled = true;
+				deleteBtn.innerHTML = '<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>';
+			}
 			try {
-				const response = await fetch('/api/os-updates/snapshots/' + snapshotID + '?server=' + currentBoxID, {
+				const response = await fetch('/api/os-updates/snapshots/' + snapshotID + '?server=' + currentServerID, {
 					method: 'DELETE'
 				});
-				if (!response.ok) throw new Error('Failed to delete snapshot');
+				if (!response.ok) {
+					const errMsg = await extractErrorMessage(response);
+					throw new Error(errMsg);
+				}
 				showToast('Snapshot deleted', 'success');
-				setTimeout(() => window.location.reload(), 1000);
+				// Remove the snapshot row from the DOM immediately
+				const snapshotRow = document.querySelector('[data-snapshot-row="' + snapshotID + '"]');
+				if (snapshotRow) {
+					snapshotRow.remove();
+					updateBulkDeleteButton();
+				} else {
+					setTimeout(() => window.location.reload(), 1000);
+				}
 			} catch (err) {
 				showToast('Failed to delete snapshot: ' + err.message, 'error');
+				if (deleteBtn) {
+					deleteBtn.disabled = false;
+					deleteBtn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>';
+				}
+			}
+		}
+	});
+}
+
+function toggleSelectAllSnapshots(checked) {
+	document.querySelectorAll('.snapshot-checkbox').forEach(cb => {
+		cb.checked = checked;
+	});
+	updateBulkDeleteButton();
+}
+
+function updateBulkDeleteButton() {
+	const btn = document.getElementById('bulk-delete-snapshots-btn');
+	if (!btn) return;
+	const all = document.querySelectorAll('.snapshot-checkbox');
+	const checked = document.querySelectorAll('.snapshot-checkbox:checked');
+	const selectAll = document.getElementById('select-all-snapshots');
+	if (selectAll) {
+		selectAll.checked = all.length > 0 && checked.length === all.length;
+		selectAll.indeterminate = checked.length > 0 && checked.length < all.length;
+	}
+	if (checked.length > 0) {
+		btn.classList.remove('hidden');
+		btn.textContent = 'Delete Selected (' + checked.length + ')';
+	} else {
+		btn.classList.add('hidden');
+	}
+}
+
+function bulkDeleteSnapshots() {
+	const checked = document.querySelectorAll('.snapshot-checkbox:checked');
+	if (checked.length === 0) return;
+
+	const ids = Array.from(checked).map(cb => cb.dataset.snapshotId);
+	showConfirmModal({
+		title: 'Delete Snapshots',
+		message: 'Delete ' + ids.length + ' selected snapshot(s)? This action cannot be undone.',
+		type: 'danger',
+		confirmText: 'Delete All',
+		onConfirm: async () => {
+			let deleted = 0;
+			let failed = 0;
+			for (const id of ids) {
+				try {
+					const response = await fetch('/api/os-updates/snapshots/' + id + '?server=' + currentServerID, {
+						method: 'DELETE'
+					});
+					if (!response.ok) {
+						failed++;
+						continue;
+					}
+					deleted++;
+					const row = document.querySelector('[data-snapshot-row="' + id + '"]');
+					if (row) row.remove();
+				} catch {
+					failed++;
+				}
+			}
+			if (failed > 0) {
+				showToast('Deleted ' + deleted + ', failed ' + failed, 'warning');
+			} else {
+				showToast(deleted + ' snapshot(s) deleted', 'success');
+			}
+			updateBulkDeleteButton();
+			if (document.querySelectorAll('[data-snapshot-row]').length === 0) {
+				setTimeout(() => window.location.reload(), 1000);
 			}
 		}
 	});
@@ -401,16 +826,70 @@ async function confirmReboot() {
 
 async function doReboot(when) {
 	try {
-		const response = await fetch('/api/os-updates/reboot?server=' + currentBoxID, {
+		const response = await fetch('/api/os-updates/reboot?server=' + currentServerID, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ when: when })
 		});
-		if (!response.ok) throw new Error('Failed to schedule reboot');
+		if (!response.ok) {
+			const errMsg = await extractErrorMessage(response);
+			throw new Error(errMsg);
+		}
 		const data = await response.json();
-		showToast(data.message || 'Reboot scheduled', 'success');
+
+		if (when === 'now') {
+			isRebooting = true;
+			showRebootingStatus();
+			showToast('System is rebooting...', 'info');
+		} else {
+			showToast(data.message || 'Reboot scheduled', 'success');
+		}
 	} catch (err) {
 		showToast('Failed to schedule reboot: ' + err.message, 'error');
+	}
+}
+
+// Update the reboot status card to show rebooting state
+function showRebootingStatus() {
+	const icon = document.getElementById('reboot-status-icon');
+	const status = document.getElementById('reboot-status');
+	const subtitle = document.getElementById('reboot-status-subtitle');
+	const actions = document.getElementById('reboot-actions');
+
+	if (icon) {
+		icon.innerHTML = '<svg class="w-5 h-5 text-blue-500 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>';
+	}
+	if (status) {
+		status.className = 'text-2xl font-bold mt-2 text-blue-600 dark:text-blue-400';
+		status.textContent = 'Rebooting...';
+	}
+	if (subtitle) {
+		subtitle.textContent = 'Waiting for server to come back online';
+	}
+	if (actions) {
+		actions.classList.add('hidden');
+	}
+}
+
+// Update the reboot status card to show not required state
+function showRebootNotRequiredStatus() {
+	const icon = document.getElementById('reboot-status-icon');
+	const status = document.getElementById('reboot-status');
+	const subtitle = document.getElementById('reboot-status-subtitle');
+	const actions = document.getElementById('reboot-actions');
+
+	if (icon) {
+		icon.innerHTML = '<svg class="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>';
+	}
+	if (status) {
+		status.className = 'text-2xl font-bold mt-2 text-green-600 dark:text-green-400';
+		status.textContent = 'Not Required';
+	}
+	if (subtitle) {
+		subtitle.textContent = 'System reboot status';
+	}
+	if (actions) {
+		actions.classList.add('hidden');
 	}
 }
 
@@ -435,46 +914,55 @@ async function confirmPipxInstall() {
 	hidePipxInstallModal();
 
 	try {
-		const response = await fetch('/api/os-updates/pipx/install?server=' + currentBoxID, {
+		const response = await fetch('/api/os-updates/pipx/install?server=' + currentServerID, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ name: name })
 		});
-		if (!response.ok) throw new Error('Failed to install package');
+		if (!response.ok) {
+			const errMsg = await extractErrorMessage(response);
+			throw new Error(errMsg);
+		}
 		showToast('Package ' + name + ' installed', 'success');
 		setTimeout(() => window.location.reload(), 1000);
 	} catch (err) {
-		showToast('Failed to install package: ' + err.message, 'error');
+		showToast('Failed to install pipx package: ' + err.message, 'error');
 	}
 }
 
 async function upgradePipxPackage(name) {
 	try {
-		const response = await fetch('/api/os-updates/pipx/upgrade?server=' + currentBoxID, {
+		const response = await fetch('/api/os-updates/pipx/upgrade?server=' + currentServerID, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ name: name })
 		});
-		if (!response.ok) throw new Error('Failed to upgrade package');
+		if (!response.ok) {
+			const errMsg = await extractErrorMessage(response);
+			throw new Error(errMsg);
+		}
 		showToast('Package ' + name + ' upgraded', 'success');
 		setTimeout(() => window.location.reload(), 1000);
 	} catch (err) {
-		showToast('Failed to upgrade package: ' + err.message, 'error');
+		showToast('Failed to upgrade pipx package: ' + err.message, 'error');
 	}
 }
 
 async function upgradeAllPipx() {
 	try {
-		const response = await fetch('/api/os-updates/pipx/upgrade?server=' + currentBoxID, {
+		const response = await fetch('/api/os-updates/pipx/upgrade?server=' + currentServerID, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({})
 		});
-		if (!response.ok) throw new Error('Failed to upgrade packages');
+		if (!response.ok) {
+			const errMsg = await extractErrorMessage(response);
+			throw new Error(errMsg);
+		}
 		showToast('All pipx packages upgraded', 'success');
 		setTimeout(() => window.location.reload(), 1000);
 	} catch (err) {
-		showToast('Failed to upgrade packages: ' + err.message, 'error');
+		showToast('Failed to upgrade pipx packages: ' + err.message, 'error');
 	}
 }
 
@@ -486,16 +974,19 @@ function uninstallPipxPackage(name) {
 		confirmText: 'Uninstall',
 		onConfirm: async () => {
 			try {
-				const response = await fetch('/api/os-updates/pipx/uninstall?server=' + currentBoxID, {
+				const response = await fetch('/api/os-updates/pipx/uninstall?server=' + currentServerID, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ name: name })
 				});
-				if (!response.ok) throw new Error('Failed to uninstall package');
+				if (!response.ok) {
+					const errMsg = await extractErrorMessage(response);
+					throw new Error(errMsg);
+				}
 				showToast('Package ' + name + ' uninstalled', 'success');
 				setTimeout(() => window.location.reload(), 1000);
 			} catch (err) {
-				showToast('Failed to uninstall package: ' + err.message, 'error');
+				showToast('Failed to uninstall pipx package: ' + err.message, 'error');
 			}
 		}
 	});
@@ -555,10 +1046,55 @@ function showConfirmModal(options) {
 	const title = document.getElementById('confirm-title');
 	const message = document.getElementById('confirm-message');
 	const actionBtn = document.getElementById('confirm-action-btn');
+	const input = document.getElementById('confirm-input');
 
 	title.textContent = options.title || 'Confirm';
 	message.textContent = options.message || 'Are you sure?';
 	actionBtn.textContent = options.confirmText || 'Confirm';
+
+	// Handle optional input field
+	const counter = document.getElementById('confirm-input-counter');
+	if (input) {
+		if (options.showInput) {
+			input.classList.remove('hidden');
+			input.value = '';
+			input.placeholder = options.inputPlaceholder || '';
+			const maxLen = options.inputMaxLength || 0;
+			if (maxLen > 0) {
+				input.maxLength = maxLen;
+				if (counter) {
+					counter.classList.add('hidden');
+					input.oninput = function() {
+						const len = input.value.length;
+						const threshold = Math.floor(maxLen * 0.8);
+						if (len >= threshold) {
+							counter.textContent = len + ' of ' + maxLen;
+							counter.classList.remove('hidden');
+							if (len >= maxLen) {
+								counter.classList.remove('text-gray-400', 'dark:text-gray-500');
+								counter.classList.add('text-red-500', 'dark:text-red-400');
+							} else {
+								counter.classList.remove('text-red-500', 'dark:text-red-400');
+								counter.classList.add('text-gray-400', 'dark:text-gray-500');
+							}
+						} else {
+							counter.classList.add('hidden');
+						}
+					};
+				}
+			} else {
+				input.removeAttribute('maxLength');
+				input.oninput = null;
+				if (counter) counter.classList.add('hidden');
+			}
+		} else {
+			input.classList.add('hidden');
+			input.value = '';
+			input.removeAttribute('maxLength');
+			input.oninput = null;
+			if (counter) counter.classList.add('hidden');
+		}
+	}
 
 	// Set icon and button style based on type
 	const type = options.type || 'warning';
@@ -581,49 +1117,39 @@ function showConfirmModal(options) {
 
 	confirmCallback = options.onConfirm;
 	actionBtn.onclick = () => {
+		const cb = confirmCallback;
+		// Read input value before hiding (hideConfirmModal clears it)
+		const inputVal = input ? input.value : '';
 		hideConfirmModal();
-		if (confirmCallback) confirmCallback();
+		if (cb) cb(inputVal);
 	};
 
 	modal.classList.remove('hidden');
 }
 
 function hideConfirmModal() {
-	document.getElementById('confirm-modal').classList.add('hidden');
+	const modal = document.getElementById('confirm-modal');
+	const input = document.getElementById('confirm-input');
+	const counter = document.getElementById('confirm-input-counter');
+	if (modal) modal.classList.add('hidden');
+	if (input) {
+		input.classList.add('hidden');
+		input.value = '';
+		input.removeAttribute('maxLength');
+		input.oninput = null;
+	}
+	if (counter) counter.classList.add('hidden');
 	confirmCallback = null;
 }
 
-// Toast functions
-let toastTimeout = null;
-
-function showToast(message, type) {
-	const toast = document.getElementById('toast');
-	const content = document.getElementById('toast-content');
-	const messageEl = document.getElementById('toast-message');
-
-	content.className = 'px-4 py-3 rounded-lg shadow-lg flex items-center gap-3';
-	if (type === 'success') {
-		content.classList.add('bg-green-100', 'dark:bg-green-900/30', 'text-green-700', 'dark:text-green-400');
-	} else if (type === 'error') {
-		content.classList.add('bg-red-100', 'dark:bg-red-900/30', 'text-red-700', 'dark:text-red-400');
-	} else if (type === 'warning') {
-		content.classList.add('bg-yellow-100', 'dark:bg-yellow-900/30', 'text-yellow-700', 'dark:text-yellow-400');
-	} else {
-		content.classList.add('bg-blue-100', 'dark:bg-blue-900/30', 'text-blue-700', 'dark:text-blue-400');
-	}
-
-	messageEl.textContent = message;
-	toast.classList.remove('hidden');
-
-	if (toastTimeout) clearTimeout(toastTimeout);
-	toastTimeout = setTimeout(hideToast, 5000);
-}
-
-function hideToast() {
-	document.getElementById('toast').classList.add('hidden');
-	if (toastTimeout) {
-		clearTimeout(toastTimeout);
-		toastTimeout = null;
+// Toast helper — delegates to the global toast system (static/js/utils/toast.js).
+// All calls in this file use window.showToast which supports:
+//   showToast(message, type)
+//   showToast(message, type, durationMs)
+//   showToast(message, type, { onClose, duration, persistent, buttons })
+function showToast(message, type, options) {
+	if (window.showToast) {
+		return window.showToast(message, type, options);
 	}
 }
 
@@ -631,6 +1157,7 @@ function hideToast() {
 function openTerminalModal(operationId, title, allPackages = true) {
 	currentOperationID = operationId;
 	terminalLineCount = 0;
+	operationReceivedSSE = false;
 
 	const modal = document.getElementById('terminal-modal');
 	const titleEl = document.getElementById('terminal-title');
@@ -658,11 +1185,18 @@ function openTerminalModal(operationId, title, allPackages = true) {
 	}
 
 	appendTerminalLine('Starting operation ' + operationId + '...\n', 'info');
+
+	// Start polling fallback — catches cases where SSE events are missed
+	// (e.g., race condition, fast operations, SSE reconnection gaps)
+	startOperationPolling(operationId);
 }
 
 function closeTerminalModal() {
 	const modal = document.getElementById('terminal-modal');
 	modal.classList.add('hidden');
+
+	// Stop polling
+	stopOperationPolling();
 
 	// Unregister event handlers
 	if (window.unregisterEventHandler) {
@@ -735,6 +1269,7 @@ function handleAptOutput(event) {
 	const opId = event.data.operation_id;
 	if (opId !== currentOperationID) return;
 
+	operationReceivedSSE = true;
 	const line = event.data.line || '';
 	const stream = event.data.stream || 'stdout';
 	appendTerminalLine(line, stream);
@@ -745,6 +1280,8 @@ function handleAptCompleted(event) {
 	const opId = event.data.operation_id;
 	if (opId !== currentOperationID) return;
 
+	operationReceivedSSE = true;
+	stopOperationPolling();
 	setTerminalStatus('completed');
 	appendTerminalLine('\nOperation completed successfully.', 'info');
 }
@@ -754,9 +1291,46 @@ function handleAptFailed(event) {
 	const opId = event.data.operation_id;
 	if (opId !== currentOperationID) return;
 
+	operationReceivedSSE = true;
+	stopOperationPolling();
 	setTerminalStatus('failed');
 	const errorMsg = event.data.error || 'Unknown error';
 	appendTerminalLine('\nOperation failed: ' + errorMsg, 'stderr');
+}
+
+function startOperationPolling(operationId) {
+	stopOperationPolling();
+	operationPollInterval = setInterval(async () => {
+		try {
+			const response = await fetch('/api/os-updates/operation/' + operationId + '?server=' + currentServerID);
+			if (!response.ok) return;
+			const data = await response.json();
+
+			if (data.status === 'completed' || data.status === 'failed') {
+				stopOperationPolling();
+				// Only update terminal if SSE didn't already handle it
+				const statusText = document.getElementById('terminal-status-text');
+				if (statusText && statusText.textContent === 'Running...') {
+					if (data.status === 'completed') {
+						setTerminalStatus('completed');
+						appendTerminalLine('\nOperation completed successfully.', 'info');
+					} else {
+						setTerminalStatus('failed');
+						appendTerminalLine('\nOperation failed: ' + (data.error || 'Unknown error'), 'stderr');
+					}
+				}
+			}
+		} catch (err) {
+			// Polling errors are non-fatal — SSE is the primary channel
+		}
+	}, 3000);
+}
+
+function stopOperationPolling() {
+	if (operationPollInterval) {
+		clearInterval(operationPollInterval);
+		operationPollInterval = null;
+	}
 }
 
 function copyTerminalOutput() {
@@ -974,3 +1548,145 @@ handleAptCompleted = function(event) {
 		originalHandleAptCompleted.call(this, event);
 	}
 };
+
+// ============================================================================
+// Update Logs
+// ============================================================================
+
+async function loadUpdateLogs() {
+	const table = document.getElementById('update-logs-table');
+	if (!table) return;
+
+	table.innerHTML = '<tr><td colspan="5" class="px-4 py-8 text-center text-gray-500 dark:text-gray-400">Loading logs...</td></tr>';
+
+	try {
+		const response = await fetch(`/api/os-updates/logs?server=${currentServerID}&limit=50`);
+		if (!response.ok) {
+			throw new Error(await extractErrorMessage(response));
+		}
+
+		const data = await response.json();
+
+		if (!data.logs || data.logs.length === 0) {
+			table.innerHTML = '<tr><td colspan="5" class="px-4 py-8 text-center text-gray-500 dark:text-gray-400">No update logs available</td></tr>';
+			return;
+		}
+
+		table.innerHTML = '';
+		data.logs.forEach(log => {
+			const row = document.createElement('tr');
+			row.className = 'hover:bg-gray-50 dark:hover:bg-slate-700';
+
+			const date = new Date(log.started_at).toLocaleString();
+			const statusColor = log.status === 'completed'
+				? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+				: log.status === 'failed'
+					? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+					: 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400';
+
+			const typeLabel = log.type === 'check' ? 'Update Check' : log.type === 'install' ? 'Install' : log.type;
+			let details = '';
+			if (log.packages && log.packages.length > 0) {
+				details = `${log.packages.length} package(s)`;
+			} else if (log.security_only) {
+				details = 'Security only';
+			}
+			if (log.error) {
+				details = log.error.substring(0, 60);
+			}
+
+			row.innerHTML = `
+				<td class="px-4 py-3 text-gray-600 dark:text-gray-400">${date}</td>
+				<td class="px-4 py-3"><span class="px-2 py-1 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded">${typeLabel}</span></td>
+				<td class="px-4 py-3"><span class="px-2 py-1 text-xs ${statusColor} rounded">${log.status}</span></td>
+				<td class="px-4 py-3 text-gray-600 dark:text-gray-400 text-xs">${details}</td>
+				<td class="px-4 py-3">
+					<button onclick="viewUpdateLog('${log.id}')" class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-xs font-medium">
+						View Output
+					</button>
+				</td>
+			`;
+			table.appendChild(row);
+		});
+	} catch (err) {
+		table.innerHTML = `<tr><td colspan="5" class="px-4 py-8 text-center text-red-500">${err.message}</td></tr>`;
+	}
+}
+
+async function viewUpdateLog(logID) {
+	const modal = document.getElementById('update-log-modal');
+	const output = document.getElementById('log-detail-output');
+	const title = document.getElementById('log-detail-title');
+	const statusIndicator = document.getElementById('log-status-indicator');
+
+	if (!modal || !output) return;
+
+	// Show modal with loading state
+	modal.classList.remove('hidden');
+	output.textContent = 'Loading...';
+	title.textContent = 'Loading log...';
+
+	try {
+		const response = await fetch(`/api/os-updates/logs/${logID}?server=${currentServerID}`);
+		if (!response.ok) {
+			throw new Error(await extractErrorMessage(response));
+		}
+
+		const log = await response.json();
+
+		// Update metadata
+		title.textContent = `${log.type === 'check' ? 'Update Check' : 'Install'} - ${log.id.substring(0, 8)}`;
+		document.getElementById('log-detail-type').textContent = log.type;
+		document.getElementById('log-detail-status').textContent = log.status;
+		document.getElementById('log-detail-started').textContent = new Date(log.started_at).toLocaleString();
+		document.getElementById('log-detail-exit-code').textContent = log.exit_code;
+
+		// Calculate duration
+		if (log.completed_at) {
+			const start = new Date(log.started_at);
+			const end = new Date(log.completed_at);
+			const diffMs = end - start;
+			const diffSec = Math.floor(diffMs / 1000);
+			if (diffSec < 60) {
+				document.getElementById('log-detail-duration').textContent = `${diffSec}s`;
+			} else {
+				const min = Math.floor(diffSec / 60);
+				const sec = diffSec % 60;
+				document.getElementById('log-detail-duration').textContent = `${min}m ${sec}s`;
+			}
+		} else {
+			document.getElementById('log-detail-duration').textContent = '-';
+		}
+
+		// Status indicator color
+		if (log.status === 'completed') {
+			statusIndicator.className = 'w-3 h-3 rounded-full bg-green-500';
+		} else if (log.status === 'failed') {
+			statusIndicator.className = 'w-3 h-3 rounded-full bg-red-500';
+		} else {
+			statusIndicator.className = 'w-3 h-3 rounded-full bg-gray-500';
+		}
+
+		// Show output
+		output.textContent = log.output || '(no output captured)';
+	} catch (err) {
+		output.textContent = `Error loading log: ${err.message}`;
+		statusIndicator.className = 'w-3 h-3 rounded-full bg-red-500';
+	}
+}
+
+function hideUpdateLogModal() {
+	const modal = document.getElementById('update-log-modal');
+	if (modal) modal.classList.add('hidden');
+}
+
+function copyLogOutput() {
+	const output = document.getElementById('log-detail-output');
+	if (output) {
+		navigator.clipboard.writeText(output.textContent).then(() => {
+			showToast('Output copied to clipboard', 'success');
+		}).catch(() => {
+			showToast('Failed to copy output', 'error');
+		});
+	}
+}

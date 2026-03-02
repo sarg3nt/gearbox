@@ -152,6 +152,41 @@ func createTLSConfig() *tls.Config {
 	}
 }
 
+// LongOperationTimeout is used for operations like apt update/install that may take several minutes.
+const LongOperationTimeout = 5 * time.Minute
+
+// parseErrorMessage extracts a meaningful error message from an HTTP error response body.
+// It tries, in order:
+//  1. JSON {"error": "..."} — used by structured API responses
+//  2. JSON {"message": "..."} — used by jsonError responses
+//  3. Plain text body (trimmed) — used by http.Error() in agent handlers
+//  4. Generic "HTTP <code>: <status>" fallback
+func parseErrorMessage(body []byte, statusCode int) string {
+	// Try JSON with "error" field
+	var errResp struct {
+		Error string `json:"error"`
+	}
+	if json.Unmarshal(body, &errResp) == nil && errResp.Error != "" {
+		return errResp.Error
+	}
+
+	// Try JSON with "message" field
+	var msgResp struct {
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(body, &msgResp) == nil && msgResp.Message != "" {
+		return msgResp.Message
+	}
+
+	// Fall back to plain text body (http.Error sends text/plain)
+	if text := strings.TrimSpace(string(body)); text != "" {
+		return text
+	}
+
+	// Generic fallback
+	return fmt.Sprintf("HTTP %d: %s", statusCode, http.StatusText(statusCode))
+}
+
 // doRequest performs an HTTP request with authentication.
 func (c *Client) doRequest(method, path string, query url.Values) ([]byte, error) {
 	fullURL := c.baseURL + path
@@ -181,19 +216,56 @@ func (c *Client) doRequest(method, path string, query url.Values) ([]byte, error
 
 	// Handle error status codes
 	if resp.StatusCode >= 400 {
-		apiErr := &APIError{StatusCode: resp.StatusCode}
-
-		// Try to parse error message from response
-		var errResp struct {
-			Error string `json:"error"`
+		return nil, &APIError{
+			StatusCode: resp.StatusCode,
+			Message:    parseErrorMessage(body, resp.StatusCode),
 		}
-		if json.Unmarshal(body, &errResp) == nil && errResp.Error != "" {
-			apiErr.Message = errResp.Error
-		} else {
-			apiErr.Message = fmt.Sprintf("HTTP %d: %s", resp.StatusCode, http.StatusText(resp.StatusCode))
-		}
+	}
 
-		return nil, apiErr
+	return body, nil
+}
+
+// doRequestLongRunning performs an HTTP request with an extended timeout for long-running operations
+// like apt update/install that may take several minutes.
+func (c *Client) doRequestLongRunning(method, path string, query url.Values) ([]byte, error) {
+	fullURL := c.baseURL + path
+	if len(query) > 0 {
+		fullURL += "?" + query.Encode()
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), LongOperationTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, method, fullURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	req.Header.Set("Accept", "application/json")
+
+	// Use a separate client with extended timeout, sharing the same transport
+	longClient := &http.Client{
+		Timeout:   LongOperationTimeout,
+		Transport: c.httpClient.Transport,
+	}
+
+	resp, err := longClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if resp.StatusCode >= 400 {
+		return nil, &APIError{
+			StatusCode: resp.StatusCode,
+			Message:    parseErrorMessage(body, resp.StatusCode),
+		}
 	}
 
 	return body, nil
@@ -203,6 +275,8 @@ func (c *Client) doRequest(method, path string, query url.Values) ([]byte, error
 func (c *Client) doRequestWithBody(method, path string, reqBody interface{}) ([]byte, error) {
 	return c.doRequestWithBodyAndQuery(method, path, reqBody, nil)
 }
+
+
 
 // doRequestWithBodyAndQuery performs an HTTP request with a JSON body and query parameters.
 func (c *Client) doRequestWithBodyAndQuery(method, path string, reqBody interface{}, query url.Values) ([]byte, error) {
@@ -243,16 +317,10 @@ func (c *Client) doRequestWithBodyAndQuery(method, path string, reqBody interfac
 	}
 
 	if resp.StatusCode >= 400 {
-		apiErr := &APIError{StatusCode: resp.StatusCode}
-		var errResp struct {
-			Error string `json:"error"`
+		return nil, &APIError{
+			StatusCode: resp.StatusCode,
+			Message:    parseErrorMessage(body, resp.StatusCode),
 		}
-		if json.Unmarshal(body, &errResp) == nil && errResp.Error != "" {
-			apiErr.Message = errResp.Error
-		} else {
-			apiErr.Message = fmt.Sprintf("HTTP %d: %s", resp.StatusCode, http.StatusText(resp.StatusCode))
-		}
-		return nil, apiErr
 	}
 
 	return body, nil
@@ -1100,8 +1168,9 @@ func (c *Client) ListUpgradablePackages() (*PackageListResponse, error) {
 }
 
 // TriggerUpdateCheck triggers an apt update to refresh package lists.
+// Uses extended timeout since apt update can take several minutes.
 func (c *Client) TriggerUpdateCheck() (*UpdateStatusResponse, error) {
-	body, err := c.doRequest("POST", "/api/v1/system/updates/check", nil)
+	body, err := c.doRequestLongRunning("POST", "/api/v1/system/updates/check", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1163,7 +1232,7 @@ func (c *Client) TriggerUpdateCheckStreaming() (*StreamingInstallResponse, error
 
 // GetOperationStatus retrieves the status of an apt operation.
 func (c *Client) GetOperationStatus(operationID string) (*OperationStatusResponse, error) {
-	path := "/api/v1/system/updates/operations/" + url.PathEscape(operationID)
+	path := "/api/v1/system/updates/operation/" + url.PathEscape(operationID)
 	body, err := c.doRequest("GET", path, nil)
 	if err != nil {
 		return nil, err
@@ -1179,9 +1248,45 @@ func (c *Client) GetOperationStatus(operationID string) (*OperationStatusRespons
 
 // CancelOperation cancels a running apt operation.
 func (c *Client) CancelOperation(operationID string) error {
-	path := "/api/v1/system/updates/operations/" + url.PathEscape(operationID)
+	path := "/api/v1/system/updates/operation/" + url.PathEscape(operationID)
 	_, err := c.doRequest("DELETE", path, nil)
 	return err
+}
+
+// ListUpdateLogs returns persisted update operation logs.
+func (c *Client) ListUpdateLogs(limit int) (*UpdateLogsResponse, error) {
+	query := url.Values{}
+	if limit > 0 {
+		query.Set("limit", strconv.Itoa(limit))
+	}
+
+	body, err := c.doRequest("GET", "/api/v1/system/updates/logs", query)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp UpdateLogsResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse update logs response: %w", err)
+	}
+
+	return &resp, nil
+}
+
+// GetUpdateLog returns a specific update log with full output.
+func (c *Client) GetUpdateLog(logID string) (*UpdateLogEntry, error) {
+	path := "/api/v1/system/updates/logs/" + url.PathEscape(logID)
+	body, err := c.doRequest("GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp UpdateLogEntry
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse update log response: %w", err)
+	}
+
+	return &resp, nil
 }
 
 // GetUpdateHistory returns recent package update history.
@@ -1283,7 +1388,7 @@ func (c *Client) CreateSnapshot(reason string) (*CreateSnapshotResponse, error) 
 	return &resp, nil
 }
 
-// RestoreSnapshot restores packages to a previous snapshot state.
+// RestoreSnapshot restores packages to a previous snapshot state (sync mode).
 func (c *Client) RestoreSnapshot(snapshotID string) (*RestoreSnapshotResponse, error) {
 	req := RestoreSnapshotRequest{SnapshotID: snapshotID}
 	body, err := c.doRequestWithBody("POST", "/api/v1/system/updates/snapshots/restore", req)
@@ -1294,6 +1399,23 @@ func (c *Client) RestoreSnapshot(snapshotID string) (*RestoreSnapshotResponse, e
 	var resp RestoreSnapshotResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, fmt.Errorf("failed to parse restore snapshot response: %w", err)
+	}
+
+	return &resp, nil
+}
+
+// RestoreSnapshotStreaming restores packages to a previous snapshot state with streaming output.
+// Returns an operation ID that can be used to track progress via WebSocket events.
+func (c *Client) RestoreSnapshotStreaming(snapshotID string) (*StreamingInstallResponse, error) {
+	req := RestoreSnapshotRequest{SnapshotID: snapshotID}
+	body, err := c.doRequestWithBodyAndQuery("POST", "/api/v1/system/updates/snapshots/restore", req, url.Values{"stream": []string{"true"}})
+	if err != nil {
+		return nil, err
+	}
+
+	var resp StreamingInstallResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse streaming restore response: %w", err)
 	}
 
 	return &resp, nil
@@ -1310,6 +1432,22 @@ func (c *Client) DeleteSnapshot(snapshotID string) (*RestoreSnapshotResponse, er
 	var resp RestoreSnapshotResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, fmt.Errorf("failed to parse delete snapshot response: %w", err)
+	}
+
+	return &resp, nil
+}
+
+// PreviewSnapshot returns the changes that would be applied by restoring a snapshot.
+func (c *Client) PreviewSnapshot(snapshotID string) (*SnapshotPreviewResponse, error) {
+	path := "/api/v1/system/updates/snapshots/" + url.PathEscape(snapshotID) + "/preview"
+	body, err := c.doRequest("GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp SnapshotPreviewResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse snapshot preview response: %w", err)
 	}
 
 	return &resp, nil

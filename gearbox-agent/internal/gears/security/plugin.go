@@ -279,6 +279,10 @@ func (p *Gear) handleBlock(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid IP address", http.StatusBadRequest)
 		return
 	}
+	if len(req.Reason) > 255 {
+		http.Error(w, "reason must be 255 characters or less", http.StatusBadRequest)
+		return
+	}
 
 	// Don't allow blocking localhost or private ranges that might be legitimate
 	if isProtectedIP(req.IP) {
@@ -512,6 +516,10 @@ func (p *Gear) handleConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	var req FirewallConfigUpdateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if len(req.BackupReason) > 255 {
+		http.Error(w, "backup reason must be 255 characters or less", http.StatusBadRequest)
 		return
 	}
 

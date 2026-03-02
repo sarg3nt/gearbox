@@ -87,6 +87,12 @@ func (h *Handler) HAProxyBoxCreatePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate field lengths
+	if len(r.FormValue("name")) > 100 || len(r.FormValue("box_id")) > 50 || len(r.FormValue("location")) > 200 || len(r.FormValue("notes")) > 1000 || len(r.FormValue("agent_url")) > 2048 || len(r.FormValue("api_key")) > 256 {
+		h.renderServerFormWithError(w, r, user, nil, false, "One or more fields exceed maximum length")
+		return
+	}
+
 	// Parse form into server struct
 	server := &database.BoxDB{
 		BoxID:     strings.TrimSpace(r.FormValue("box_id")),
@@ -209,6 +215,12 @@ func (h *Handler) HAProxyBoxUpdatePost(w http.ResponseWriter, r *http.Request) {
 	encryptor, err := h.getEncryptor()
 	if err != nil {
 		h.renderServerFormWithError(w, r, user, server, true, "Encryption initialization failed")
+		return
+	}
+
+	// Validate field lengths
+	if len(r.FormValue("name")) > 100 || len(r.FormValue("location")) > 200 || len(r.FormValue("notes")) > 1000 || len(r.FormValue("agent_url")) > 2048 || len(r.FormValue("api_key")) > 256 {
+		h.renderServerFormWithError(w, r, user, server, true, "One or more fields exceed maximum length")
 		return
 	}
 

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -87,11 +88,21 @@ func NewUpdatesCollector() *UpdatesCollector {
 }
 
 // runCommand runs a command with context and timeout.
+// Returns the raw combined stdout/stderr output and any error.
+// Callers that discard the output on error should use runCommandWithOutput instead.
+// For apt/apt-get commands, DEBIAN_FRONTEND=noninteractive is set automatically.
 func (c *UpdatesCollector) runCommand(name string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.commandTimeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, name, args...)
+
+	// Set noninteractive frontend for apt commands to prevent prompts and
+	// ensure consistent behavior when running under systemd.
+	if name == "apt" || name == "apt-get" || name == "apt-cache" {
+		cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
+	}
+
 	output, err := cmd.CombinedOutput()
 
 	if ctx.Err() == context.DeadlineExceeded {
@@ -99,6 +110,66 @@ func (c *UpdatesCollector) runCommand(name string, args ...string) ([]byte, erro
 	}
 
 	return output, err
+}
+
+// runCommandWithOutput runs a command and, on failure, wraps the error with the
+// command's combined stdout/stderr output. This ensures error messages contain
+// the actual diagnostic output (e.g. "E: The repository does not have a Release
+// file") instead of just "exit status 100".
+func (c *UpdatesCollector) runCommandWithOutput(name string, args ...string) ([]byte, error) {
+	output, err := c.runCommand(name, args...)
+	if err != nil {
+		// Extract the last meaningful line(s) from the output for a concise error
+		errDetail := extractErrorLines(output)
+		if errDetail != "" {
+			return output, fmt.Errorf("%s: %w", errDetail, err)
+		}
+		return output, err
+	}
+	return output, nil
+}
+
+// extractErrorLines pulls the most useful error lines from command output.
+// For apt, these are lines starting with "E:" or "W:". If none found,
+// returns the last non-empty line of output (trimmed to a reasonable length).
+func extractErrorLines(output []byte) string {
+	if len(output) == 0 {
+		return ""
+	}
+
+	text := strings.TrimSpace(string(output))
+	lines := strings.Split(text, "\n")
+
+	// Collect apt error/warning lines (E: ..., W: ...)
+	var errLines []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "E: ") || strings.HasPrefix(trimmed, "Err:") {
+			errLines = append(errLines, trimmed)
+		}
+	}
+
+	if len(errLines) > 0 {
+		// Return up to 3 error lines joined
+		if len(errLines) > 3 {
+			errLines = errLines[:3]
+		}
+		return strings.Join(errLines, "; ")
+	}
+
+	// No apt-specific error lines; use the last non-empty line
+	for i := len(lines) - 1; i >= 0; i-- {
+		trimmed := strings.TrimSpace(lines[i])
+		if trimmed != "" {
+			// Truncate very long lines
+			if len(trimmed) > 200 {
+				trimmed = trimmed[:200] + "..."
+			}
+			return trimmed
+		}
+	}
+
+	return ""
 }
 
 // runPipxCommand runs a pipx command with the correct environment for root's pipx.
@@ -118,6 +189,20 @@ func (c *UpdatesCollector) runPipxCommand(args ...string) ([]byte, error) {
 	}
 
 	return output, err
+}
+
+// runPipxCommandWithOutput runs a pipx command and wraps failures with the
+// command's output, just like runCommandWithOutput does for regular commands.
+func (c *UpdatesCollector) runPipxCommandWithOutput(args ...string) ([]byte, error) {
+	output, err := c.runPipxCommand(args...)
+	if err != nil {
+		errDetail := extractErrorLines(output)
+		if errDetail != "" {
+			return output, fmt.Errorf("%s: %w", errDetail, err)
+		}
+		return output, err
+	}
+	return output, nil
 }
 
 // CheckUpdates retrieves the current update status.
@@ -263,9 +348,9 @@ func (c *UpdatesCollector) parseAptListOutput(output string) []Package {
 	return packages
 }
 
-// TriggerUpdateCheck triggers a fresh 'apt update' to refresh package lists.
+// TriggerUpdateCheck triggers a fresh 'apt-get update' to refresh package lists.
 func (c *UpdatesCollector) TriggerUpdateCheck() error {
-	_, err := c.runCommand("apt", "update")
+	_, err := c.runCommandWithOutput("apt-get", "update")
 	if err != nil {
 		return fmt.Errorf("apt update failed: %w", err)
 	}
@@ -307,7 +392,7 @@ func (c *UpdatesCollector) InstallUpdates(securityOnly bool, packages []string) 
 		args = []string{"upgrade", "-y"}
 	}
 
-	_, err := c.runCommand("apt", args...)
+	_, err := c.runCommandWithOutput("apt-get", args...)
 	if err != nil {
 		return nil, fmt.Errorf("apt upgrade failed: %w", err)
 	}
@@ -378,12 +463,12 @@ func (c *UpdatesCollector) GetUnattendedUpgradesConfig() (map[string]any, error)
 func (c *UpdatesCollector) ConfigureUnattendedUpgrades(enabled, autoReboot bool) error {
 	if !enabled {
 		// Disable unattended-upgrades
-		_, err := c.runCommand("systemctl", "disable", "--now", "unattended-upgrades")
+		_, err := c.runCommandWithOutput("systemctl", "disable", "--now", "unattended-upgrades")
 		return err
 	}
 
 	// Enable unattended-upgrades
-	_, err := c.runCommand("systemctl", "enable", "--now", "unattended-upgrades")
+	_, err := c.runCommandWithOutput("systemctl", "enable", "--now", "unattended-upgrades")
 	if err != nil {
 		return fmt.Errorf("failed to enable unattended-upgrades: %w", err)
 	}
@@ -437,7 +522,7 @@ func (c *UpdatesCollector) ScheduleReboot(when string) error {
 		args = []string{"-r", when}
 	}
 
-	_, err := c.runCommand("shutdown", args...)
+	_, err := c.runCommandWithOutput("shutdown", args...)
 	if err != nil {
 		return fmt.Errorf("failed to schedule reboot: %w", err)
 	}
@@ -447,7 +532,7 @@ func (c *UpdatesCollector) ScheduleReboot(when string) error {
 
 // CancelReboot cancels a scheduled reboot.
 func (c *UpdatesCollector) CancelReboot() error {
-	_, err := c.runCommand("shutdown", "-c")
+	_, err := c.runCommandWithOutput("shutdown", "-c")
 	return err
 }
 
@@ -455,9 +540,6 @@ func (c *UpdatesCollector) CancelReboot() error {
 
 // CreateSnapshot creates an APT snapshot for rollback capability.
 func (c *UpdatesCollector) CreateSnapshot(reason string) (*AptSnapshot, error) {
-	// Ubuntu 24.04+ has apt-snapshot (snapper integration)
-	// For now, we'll create a manual snapshot using dpkg selections
-
 	timestamp := time.Now()
 	snapshotID := timestamp.Format("20060102-150405")
 	snapshotDir := "/var/lib/gearbox-agent/snapshots"
@@ -476,6 +558,14 @@ func (c *UpdatesCollector) CreateSnapshot(reason string) (*AptSnapshot, error) {
 	snapshotFile := fmt.Sprintf("%s/%s.selections", snapshotDir, snapshotID)
 	if err := os.WriteFile(snapshotFile, output, 0644); err != nil {
 		return nil, fmt.Errorf("failed to save snapshot: %w", err)
+	}
+
+	// Save installed package versions for version-aware restore.
+	// Format: "package\tversion\n" for each installed package.
+	versionsOutput, err := c.runCommand("dpkg-query", "-W", "-f", "${Package}\t${Version}\n")
+	if err == nil {
+		versionsFile := fmt.Sprintf("%s/%s.versions", snapshotDir, snapshotID)
+		_ = os.WriteFile(versionsFile, versionsOutput, 0644)
 	}
 
 	// Save metadata
@@ -539,6 +629,11 @@ func (c *UpdatesCollector) ListSnapshots() ([]AptSnapshot, error) {
 		snapshots = append(snapshots, snapshot)
 	}
 
+	// Sort newest first
+	sort.Slice(snapshots, func(i, j int) bool {
+		return snapshots[i].CreatedAt.After(snapshots[j].CreatedAt)
+	})
+
 	return snapshots, nil
 }
 
@@ -560,93 +655,290 @@ func (c *UpdatesCollector) RestoreSnapshot(snapshotID string) error {
 	}
 
 	// Write selections to dpkg
-	cmd := exec.Command("dpkg", "--set-selections")
+	ctx, cancel := context.WithTimeout(context.Background(), c.commandTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "dpkg", "--set-selections")
+	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
 	cmd.Stdin = strings.NewReader(string(selectionsData))
-	if err := cmd.Run(); err != nil {
+	if output, err := cmd.CombinedOutput(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("dpkg --set-selections timed out")
+		}
+		errDetail := extractErrorLines(output)
+		if errDetail != "" {
+			return fmt.Errorf("failed to set package selections: %s: %w", errDetail, err)
+		}
 		return fmt.Errorf("failed to set package selections: %w", err)
 	}
 
-	// Apply the selections
-	_, err = c.runCommand("apt-get", "dselect-upgrade", "-y")
+	// Apply the selections — this can take a long time
+	_, err = c.runCommandWithOutput("apt-get", "dselect-upgrade", "-y")
 	if err != nil {
 		return fmt.Errorf("failed to restore packages: %w", err)
 	}
 
+	// Version-aware downgrade: if we have a .versions file, downgrade packages
+	// that are currently at a newer version than what the snapshot recorded.
+	versionsFile := fmt.Sprintf("%s/%s.versions", snapshotDir, snapshotID)
+	if downgrades := computeDowngrades(versionsFile); len(downgrades) > 0 {
+		args := append([]string{"install", "-y", "--allow-downgrades"}, downgrades...)
+		_, _ = c.runCommandWithOutput("apt-get", args...)
+	}
+
+	// Refresh package cache so the available updates list is accurate
+	_, _ = c.runCommandWithOutput("apt-get", "update")
+
 	return nil
+}
+
+// computeDowngrades compares a snapshot's .versions file against currently
+// installed packages and returns a list of "package=version" strings for
+// packages that need to be downgraded.
+func computeDowngrades(versionsFile string) []string {
+	data, err := os.ReadFile(versionsFile) //#nosec G304
+	if err != nil {
+		return nil
+	}
+
+	// Build map of snapshot versions: package -> version
+	snapshotVersions := make(map[string]string)
+	scanner := bufio.NewScanner(strings.NewReader(string(data)))
+	for scanner.Scan() {
+		line := scanner.Text()
+		parts := strings.SplitN(line, "\t", 2)
+		if len(parts) == 2 && parts[0] != "" && parts[1] != "" {
+			snapshotVersions[parts[0]] = parts[1]
+		}
+	}
+
+	// Get current installed versions
+	cmd := exec.Command("dpkg-query", "-W", "-f", "${Package}\t${Version}\n")
+	currentOutput, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+
+	currentVersions := make(map[string]string)
+	scanner = bufio.NewScanner(strings.NewReader(string(currentOutput)))
+	for scanner.Scan() {
+		line := scanner.Text()
+		parts := strings.SplitN(line, "\t", 2)
+		if len(parts) == 2 && parts[0] != "" && parts[1] != "" {
+			currentVersions[parts[0]] = parts[1]
+		}
+	}
+
+	// Find packages that need downgrading
+	var downgrades []string
+	for pkg, snapshotVer := range snapshotVersions {
+		currentVer, exists := currentVersions[pkg]
+		if !exists {
+			continue // package not currently installed, dselect-upgrade handles this
+		}
+		if currentVer != snapshotVer {
+			downgrades = append(downgrades, pkg+"="+snapshotVer)
+		}
+	}
+
+	return downgrades
 }
 
 // DeleteSnapshot removes a snapshot.
 func (c *UpdatesCollector) DeleteSnapshot(snapshotID string) error {
 	snapshotDir := "/var/lib/gearbox-agent/snapshots"
 
-	// Remove both files
-	os.Remove(fmt.Sprintf("%s/%s.selections", snapshotDir, snapshotID))
-	os.Remove(fmt.Sprintf("%s/%s.meta", snapshotDir, snapshotID))
+	selectionsPath := fmt.Sprintf("%s/%s.selections", snapshotDir, snapshotID)
+	metaPath := fmt.Sprintf("%s/%s.meta", snapshotDir, snapshotID)
+	versionsPath := fmt.Sprintf("%s/%s.versions", snapshotDir, snapshotID)
+
+	// Check that the snapshot exists before attempting removal
+	_, selErr := os.Stat(selectionsPath)
+	_, metaErr := os.Stat(metaPath)
+	if os.IsNotExist(selErr) && os.IsNotExist(metaErr) {
+		return fmt.Errorf("snapshot not found: %s", snapshotID)
+	}
+
+	// Remove all snapshot files, ignoring errors for files that don't exist
+	os.Remove(selectionsPath)
+	os.Remove(metaPath)
+	os.Remove(versionsPath)
 
 	return nil
 }
 
+// PackageChange represents a version change for a single package.
+type PackageChange struct {
+	Package        string `json:"package"`
+	CurrentVersion string `json:"current_version"`
+	TargetVersion  string `json:"target_version"`
+}
+
+// SnapshotPreview represents the changes that would be applied by restoring a snapshot.
+type SnapshotPreview struct {
+	SnapshotID   string          `json:"snapshot_id"`
+	HasVersions  bool            `json:"has_versions"`
+	Downgrades   []PackageChange `json:"downgrades"`
+	Installs     []string        `json:"installs"`
+	Removals     []string        `json:"removals"`
+	TotalChanges int             `json:"total_changes"`
+}
+
+// PreviewRestore computes what changes restoring a snapshot would make without applying them.
+func (c *UpdatesCollector) PreviewRestore(snapshotID string) (*SnapshotPreview, error) {
+	snapshotDir := "/var/lib/gearbox-agent/snapshots"
+	selectionsFile := fmt.Sprintf("%s/%s.selections", snapshotDir, snapshotID)
+	versionsFile := fmt.Sprintf("%s/%s.versions", snapshotDir, snapshotID)
+
+	// Verify snapshot exists
+	if _, err := os.Stat(selectionsFile); err != nil {
+		return nil, fmt.Errorf("snapshot not found: %s", snapshotID)
+	}
+
+	preview := &SnapshotPreview{
+		SnapshotID: snapshotID,
+	}
+
+	// Compare selections to find installs/removals
+	snapshotSelections, err := os.ReadFile(selectionsFile) //#nosec G304
+	if err != nil {
+		return nil, fmt.Errorf("failed to read snapshot selections: %w", err)
+	}
+
+	// Parse snapshot selections: "package\tinstall" or "package\tdeinstall"
+	snapshotState := make(map[string]string) // package -> "install"/"deinstall"
+	scanner := bufio.NewScanner(strings.NewReader(string(snapshotSelections)))
+	for scanner.Scan() {
+		parts := strings.Fields(scanner.Text())
+		if len(parts) == 2 {
+			snapshotState[parts[0]] = parts[1]
+		}
+	}
+
+	// Get current selections
+	currentOutput, err := c.runCommand("dpkg", "--get-selections")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current selections: %w", err)
+	}
+
+	currentState := make(map[string]string)
+	scanner = bufio.NewScanner(strings.NewReader(string(currentOutput)))
+	for scanner.Scan() {
+		parts := strings.Fields(scanner.Text())
+		if len(parts) == 2 {
+			currentState[parts[0]] = parts[1]
+		}
+	}
+
+	// Find packages that would be installed (in snapshot but not currently, or marked deinstall currently)
+	for pkg, snapState := range snapshotState {
+		curState, exists := currentState[pkg]
+		if snapState == "install" && (!exists || curState == "deinstall" || curState == "purge") {
+			preview.Installs = append(preview.Installs, pkg)
+		}
+	}
+
+	// Find packages that would be removed (currently installed but snapshot has deinstall/purge)
+	for pkg, curState := range currentState {
+		if curState != "install" {
+			continue
+		}
+		snapState, exists := snapshotState[pkg]
+		if exists && (snapState == "deinstall" || snapState == "purge") {
+			preview.Removals = append(preview.Removals, pkg)
+		}
+	}
+
+	// Check for version-aware downgrades
+	if _, err := os.Stat(versionsFile); err == nil {
+		preview.HasVersions = true
+
+		// Read snapshot versions
+		versionsData, err := os.ReadFile(versionsFile) //#nosec G304
+		if err == nil {
+			snapshotVersions := make(map[string]string)
+			scanner = bufio.NewScanner(strings.NewReader(string(versionsData)))
+			for scanner.Scan() {
+				parts := strings.SplitN(scanner.Text(), "\t", 2)
+				if len(parts) == 2 && parts[0] != "" && parts[1] != "" {
+					snapshotVersions[parts[0]] = parts[1]
+				}
+			}
+
+			// Get current versions
+			currentVersionsOutput, err := c.runCommand("dpkg-query", "-W", "-f", "${Package}\t${Version}\n")
+			if err == nil {
+				currentVersions := make(map[string]string)
+				scanner = bufio.NewScanner(strings.NewReader(string(currentVersionsOutput)))
+				for scanner.Scan() {
+					parts := strings.SplitN(scanner.Text(), "\t", 2)
+					if len(parts) == 2 && parts[0] != "" && parts[1] != "" {
+						currentVersions[parts[0]] = parts[1]
+					}
+				}
+
+				for pkg, snapVer := range snapshotVersions {
+					curVer, exists := currentVersions[pkg]
+					if exists && curVer != snapVer {
+						preview.Downgrades = append(preview.Downgrades, PackageChange{
+							Package:        pkg,
+							CurrentVersion: curVer,
+							TargetVersion:  snapVer,
+						})
+					}
+				}
+			}
+		}
+	}
+
+	sort.Strings(preview.Installs)
+	sort.Strings(preview.Removals)
+	sort.Slice(preview.Downgrades, func(i, j int) bool {
+		return preview.Downgrades[i].Package < preview.Downgrades[j].Package
+	})
+
+	preview.TotalChanges = len(preview.Downgrades) + len(preview.Installs) + len(preview.Removals)
+	return preview, nil
+}
+
 // --- Update History ---
 
-// GetUpdateHistory returns recent package update history from apt logs.
+// GetUpdateHistory returns recent package update history from dpkg and apt logs.
+// Reads both /var/log/dpkg.log and /var/log/apt/history.log for comprehensive history
+// regardless of whether updates were performed via Gearbox or directly via SSH.
 func (c *UpdatesCollector) GetUpdateHistory(limit int) ([]UpdateHistoryEntry, error) {
 	var history []UpdateHistoryEntry
 
-	// Parse /var/log/apt/history.log
-	logFile := "/var/log/apt/history.log"
-	file, err := os.Open(logFile)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return history, nil
-		}
-		return nil, fmt.Errorf("failed to open apt history log: %w", err)
-	}
-	defer file.Close()
+	// Primary source: dpkg.log — logs every individual package operation
+	dpkgHistory := c.parseDpkgLogs()
+	history = append(history, dpkgHistory...)
 
-	var currentEntry *UpdateHistoryEntry
-	scanner := bufio.NewScanner(file)
+	// Fallback/supplement: apt history.log — provides higher-level context
+	aptHistory := c.parseAptHistoryLogs()
 
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		if strings.HasPrefix(line, "Start-Date:") {
-			// New entry
-			dateStr := strings.TrimPrefix(line, "Start-Date: ")
-			if t, err := time.Parse("2006-01-02  15:04:05", dateStr); err == nil {
-				currentEntry = &UpdateHistoryEntry{
-					Timestamp: t,
-					Status:    "success",
-				}
-			}
-		} else if strings.HasPrefix(line, "Commandline:") && currentEntry != nil {
-			cmdLine := strings.TrimPrefix(line, "Commandline: ")
-			if strings.Contains(cmdLine, "upgrade") {
-				currentEntry.Action = "upgrade"
-			} else if strings.Contains(cmdLine, "install") {
-				currentEntry.Action = "install"
-			} else if strings.Contains(cmdLine, "remove") {
-				currentEntry.Action = "remove"
-			}
-		} else if strings.HasPrefix(line, "Upgrade:") && currentEntry != nil {
-			currentEntry.Action = "upgrade"
-			currentEntry.Package = strings.TrimPrefix(line, "Upgrade: ")
-		} else if strings.HasPrefix(line, "Install:") && currentEntry != nil {
-			currentEntry.Action = "install"
-			currentEntry.Package = strings.TrimPrefix(line, "Install: ")
-		} else if strings.HasPrefix(line, "Remove:") && currentEntry != nil {
-			currentEntry.Action = "remove"
-			currentEntry.Package = strings.TrimPrefix(line, "Remove: ")
-		} else if strings.HasPrefix(line, "End-Date:") && currentEntry != nil {
-			history = append(history, *currentEntry)
-			currentEntry = nil
-		} else if strings.HasPrefix(line, "Error:") && currentEntry != nil {
-			currentEntry.Status = "failed"
-		}
+	// Merge apt history entries that aren't already captured by dpkg
+	// dpkg is more granular so prefer it, but apt history captures the "why"
+	if len(history) == 0 {
+		history = aptHistory
 	}
 
-	// Reverse to get most recent first
-	for i, j := 0, len(history)-1; i < j; i, j = i+1, j-1 {
-		history[i], history[j] = history[j], history[i]
+	// Sort by timestamp, most recent first
+	sort.Slice(history, func(i, j int) bool {
+		return history[i].Timestamp.After(history[j].Timestamp)
+	})
+
+	// Deduplicate entries with same timestamp+package+action
+	if len(history) > 1 {
+		deduped := []UpdateHistoryEntry{history[0]}
+		for i := 1; i < len(history); i++ {
+			prev := deduped[len(deduped)-1]
+			curr := history[i]
+			if curr.Package != prev.Package || curr.Action != prev.Action ||
+				!curr.Timestamp.Equal(prev.Timestamp) {
+				deduped = append(deduped, curr)
+			}
+		}
+		history = deduped
 	}
 
 	// Apply limit
@@ -655,6 +947,240 @@ func (c *UpdatesCollector) GetUpdateHistory(limit int) ([]UpdateHistoryEntry, er
 	}
 
 	return history, nil
+}
+
+// parseDpkgLogs parses /var/log/dpkg.log and rotated versions.
+// dpkg.log format: "2024-01-15 10:30:45 status installed package-name:amd64 1.2.3-1"
+func (c *UpdatesCollector) parseDpkgLogs() []UpdateHistoryEntry {
+	var history []UpdateHistoryEntry
+
+	// Read rotated logs first (older), then current log (newest)
+	logFiles := []string{
+		"/var/log/dpkg.log.1",
+		"/var/log/dpkg.log",
+	}
+
+	for _, logFile := range logFiles {
+		entries := c.parseSingleDpkgLog(logFile)
+		history = append(history, entries...)
+	}
+
+	return history
+}
+
+func (c *UpdatesCollector) parseSingleDpkgLog(logFile string) []UpdateHistoryEntry {
+	var history []UpdateHistoryEntry
+
+	file, err := os.Open(logFile)
+	if err != nil {
+		return history
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	// Increase buffer size for long lines
+	scanner.Buffer(make([]byte, 0, 64*1024), 256*1024)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		// dpkg.log format: "2024-01-15 10:30:45 <action> <status> <package>:<arch> <version>"
+		// We care about lines with specific status transitions
+		parts := strings.Fields(line)
+		if len(parts) < 4 {
+			continue
+		}
+
+		// Parse timestamp (first two fields)
+		dateStr := parts[0] + " " + parts[1]
+		t, err := time.Parse("2006-01-02 15:04:05", dateStr)
+		if err != nil {
+			continue
+		}
+
+		action := parts[2]
+		status := parts[3]
+
+		// Filter to meaningful status transitions
+		var entry UpdateHistoryEntry
+		entry.Timestamp = t
+		entry.Status = "success"
+
+		switch {
+		case action == "install" && status == "installed":
+			entry.Action = "install"
+			if len(parts) >= 5 {
+				entry.Package = strings.Split(parts[4], ":")[0]
+			}
+			if len(parts) >= 6 {
+				entry.ToVersion = parts[5]
+			}
+		case action == "upgrade" && status == "installed":
+			// Upgrade completion: "upgrade <pkg>:<arch> <old-version> <new-version>"
+			entry.Action = "upgrade"
+			if len(parts) >= 5 {
+				entry.Package = strings.Split(parts[4], ":")[0]
+			}
+			if len(parts) >= 6 {
+				entry.ToVersion = parts[5]
+			}
+		case action == "status" && status == "installed" && len(parts) >= 6:
+			// "status installed <pkg>:<arch> <version>" — final state after install/upgrade
+			entry.Action = "install"
+			entry.Package = strings.Split(parts[4], ":")[0]
+			entry.ToVersion = parts[5]
+		case action == "remove" && status == "removed":
+			entry.Action = "remove"
+			if len(parts) >= 5 {
+				entry.Package = strings.Split(parts[4], ":")[0]
+			}
+			if len(parts) >= 6 {
+				entry.FromVersion = parts[5]
+			}
+		case action == "purge" && status == "purged":
+			entry.Action = "remove"
+			if len(parts) >= 5 {
+				entry.Package = strings.Split(parts[4], ":")[0]
+			}
+		default:
+			continue
+		}
+
+		if entry.Package != "" {
+			history = append(history, entry)
+		}
+	}
+
+	return history
+}
+
+// parseAptHistoryLogs parses /var/log/apt/history.log and rotated versions.
+func (c *UpdatesCollector) parseAptHistoryLogs() []UpdateHistoryEntry {
+	var history []UpdateHistoryEntry
+
+	logFiles := []string{
+		"/var/log/apt/history.log.1.gz",
+		"/var/log/apt/history.log",
+	}
+
+	for _, logFile := range logFiles {
+		if strings.HasSuffix(logFile, ".gz") {
+			// Skip gzipped logs for now — only read plain text
+			continue
+		}
+		entries := c.parseSingleAptHistoryLog(logFile)
+		history = append(history, entries...)
+	}
+
+	return history
+}
+
+func (c *UpdatesCollector) parseSingleAptHistoryLog(logFile string) []UpdateHistoryEntry {
+	var history []UpdateHistoryEntry
+
+	file, err := os.Open(logFile)
+	if err != nil {
+		return history
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 0, 64*1024), 256*1024)
+
+	var currentTimestamp time.Time
+	var currentAction string
+	var currentStatus string
+	inEntry := false
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		if strings.HasPrefix(line, "Start-Date:") {
+			dateStr := strings.TrimSpace(strings.TrimPrefix(line, "Start-Date:"))
+			if t, err := time.Parse("2006-01-02  15:04:05", dateStr); err == nil {
+				currentTimestamp = t
+				currentStatus = "success"
+				currentAction = ""
+				inEntry = true
+			}
+		} else if strings.HasPrefix(line, "Commandline:") && inEntry {
+			cmdLine := strings.TrimPrefix(line, "Commandline: ")
+			if strings.Contains(cmdLine, "upgrade") || strings.Contains(cmdLine, "dist-upgrade") {
+				currentAction = "upgrade"
+			} else if strings.Contains(cmdLine, "install") {
+				currentAction = "install"
+			} else if strings.Contains(cmdLine, "remove") || strings.Contains(cmdLine, "purge") {
+				currentAction = "remove"
+			}
+		} else if inEntry && (strings.HasPrefix(line, "Upgrade:") || strings.HasPrefix(line, "Install:") || strings.HasPrefix(line, "Remove:") || strings.HasPrefix(line, "Purge:")) {
+			// Parse individual packages from the line
+			// Format: "pkg1:arch (old-ver, new-ver), pkg2:arch (old-ver, new-ver), ..."
+			var action string
+			var pkgLine string
+			if strings.HasPrefix(line, "Upgrade:") {
+				action = "upgrade"
+				pkgLine = strings.TrimPrefix(line, "Upgrade: ")
+			} else if strings.HasPrefix(line, "Install:") {
+				action = "install"
+				pkgLine = strings.TrimPrefix(line, "Install: ")
+			} else if strings.HasPrefix(line, "Remove:") {
+				action = "remove"
+				pkgLine = strings.TrimPrefix(line, "Remove: ")
+			} else if strings.HasPrefix(line, "Purge:") {
+				action = "remove"
+				pkgLine = strings.TrimPrefix(line, "Purge: ")
+			}
+
+			if action == "" {
+				continue
+			}
+			if currentAction == "" {
+				currentAction = action
+			}
+
+			// Parse comma-separated package entries
+			pkgEntries := strings.Split(pkgLine, "),")
+			for _, entry := range pkgEntries {
+				entry = strings.TrimSpace(entry)
+				if entry == "" {
+					continue
+				}
+
+				he := UpdateHistoryEntry{
+					Timestamp: currentTimestamp,
+					Action:    action,
+					Status:    currentStatus,
+				}
+
+				// Parse "pkgname:arch (old-ver, new-ver)" or "pkgname:arch (ver)"
+				if parenIdx := strings.Index(entry, " ("); parenIdx > 0 {
+					pkgPart := entry[:parenIdx]
+					he.Package = strings.Split(strings.TrimSpace(pkgPart), ":")[0]
+
+					verPart := strings.TrimRight(entry[parenIdx+2:], ")")
+					versions := strings.Split(verPart, ", ")
+					if len(versions) == 2 {
+						he.FromVersion = strings.TrimSpace(versions[0])
+						he.ToVersion = strings.TrimSpace(versions[1])
+					} else if len(versions) == 1 {
+						he.ToVersion = strings.TrimSpace(versions[0])
+					}
+				} else {
+					he.Package = strings.Split(strings.TrimSpace(entry), ":")[0]
+				}
+
+				if he.Package != "" {
+					history = append(history, he)
+				}
+			}
+		} else if strings.HasPrefix(line, "Error:") && inEntry {
+			currentStatus = "failed"
+		} else if strings.HasPrefix(line, "End-Date:") && inEntry {
+			inEntry = false
+		}
+	}
+
+	return history
 }
 
 // --- Package Search ---
@@ -696,7 +1222,7 @@ func (c *UpdatesCollector) InstallPackage(name string) error {
 		return fmt.Errorf("invalid package name: %s", name)
 	}
 
-	_, err := c.runCommand("apt", "install", "-y", name)
+	_, err := c.runCommandWithOutput("apt-get", "install", "-y", name)
 	if err != nil {
 		return fmt.Errorf("failed to install package %s: %w", name, err)
 	}
@@ -715,7 +1241,7 @@ func (c *UpdatesCollector) RemovePackage(name string, purge bool) error {
 		action = "purge"
 	}
 
-	_, err := c.runCommand("apt", action, "-y", name)
+	_, err := c.runCommandWithOutput("apt-get", action, "-y", name)
 	if err != nil {
 		return fmt.Errorf("failed to remove package %s: %w", name, err)
 	}
@@ -843,7 +1369,7 @@ func (c *UpdatesCollector) InstallPipxPackage(name string) error {
 		return fmt.Errorf("invalid package name: %s", name)
 	}
 
-	_, err := c.runPipxCommand("install", name)
+	_, err := c.runPipxCommandWithOutput("install", name)
 	if err != nil {
 		return fmt.Errorf("failed to install pipx package %s: %w", name, err)
 	}
@@ -861,7 +1387,7 @@ func (c *UpdatesCollector) UninstallPipxPackage(name string) error {
 		return fmt.Errorf("invalid package name: %s", name)
 	}
 
-	_, err := c.runPipxCommand("uninstall", name)
+	_, err := c.runPipxCommandWithOutput("uninstall", name)
 	if err != nil {
 		return fmt.Errorf("failed to uninstall pipx package %s: %w", name, err)
 	}
@@ -879,7 +1405,7 @@ func (c *UpdatesCollector) UpgradePipxPackage(name string) error {
 		return fmt.Errorf("invalid package name: %s", name)
 	}
 
-	_, err := c.runPipxCommand("upgrade", name)
+	_, err := c.runPipxCommandWithOutput("upgrade", name)
 	if err != nil {
 		return fmt.Errorf("failed to upgrade pipx package %s: %w", name, err)
 	}
@@ -893,7 +1419,7 @@ func (c *UpdatesCollector) UpgradeAllPipxPackages() error {
 		return fmt.Errorf("pipx is not installed")
 	}
 
-	_, err := c.runPipxCommand("upgrade-all")
+	_, err := c.runPipxCommandWithOutput("upgrade-all")
 	if err != nil {
 		return fmt.Errorf("failed to upgrade all pipx packages: %w", err)
 	}
