@@ -482,6 +482,9 @@ func (a *aptPackageManager) CreateSnapshot(reason string) (*AptSnapshot, error) 
 }
 
 func (a *aptPackageManager) RestoreSnapshot(snapshotID string) error {
+	if err := validateSnapshotID(snapshotID); err != nil {
+		return err
+	}
 	snapshotDir := "/var/lib/gearbox-agent/snapshots"
 	snapshotFile := fmt.Sprintf("%s/%s.selections", snapshotDir, snapshotID)
 

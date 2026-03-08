@@ -397,6 +397,9 @@ func (r *AptRunner) failOperation(op *AptOperation, errorMsg string) {
 
 // StartRestore begins a streaming snapshot restore operation.
 func (r *AptRunner) StartRestore(snapshotID string) (string, error) {
+	if err := validateSnapshotID(snapshotID); err != nil {
+		return "", err
+	}
 	operationID := uuid.New().String()
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -674,6 +677,9 @@ func (r *AptRunner) ListUpdateLogs(limit int) ([]UpdateLog, error) {
 
 // GetUpdateLog returns a specific update log with full output.
 func (r *AptRunner) GetUpdateLog(id string) (*UpdateLog, error) {
+	if len(id) < 8 {
+		return nil, fmt.Errorf("invalid log ID")
+	}
 	entries, err := os.ReadDir(updateLogsDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read update logs directory: %w", err)

@@ -300,6 +300,17 @@ func (c *UpdatesCollector) CancelReboot() error {
 
 // --- Snapshot Management ---
 
+// validSnapshotID matches only safe snapshot IDs (timestamp + hex suffix, no path separators).
+var validSnapshotID = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
+// validateSnapshotID returns an error if id is empty or contains path-unsafe characters.
+func validateSnapshotID(id string) error {
+	if id == "" || !validSnapshotID.MatchString(id) {
+		return fmt.Errorf("invalid snapshot ID")
+	}
+	return nil
+}
+
 // CreateSnapshot creates a package snapshot for rollback capability.
 // The snapshot format depends on the active package manager.
 func (c *UpdatesCollector) CreateSnapshot(reason string) (*AptSnapshot, error) {
@@ -421,6 +432,9 @@ func computeDowngrades(versionsFile string) []string {
 
 // DeleteSnapshot removes a snapshot.
 func (c *UpdatesCollector) DeleteSnapshot(snapshotID string) error {
+	if err := validateSnapshotID(snapshotID); err != nil {
+		return err
+	}
 	snapshotDir := "/var/lib/gearbox-agent/snapshots"
 
 	selectionsPath := fmt.Sprintf("%s/%s.selections", snapshotDir, snapshotID)
@@ -461,6 +475,9 @@ type SnapshotPreview struct {
 
 // PreviewRestore computes what changes restoring a snapshot would make without applying them.
 func (c *UpdatesCollector) PreviewRestore(snapshotID string) (*SnapshotPreview, error) {
+	if err := validateSnapshotID(snapshotID); err != nil {
+		return nil, err
+	}
 	snapshotDir := "/var/lib/gearbox-agent/snapshots"
 	selectionsFile := fmt.Sprintf("%s/%s.selections", snapshotDir, snapshotID)
 	versionsFile := fmt.Sprintf("%s/%s.versions", snapshotDir, snapshotID)

@@ -319,8 +319,10 @@
 
 	function enforceMaxToasts() {
 		while (activeToasts.length > DEFAULTS.maxToasts) {
-			// Remove the oldest toast (first in array)
-			dismiss(activeToasts[0]);
+			// Splice synchronously so the length decreases each iteration,
+			// then dismiss (which animates out and does a no-op splice later).
+			var oldest = activeToasts.splice(0, 1)[0];
+			dismiss(oldest);
 		}
 	}
 

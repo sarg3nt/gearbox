@@ -26,11 +26,14 @@ Restart=always
 RestartSec=5
 
 # Security hardening
-# Note: ProtectSystem is intentionally not set to "strict" because gearbox-agent
-# needs broad system access for package management (apt install/upgrade),
-# service control, HAProxy config, certificate management, and system reboots.
+# Note: ProtectSystem=strict cannot be used because gearbox-agent needs write
+# access to /etc (HAProxy config, certificates) and /var (package management,
+# data dir). ProtectHome=read-only is set since the agent runs as root and only
+# needs read access to home directories.
 NoNewPrivileges=false
-ProtectHome=no
+ProtectHome=read-only
+PrivateTmp=true
+ProtectKernelTunables=true
 
 # Logging
 StandardOutput=journal
