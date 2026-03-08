@@ -21,7 +21,7 @@ type OSUpdatesPageData struct {
 	Packages         []agent.Package
 	RebootStatus     *agent.RebootRequiredResponse
 	UnattendedConfig *agent.UnattendedConfigResponse
-	PipxStatus       *agent.PipxStatusResponse
+	PythonToolsStatus *agent.PythonToolsStatusResponse
 	Snapshots        *agent.SnapshotsResponse
 	History          *agent.UpdateHistoryResponse
 	CanConfigure     bool
@@ -448,14 +448,20 @@ templ OSUpdatesPage(data OSUpdatesPageData) {
 					</div>
 				</div>
 
-				<!-- Pipx Section -->
-				if data.Config != nil && data.Config.ShowPipx {
+				<!-- Python CLI Tools Section -->
+				if data.Config != nil && data.Config.ShowPythonTools {
 					<div class="bg-white dark:bg-slate-800 rounded-lg shadow">
 						<div class="p-4 border-b border-gray-200 dark:border-slate-700">
-							<div class="flex justify-between items-center">
+							<h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">Python CLI Tools</h3>
+							<p class="text-sm text-gray-500 dark:text-gray-400">Manage Python packages and applications</p>
+						</div>
+
+						<!-- pipx subsection -->
+						<div class="p-4 border-b border-gray-200 dark:border-slate-700">
+							<div class="flex justify-between items-center mb-3">
 								<div>
-									<h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">Python CLI Tools (pipx)</h3>
-									<p class="text-sm text-gray-500 dark:text-gray-400">Manage Python applications in isolated environments</p>
+									<h4 class="font-semibold text-gray-800 dark:text-gray-200">pipx Applications</h4>
+									<p class="text-xs text-gray-500 dark:text-gray-400">Isolated Python CLI applications</p>
 								</div>
 								<div class="flex gap-2">
 									if data.CanAction {
@@ -466,55 +472,202 @@ templ OSUpdatesPage(data OSUpdatesPageData) {
 											Install Package
 										</button>
 										<button
-											onclick="upgradeAllPipx()"
-											class="px-3 py-1.5 text-sm bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+											id="pipx-upgrade-all-btn"
+											onclick="upgradeAllPipx(this)"
+											class="px-3 py-1.5 text-sm bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors flex items-center gap-1.5"
 										>
 											Upgrade All
 										</button>
 									}
 								</div>
 							</div>
-						</div>
-						<div id="pipx-list" class="divide-y divide-gray-200 dark:divide-slate-600">
-							if data.PipxStatus == nil || !data.PipxStatus.Available {
-								<div class="p-8 text-center text-gray-500 dark:text-gray-400">
-									pipx is not available on this system
-								</div>
-							} else if len(data.PipxStatus.Packages) == 0 {
-								<div class="p-8 text-center text-gray-500 dark:text-gray-400">
-									No pipx packages installed
-								</div>
-							} else {
-								for _, pkg := range data.PipxStatus.Packages {
-									<div class="p-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-slate-700">
-										<div>
-											<p class="font-medium text-gray-800 dark:text-gray-200">{ pkg.Name }</p>
-											<p class="text-sm text-gray-500 dark:text-gray-400">
-												Version { pkg.Version }
-												if len(pkg.Apps) > 0 {
-													<span class="ml-2">Apps: { joinStrings(pkg.Apps, ", ") }</span>
-												}
-											</p>
-										</div>
-										if data.CanAction {
-											<div class="flex gap-2">
-												<button
-													class="pipx-upgrade-btn px-3 py-1.5 text-sm bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-400 rounded-lg transition-colors"
-													data-package-name={ pkg.Name }
-												>
-													Upgrade
-												</button>
-												<button
-													class="pipx-uninstall-btn px-3 py-1.5 text-sm bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 rounded-lg transition-colors"
-													data-package-name={ pkg.Name }
-												>
-													Uninstall
-												</button>
-											</div>
-										}
+							<!-- pipx bulk action bar (hidden until selection) -->
+							<div id="pipx-bulk-bar" class="hidden mb-2 flex items-center gap-3 px-3 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+								<span id="pipx-selected-count" class="text-sm font-medium text-blue-700 dark:text-blue-300">0 selected</span>
+								<button id="pipx-bulk-upgrade-btn" onclick="bulkUpgradePipx()" class="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-1.5">
+									Upgrade Selected
+								</button>
+								<button onclick="bulkUninstallPipx()" class="px-3 py-1 text-xs bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors">
+									Uninstall Selected
+								</button>
+								<button onclick="clearPipxSelection()" class="px-3 py-1 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
+									Clear
+								</button>
+							</div>
+							<div id="pipx-list" class="overflow-x-auto rounded-lg border border-gray-200 dark:border-slate-600">
+								if data.PythonToolsStatus == nil || !data.PythonToolsStatus.Pipx.Available {
+									<div class="p-6 text-center text-gray-500 dark:text-gray-400">
+										pipx is not available on this system
 									</div>
+								} else if len(data.PythonToolsStatus.Pipx.Packages) == 0 {
+									<div class="p-6 text-center text-gray-500 dark:text-gray-400">
+										No pipx packages installed
+									</div>
+								} else {
+									<table class="w-full text-sm">
+										<thead class="bg-gray-50 dark:bg-slate-700 border-b border-gray-200 dark:border-slate-600">
+											<tr>
+												if data.CanAction {
+													<th class="px-3 py-3 w-8">
+														<input type="checkbox" id="pipx-select-all" class="rounded border-gray-300 dark:border-slate-500 text-blue-600 focus:ring-blue-500" onchange="togglePipxSelectAll(this)"/>
+													</th>
+												}
+												<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Package</th>
+												<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Installed</th>
+												<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Latest</th>
+												<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Apps</th>
+												if data.CanAction {
+													<th class="px-4 py-3 w-40"></th>
+												}
+											</tr>
+										</thead>
+										<tbody class="divide-y divide-gray-200 dark:divide-slate-600">
+											for _, pkg := range data.PythonToolsStatus.Pipx.Packages {
+												<tr class="hover:bg-gray-50 dark:hover:bg-slate-700 pipx-row" data-package-name={ pkg.Name }>
+													if data.CanAction {
+														<td class="px-3 py-3">
+															<input type="checkbox" class="pipx-checkbox rounded border-gray-300 dark:border-slate-500 text-blue-600 focus:ring-blue-500" value={ pkg.Name } onchange="onPipxCheckboxChange()"/>
+														</td>
+													}
+													<td class="px-4 py-3 text-gray-800 dark:text-gray-200 font-medium">{ pkg.Name }</td>
+													<td class="px-4 py-3 text-gray-600 dark:text-gray-400 font-mono text-xs">{ pkg.Version }</td>
+													<td class="px-4 py-3 font-mono text-xs pipx-version-cell" data-package={ pkg.Name } data-installed={ pkg.Version }>
+														<svg class="w-3.5 h-3.5 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+													</td>
+													<td class="px-4 py-3 text-gray-500 dark:text-gray-400 text-xs">
+														if len(pkg.Apps) > 0 {
+															{ joinStrings(pkg.Apps, ", ") }
+														} else {
+															<span class="text-gray-400 dark:text-gray-500">—</span>
+														}
+													</td>
+													if data.CanAction {
+														<td class="px-4 py-3">
+															<div class="flex gap-2 justify-end">
+																<button
+																	class="pipx-upgrade-btn px-3 py-1.5 text-sm bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-400 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+																	data-package-name={ pkg.Name }
+																>
+																	Upgrade
+																</button>
+																<button
+																	class="pipx-uninstall-btn px-3 py-1.5 text-sm bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 rounded-lg transition-colors"
+																	data-package-name={ pkg.Name }
+																>
+																	Uninstall
+																</button>
+															</div>
+														</td>
+													}
+												</tr>
+											}
+										</tbody>
+									</table>
 								}
-							}
+							</div>
+						</div>
+
+						<!-- pip subsection -->
+						<div class="p-4">
+							<div class="flex justify-between items-center mb-3">
+								<div>
+									<h4 class="font-semibold text-gray-800 dark:text-gray-200">pip Packages</h4>
+									<p class="text-xs text-gray-500 dark:text-gray-400">User-installed Python packages</p>
+								</div>
+								<div class="flex gap-2">
+									if data.CanAction {
+										<button
+											onclick="showPipInstallModal()"
+											class="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+										>
+											Install Package
+										</button>
+										<button
+											id="pip-upgrade-all-btn"
+											onclick="upgradeAllPip(this)"
+											class="px-3 py-1.5 text-sm bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors flex items-center gap-1.5"
+										>
+											Upgrade All
+										</button>
+									}
+								</div>
+							</div>
+							<!-- pip bulk action bar (hidden until selection) -->
+							<div id="pip-bulk-bar" class="hidden mb-2 flex items-center gap-3 px-3 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+								<span id="pip-selected-count" class="text-sm font-medium text-blue-700 dark:text-blue-300">0 selected</span>
+								<button id="pip-bulk-upgrade-btn" onclick="bulkUpgradePip()" class="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-1.5">
+									Upgrade Selected
+								</button>
+								<button onclick="bulkUninstallPip()" class="px-3 py-1 text-xs bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors">
+									Uninstall Selected
+								</button>
+								<button onclick="clearPipSelection()" class="px-3 py-1 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
+									Clear
+								</button>
+							</div>
+							<div id="pip-list" class="overflow-x-auto rounded-lg border border-gray-200 dark:border-slate-600">
+								if data.PythonToolsStatus == nil || !data.PythonToolsStatus.Pip.Available {
+									<div class="p-6 text-center text-gray-500 dark:text-gray-400">
+										pip is not available on this system
+									</div>
+								} else if len(data.PythonToolsStatus.Pip.Packages) == 0 {
+									<div class="p-6 text-center text-gray-500 dark:text-gray-400">
+										No user-installed pip packages
+									</div>
+								} else {
+									<table class="w-full text-sm">
+										<thead class="bg-gray-50 dark:bg-slate-700 border-b border-gray-200 dark:border-slate-600">
+											<tr>
+												if data.CanAction {
+													<th class="px-3 py-3 w-8">
+														<input type="checkbox" id="pip-select-all" class="rounded border-gray-300 dark:border-slate-500 text-blue-600 focus:ring-blue-500" onchange="togglePipSelectAll(this)"/>
+													</th>
+												}
+												<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Package</th>
+												<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Installed</th>
+												<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Latest</th>
+												if data.CanAction {
+													<th class="px-4 py-3 w-40"></th>
+												}
+											</tr>
+										</thead>
+										<tbody class="divide-y divide-gray-200 dark:divide-slate-600">
+											for _, pkg := range data.PythonToolsStatus.Pip.Packages {
+												<tr class="hover:bg-gray-50 dark:hover:bg-slate-700 pip-row" data-package-name={ pkg.Name }>
+													if data.CanAction {
+														<td class="px-3 py-3">
+															<input type="checkbox" class="pip-checkbox rounded border-gray-300 dark:border-slate-500 text-blue-600 focus:ring-blue-500" value={ pkg.Name } onchange="onPipCheckboxChange()"/>
+														</td>
+													}
+													<td class="px-4 py-3 text-gray-800 dark:text-gray-200 font-medium">{ pkg.Name }</td>
+													<td class="px-4 py-3 text-gray-600 dark:text-gray-400 font-mono text-xs">{ pkg.Version }</td>
+													<td class="px-4 py-3 font-mono text-xs pip-version-cell" data-package={ pkg.Name } data-installed={ pkg.Version }>
+														<svg class="w-3.5 h-3.5 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+													</td>
+													if data.CanAction {
+														<td class="px-4 py-3">
+															<div class="flex gap-2 justify-end">
+																<button
+																	class="pip-upgrade-btn px-3 py-1.5 text-sm bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-400 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+																	data-package-name={ pkg.Name }
+																>
+																	Upgrade
+																</button>
+																<button
+																	class="pip-uninstall-btn px-3 py-1.5 text-sm bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 rounded-lg transition-colors"
+																	data-package-name={ pkg.Name }
+																>
+																	Uninstall
+																</button>
+															</div>
+														</td>
+													}
+												</tr>
+											}
+										</tbody>
+									</table>
+								}
+							</div>
 						</div>
 					</div>
 				}
@@ -699,26 +852,90 @@ templ OSUpdatesPage(data OSUpdatesPageData) {
 
 			<!-- Pipx Install Modal -->
 			<div id="pipx-install-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-				<div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-md w-full mx-4">
+				<div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-lg w-full mx-4">
 					<div class="p-4 border-b border-gray-200 dark:border-slate-700">
-						<h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">Install Python Package</h3>
+						<h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">Install pipx Package</h3>
 					</div>
-					<div class="p-4 space-y-4">
-						<p class="text-gray-600 dark:text-gray-400">Enter the name of the Python package to install via pipx:</p>
-						<input
-							type="text"
-							id="pipx-package-name"
-							placeholder="e.g., black, ruff, httpie"
-							maxlength="200"
-							data-charlimit="200"
-							class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-						/>
+					<div class="p-4 space-y-3">
+						<p class="text-sm text-gray-600 dark:text-gray-400">Type a package name to look it up on PyPI, then click Install.</p>
+						<div class="relative">
+							<input
+								type="text"
+								id="pipx-package-name"
+								placeholder="e.g., black, ruff, httpie"
+								maxlength="200"
+								data-charlimit="200"
+								autocomplete="off"
+								oninput="onPipxSearchInput(this.value)"
+								class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+							/>
+							<div id="pipx-search-spinner" class="hidden absolute right-3 top-2.5">
+								<svg class="w-4 h-4 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+							</div>
+						</div>
+						<div id="pipx-package-info" class="hidden rounded-lg border border-gray-200 dark:border-slate-600 p-3 bg-gray-50 dark:bg-slate-700 space-y-1">
+							<div class="flex items-center justify-between">
+								<span id="pipx-pkg-name" class="font-semibold text-gray-800 dark:text-gray-100 text-sm"></span>
+								<span id="pipx-pkg-version" class="font-mono text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded"></span>
+							</div>
+							<p id="pipx-pkg-summary" class="text-xs text-gray-600 dark:text-gray-400"></p>
+							<a id="pipx-pkg-link" href="#" target="_blank" rel="noopener" class="text-xs text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">View on PyPI →</a>
+						</div>
+						<div id="pipx-package-not-found" class="hidden rounded-lg border border-red-200 dark:border-red-800 p-3 bg-red-50 dark:bg-red-900/20">
+							<p class="text-xs text-red-600 dark:text-red-400">Package not found on PyPI. Check the name and try again.</p>
+						</div>
 					</div>
 					<div class="p-4 border-t border-gray-200 dark:border-slate-700 flex justify-end gap-3">
 						<button onclick="hidePipxInstallModal()" class="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">
 							Cancel
 						</button>
-						<button onclick="confirmPipxInstall()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
+						<button id="pipx-install-confirm-btn" onclick="confirmPipxInstall()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2">
+							Install
+						</button>
+					</div>
+				</div>
+			</div>
+
+			<!-- Pip Install Modal -->
+			<div id="pip-install-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+				<div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-lg w-full mx-4">
+					<div class="p-4 border-b border-gray-200 dark:border-slate-700">
+						<h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">Install pip Package</h3>
+					</div>
+					<div class="p-4 space-y-3">
+						<p class="text-sm text-gray-600 dark:text-gray-400">Type a package name to look it up on PyPI, then click Install.</p>
+						<div class="relative">
+							<input
+								type="text"
+								id="pip-package-name"
+								placeholder="e.g., requests, flask, numpy"
+								maxlength="200"
+								data-charlimit="200"
+								autocomplete="off"
+								oninput="onPipSearchInput(this.value)"
+								class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+							/>
+							<div id="pip-search-spinner" class="hidden absolute right-3 top-2.5">
+								<svg class="w-4 h-4 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+							</div>
+						</div>
+						<div id="pip-package-info" class="hidden rounded-lg border border-gray-200 dark:border-slate-600 p-3 bg-gray-50 dark:bg-slate-700 space-y-1">
+							<div class="flex items-center justify-between">
+								<span id="pip-pkg-name" class="font-semibold text-gray-800 dark:text-gray-100 text-sm"></span>
+								<span id="pip-pkg-version" class="font-mono text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded"></span>
+							</div>
+							<p id="pip-pkg-summary" class="text-xs text-gray-600 dark:text-gray-400"></p>
+							<a id="pip-pkg-link" href="#" target="_blank" rel="noopener" class="text-xs text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">View on PyPI →</a>
+						</div>
+						<div id="pip-package-not-found" class="hidden rounded-lg border border-red-200 dark:border-red-800 p-3 bg-red-50 dark:bg-red-900/20">
+							<p class="text-xs text-red-600 dark:text-red-400">Package not found on PyPI. Check the name and try again.</p>
+						</div>
+					</div>
+					<div class="p-4 border-t border-gray-200 dark:border-slate-700 flex justify-end gap-3">
+						<button onclick="hidePipInstallModal()" class="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">
+							Cancel
+						</button>
+						<button id="pip-install-confirm-btn" onclick="confirmPipInstall()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2">
 							Install
 						</button>
 					</div>

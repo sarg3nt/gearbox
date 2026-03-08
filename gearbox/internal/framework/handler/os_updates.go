@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sarg3nt/gearbox/internal/framework/agent"
@@ -53,7 +55,7 @@ func (h *Handler) OSUpdatesPage(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("Failed to get OS updates config", "error", err)
 		config = &database.OSUpdatesConfig{
 			CheckFrequencyMinutes: 60,
-			ShowPipx:              true,
+			ShowPythonTools:       true,
 		}
 	}
 
@@ -90,10 +92,10 @@ func (h *Handler) OSUpdatesPage(w http.ResponseWriter, r *http.Request) {
 	// Get unattended-upgrades config
 	unattendedConfig, _ := client.GetUnattendedConfig()
 
-	// Get pipx packages if enabled
-	var pipxStatus *agent.PipxStatusResponse
-	if config.ShowPipx {
-		pipxStatus, _ = client.GetPipxStatus()
+	// Get Python tools status (pip + pipx) if enabled
+	var pythonToolsStatus *agent.PythonToolsStatusResponse
+	if config.ShowPythonTools {
+		pythonToolsStatus, _ = client.GetPythonToolsStatus()
 	}
 
 	// Get snapshots
@@ -112,7 +114,7 @@ func (h *Handler) OSUpdatesPage(w http.ResponseWriter, r *http.Request) {
 		Packages:         packages,
 		RebootStatus:     rebootStatus,
 		UnattendedConfig: unattendedConfig,
-		PipxStatus:       pipxStatus,
+		PythonToolsStatus: pythonToolsStatus,
 		Snapshots:        snapshots,
 		History:          history,
 		CanConfigure:     h.authManager.HasPermission(r, models.ComponentOSUpdates, models.PermissionConfigure),
@@ -984,6 +986,285 @@ func (h *Handler) APIPipxUpgradeHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	h.jsonResponseOK(w, result)
+}
+
+// APIPipStatusHandler handles GET /api/os-updates/pip.
+func (h *Handler) APIPipStatusHandler(w http.ResponseWriter, r *http.Request) {
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" {
+		boxID = h.getDefaultServerID()
+	}
+
+	server, err := h.db.GetBoxByBoxID(boxID)
+	if err != nil || server == nil {
+		h.jsonError(w, "Server not found", http.StatusNotFound)
+		return
+	}
+
+	client, err := h.getAgentClient(server)
+	if err != nil {
+		h.jsonError(w, "Failed to connect to agent", http.StatusServiceUnavailable)
+		return
+	}
+
+	status, err := client.GetPipStatus()
+	if err != nil {
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	h.jsonResponseOK(w, status)
+}
+
+// APIPipInstallHandler handles POST /api/os-updates/pip/install.
+func (h *Handler) APIPipInstallHandler(w http.ResponseWriter, r *http.Request) {
+	if !h.authManager.HasPermission(r, models.ComponentOSUpdates, models.PermissionAction) {
+		h.jsonError(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" {
+		boxID = h.getDefaultServerID()
+	}
+
+	user, _ := auth.GetUserFromContext(r.Context())
+
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.jsonError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Name == "" {
+		h.jsonError(w, "package name is required", http.StatusBadRequest)
+		return
+	}
+	if len(req.Name) > 200 {
+		h.jsonError(w, "package name must be 200 characters or less", http.StatusBadRequest)
+		return
+	}
+
+	server, err := h.db.GetBoxByBoxID(boxID)
+	if err != nil || server == nil {
+		h.jsonError(w, "Server not found", http.StatusNotFound)
+		return
+	}
+
+	client, err := h.getAgentClient(server)
+	if err != nil {
+		h.jsonError(w, "Failed to connect to agent", http.StatusServiceUnavailable)
+		return
+	}
+
+	result, err := client.InstallPipPackage(req.Name)
+	if err != nil {
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	h.logger.Info("AUDIT: installed pip package", "user_id", user.ID, "action", "os_updates_pip_install", "package", req.Name)
+	h.jsonResponseOK(w, result)
+}
+
+// APIPipUninstallHandler handles POST /api/os-updates/pip/uninstall.
+func (h *Handler) APIPipUninstallHandler(w http.ResponseWriter, r *http.Request) {
+	if !h.authManager.HasPermission(r, models.ComponentOSUpdates, models.PermissionAction) {
+		h.jsonError(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" {
+		boxID = h.getDefaultServerID()
+	}
+
+	user, _ := auth.GetUserFromContext(r.Context())
+
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.jsonError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Name == "" {
+		h.jsonError(w, "package name is required", http.StatusBadRequest)
+		return
+	}
+	if len(req.Name) > 200 {
+		h.jsonError(w, "package name must be 200 characters or less", http.StatusBadRequest)
+		return
+	}
+
+	server, err := h.db.GetBoxByBoxID(boxID)
+	if err != nil || server == nil {
+		h.jsonError(w, "Server not found", http.StatusNotFound)
+		return
+	}
+
+	client, err := h.getAgentClient(server)
+	if err != nil {
+		h.jsonError(w, "Failed to connect to agent", http.StatusServiceUnavailable)
+		return
+	}
+
+	result, err := client.UninstallPipPackage(req.Name)
+	if err != nil {
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	h.logger.Info("AUDIT: uninstalled pip package", "user_id", user.ID, "action", "os_updates_pip_uninstall", "package", req.Name)
+	h.jsonResponseOK(w, result)
+}
+
+// APIPipUpgradeHandler handles POST /api/os-updates/pip/upgrade.
+func (h *Handler) APIPipUpgradeHandler(w http.ResponseWriter, r *http.Request) {
+	if !h.authManager.HasPermission(r, models.ComponentOSUpdates, models.PermissionAction) {
+		h.jsonError(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" {
+		boxID = h.getDefaultServerID()
+	}
+
+	user, _ := auth.GetUserFromContext(r.Context())
+
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.jsonError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	if len(req.Name) > 200 {
+		h.jsonError(w, "package name must be 200 characters or less", http.StatusBadRequest)
+		return
+	}
+
+	server, err := h.db.GetBoxByBoxID(boxID)
+	if err != nil || server == nil {
+		h.jsonError(w, "Server not found", http.StatusNotFound)
+		return
+	}
+
+	client, err := h.getAgentClient(server)
+	if err != nil {
+		h.jsonError(w, "Failed to connect to agent", http.StatusServiceUnavailable)
+		return
+	}
+
+	var result *agent.PipxPackageResponse
+	if req.Name == "" {
+		// Upgrade all
+		result, err = client.UpgradeAllPipPackages()
+	} else {
+		result, err = client.UpgradePipPackage(req.Name)
+	}
+
+	if err != nil {
+		h.logger.Error("Failed to upgrade pip package(s)", "error", err, "name", req.Name)
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if req.Name == "" {
+		h.logger.Info("AUDIT: upgraded all pip packages", "user_id", user.ID, "action", "os_updates_pip_upgrade")
+	} else {
+		h.logger.Info("AUDIT: upgraded pip package", "user_id", user.ID, "action", "os_updates_pip_upgrade", "package", req.Name)
+	}
+
+	h.jsonResponseOK(w, result)
+}
+
+// APIPythonToolsVersionsHandler handles GET /api/os-updates/python-tools/versions.
+// This is the slow endpoint that fetches latest PyPI version info for all packages.
+func (h *Handler) APIPythonToolsVersionsHandler(w http.ResponseWriter, r *http.Request) {
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" {
+		boxID = h.getDefaultServerID()
+	}
+
+	server, err := h.db.GetBoxByBoxID(boxID)
+	if err != nil || server == nil {
+		h.jsonError(w, "Server not found", http.StatusNotFound)
+		return
+	}
+
+	client, err := h.getAgentClient(server)
+	if err != nil {
+		h.jsonError(w, "Failed to connect to agent", http.StatusServiceUnavailable)
+		return
+	}
+
+	status, err := client.GetPythonToolsVersions()
+	if err != nil {
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	h.jsonResponseOK(w, status)
+}
+
+// APIPyPILookupHandler handles GET /api/os-updates/pypi-lookup?name=<pkg>.
+// Proxies the PyPI JSON API so the browser avoids CORS issues.
+func (h *Handler) APIPyPILookupHandler(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("name")
+	if name == "" {
+		h.jsonError(w, "name parameter required", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://pypi.org/pypi/"+name+"/json", nil)
+	if err != nil {
+		h.jsonError(w, "Failed to build request", http.StatusInternalServerError)
+		return
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		h.jsonError(w, "PyPI unreachable", http.StatusServiceUnavailable)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		h.jsonError(w, "Package not found", http.StatusNotFound)
+		return
+	}
+	if resp.StatusCode != http.StatusOK {
+		h.jsonError(w, "PyPI error", http.StatusBadGateway)
+		return
+	}
+
+	var pypiResp struct {
+		Info struct {
+			Name        string `json:"name"`
+			Version     string `json:"version"`
+			Summary     string `json:"summary"`
+			ProjectURL  string `json:"project_url"`
+		} `json:"info"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&pypiResp); err != nil {
+		h.jsonError(w, "Failed to parse PyPI response", http.StatusInternalServerError)
+		return
+	}
+
+	h.jsonResponseOK(w, map[string]string{
+		"name":        pypiResp.Info.Name,
+		"version":     pypiResp.Info.Version,
+		"summary":     pypiResp.Info.Summary,
+		"project_url": "https://pypi.org/project/" + pypiResp.Info.Name + "/",
+	})
 }
 
 // APIUnattendedConfigHandler handles GET /api/os-updates/unattended.

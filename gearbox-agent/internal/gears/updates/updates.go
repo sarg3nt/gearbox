@@ -4,8 +4,11 @@ package updates
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"net/http"
 	"os"
 	"os/exec"
 	"regexp"
@@ -62,10 +65,12 @@ type UpdateHistoryEntry struct {
 
 // PipxPackage represents a pipx-installed Python package.
 type PipxPackage struct {
-	Name       string   `json:"name"`
-	Version    string   `json:"version"`
-	PythonPath string   `json:"python_path,omitempty"`
-	Apps       []string `json:"apps,omitempty"` // Exposed applications
+	Name          string   `json:"name"`
+	Version       string   `json:"version"`
+	LatestVersion string   `json:"latest_version,omitempty"`
+	UpdateAvailable bool   `json:"update_available,omitempty"`
+	PythonPath    string   `json:"python_path,omitempty"`
+	Apps          []string `json:"apps,omitempty"` // Exposed applications
 }
 
 // AptSnapshot represents an APT snapshot for rollback.
@@ -172,16 +177,18 @@ func extractErrorLines(output []byte) string {
 	return ""
 }
 
-// runPipxCommand runs a pipx command with the correct environment for root's pipx.
-// pipx stores packages in user-specific directories, so we need to ensure
-// HOME is set to /root when the agent runs as root.
+// runPipxCommand runs a pipx command, ensuring HOME is set.
+// When running under systemd, HOME may not be set, but pipx needs it
+// to locate its venvs (e.g., /root/.local/share/pipx/venvs).
 func (c *UpdatesCollector) runPipxCommand(args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.commandTimeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "pipx", args...)
-	// Set HOME to /root to access root's pipx packages
-	cmd.Env = append(os.Environ(), "HOME=/root")
+	// Ensure HOME is set — systemd services don't always provide it
+	if os.Getenv("HOME") == "" {
+		cmd.Env = append(os.Environ(), "HOME=/root")
+	}
 	output, err := cmd.CombinedOutput()
 
 	if ctx.Err() == context.DeadlineExceeded {
@@ -1257,7 +1264,32 @@ func (c *UpdatesCollector) IsPipxAvailable() bool {
 	return err == nil
 }
 
-// ListPipxPackages returns installed pipx packages.
+// getLatestPyPIVersion returns the latest version of a package from the PyPI JSON API.
+// Returns empty string if the check fails (non-fatal).
+func (c *UpdatesCollector) getLatestPyPIVersion(pkgName string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://pypi.org/pypi/"+pkgName+"/json", nil)
+	if err != nil {
+		return ""
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	defer resp.Body.Close()
+	var result struct {
+		Info struct {
+			Version string `json:"version"`
+		} `json:"info"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&result) != nil {
+		return ""
+	}
+	return result.Info.Version
+}
+
+// ListPipxPackages returns installed pipx packages (fast, no version check).
 func (c *UpdatesCollector) ListPipxPackages() ([]PipxPackage, error) {
 	if !c.IsPipxAvailable() {
 		return nil, fmt.Errorf("pipx is not installed")
@@ -1265,15 +1297,34 @@ func (c *UpdatesCollector) ListPipxPackages() ([]PipxPackage, error) {
 
 	output, err := c.runPipxCommand("list", "--json")
 	if err != nil {
+		slog.Warn("pipx list --json failed, trying plain list",
+			"error", err,
+			"output", strings.TrimSpace(string(output)))
 		// Fallback to plain list if JSON fails
 		output, err = c.runPipxCommand("list")
 		if err != nil {
-			return nil, fmt.Errorf("failed to list pipx packages: %w", err)
+			return nil, fmt.Errorf("failed to list pipx packages (output: %s): %w", strings.TrimSpace(string(output)), err)
 		}
 		return c.parsePipxListPlain(string(output)), nil
 	}
 
 	return c.parsePipxListJSON(string(output))
+}
+
+// ListPipxPackagesWithVersions returns installed pipx packages with latest PyPI version info (slow).
+func (c *UpdatesCollector) ListPipxPackagesWithVersions() ([]PipxPackage, error) {
+	packages, err := c.ListPipxPackages()
+	if err != nil {
+		return nil, err
+	}
+	for i := range packages {
+		latest := c.getLatestPyPIVersion(packages[i].Name)
+		if latest != "" {
+			packages[i].LatestVersion = latest
+			packages[i].UpdateAvailable = latest != packages[i].Version
+		}
+	}
+	return packages, nil
 }
 
 // parsePipxListPlain parses plain text pipx list output.
@@ -1325,10 +1376,46 @@ func (c *UpdatesCollector) parsePipxListPlain(output string) []PipxPackage {
 }
 
 // parsePipxListJSON parses JSON pipx list output (pipx >= 1.0).
+// The JSON format has a top-level "venvs" object keyed by package name,
+// each containing metadata.main_package with package info and app_paths.
 func (c *UpdatesCollector) parsePipxListJSON(output string) ([]PipxPackage, error) {
-	// For now, fall back to plain parsing since JSON format varies
-	// TODO: Implement proper JSON parsing if needed
-	return c.parsePipxListPlain(output), nil
+	var result struct {
+		Venvs map[string]struct {
+			Metadata struct {
+				MainPackage struct {
+					Package    string `json:"package"`
+					PackageURL string `json:"package_or_url"`
+					Version    string `json:"package_version"`
+					AppPaths   []struct {
+						Name string `json:"__Path__"`
+					} `json:"app_paths"`
+					Apps []string `json:"apps"`
+				} `json:"main_package"`
+			} `json:"metadata"`
+		} `json:"venvs"`
+	}
+
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		// Fall back to plain text parsing if JSON structure is unexpected
+		return c.parsePipxListPlain(output), nil
+	}
+
+	var packages []PipxPackage
+	for name, venv := range result.Venvs {
+		pkg := PipxPackage{
+			Name:    name,
+			Version: venv.Metadata.MainPackage.Version,
+		}
+
+		// Collect app names from the apps field
+		if len(venv.Metadata.MainPackage.Apps) > 0 {
+			pkg.Apps = venv.Metadata.MainPackage.Apps
+		}
+
+		packages = append(packages, pkg)
+	}
+
+	return packages, nil
 }
 
 // SearchPyPI searches PyPI for packages (basic implementation).
@@ -1424,6 +1511,181 @@ func (c *UpdatesCollector) UpgradeAllPipxPackages() error {
 		return fmt.Errorf("failed to upgrade all pipx packages: %w", err)
 	}
 
+	return nil
+}
+
+// --- Pip Package Management ---
+
+// pipCommand returns the pip executable name available on this system.
+// Prefers pip3 over pip.
+func pipCommand() string {
+	if _, err := exec.LookPath("pip3"); err == nil {
+		return "pip3"
+	}
+	return "pip"
+}
+
+// runPipCommand runs a pip command with a timeout.
+func (c *UpdatesCollector) runPipCommand(args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), c.commandTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, pipCommand(), args...)
+	output, err := cmd.CombinedOutput()
+
+	if ctx.Err() == context.DeadlineExceeded {
+		return output, ErrCommandTimeout
+	}
+
+	return output, err
+}
+
+// runPipCommandWithOutput runs a pip command and wraps failures with
+// the command's output, just like runCommandWithOutput does for regular commands.
+func (c *UpdatesCollector) runPipCommandWithOutput(args ...string) ([]byte, error) {
+	output, err := c.runPipCommand(args...)
+	if err != nil {
+		errDetail := extractErrorLines(output)
+		if errDetail != "" {
+			return output, fmt.Errorf("%s: %w", errDetail, err)
+		}
+		return output, err
+	}
+	return output, nil
+}
+
+// IsPipAvailable checks if pip is installed.
+func (c *UpdatesCollector) IsPipAvailable() bool {
+	_, err := exec.LookPath("pip3")
+	if err != nil {
+		_, err = exec.LookPath("pip")
+	}
+	return err == nil
+}
+
+// ListPipPackages returns user-installed pip packages (fast, no version check).
+func (c *UpdatesCollector) ListPipPackages() ([]PipxPackage, error) {
+	if !c.IsPipAvailable() {
+		return nil, fmt.Errorf("pip is not installed")
+	}
+
+	output, err := c.runPipCommand("list", "--user", "--format=json")
+	if err != nil {
+		return nil, fmt.Errorf("listing pip packages: %w", err)
+	}
+
+	var pipList []struct {
+		Name    string `json:"name"`
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(output, &pipList); err != nil {
+		return nil, fmt.Errorf("parsing pip list output: %w", err)
+	}
+
+	var packages []PipxPackage
+	for _, p := range pipList {
+		packages = append(packages, PipxPackage{Name: p.Name, Version: p.Version})
+	}
+	return packages, nil
+}
+
+// ListPipPackagesWithVersions returns user-installed pip packages with latest version info (slow).
+func (c *UpdatesCollector) ListPipPackagesWithVersions() ([]PipxPackage, error) {
+	packages, err := c.ListPipPackages()
+	if err != nil {
+		return nil, err
+	}
+
+	// Build outdated map via pip list --outdated (one network call, best-effort)
+	outdatedMap := map[string]string{}
+	outdatedOutput, err := c.runPipCommand("list", "--user", "--outdated", "--format=json")
+	if err == nil {
+		var outdatedList []struct {
+			Name   string `json:"name"`
+			Latest string `json:"latest_version"`
+		}
+		if json.Unmarshal(outdatedOutput, &outdatedList) == nil {
+			for _, o := range outdatedList {
+				outdatedMap[strings.ToLower(o.Name)] = o.Latest
+			}
+		}
+	}
+
+	for i := range packages {
+		if latest, ok := outdatedMap[strings.ToLower(packages[i].Name)]; ok {
+			packages[i].LatestVersion = latest
+			packages[i].UpdateAvailable = true
+		}
+	}
+	return packages, nil
+}
+
+// InstallPipPackage installs a package via pip.
+func (c *UpdatesCollector) InstallPipPackage(name string) error {
+	if !c.IsPipAvailable() {
+		return fmt.Errorf("pip is not installed")
+	}
+
+	if !isValidPackageName(name) {
+		return fmt.Errorf("invalid package name: %s", name)
+	}
+
+	_, err := c.runPipCommandWithOutput("install", "--user", name)
+	return err
+}
+
+// UninstallPipPackage uninstalls a package via pip.
+func (c *UpdatesCollector) UninstallPipPackage(name string) error {
+	if !c.IsPipAvailable() {
+		return fmt.Errorf("pip is not installed")
+	}
+
+	if !isValidPackageName(name) {
+		return fmt.Errorf("invalid package name: %s", name)
+	}
+
+	_, err := c.runPipCommandWithOutput("uninstall", "-y", name)
+	return err
+}
+
+// UpgradePipPackage upgrades a pip package.
+func (c *UpdatesCollector) UpgradePipPackage(name string) error {
+	if !c.IsPipAvailable() {
+		return fmt.Errorf("pip is not installed")
+	}
+
+	if !isValidPackageName(name) {
+		return fmt.Errorf("invalid package name: %s", name)
+	}
+
+	_, err := c.runPipCommandWithOutput("install", "--user", "--upgrade", name)
+	return err
+}
+
+// UpgradeAllPipPackages upgrades all user-installed pip packages.
+func (c *UpdatesCollector) UpgradeAllPipPackages() error {
+	if !c.IsPipAvailable() {
+		return fmt.Errorf("pip is not installed")
+	}
+
+	// Get list of outdated packages
+	output, err := c.runPipCommand("list", "--user", "--outdated", "--format=json")
+	if err != nil {
+		return fmt.Errorf("listing outdated packages: %w", err)
+	}
+
+	var outdated []struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(output, &outdated); err != nil {
+		return fmt.Errorf("parsing outdated list: %w", err)
+	}
+
+	for _, pkg := range outdated {
+		if _, err := c.runPipCommandWithOutput("install", "--user", "--upgrade", pkg.Name); err != nil {
+			return fmt.Errorf("upgrading %s: %w", pkg.Name, err)
+		}
+	}
 	return nil
 }
 

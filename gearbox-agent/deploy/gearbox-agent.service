@@ -13,6 +13,7 @@ Group=root
 ExecStart=/usr/local/bin/gearbox-agent
 
 # Environment variables (can be overridden in /etc/default/gearbox-agent)
+Environment=HOME=/root
 Environment=HAPROXY_AGENT_LISTEN=0.0.0.0:8405
 Environment=HAPROXY_AGENT_DATA_DIR=/var/lib/gearbox-agent
 Environment=HAPROXY_AGENT_LOG_LEVEL=info
@@ -29,7 +30,7 @@ RestartSec=5
 # needs broad system access for package management (apt install/upgrade),
 # service control, HAProxy config, certificate management, and system reboots.
 NoNewPrivileges=false
-ProtectHome=read-only
+ProtectHome=no
 
 # Logging
 StandardOutput=journal

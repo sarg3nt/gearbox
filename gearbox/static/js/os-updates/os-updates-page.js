@@ -12,6 +12,60 @@ let totalPackagesToInstall = 0;
 let operationPollInterval = null;
 let operationReceivedSSE = false;
 let isRebooting = false;
+let rebootPollInterval = null;
+
+// Reboot state persistence via localStorage
+const REBOOT_STORAGE_KEY = 'gearbox_reboot_state';
+const REBOOT_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+
+function getRebootState() {
+	try {
+		const raw = localStorage.getItem(REBOOT_STORAGE_KEY);
+		if (!raw) return null;
+		return JSON.parse(raw);
+	} catch {
+		return null;
+	}
+}
+
+function setRebootState(serverID) {
+	localStorage.setItem(REBOOT_STORAGE_KEY, JSON.stringify({
+		serverID: serverID,
+		timestamp: Date.now()
+	}));
+}
+
+function clearRebootState() {
+	localStorage.removeItem(REBOOT_STORAGE_KEY);
+}
+
+// Poll the agent to detect when the server comes back online after reboot
+function startRebootPolling() {
+	stopRebootPolling();
+	rebootPollInterval = setInterval(async () => {
+		try {
+			const response = await fetch('/api/os-updates/status?server=' + currentServerID);
+			if (response.ok) {
+				// Server is reachable — reboot is complete
+				stopRebootPolling();
+				isRebooting = false;
+				clearRebootState();
+				showRebootNotRequiredStatus();
+				showToast('Reboot complete. Server is back online.', 'success');
+				autoCheckForUpdates();
+			}
+		} catch {
+			// Server still down, keep polling
+		}
+	}, 5000);
+}
+
+function stopRebootPolling() {
+	if (rebootPollInterval) {
+		clearInterval(rebootPollInterval);
+		rebootPollInterval = null;
+	}
+}
 
 // Extract error message from a failed fetch response.
 // Tries to parse JSON { message } or { error }, falls back to status text.
@@ -74,10 +128,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
 	// Bind pipx button events
 	document.querySelectorAll('.pipx-upgrade-btn').forEach(btn => {
-		btn.addEventListener('click', () => upgradePipxPackage(btn.dataset.packageName));
+		btn.addEventListener('click', () => upgradePipxPackage(btn, btn.dataset.packageName));
 	});
 	document.querySelectorAll('.pipx-uninstall-btn').forEach(btn => {
-		btn.addEventListener('click', () => uninstallPipxPackage(btn.dataset.packageName));
+		btn.addEventListener('click', () => uninstallPipxPackage(btn, btn.dataset.packageName));
+	});
+
+	// Bind pip button events
+	document.querySelectorAll('.pip-upgrade-btn').forEach(btn => {
+		btn.addEventListener('click', () => upgradePipPackage(btn, btn.dataset.packageName));
+	});
+	document.querySelectorAll('.pip-uninstall-btn').forEach(btn => {
+		btn.addEventListener('click', () => uninstallPipPackage(btn, btn.dataset.packageName));
 	});
 
 	// Bind package info button events
@@ -85,9 +147,29 @@ document.addEventListener('DOMContentLoaded', function() {
 		btn.addEventListener('click', () => showPackageInfo(btn));
 	});
 
+	// Restore reboot state from localStorage if a reboot was in progress
+	if (currentServerID) {
+		const savedState = getRebootState();
+		if (savedState && savedState.serverID === currentServerID) {
+			if (Date.now() - savedState.timestamp < REBOOT_TIMEOUT_MS) {
+				isRebooting = true;
+				showRebootingStatus();
+				startRebootPolling();
+			} else {
+				// Stale reboot state (>30 min) — clear it
+				clearRebootState();
+			}
+		}
+	}
+
 	// Initialize SSE connection for real-time apt events
 	// Delay slightly to ensure currentServerID is set
 	setTimeout(initSSE, 100);
+
+	// Lazily load Python package version info (slow PyPI check, done async)
+	if (document.querySelector('.pipx-version-cell, .pip-version-cell')) {
+		setTimeout(loadPythonVersions, 200);
+	}
 
 	// Auto-check for updates on page load (if user has action permissions)
 	const canAction = document.getElementById('can-action');
@@ -104,6 +186,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Cleanup SSE connection on page unload
 window.addEventListener('beforeunload', function() {
+	stopRebootPolling();
 	if (sseConnection) {
 		sseConnection.close();
 	}
@@ -176,9 +259,11 @@ function initSSE() {
 		try {
 			const event = JSON.parse(e.data);
 			console.log('SSE: Server disconnected', event.data);
-			// Server went down — assume rebooting so we can detect reconnection
-			isRebooting = true;
-			showRebootingStatus();
+			// Only show rebooting UI if user explicitly initiated a reboot.
+			// Don't assume every disconnect is a reboot — could be a transient issue.
+			if (isRebooting) {
+				showRebootingStatus();
+			}
 		} catch (err) {
 			console.error('Failed to handle server.disconnected:', err);
 		}
@@ -191,6 +276,8 @@ function initSSE() {
 			console.log('SSE: Server connected', event.data);
 			if (isRebooting) {
 				isRebooting = false;
+				clearRebootState();
+				stopRebootPolling();
 				showRebootNotRequiredStatus();
 				showToast('Reboot complete. Server is back online.', 'success');
 				autoCheckForUpdates();
@@ -839,7 +926,9 @@ async function doReboot(when) {
 
 		if (when === 'now') {
 			isRebooting = true;
+			setRebootState(currentServerID);
 			showRebootingStatus();
+			startRebootPolling();
 			showToast('System is rebooting...', 'info');
 		} else {
 			showToast(data.message || 'Reboot scheduled', 'success');
@@ -893,7 +982,299 @@ function showRebootNotRequiredStatus() {
 	}
 }
 
-// Pipx functions
+// Async version check — fetches latest PyPI versions and updates the Latest cells
+async function loadPythonVersions() {
+	try {
+		const response = await fetch('/api/os-updates/python-tools/versions?server=' + currentServerID);
+		if (!response.ok) return;
+		const data = await response.json();
+
+		// Update pipx version cells
+		document.querySelectorAll('.pipx-version-cell').forEach(cell => {
+			const pkg = data.pipx?.packages?.find(p => p.name === cell.dataset.package);
+			renderVersionCell(cell, pkg);
+		});
+
+		// Update pip version cells
+		document.querySelectorAll('.pip-version-cell').forEach(cell => {
+			const pkg = data.pip?.packages?.find(p => p.name === cell.dataset.package);
+			renderVersionCell(cell, pkg);
+		});
+	} catch {
+		// Non-fatal: leave spinners as-is on network error
+	}
+}
+
+function renderVersionCell(cell, pkg) {
+	if (!pkg) {
+		cell.innerHTML = '<span class="text-gray-400 dark:text-gray-500">—</span>';
+		disableUpgradeBtn(cell);
+		return;
+	}
+	if (pkg.update_available) {
+		cell.innerHTML =
+			'<span class="text-amber-600 dark:text-amber-400">' + pkg.latest_version + '</span>' +
+			'<span class="ml-1 px-1.5 py-0.5 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded">Update</span>';
+	} else if (pkg.latest_version) {
+		cell.innerHTML = '<span class="text-gray-500 dark:text-gray-400">' + pkg.latest_version + '</span>';
+		disableUpgradeBtn(cell);
+	} else {
+		cell.innerHTML = '<span class="text-gray-400 dark:text-gray-500">—</span>';
+		disableUpgradeBtn(cell);
+	}
+}
+
+// Disables the upgrade button in the same table row as the given version cell.
+function disableUpgradeBtn(cell) {
+	const row = cell.closest('tr');
+	if (!row) return;
+	const btn = row.querySelector('.pipx-upgrade-btn, .pip-upgrade-btn');
+	if (btn) btn.disabled = true;
+}
+
+// Button loading state helpers
+const SPINNER_SVG = '<svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>';
+
+function setButtonLoading(btn, loadingText) {
+	btn.disabled = true;
+	btn.dataset.originalHtml = btn.innerHTML;
+	btn.innerHTML = SPINNER_SVG + '<span>' + loadingText + '</span>';
+}
+
+function clearButtonLoading(btn) {
+	btn.disabled = false;
+	if (btn.dataset.originalHtml) {
+		btn.innerHTML = btn.dataset.originalHtml;
+		delete btn.dataset.originalHtml;
+	}
+}
+
+// ── Multi-select: pipx ────────────────────────────────────────────────────────
+
+function onPipxCheckboxChange() {
+	const checked = document.querySelectorAll('.pipx-checkbox:checked');
+	const all = document.querySelectorAll('.pipx-checkbox');
+	const bar = document.getElementById('pipx-bulk-bar');
+	const count = document.getElementById('pipx-selected-count');
+	const selectAll = document.getElementById('pipx-select-all');
+	if (bar) bar.classList.toggle('hidden', checked.length === 0);
+	if (count) count.textContent = checked.length + ' selected';
+	if (selectAll) selectAll.indeterminate = checked.length > 0 && checked.length < all.length;
+	if (selectAll) selectAll.checked = checked.length === all.length && all.length > 0;
+}
+
+function togglePipxSelectAll(cb) {
+	document.querySelectorAll('.pipx-checkbox').forEach(c => { c.checked = cb.checked; });
+	onPipxCheckboxChange();
+}
+
+function clearPipxSelection() {
+	document.querySelectorAll('.pipx-checkbox').forEach(c => { c.checked = false; });
+	const selectAll = document.getElementById('pipx-select-all');
+	if (selectAll) { selectAll.checked = false; selectAll.indeterminate = false; }
+	onPipxCheckboxChange();
+}
+
+async function bulkUpgradePipx() {
+	const names = [...document.querySelectorAll('.pipx-checkbox:checked')].map(c => c.value);
+	if (names.length === 0) return;
+	const btn = document.getElementById('pipx-bulk-upgrade-btn');
+	setButtonLoading(btn, 'Upgrading...');
+	let failed = [];
+	for (const name of names) {
+		try {
+			const r = await fetch('/api/os-updates/pipx/upgrade?server=' + currentServerID, {
+				method: 'POST', headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ name })
+			});
+			if (!r.ok) failed.push(name);
+		} catch { failed.push(name); }
+	}
+	if (failed.length > 0) {
+		showToast('Failed to upgrade: ' + failed.join(', '), 'error');
+		clearButtonLoading(btn);
+	} else {
+		showToast('Upgraded ' + names.length + ' package(s)', 'success');
+		setTimeout(() => window.location.reload(), 1000);
+	}
+}
+
+function bulkUninstallPipx() {
+	const names = [...document.querySelectorAll('.pipx-checkbox:checked')].map(c => c.value);
+	if (names.length === 0) return;
+	showConfirmModal({
+		title: 'Uninstall Packages',
+		message: 'Uninstall ' + names.length + ' selected package(s)? This cannot be undone.',
+		type: 'danger',
+		confirmText: 'Uninstall',
+		onConfirm: async () => {
+			let failed = [];
+			for (const name of names) {
+				try {
+					const r = await fetch('/api/os-updates/pipx/uninstall?server=' + currentServerID, {
+						method: 'POST', headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({ name })
+					});
+					if (!r.ok) failed.push(name);
+				} catch { failed.push(name); }
+			}
+			if (failed.length > 0) {
+				showToast('Failed to uninstall: ' + failed.join(', '), 'error');
+			} else {
+				showToast('Uninstalled ' + names.length + ' package(s)', 'success');
+				setTimeout(() => window.location.reload(), 1000);
+			}
+		}
+	});
+}
+
+// ── Multi-select: pip ─────────────────────────────────────────────────────────
+
+function onPipCheckboxChange() {
+	const checked = document.querySelectorAll('.pip-checkbox:checked');
+	const all = document.querySelectorAll('.pip-checkbox');
+	const bar = document.getElementById('pip-bulk-bar');
+	const count = document.getElementById('pip-selected-count');
+	const selectAll = document.getElementById('pip-select-all');
+	if (bar) bar.classList.toggle('hidden', checked.length === 0);
+	if (count) count.textContent = checked.length + ' selected';
+	if (selectAll) selectAll.indeterminate = checked.length > 0 && checked.length < all.length;
+	if (selectAll) selectAll.checked = checked.length === all.length && all.length > 0;
+}
+
+function togglePipSelectAll(cb) {
+	document.querySelectorAll('.pip-checkbox').forEach(c => { c.checked = cb.checked; });
+	onPipCheckboxChange();
+}
+
+function clearPipSelection() {
+	document.querySelectorAll('.pip-checkbox').forEach(c => { c.checked = false; });
+	const selectAll = document.getElementById('pip-select-all');
+	if (selectAll) { selectAll.checked = false; selectAll.indeterminate = false; }
+	onPipCheckboxChange();
+}
+
+async function bulkUpgradePip() {
+	const names = [...document.querySelectorAll('.pip-checkbox:checked')].map(c => c.value);
+	if (names.length === 0) return;
+	const btn = document.getElementById('pip-bulk-upgrade-btn');
+	setButtonLoading(btn, 'Upgrading...');
+	let failed = [];
+	for (const name of names) {
+		try {
+			const r = await fetch('/api/os-updates/pip/upgrade?server=' + currentServerID, {
+				method: 'POST', headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ name })
+			});
+			if (!r.ok) failed.push(name);
+		} catch { failed.push(name); }
+	}
+	if (failed.length > 0) {
+		showToast('Failed to upgrade: ' + failed.join(', '), 'error');
+		clearButtonLoading(btn);
+	} else {
+		showToast('Upgraded ' + names.length + ' package(s)', 'success');
+		setTimeout(() => window.location.reload(), 1000);
+	}
+}
+
+function bulkUninstallPip() {
+	const names = [...document.querySelectorAll('.pip-checkbox:checked')].map(c => c.value);
+	if (names.length === 0) return;
+	showConfirmModal({
+		title: 'Uninstall Packages',
+		message: 'Uninstall ' + names.length + ' selected package(s)? This cannot be undone.',
+		type: 'danger',
+		confirmText: 'Uninstall',
+		onConfirm: async () => {
+			let failed = [];
+			for (const name of names) {
+				try {
+					const r = await fetch('/api/os-updates/pip/uninstall?server=' + currentServerID, {
+						method: 'POST', headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({ name })
+					});
+					if (!r.ok) failed.push(name);
+				} catch { failed.push(name); }
+			}
+			if (failed.length > 0) {
+				showToast('Failed to uninstall: ' + failed.join(', '), 'error');
+			} else {
+				showToast('Uninstalled ' + names.length + ' package(s)', 'success');
+				setTimeout(() => window.location.reload(), 1000);
+			}
+		}
+	});
+}
+
+// ── PyPI live lookup ──────────────────────────────────────────────────────────
+
+let pypiSearchTimer = null;
+
+async function lookupPyPIPackage(name, prefix) {
+	const spinner = document.getElementById(prefix + '-search-spinner');
+	const infoBox = document.getElementById(prefix + '-package-info');
+	const notFound = document.getElementById(prefix + '-package-not-found');
+
+	if (!name || name.length < 2) {
+		if (infoBox) infoBox.classList.add('hidden');
+		if (notFound) notFound.classList.add('hidden');
+		return;
+	}
+
+	if (spinner) spinner.classList.remove('hidden');
+	if (infoBox) infoBox.classList.add('hidden');
+	if (notFound) notFound.classList.add('hidden');
+
+	try {
+		const resp = await fetch('/api/os-updates/pypi-lookup?name=' + encodeURIComponent(name));
+		if (spinner) spinner.classList.add('hidden');
+		if (resp.status === 404) {
+			if (notFound) notFound.classList.remove('hidden');
+			return;
+		}
+		if (!resp.ok) return;
+		const pkg = await resp.json();
+		if (infoBox) {
+			document.getElementById(prefix + '-pkg-name').textContent = pkg.name;
+			document.getElementById(prefix + '-pkg-version').textContent = pkg.version;
+			document.getElementById(prefix + '-pkg-summary').textContent = pkg.summary || '';
+			document.getElementById(prefix + '-pkg-link').href = pkg.project_url;
+			infoBox.classList.remove('hidden');
+		}
+	} catch {
+		if (spinner) spinner.classList.add('hidden');
+	}
+}
+
+function onPipxSearchInput(value) {
+	clearTimeout(pypiSearchTimer);
+	const trimmed = value.trim();
+	const infoBox = document.getElementById('pipx-package-info');
+	const notFound = document.getElementById('pipx-package-not-found');
+	if (!trimmed) {
+		if (infoBox) infoBox.classList.add('hidden');
+		if (notFound) notFound.classList.add('hidden');
+		return;
+	}
+	pypiSearchTimer = setTimeout(() => lookupPyPIPackage(trimmed, 'pipx'), 350);
+}
+
+function onPipSearchInput(value) {
+	clearTimeout(pypiSearchTimer);
+	const trimmed = value.trim();
+	const infoBox = document.getElementById('pip-package-info');
+	const notFound = document.getElementById('pip-package-not-found');
+	if (!trimmed) {
+		if (infoBox) infoBox.classList.add('hidden');
+		if (notFound) notFound.classList.add('hidden');
+		return;
+	}
+	pypiSearchTimer = setTimeout(() => lookupPyPIPackage(trimmed, 'pip'), 350);
+}
+
+// ── Pipx functions ────────────────────────────────────────────────────────────
+
 function showPipxInstallModal() {
 	document.getElementById('pipx-install-modal').classList.remove('hidden');
 	document.getElementById('pipx-package-name').focus();
@@ -902,6 +1283,8 @@ function showPipxInstallModal() {
 function hidePipxInstallModal() {
 	document.getElementById('pipx-install-modal').classList.add('hidden');
 	document.getElementById('pipx-package-name').value = '';
+	document.getElementById('pipx-package-info').classList.add('hidden');
+	document.getElementById('pipx-package-not-found').classList.add('hidden');
 }
 
 async function confirmPipxInstall() {
@@ -930,7 +1313,8 @@ async function confirmPipxInstall() {
 	}
 }
 
-async function upgradePipxPackage(name) {
+async function upgradePipxPackage(btn, name) {
+	setButtonLoading(btn, 'Upgrading...');
 	try {
 		const response = await fetch('/api/os-updates/pipx/upgrade?server=' + currentServerID, {
 			method: 'POST',
@@ -944,11 +1328,13 @@ async function upgradePipxPackage(name) {
 		showToast('Package ' + name + ' upgraded', 'success');
 		setTimeout(() => window.location.reload(), 1000);
 	} catch (err) {
+		clearButtonLoading(btn);
 		showToast('Failed to upgrade pipx package: ' + err.message, 'error');
 	}
 }
 
-async function upgradeAllPipx() {
+async function upgradeAllPipx(btn) {
+	setButtonLoading(btn, 'Upgrading...');
 	try {
 		const response = await fetch('/api/os-updates/pipx/upgrade?server=' + currentServerID, {
 			method: 'POST',
@@ -962,17 +1348,19 @@ async function upgradeAllPipx() {
 		showToast('All pipx packages upgraded', 'success');
 		setTimeout(() => window.location.reload(), 1000);
 	} catch (err) {
+		clearButtonLoading(btn);
 		showToast('Failed to upgrade pipx packages: ' + err.message, 'error');
 	}
 }
 
-function uninstallPipxPackage(name) {
+function uninstallPipxPackage(btn, name) {
 	showConfirmModal({
 		title: 'Uninstall Package',
 		message: 'Uninstall ' + name + '? This will remove the package and its virtual environment.',
 		type: 'danger',
 		confirmText: 'Uninstall',
 		onConfirm: async () => {
+			setButtonLoading(btn, 'Uninstalling...');
 			try {
 				const response = await fetch('/api/os-updates/pipx/uninstall?server=' + currentServerID, {
 					method: 'POST',
@@ -986,7 +1374,116 @@ function uninstallPipxPackage(name) {
 				showToast('Package ' + name + ' uninstalled', 'success');
 				setTimeout(() => window.location.reload(), 1000);
 			} catch (err) {
+				clearButtonLoading(btn);
 				showToast('Failed to uninstall pipx package: ' + err.message, 'error');
+			}
+		}
+	});
+}
+
+// ── Pip functions ─────────────────────────────────────────────────────────────
+
+function showPipInstallModal() {
+	document.getElementById('pip-install-modal').classList.remove('hidden');
+	document.getElementById('pip-package-name').focus();
+}
+
+function hidePipInstallModal() {
+	document.getElementById('pip-install-modal').classList.add('hidden');
+	document.getElementById('pip-package-name').value = '';
+	document.getElementById('pip-package-info').classList.add('hidden');
+	document.getElementById('pip-package-not-found').classList.add('hidden');
+}
+
+async function confirmPipInstall() {
+	const name = document.getElementById('pip-package-name').value.trim();
+	if (!name) {
+		showToast('Please enter a package name', 'warning');
+		return;
+	}
+
+	hidePipInstallModal();
+
+	try {
+		const response = await fetch('/api/os-updates/pip/install?server=' + currentServerID, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ name: name })
+		});
+		if (!response.ok) {
+			const errMsg = await extractErrorMessage(response);
+			throw new Error(errMsg);
+		}
+		showToast('Package ' + name + ' installed', 'success');
+		setTimeout(() => window.location.reload(), 1000);
+	} catch (err) {
+		showToast('Failed to install pip package: ' + err.message, 'error');
+	}
+}
+
+async function upgradePipPackage(btn, name) {
+	setButtonLoading(btn, 'Upgrading...');
+	try {
+		const response = await fetch('/api/os-updates/pip/upgrade?server=' + currentServerID, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ name: name })
+		});
+		if (!response.ok) {
+			const errMsg = await extractErrorMessage(response);
+			throw new Error(errMsg);
+		}
+		showToast('Package ' + name + ' upgraded', 'success');
+		setTimeout(() => window.location.reload(), 1000);
+	} catch (err) {
+		clearButtonLoading(btn);
+		showToast('Failed to upgrade pip package: ' + err.message, 'error');
+	}
+}
+
+async function upgradeAllPip(btn) {
+	setButtonLoading(btn, 'Upgrading...');
+	try {
+		const response = await fetch('/api/os-updates/pip/upgrade?server=' + currentServerID, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({})
+		});
+		if (!response.ok) {
+			const errMsg = await extractErrorMessage(response);
+			throw new Error(errMsg);
+		}
+		showToast('All pip packages upgraded', 'success');
+		setTimeout(() => window.location.reload(), 1000);
+	} catch (err) {
+		clearButtonLoading(btn);
+		showToast('Failed to upgrade pip packages: ' + err.message, 'error');
+	}
+}
+
+function uninstallPipPackage(btn, name) {
+	showConfirmModal({
+		title: 'Uninstall Package',
+		message: 'Uninstall ' + name + '? This will remove the pip package.',
+		type: 'danger',
+		confirmText: 'Uninstall',
+		onConfirm: async () => {
+			setButtonLoading(btn, 'Uninstalling...');
+			try {
+				const response = await fetch('/api/os-updates/pip/uninstall?server=' + currentServerID, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ name: name })
+				});
+				if (!response.ok) {
+					const errMsg = await extractErrorMessage(response);
+					throw new Error(errMsg);
+				}
+				showToast('Package ' + name + ' uninstalled', 'success');
+				setTimeout(() => window.location.reload(), 1000);
+			} catch (err) {
+				clearButtonLoading(btn);
+				showToast('Failed to uninstall pip package: ' + err.message, 'error');
 			}
 		}
 	});

@@ -853,10 +853,12 @@ type RemovePackageRequest struct {
 
 // PipxPackage represents a pipx-installed Python package.
 type PipxPackage struct {
-	Name       string   `json:"name"`
-	Version    string   `json:"version"`
-	PythonPath string   `json:"python_path,omitempty"`
-	Apps       []string `json:"apps,omitempty"`
+	Name            string   `json:"name"`
+	Version         string   `json:"version"`
+	LatestVersion   string   `json:"latest_version,omitempty"`
+	UpdateAvailable bool     `json:"update_available,omitempty"`
+	PythonPath      string   `json:"python_path,omitempty"`
+	Apps            []string `json:"apps,omitempty"`
 }
 
 // PipxStatusResponse represents pipx availability status.
@@ -876,6 +878,19 @@ type PipxPackageResponse struct {
 	Success bool   `json:"success"`
 	Message string `json:"message"`
 	Package string `json:"package"`
+}
+
+// PipStatusResponse represents pip availability status.
+type PipStatusResponse struct {
+	Available bool          `json:"available"`
+	Packages  []PipxPackage `json:"packages,omitempty"`
+	Count     int           `json:"count"`
+}
+
+// PythonToolsStatusResponse represents combined pip + pipx status.
+type PythonToolsStatusResponse struct {
+	Pip  PipStatusResponse  `json:"pip"`
+	Pipx PipxStatusResponse `json:"pipx"`
 }
 
 // UnattendedConfigResponse represents unattended-upgrades configuration.

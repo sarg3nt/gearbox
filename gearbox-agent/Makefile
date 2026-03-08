@@ -68,10 +68,18 @@ run: build ## Build and run locally (for development only - won't work on macOS 
 	@echo "Running $(APP_NAME)..."
 	@./bin/$(APP_NAME)
 
-deploy: build-linux ## Build and deploy to server
+deploy: build-linux ## Build and deploy to server (binary + service file)
 	@echo "Deploying to $(DEPLOY_USER)@$(DEPLOY_HOST)..."
 	@scp bin/$(APP_NAME)-linux-amd64 $(DEPLOY_USER)@$(DEPLOY_HOST):/tmp/$(APP_NAME)
-	@ssh $(DEPLOY_USER)@$(DEPLOY_HOST) 'sudo /usr/bin/systemctl stop $(APP_NAME) && sudo /usr/bin/cp /tmp/$(APP_NAME) $(DEPLOY_PATH) && sudo /usr/bin/chmod +x $(DEPLOY_PATH) && sudo /usr/bin/systemctl start $(APP_NAME) && sudo /usr/bin/systemctl status $(APP_NAME)'
+	@scp deploy/$(APP_NAME).service $(DEPLOY_USER)@$(DEPLOY_HOST):/tmp/$(APP_NAME).service
+	@ssh $(DEPLOY_USER)@$(DEPLOY_HOST) '\
+		sudo /usr/bin/systemctl stop $(APP_NAME) && \
+		sudo /usr/bin/cp /tmp/$(APP_NAME) $(DEPLOY_PATH) && \
+		sudo /usr/bin/chmod +x $(DEPLOY_PATH) && \
+		sudo /usr/bin/cp /tmp/$(APP_NAME).service /etc/systemd/system/$(APP_NAME).service && \
+		sudo /usr/bin/systemctl daemon-reload && \
+		sudo /usr/bin/systemctl start $(APP_NAME) && \
+		sudo /usr/bin/systemctl status $(APP_NAME)'
 	@echo "Deployment complete."
 
 deploy-rebrand: build-linux ## One-time rebrand deployment (haproxy-agent -> gearbox-agent)

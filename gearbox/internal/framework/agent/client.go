@@ -1588,6 +1588,116 @@ func (c *Client) UpgradeAllPipxPackages() (*PipxPackageResponse, error) {
 	return &resp, nil
 }
 
+// Pip Methods
+
+// GetPipStatus returns pip availability and installed packages.
+func (c *Client) GetPipStatus() (*PipStatusResponse, error) {
+	body, err := c.doRequest("GET", "/api/v1/system/pip", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp PipStatusResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse pip status response: %w", err)
+	}
+
+	return &resp, nil
+}
+
+// InstallPipPackage installs a package via pip.
+func (c *Client) InstallPipPackage(name string) (*PipxPackageResponse, error) {
+	req := PipxPackageRequest{Name: name}
+	body, err := c.doRequestWithBody("POST", "/api/v1/system/pip/install", req)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp PipxPackageResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse pip install response: %w", err)
+	}
+
+	return &resp, nil
+}
+
+// UninstallPipPackage uninstalls a package via pip.
+func (c *Client) UninstallPipPackage(name string) (*PipxPackageResponse, error) {
+	req := PipxPackageRequest{Name: name}
+	body, err := c.doRequestWithBody("POST", "/api/v1/system/pip/uninstall", req)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp PipxPackageResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse pip uninstall response: %w", err)
+	}
+
+	return &resp, nil
+}
+
+// UpgradePipPackage upgrades a pip package.
+func (c *Client) UpgradePipPackage(name string) (*PipxPackageResponse, error) {
+	req := PipxPackageRequest{Name: name}
+	body, err := c.doRequestWithBody("POST", "/api/v1/system/pip/upgrade", req)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp PipxPackageResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse pip upgrade response: %w", err)
+	}
+
+	return &resp, nil
+}
+
+// UpgradeAllPipPackages upgrades all pip packages.
+func (c *Client) UpgradeAllPipPackages() (*PipxPackageResponse, error) {
+	body, err := c.doRequest("POST", "/api/v1/system/pip/upgrade-all", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp PipxPackageResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse pip upgrade-all response: %w", err)
+	}
+
+	return &resp, nil
+}
+
+// GetPythonToolsStatus returns combined pip + pipx status (fast, no version check).
+func (c *Client) GetPythonToolsStatus() (*PythonToolsStatusResponse, error) {
+	body, err := c.doRequest("GET", "/api/v1/system/python-tools", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp PythonToolsStatusResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse python tools status response: %w", err)
+	}
+
+	return &resp, nil
+}
+
+// GetPythonToolsVersions returns combined pip + pipx status with latest PyPI version info (slow).
+func (c *Client) GetPythonToolsVersions() (*PythonToolsStatusResponse, error) {
+	body, err := c.doRequest("GET", "/api/v1/system/python-tools/versions", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp PythonToolsStatusResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse python tools versions response: %w", err)
+	}
+
+	return &resp, nil
+}
+
 // Unattended Upgrades Methods
 
 // GetUnattendedConfig retrieves unattended-upgrades configuration.

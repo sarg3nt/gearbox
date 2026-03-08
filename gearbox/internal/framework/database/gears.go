@@ -146,7 +146,7 @@ type OSUpdatesConfig struct {
 	AlertThreshold         int  `json:"alert_threshold"`          // Alert when N+ updates are pending (0 = any)
 	SecurityAlertThreshold int  `json:"security_alert_threshold"` // Alert when N+ security updates pending (0 = any)
 	CreateSnapshotBefore   bool `json:"create_snapshot_before"`   // Create snapshot before installing updates
-	ShowPipx               bool `json:"show_pipx"`                // Show pipx package management section
+	ShowPythonTools         bool `json:"show_pipx"`                // Show Python tools management section (pip + pipx)
 	HistoryRetentionDays   int  `json:"history_retention_days"`   // Days to keep update history (default: 90)
 }
 
@@ -927,7 +927,7 @@ func (d *DB) GetOSUpdatesConfig(serverID string) (*OSUpdatesConfig, error) {
 			AlertThreshold:         0,
 			SecurityAlertThreshold: 0,
 			CreateSnapshotBefore:   true,
-			ShowPipx:               true,
+			ShowPythonTools:        true,
 			HistoryRetentionDays:   90,
 		}, nil
 	}

@@ -1510,32 +1510,32 @@ templ osUpdatesConfigForm(integration *database.Gear, serverID string) {
 				</div>
 			</div>
 
-			<!-- Pipx Settings -->
+			<!-- Python Tools Settings -->
 			<div class="border border-gray-200 dark:border-slate-600 rounded-lg p-4">
 				<div class="flex items-center justify-between">
 					<div>
-						<span class="text-sm font-medium text-gray-700 dark:text-gray-300">Show pipx package management</span>
+						<span class="text-sm font-medium text-gray-700 dark:text-gray-300">Show Python tools management</span>
 						<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-							Display the pipx (Python CLI tools) management section on the OS Updates page.
+							Display the Python tools (pip + pipx) management section on the OS Updates page.
 						</p>
 					</div>
 					<button
 						type="button"
 						id="show-pipx-toggle"
 						class={ "relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2",
-							templ.KV("bg-blue-600", getOSUpdatesShowPipx(integration.Config)),
-							templ.KV("bg-gray-200 dark:bg-gray-600", !getOSUpdatesShowPipx(integration.Config)) }
+							templ.KV("bg-blue-600", getOSUpdatesShowPythonTools(integration.Config)),
+							templ.KV("bg-gray-200 dark:bg-gray-600", !getOSUpdatesShowPythonTools(integration.Config)) }
 						role="switch"
-						aria-checked={ boolToString(getOSUpdatesShowPipx(integration.Config)) }
+						aria-checked={ boolToString(getOSUpdatesShowPythonTools(integration.Config)) }
 						onclick="toggleOSUpdatesField(this, 'show_pipx_value')"
 					>
 						<span
 							class={ "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
-								templ.KV("translate-x-5", getOSUpdatesShowPipx(integration.Config)),
-								templ.KV("translate-x-0", !getOSUpdatesShowPipx(integration.Config)) }
+								templ.KV("translate-x-5", getOSUpdatesShowPythonTools(integration.Config)),
+								templ.KV("translate-x-0", !getOSUpdatesShowPythonTools(integration.Config)) }
 						></span>
 					</button>
-					<input type="hidden" name="show_pipx_value" id="show_pipx_value" value={ boolToString(getOSUpdatesShowPipx(integration.Config)) }/>
+					<input type="hidden" name="show_pipx_value" id="show_pipx_value" value={ boolToString(getOSUpdatesShowPythonTools(integration.Config)) }/>
 				</div>
 			</div>
 
@@ -1619,12 +1619,12 @@ func getOSUpdatesCreateSnapshot(config json.RawMessage) bool {
 	return cfg.CreateSnapshotBefore
 }
 
-func getOSUpdatesShowPipx(config json.RawMessage) bool {
+func getOSUpdatesShowPythonTools(config json.RawMessage) bool {
 	var cfg database.OSUpdatesConfig
 	if err := json.Unmarshal(config, &cfg); err != nil {
 		return true // Default enabled
 	}
-	return cfg.ShowPipx
+	return cfg.ShowPythonTools
 }
 
 func getOSUpdatesHistoryRetention(config json.RawMessage) int {

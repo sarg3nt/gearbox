@@ -59,7 +59,7 @@ func (h *Handlers) OSUpdatesPage(w http.ResponseWriter, r *http.Request) {
 		Packages:         nil,
 		RebootStatus:     nil,
 		UnattendedConfig: nil,
-		PipxStatus:       nil,
+		PythonToolsStatus: nil,
 		Snapshots:        nil,
 		History:          nil,
 		CanConfigure:     true, // Based on permission check above

@@ -578,7 +578,7 @@ func (h *Handler) parseAlertsConfig(r *http.Request) (json.RawMessage, error) {
 func (h *Handler) parseOSUpdatesConfig(r *http.Request) (json.RawMessage, error) {
 	alertOnAvailable := r.FormValue("alert_on_available_value") == "true"
 	createSnapshotBefore := r.FormValue("create_snapshot_before_value") == "true"
-	showPipx := r.FormValue("show_pipx_value") == "true"
+	showPythonTools := r.FormValue("show_pipx_value") == "true"
 
 	// Parse check frequency
 	checkFrequencyMinutes := 60 // default
@@ -620,7 +620,7 @@ func (h *Handler) parseOSUpdatesConfig(r *http.Request) (json.RawMessage, error)
 		AlertThreshold:         alertThreshold,
 		SecurityAlertThreshold: securityAlertThreshold,
 		CreateSnapshotBefore:   createSnapshotBefore,
-		ShowPipx:               showPipx,
+		ShowPythonTools:        showPythonTools,
 		HistoryRetentionDays:   historyRetentionDays,
 	}
 

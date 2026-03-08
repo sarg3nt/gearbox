@@ -92,6 +92,17 @@ func (p *Gear) RegisterRoutes(r chi.Router) {
 	r.Post("/api/v1/system/pipx/upgrade", p.handlePipxUpgrade)
 	r.Post("/api/v1/system/pipx/upgrade-all", p.handlePipxUpgradeAll)
 
+	// Pip
+	r.Get("/api/v1/system/pip", p.handlePipStatus)
+	r.Post("/api/v1/system/pip/install", p.handlePipInstall)
+	r.Post("/api/v1/system/pip/uninstall", p.handlePipUninstall)
+	r.Post("/api/v1/system/pip/upgrade", p.handlePipUpgrade)
+	r.Post("/api/v1/system/pip/upgrade-all", p.handlePipUpgradeAll)
+
+	// Combined Python tools status
+	r.Get("/api/v1/system/python-tools", p.handlePythonToolsStatus)
+	r.Get("/api/v1/system/python-tools/versions", p.handlePythonToolsVersions)
+
 	// Unattended-upgrades
 	r.Get("/api/v1/system/updates/unattended", p.handleUnattendedConfig)
 	r.Post("/api/v1/system/updates/unattended", p.handleConfigureUnattended)
@@ -255,6 +266,19 @@ type PipxPackageResponse struct {
 	Success bool   `json:"success"`
 	Message string `json:"message"`
 	Package string `json:"package"`
+}
+
+// PipStatusResponse represents pip availability status.
+type PipStatusResponse struct {
+	Available bool          `json:"available"`
+	Packages  []PipxPackage `json:"packages,omitempty"`
+	Count     int           `json:"count"`
+}
+
+// PythonToolsStatusResponse represents combined pip + pipx status.
+type PythonToolsStatusResponse struct {
+	Pip  PipStatusResponse  `json:"pip"`
+	Pipx PipxStatusResponse `json:"pipx"`
 }
 
 // UnattendedConfigResponse represents unattended-upgrades configuration.
@@ -771,7 +795,9 @@ func (p *Gear) handlePipxStatus(w http.ResponseWriter, r *http.Request) {
 
 	if resp.Available {
 		packages, err := p.collector.ListPipxPackages()
-		if err == nil {
+		if err != nil {
+			p.Logger().Warn("listing pipx packages", "error", err)
+		} else {
 			resp.Packages = packages
 			resp.Count = len(packages)
 		}
@@ -891,6 +917,202 @@ func (p *Gear) handlePipxUpgradeAll(w http.ResponseWriter, r *http.Request) {
 	resp := PipxPackageResponse{
 		Success: true,
 		Message: "All packages upgraded successfully",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// Pip handlers
+
+func (p *Gear) handlePipStatus(w http.ResponseWriter, r *http.Request) {
+	resp := PipStatusResponse{
+		Available: p.collector.IsPipAvailable(),
+	}
+
+	if resp.Available {
+		packages, err := p.collector.ListPipPackages()
+		if err != nil {
+			p.Logger().Warn("listing pip packages", "error", err)
+		} else {
+			resp.Packages = packages
+			resp.Count = len(packages)
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (p *Gear) handlePipInstall(w http.ResponseWriter, r *http.Request) {
+	var req PipxPackageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.Name == "" {
+		jsonError(w, "package name is required", http.StatusBadRequest)
+		return
+	}
+	if len(req.Name) > 200 {
+		jsonError(w, "package name must be 200 characters or less", http.StatusBadRequest)
+		return
+	}
+
+	p.Logger().Info("Installing pip package", "name", req.Name)
+
+	if err := p.collector.InstallPipPackage(req.Name); err != nil {
+		jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := PipxPackageResponse{
+		Success: true,
+		Message: "Package installed successfully",
+		Package: req.Name,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (p *Gear) handlePipUninstall(w http.ResponseWriter, r *http.Request) {
+	var req PipxPackageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.Name == "" {
+		jsonError(w, "package name is required", http.StatusBadRequest)
+		return
+	}
+	if len(req.Name) > 200 {
+		jsonError(w, "package name must be 200 characters or less", http.StatusBadRequest)
+		return
+	}
+
+	p.Logger().Info("Uninstalling pip package", "name", req.Name)
+
+	if err := p.collector.UninstallPipPackage(req.Name); err != nil {
+		jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := PipxPackageResponse{
+		Success: true,
+		Message: "Package uninstalled successfully",
+		Package: req.Name,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (p *Gear) handlePipUpgrade(w http.ResponseWriter, r *http.Request) {
+	var req PipxPackageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.Name == "" {
+		jsonError(w, "package name is required", http.StatusBadRequest)
+		return
+	}
+	if len(req.Name) > 200 {
+		jsonError(w, "package name must be 200 characters or less", http.StatusBadRequest)
+		return
+	}
+
+	p.Logger().Info("Upgrading pip package", "name", req.Name)
+
+	if err := p.collector.UpgradePipPackage(req.Name); err != nil {
+		jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := PipxPackageResponse{
+		Success: true,
+		Message: "Package upgraded successfully",
+		Package: req.Name,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (p *Gear) handlePipUpgradeAll(w http.ResponseWriter, r *http.Request) {
+	p.Logger().Info("Upgrading all pip packages")
+
+	if err := p.collector.UpgradeAllPipPackages(); err != nil {
+		jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := PipxPackageResponse{
+		Success: true,
+		Message: "All pip packages upgraded successfully",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// Combined Python tools handler
+
+func (p *Gear) handlePythonToolsStatus(w http.ResponseWriter, r *http.Request) {
+	resp := PythonToolsStatusResponse{}
+
+	// Pip status
+	resp.Pip.Available = p.collector.IsPipAvailable()
+	if resp.Pip.Available {
+		if packages, err := p.collector.ListPipPackages(); err == nil {
+			resp.Pip.Packages = packages
+			resp.Pip.Count = len(packages)
+		} else {
+			p.Logger().Warn("listing pip packages", "error", err)
+		}
+	}
+
+	// Pipx status
+	resp.Pipx.Available = p.collector.IsPipxAvailable()
+	if resp.Pipx.Available {
+		if packages, err := p.collector.ListPipxPackages(); err == nil {
+			resp.Pipx.Packages = packages
+			resp.Pipx.Count = len(packages)
+		} else {
+			p.Logger().Warn("listing pipx packages", "error", err)
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// handlePythonToolsVersions is the slow endpoint that fetches latest PyPI versions.
+func (p *Gear) handlePythonToolsVersions(w http.ResponseWriter, r *http.Request) {
+	resp := PythonToolsStatusResponse{}
+
+	resp.Pip.Available = p.collector.IsPipAvailable()
+	if resp.Pip.Available {
+		if packages, err := p.collector.ListPipPackagesWithVersions(); err == nil {
+			resp.Pip.Packages = packages
+			resp.Pip.Count = len(packages)
+		} else {
+			p.Logger().Warn("listing pip packages with versions", "error", err)
+		}
+	}
+
+	resp.Pipx.Available = p.collector.IsPipxAvailable()
+	if resp.Pipx.Available {
+		if packages, err := p.collector.ListPipxPackagesWithVersions(); err == nil {
+			resp.Pipx.Packages = packages
+			resp.Pipx.Count = len(packages)
+		} else {
+			p.Logger().Warn("listing pipx packages with versions", "error", err)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
