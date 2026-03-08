@@ -16,7 +16,7 @@ import (
 //
 // Run:
 //   GEARBOX_FUNCTIONAL_TEST_URL=https://light-hugger.sarg3.net:8405 \
-//   GEARBOX_FUNCTIONAL_TEST_API_KEY=9795a6e1d5030438fd271344a1fc1f2d016e5348361d0dedede16318e9657a52 \
+//   GEARBOX_FUNCTIONAL_TEST_API_KEY=<YOUR_API_KEY> \
 //   go test -v -run TestFunctional ./gearbox/internal/framework/agent/
 
 // functionalClient returns a Client configured for the live agent,

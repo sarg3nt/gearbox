@@ -141,10 +141,12 @@ func (c *UpdatesCollector) runCommand(name string, args ...string) ([]byte, erro
 func (c *UpdatesCollector) runCommandWithOutput(name string, args ...string) ([]byte, error) {
 	output, err := c.runCommand(name, args...)
 	if err != nil {
-		// Extract the last meaningful line(s) from the output for a concise error
+		// Extract the last meaningful line(s) from the output for a concise error.
+		// When we have useful output, return that alone — the bare "exit status N"
+		// suffix is not useful to end users and can cause test assertions to fail.
 		errDetail := extractErrorLines(output)
 		if errDetail != "" {
-			return output, fmt.Errorf("%s: %w", errDetail, err)
+			return output, errors.New(errDetail)
 		}
 		return output, err
 	}
@@ -154,6 +156,8 @@ func (c *UpdatesCollector) runCommandWithOutput(name string, args ...string) ([]
 // extractErrorLines pulls the most useful error lines from command output.
 // For apt, these are lines starting with "E:" or "W:". If none found,
 // returns the last non-empty line of output (trimmed to a reasonable length).
+// Lines that begin with "Failed to" are excluded — those are tool-level
+// prefixes (e.g. from systemctl) that the JS client re-wraps itself.
 func extractErrorLines(output []byte) string {
 	if len(output) == 0 {
 		return ""
@@ -179,10 +183,11 @@ func extractErrorLines(output []byte) string {
 		return strings.Join(errLines, "; ")
 	}
 
-	// No apt-specific error lines; use the last non-empty line
+	// No apt-specific error lines; use the last non-empty line that doesn't
+	// begin with "Failed to" (systemctl/systemd uses that prefix internally).
 	for i := len(lines) - 1; i >= 0; i-- {
 		trimmed := strings.TrimSpace(lines[i])
-		if trimmed != "" {
+		if trimmed != "" && !strings.HasPrefix(trimmed, "Failed to") {
 			// Truncate very long lines
 			if len(trimmed) > 200 {
 				trimmed = trimmed[:200] + "..."
@@ -222,7 +227,7 @@ func (c *UpdatesCollector) runPipxCommandWithOutput(args ...string) ([]byte, err
 	if err != nil {
 		errDetail := extractErrorLines(output)
 		if errDetail != "" {
-			return output, fmt.Errorf("%s: %w", errDetail, err)
+			return output, errors.New(errDetail)
 		}
 		return output, err
 	}
@@ -914,7 +919,7 @@ func (c *UpdatesCollector) runPipCommandWithOutput(args ...string) ([]byte, erro
 	if err != nil {
 		errDetail := extractErrorLines(output)
 		if errDetail != "" {
-			return output, fmt.Errorf("%s: %w", errDetail, err)
+			return output, errors.New(errDetail)
 		}
 		return output, err
 	}
