@@ -1,5 +1,4 @@
 let currentServerID = '';
-let selectedPackages = new Set();
 let currentOperationID = null;
 let terminalLineCount = 0;
 let sseConnection = null;
@@ -189,6 +188,28 @@ document.addEventListener('DOMContentLoaded', function() {
 	}
 });
 
+// Central Escape key handler — closes whichever modal is currently visible.
+document.addEventListener('keydown', function(e) {
+	if (e.key !== 'Escape') return;
+	const modals = [
+		{ id: 'confirm-modal',      hide: hideConfirmModal },
+		{ id: 'package-info-modal', hide: hidePackageInfoModal },
+		{ id: 'reboot-modal',       hide: hideRebootModal },
+		{ id: 'update-log-modal',   hide: hideUpdateLogModal },
+		{ id: 'preview-modal',      hide: hidePreviewModal },
+		{ id: 'pipx-install-modal', hide: hidePipxInstallModal },
+		{ id: 'pip-install-modal',  hide: hidePipInstallModal },
+		{ id: 'apt-install-modal',  hide: hideAptInstallModal },
+	];
+	for (const m of modals) {
+		const el = document.getElementById(m.id);
+		if (el && !el.classList.contains('hidden')) {
+			m.hide();
+			break;
+		}
+	}
+});
+
 // Cleanup SSE connection on page unload
 window.addEventListener('beforeunload', function() {
 	stopRebootPolling();
@@ -351,7 +372,7 @@ async function checkForUpdates() {
 				securityEl.className = 'text-2xl font-bold mt-2 text-gray-800 dark:text-gray-100';
 			}
 		}
-		await refreshPackageTable();
+		await refreshInstalledPackagesGrid();
 
 		if (btn) {
 			btn.disabled = false;
@@ -366,10 +387,17 @@ async function checkForUpdates() {
 	}
 }
 
-async function autoCheckForUpdates() {
+async function autoCheckForUpdates(retryCount = 0) {
+	const MAX_RETRIES = 3;
+	const RETRY_DELAY_MS = 5000;
+
 	try {
 		const response = await fetch('/api/os-updates/check?server=' + currentServerID, { method: 'POST' });
 		if (!response.ok) {
+			if (retryCount < MAX_RETRIES) {
+				setTimeout(() => autoCheckForUpdates(retryCount + 1), RETRY_DELAY_MS);
+				return;
+			}
 			console.warn('Auto-check for updates failed:', response.status);
 			return;
 		}
@@ -388,12 +416,29 @@ async function autoCheckForUpdates() {
 			}
 		}
 
-		// If package count changed, refresh the package table
-		const currentCount = document.querySelectorAll('.package-row').length;
-		if (data.total_updates !== currentCount) {
-			await refreshPackageTable();
+		// Update reboot status card
+		if (data.reboot_required) {
+			showRebootRequiredStatus();
+		} else if (!isRebooting) {
+			showRebootNotRequiredStatus();
 		}
+
+		// Update auto-updates card
+		const autoEl = document.getElementById('auto-updates-status');
+		if (autoEl) {
+			autoEl.textContent = data.unattended_active ? 'Enabled' : 'Disabled';
+			autoEl.className = 'text-2xl font-bold mt-2 ' + (data.unattended_active
+				? 'text-green-600 dark:text-green-400'
+				: 'text-gray-500 dark:text-gray-400');
+		}
+
+		// Refresh installed packages grid to pick up updated availability info
+		await refreshInstalledPackagesGrid();
 	} catch (err) {
+		if (retryCount < MAX_RETRIES) {
+			setTimeout(() => autoCheckForUpdates(retryCount + 1), RETRY_DELAY_MS);
+			return;
+		}
 		console.warn('Auto-check for updates error:', err.message);
 	}
 }
@@ -408,73 +453,6 @@ function formatBytes(bytes) {
 		i++;
 	}
 	return i === 0 ? size + ' B' : size.toFixed(1) + ' ' + units[i];
-}
-
-async function refreshPackageTable() {
-	try {
-		const response = await fetch('/api/os-updates/packages?server=' + currentServerID);
-		if (!response.ok) return;
-		const data = await response.json();
-
-		const tbody = document.getElementById('packages-table');
-		if (!tbody) return;
-
-		const canAction = document.getElementById('can-action');
-		const hasAction = canAction && canAction.value === 'true';
-
-		if (!data.packages || data.packages.length === 0) {
-			tbody.innerHTML = '<tr><td colspan="8" class="px-4 py-8 text-center text-gray-500 dark:text-gray-400">No updates available - system is up to date!</td></tr>';
-			return;
-		}
-
-		selectedPackages.clear();
-		updateSelectedPackagesUI();
-
-		tbody.innerHTML = '';
-		data.packages.forEach(pkg => {
-			const row = document.createElement('tr');
-			row.className = 'package-row hover:bg-gray-50 dark:hover:bg-slate-700 transition-opacity duration-300';
-			row.dataset.packageName = pkg.name;
-			row.dataset.packageSize = pkg.size_bytes || 0;
-
-			let html = '';
-			if (hasAction) {
-				html += '<td class="px-4 py-3"><input type="checkbox" class="package-checkbox w-4 h-4 rounded border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700" data-package="' + escapeHtml(pkg.name) + '"/></td>';
-			}
-			html += '<td class="px-4 py-3 package-status-cell"></td>';
-			html += '<td class="px-4 py-3 text-gray-800 dark:text-gray-200 font-medium package-name-cell">' + escapeHtml(pkg.name) + '</td>';
-			html += '<td class="px-4 py-3 text-gray-600 dark:text-gray-400 font-mono text-xs">' + escapeHtml(pkg.current_version) + '</td>';
-			html += '<td class="px-4 py-3 text-gray-600 dark:text-gray-400 font-mono text-xs">' + escapeHtml(pkg.available_version) + '</td>';
-			if (pkg.is_security_update) {
-				html += '<td class="px-4 py-3"><span class="px-2 py-1 text-xs bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded">Security</span></td>';
-			} else {
-				html += '<td class="px-4 py-3"><span class="px-2 py-1 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded">Standard</span></td>';
-			}
-			html += '<td class="px-4 py-3 text-gray-600 dark:text-gray-400">' + formatBytes(pkg.size_bytes) + '</td>';
-			html += '<td class="px-4 py-3"><button class="package-info-btn p-1.5 rounded hover:bg-gray-100 dark:hover:bg-slate-600 text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"'
-				+ ' data-package-name="' + escapeHtml(pkg.name) + '"'
-				+ ' data-package-current="' + escapeHtml(pkg.current_version) + '"'
-				+ ' data-package-available="' + escapeHtml(pkg.available_version) + '"'
-				+ ' data-package-arch="' + escapeHtml(pkg.architecture || '') + '"'
-				+ ' data-package-repo="' + escapeHtml(pkg.repository || '') + '"'
-				+ ' data-package-size="' + formatBytes(pkg.size_bytes) + '"'
-				+ ' data-package-security="' + (pkg.is_security_update ? 'true' : 'false') + '"'
-				+ ' data-changelog-url="' + escapeHtml(pkg.changelog_url || '') + '"'
-				+ ' title="View package info">'
-				+ '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>'
-				+ '</button></td>';
-
-			row.innerHTML = html;
-			tbody.appendChild(row);
-		});
-
-		// Re-bind package info buttons for new rows
-		tbody.querySelectorAll('.package-info-btn').forEach(btn => {
-			btn.addEventListener('click', () => showPackageInfo(btn));
-		});
-	} catch (err) {
-		console.warn('Failed to refresh package table:', err.message);
-	}
 }
 
 function installAllUpdates() {
@@ -539,94 +517,6 @@ function installSecurityUpdates() {
 	});
 }
 
-function installSelectedPackages() {
-	const packages = Array.from(selectedPackages);
-	if (packages.length === 0) {
-		showToast('No packages selected', 'warning');
-		return;
-	}
-
-	showConfirmModal({
-		title: 'Install Selected Packages',
-		message: 'Install ' + packages.length + ' selected package(s)?',
-		type: 'info',
-		confirmText: 'Install',
-		onConfirm: async () => {
-			try {
-				const response = await fetch('/api/os-updates/install?server=' + currentServerID + '&stream=true', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ packages: packages })
-				});
-				if (!response.ok) {
-					const errMsg = await extractErrorMessage(response);
-					throw new Error(errMsg);
-				}
-				const data = await response.json();
-				if (data.operation_id) {
-					openTerminalModal(data.operation_id, 'Installing ' + packages.length + ' Package(s)', false);
-				} else {
-					showToast(data.message || 'Packages installed', 'success');
-					setTimeout(() => window.location.reload(), 3000);
-				}
-			} catch (err) {
-				showToast('Failed to install packages: ' + err.message, 'error');
-			}
-		}
-	});
-}
-
-function toggleSelectAllPackages(checked) {
-	document.querySelectorAll('.package-checkbox').forEach(cb => {
-		cb.checked = checked;
-		const pkg = cb.dataset.package;
-		if (checked) {
-			selectedPackages.add(pkg);
-		} else {
-			selectedPackages.delete(pkg);
-		}
-	});
-	updateSelectedPackagesUI();
-}
-
-document.addEventListener('change', function(e) {
-	if (e.target.classList.contains('package-checkbox')) {
-		const pkg = e.target.dataset.package;
-		if (e.target.checked) {
-			selectedPackages.add(pkg);
-		} else {
-			selectedPackages.delete(pkg);
-		}
-		updateSelectedPackagesUI();
-	}
-});
-
-function updateSelectedPackagesUI() {
-	const actionsDiv = document.getElementById('selected-packages-actions');
-	const countSpan = document.getElementById('selected-count');
-	if (actionsDiv && countSpan) {
-		if (selectedPackages.size > 0) {
-			actionsDiv.classList.remove('hidden');
-			countSpan.textContent = selectedPackages.size + ' packages selected';
-		} else {
-			actionsDiv.classList.add('hidden');
-		}
-	}
-}
-
-function filterPackages(query) {
-	const rows = document.querySelectorAll('#packages-table tr');
-	query = query.toLowerCase();
-	rows.forEach(row => {
-		const packageName = row.querySelector('td:nth-child(2)')?.textContent || '';
-		if (packageName.toLowerCase().includes(query) || query === '') {
-			row.style.display = '';
-		} else {
-			row.style.display = 'none';
-		}
-	});
-}
-
 async function createSnapshot(reason) {
 	try {
 		const response = await fetch('/api/os-updates/snapshots?server=' + currentServerID, {
@@ -672,6 +562,7 @@ async function previewSnapshot(snapshotID) {
 	title.textContent = 'Snapshot Preview — ' + snapshotID;
 	content.innerHTML = '<div class="flex items-center justify-center py-8"><svg class="animate-spin h-6 w-6 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span class="ml-2 text-gray-500 dark:text-gray-400">Loading preview...</span></div>';
 	modal.classList.remove('hidden');
+	setTimeout(() => document.getElementById('preview-close-btn')?.focus(), 50);
 
 	try {
 		const response = await fetch('/api/os-updates/snapshots/' + encodeURIComponent(snapshotID) + '/preview?server=' + currentServerID);
@@ -880,6 +771,7 @@ function bulkDeleteSnapshots() {
 
 function scheduleReboot() {
 	document.getElementById('reboot-modal').classList.remove('hidden');
+	setTimeout(() => document.getElementById('reboot-confirm-btn')?.focus(), 50);
 }
 
 function hideRebootModal() {
@@ -962,6 +854,24 @@ function showRebootingStatus() {
 	}
 	if (actions) {
 		actions.classList.add('hidden');
+	}
+}
+
+// Update the reboot status card to show reboot required state
+function showRebootRequiredStatus() {
+	const icon = document.getElementById('reboot-status-icon');
+	const status = document.getElementById('reboot-status');
+	const subtitle = document.getElementById('reboot-status-subtitle');
+
+	if (icon) {
+		icon.innerHTML = '<svg class="w-5 h-5 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>';
+	}
+	if (status) {
+		status.className = 'text-2xl font-bold mt-2 text-yellow-600 dark:text-yellow-400';
+		status.textContent = 'Required';
+	}
+	if (subtitle) {
+		subtitle.textContent = 'System reboot status';
 	}
 }
 
@@ -1533,6 +1443,7 @@ function showPackageInfo(btn) {
 	}
 
 	modal.classList.remove('hidden');
+	setTimeout(() => document.getElementById('package-info-close-btn')?.focus(), 50);
 }
 
 function hidePackageInfoModal() {
@@ -1561,6 +1472,9 @@ function showConfirmModal(options) {
 			input.classList.remove('hidden');
 			input.value = '';
 			input.placeholder = options.inputPlaceholder || '';
+			input.onkeydown = function(e) {
+				if (e.key === 'Enter') { e.preventDefault(); actionBtn.click(); }
+			};
 			const maxLen = options.inputMaxLength || 0;
 			if (maxLen > 0) {
 				input.maxLength = maxLen;
@@ -1594,6 +1508,7 @@ function showConfirmModal(options) {
 			input.value = '';
 			input.removeAttribute('maxLength');
 			input.oninput = null;
+			input.onkeydown = null;
 			if (counter) counter.classList.add('hidden');
 		}
 	}
@@ -1627,6 +1542,14 @@ function showConfirmModal(options) {
 	};
 
 	modal.classList.remove('hidden');
+	// Focus the input if shown, otherwise focus the action button so Enter activates it
+	setTimeout(() => {
+		if (options.showInput && input && !input.classList.contains('hidden')) {
+			input.focus();
+		} else {
+			actionBtn.focus();
+		}
+	}, 50);
 }
 
 function hideConfirmModal() {
@@ -1854,26 +1777,19 @@ function startInstallProgress(allPackages) {
 	installingPackages.clear();
 	packagesInstalled = 0;
 	installedSize = 0;
-
-	// Calculate total packages and size
-	const rows = document.querySelectorAll('.package-row');
 	totalPackagesToInstall = 0;
 	totalInstallSize = 0;
 
-	rows.forEach(row => {
-		const pkgName = row.dataset.packageName;
-		const pkgSize = parseInt(row.dataset.packageSize) || 0;
-
-		// If allPackages is true, include all; otherwise check if in selectedPackages
-		if (allPackages || selectedPackages.has(pkgName)) {
-			installingPackages.add(pkgName);
-			totalPackagesToInstall++;
-			totalInstallSize += pkgSize;
-		}
-	});
-
-	// Grey out all packages being installed
-	greyOutInstallingPackages();
+	// Collect names of packages being installed from Tabulator data
+	if (installedPkgTable) {
+		const data = installedPkgTable.getData();
+		data.forEach(pkg => {
+			if (allPackages ? pkg.update_available : false) {
+				installingPackages.add(pkg.name);
+				totalPackagesToInstall++;
+			}
+		});
+	}
 
 	// Show progress bar
 	const progressContainer = document.getElementById('install-progress-container');
@@ -1884,57 +1800,17 @@ function startInstallProgress(allPackages) {
 	}
 }
 
-// Grey out packages being installed
-function greyOutInstallingPackages() {
-	const rows = document.querySelectorAll('.package-row');
-	rows.forEach(row => {
-		const pkgName = row.dataset.packageName;
-		if (installingPackages.has(pkgName)) {
-			row.classList.add('opacity-50', 'pointer-events-none');
-			// Disable checkbox
-			const checkbox = row.querySelector('.package-checkbox');
-			if (checkbox) checkbox.disabled = true;
-		}
-	});
-}
-
-// Set spinner on current package
+// No-op stubs kept for compatibility with progress tracking calls
 function setCurrentPackageSpinner(packageName) {
-	const rows = document.querySelectorAll('.package-row');
-	rows.forEach(row => {
-		const pkgName = row.dataset.packageName;
-		const statusCell = row.querySelector('.package-status-cell');
-		if (!statusCell) return;
-
-		if (pkgName === packageName) {
-			// Show spinner
-			statusCell.innerHTML = '<svg class="w-4 h-4 animate-spin text-blue-500" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>';
-		} else if (installingPackages.has(pkgName) && !statusCell.innerHTML.includes('M9 12l2 2 4-4')) {
-			// Clear spinner for other installing packages (but not if already completed)
-			statusCell.innerHTML = '';
-		}
-	});
+	// Progress tracked via line count in apt output handler
+	packagesInstalled++;
+	updateProgressBar();
 }
 
 // Mark package as completed
 function markPackageCompleted(packageName) {
-	const rows = document.querySelectorAll('.package-row');
-	rows.forEach(row => {
-		const pkgName = row.dataset.packageName;
-		if (pkgName === packageName) {
-			const statusCell = row.querySelector('.package-status-cell');
-			if (statusCell) {
-				// Show checkmark
-				statusCell.innerHTML = '<svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>';
-			}
-
-			// Update progress
-			const pkgSize = parseInt(row.dataset.packageSize) || 0;
-			installedSize += pkgSize;
-			packagesInstalled++;
-			updateProgressBar();
-		}
-	});
+	packagesInstalled++;
+	updateProgressBar();
 }
 
 // Update progress bar based on installed packages
@@ -1942,16 +1818,11 @@ function updateProgressBar() {
 	const progressBar = document.getElementById('install-progress-bar');
 	if (!progressBar) return;
 
-	// Calculate progress: weighted 70% by package count, 30% by size
 	let progress = 0;
 	if (totalPackagesToInstall > 0) {
-		const countProgress = packagesInstalled / totalPackagesToInstall;
-		const sizeProgress = totalInstallSize > 0 ? installedSize / totalInstallSize : countProgress;
-		progress = (countProgress * 0.7 + sizeProgress * 0.3) * 100;
+		progress = Math.min((packagesInstalled / totalPackagesToInstall) * 100, 95);
 	}
 
-	// Clamp between 0 and 100
-	progress = Math.max(0, Math.min(100, progress));
 	progressBar.style.width = progress + '%';
 }
 
@@ -1961,16 +1832,6 @@ function resetInstallProgress() {
 	const progressBar = document.getElementById('install-progress-bar');
 	if (progressContainer) progressContainer.classList.add('hidden');
 	if (progressBar) progressBar.style.width = '0%';
-
-	// Clear visual states on rows
-	const rows = document.querySelectorAll('.package-row');
-	rows.forEach(row => {
-		row.classList.remove('opacity-50', 'pointer-events-none');
-		const checkbox = row.querySelector('.package-checkbox');
-		if (checkbox) checkbox.disabled = false;
-		const statusCell = row.querySelector('.package-status-cell');
-		if (statusCell) statusCell.innerHTML = '';
-	});
 
 	installingPackages.clear();
 	packagesInstalled = 0;
@@ -2009,24 +1870,12 @@ handleAptOutput = function(event) {
 		originalHandleAptOutput.call(this, event);
 	}
 
-	// Parse for progress tracking
+	// Parse for progress tracking — each "Setting up" line means one package configured
 	if (event.data && event.data.line) {
 		const line = event.data.line;
-
-		// Track package installation
-		const settingUpMatch = line.match(/Setting up ([^\s:]+)/);
-		if (settingUpMatch) {
-			const pkgName = settingUpMatch[1];
-			// Mark as currently being setup
-			setCurrentPackageSpinner(pkgName);
-		}
-
-		// Completion is hard to detect line-by-line, so we estimate
-		// When we see "Setting up X", mark the previous package complete
-		const unpacking = line.match(/Unpacking ([^\s:]+)/);
-		if (unpacking) {
-			const pkgName = unpacking[1];
-			setCurrentPackageSpinner(pkgName);
+		if (line.match(/^Setting up /)) {
+			packagesInstalled = Math.min(packagesInstalled + 1, totalPackagesToInstall);
+			updateProgressBar();
 		}
 	}
 };
@@ -2125,6 +1974,7 @@ async function viewUpdateLog(logID) {
 
 	// Show modal with loading state
 	modal.classList.remove('hidden');
+	setTimeout(() => document.getElementById('update-log-close-btn')?.focus(), 50);
 	output.textContent = 'Loading...';
 	title.textContent = 'Loading log...';
 
@@ -2198,24 +2048,88 @@ function copyLogOutput() {
 // ── Installed Packages (Tabulator data grid) ──────────────────────────────────
 
 let installedPkgTable = null;
+// Track whether the full installed package list has been loaded.
+// On page load we only fetch upgradable packages (fast). The full list is
+// lazy-loaded the first time the user switches to "All Packages".
+let allPackagesLoaded = false;
 
-async function loadInstalledPackages() {
+// Normalize upgradable Package objects (from /api/os-updates/packages) to the
+// shape expected by the grid (which was designed around InstalledPackage).
+function normalizeUpgradablePackages(packages) {
+	return packages.map(p => ({
+		name: p.name,
+		version: p.current_version,
+		available_version: p.available_version,
+		architecture: p.architecture,
+		description: '',
+		update_available: true,
+		is_security_update: p.is_security_update || false,
+		is_held: false,
+		package_url: p.package_url || '',
+	}));
+}
+
+async function loadInstalledPackages(retryCount = 0) {
 	const el = document.getElementById('installed-packages-table');
 	if (!el) return;
+
+	const MAX_RETRIES = 3;
+	const RETRY_DELAY_MS = 3000;
+
+	// Default view is "updates" — only fetch upgradable packages on page load.
+	try {
+		const resp = await fetch('/api/os-updates/packages?server=' + currentServerID);
+		if (!resp.ok) {
+			if (retryCount < MAX_RETRIES) {
+				const loading = document.getElementById('installed-packages-loading');
+				if (loading) loading.textContent = 'Connecting to agent...';
+				setTimeout(() => loadInstalledPackages(retryCount + 1), RETRY_DELAY_MS);
+				return;
+			}
+			const loading = document.getElementById('installed-packages-loading');
+			if (loading) loading.textContent = 'Failed to load packages.';
+			return;
+		}
+		const data = await resp.json();
+		const packages = normalizeUpgradablePackages(data.packages || []);
+		const canAction = document.getElementById('can-action-installed')?.value === 'true';
+		allPackagesLoaded = false;
+		initInstalledPackagesGrid(el, packages, canAction);
+	} catch {
+		if (retryCount < MAX_RETRIES) {
+			const loading = document.getElementById('installed-packages-loading');
+			if (loading) loading.textContent = 'Connecting to agent...';
+			setTimeout(() => loadInstalledPackages(retryCount + 1), RETRY_DELAY_MS);
+			return;
+		}
+		const loading = document.getElementById('installed-packages-loading');
+		if (loading) loading.textContent = 'Failed to load packages.';
+	}
+}
+
+async function loadAllInstalledPackages() {
+	if (allPackagesLoaded) return;
+	if (!installedPkgTable) return;
+
+	const loading = document.getElementById('installed-packages-loading');
+	// Show a subtle loading state in the table
+	installedPkgTable.alert('Loading all packages...');
 
 	try {
 		const resp = await fetch('/api/os-updates/packages/installed?server=' + currentServerID);
 		if (!resp.ok) {
-			document.getElementById('installed-packages-loading').textContent = 'Failed to load installed packages.';
+			installedPkgTable.clearAlert();
 			return;
 		}
 		const data = await resp.json();
 		const packages = data.packages || [];
-		const canAction = document.getElementById('can-action-installed')?.value === 'true';
-		initInstalledPackagesGrid(el, packages, canAction);
-	} catch {
-		const loading = document.getElementById('installed-packages-loading');
-		if (loading) loading.textContent = 'Failed to load installed packages.';
+		allPackagesLoaded = true;
+		installedPkgTable.clearAlert();
+		installedPkgTable.setData(packages);
+		_applyPkgViewFilter('all', packages);
+	} catch (err) {
+		if (installedPkgTable) installedPkgTable.clearAlert();
+		console.warn('Failed to load all packages:', err.message);
 	}
 }
 
@@ -2224,7 +2138,7 @@ function initInstalledPackagesGrid(el, packages, canAction) {
 	const loading = document.getElementById('installed-packages-loading');
 	if (loading) loading.remove();
 
-	// Row height × 20 visible rows + header (~42px) + header filter row (~34px)
+	// Row height × 12 visible rows + header (~42px) + header filter row (~34px)
 	const ROW_HEIGHT = 36;
 	const VISIBLE_ROWS = 12;
 	const gridHeight = (ROW_HEIGHT * VISIBLE_ROWS) + 42 + 34;
@@ -2238,11 +2152,24 @@ function initInstalledPackagesGrid(el, packages, canAction) {
 			headerFilterPlaceholder: 'filter...',
 			minWidth: 180,
 			formatter: function(cell) {
-				return '<span class="font-mono text-xs font-medium">' + escapeHtml(cell.getValue()) + '</span>';
+				const row = cell.getRow().getData();
+				const name = escapeHtml(cell.getValue());
+				let badge = '';
+				if (row.is_held) {
+					badge = ' <span class="px-1.5 py-0.5 text-xs bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 rounded font-medium">held</span>';
+				} else if (row.is_security_update) {
+					badge = ' <span class="px-1.5 py-0.5 text-xs bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded font-medium">security</span>';
+				} else if (row.update_available) {
+					badge = ' <span class="px-1.5 py-0.5 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded font-medium">update</span>';
+				}
+				if (row.package_url) {
+					return '<a href="' + escapeHtml(row.package_url) + '" target="_blank" rel="noopener noreferrer" class="font-mono text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline">' + name + '</a>' + badge;
+				}
+				return '<span class="font-mono text-xs font-medium">' + name + '</span>' + badge;
 			}
 		},
 		{
-			title: 'Version',
+			title: 'Installed Version',
 			field: 'version',
 			sorter: 'string',
 			headerFilter: 'input',
@@ -2250,6 +2177,23 @@ function initInstalledPackagesGrid(el, packages, canAction) {
 			width: 160,
 			formatter: function(cell) {
 				return '<span class="font-mono text-xs">' + escapeHtml(cell.getValue() || '') + '</span>';
+			}
+		},
+		{
+			title: 'Available Version',
+			field: 'available_version',
+			sorter: 'string',
+			headerFilter: 'input',
+			headerFilterPlaceholder: 'filter...',
+			width: 160,
+			formatter: function(cell) {
+				const val = cell.getValue();
+				if (val) {
+					return '<span class="font-mono text-xs text-green-600 dark:text-green-400 font-medium">' + escapeHtml(val) + '</span>';
+				}
+				// No update available — show current version in muted text
+				const current = cell.getRow().getData().version || '';
+				return '<span class="font-mono text-xs text-gray-500 dark:text-gray-400">' + escapeHtml(current) + '</span>';
 			}
 		},
 		{
@@ -2270,18 +2214,28 @@ function initInstalledPackagesGrid(el, packages, canAction) {
 			title: '',
 			field: 'name',
 			headerSort: false,
-			width: 90,
+			width: 220,
 			hozAlign: 'right',
 			formatter: function(cell) {
-				return '<button class="pkg-remove-btn px-2.5 py-1 text-xs bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 rounded transition-colors">Remove</button>';
+				const row = cell.getRow().getData();
+				const holdBtn = row.is_held
+					? '<button class="pkg-unhold-btn px-2.5 py-1 text-xs bg-yellow-100 dark:bg-yellow-900/30 hover:bg-yellow-200 dark:hover:bg-yellow-900/50 text-yellow-700 dark:text-yellow-400 rounded transition-colors mr-1">Unhold</button>'
+					: '';
+				return holdBtn + '<button class="pkg-remove-btn px-2.5 py-1 text-xs bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 rounded transition-colors">Remove</button>';
 			},
 			cellClick: function(e, cell) {
+				const name = cell.getValue();
 				if (e.target.classList.contains('pkg-remove-btn')) {
-					removeInstalledPackageTabulator(cell, cell.getValue());
+					removeInstalledPackageTabulator(cell, name);
+				} else if (e.target.classList.contains('pkg-unhold-btn')) {
+					unholdPackage(name, cell);
 				}
 			}
 		});
 	}
+
+	const filterSelect = document.getElementById('pkg-view-filter');
+	const initialFilter = filterSelect ? filterSelect.value : 'updates';
 
 	installedPkgTable = new Tabulator(el, {
 		data: packages,
@@ -2295,7 +2249,88 @@ function initInstalledPackagesGrid(el, packages, canAction) {
 		filterMode: 'local',
 		initialSort: [{ column: 'name', dir: 'asc' }],
 		placeholder: 'No packages found',
+		tableBuilt: function() {
+			// Apply initial filter and show/hide Update All button after table is ready
+			_applyPkgViewFilter(initialFilter, packages);
+		},
 	});
+}
+
+function onPkgViewFilterChange(value) {
+	if (!installedPkgTable) return;
+	if (value === 'all' && !allPackagesLoaded) {
+		// Lazy-load full package list on first switch to "All Packages"
+		loadAllInstalledPackages();
+		return;
+	}
+	const data = installedPkgTable.getData();
+	_applyPkgViewFilter(value, data);
+}
+
+function _applyPkgViewFilter(value, allData) {
+	if (!installedPkgTable) return;
+
+	if (value === 'updates') {
+		installedPkgTable.setFilter('update_available', '=', true);
+	} else {
+		installedPkgTable.clearFilter();
+	}
+
+	// Count packages with updates
+	const updateCount = allData.filter(p => p.update_available).length;
+	const securityCount = allData.filter(p => p.is_security_update).length;
+
+	// Show/hide Update All button
+	const updateAllBtn = document.getElementById('pkg-update-all-btn');
+	const updateAllLabel = document.getElementById('pkg-update-all-label');
+	if (updateAllBtn && updateCount > 0) {
+		updateAllBtn.classList.remove('hidden');
+		if (updateAllLabel) {
+			updateAllLabel.textContent = 'Update All (' + updateCount + ')';
+		}
+	} else if (updateAllBtn) {
+		updateAllBtn.classList.add('hidden');
+	}
+
+	// Show/hide Security button
+	const secBtn = document.getElementById('pkg-update-security-btn');
+	if (secBtn) {
+		if (securityCount > 0) {
+			secBtn.classList.remove('hidden');
+		} else {
+			secBtn.classList.add('hidden');
+		}
+	}
+}
+
+async function refreshInstalledPackagesGrid() {
+	if (!installedPkgTable) return;
+	const filterSelect = document.getElementById('pkg-view-filter');
+	const currentFilter = filterSelect ? filterSelect.value : 'updates';
+
+	try {
+		if (currentFilter === 'all' || allPackagesLoaded) {
+			// Full refresh of installed packages
+			const resp = await fetch('/api/os-updates/packages/installed?server=' + currentServerID);
+			if (!resp.ok) return;
+			const data = await resp.json();
+			const packages = data.packages || [];
+			allPackagesLoaded = true;
+			installedPkgTable.setData(packages);
+			_applyPkgViewFilter(currentFilter, packages);
+		} else {
+			// Refresh upgradable-only view
+			const resp = await fetch('/api/os-updates/packages?server=' + currentServerID);
+			if (!resp.ok) return;
+			const data = await resp.json();
+			const packages = normalizeUpgradablePackages(data.packages || []);
+			allPackagesLoaded = false;
+			installedPkgTable.setData(packages);
+			_applyPkgViewFilter(currentFilter, packages);
+		}
+	} catch (err) {
+		console.warn('Failed to refresh packages grid:', err.message);
+	}
 }
 
 function removeInstalledPackageTabulator(cell, name) {
@@ -2324,6 +2359,41 @@ function removeInstalledPackageTabulator(cell, name) {
 		}
 	});
 }
+
+// ── Package Hold / Unhold ─────────────────────────────────────────────────────
+
+async function unholdPackage(name, cell) {
+	showConfirmModal({
+		title: 'Remove Hold',
+		message: 'Allow ' + name + ' to be upgraded again? This removes the hold.',
+		type: 'warning',
+		confirmText: 'Remove Hold',
+		onConfirm: async () => {
+			try {
+				const resp = await fetch('/api/os-updates/packages/unhold?server=' + currentServerID, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ name: name })
+				});
+				if (!resp.ok) {
+					const errMsg = await extractErrorMessage(resp);
+					throw new Error(errMsg);
+				}
+				showToast(name + ' hold removed', 'success');
+				// Update the row data in-place
+				if (cell) {
+					const row = cell.getRow();
+					const data = row.getData();
+					data.is_held = false;
+					row.update(data);
+				}
+			} catch (err) {
+				showToast('Failed to remove hold: ' + err.message, 'error');
+			}
+		}
+	});
+}
+
 
 // ── Apt Install Modal ─────────────────────────────────────────────────────────
 
@@ -2434,6 +2504,7 @@ async function confirmAptInstall() {
 			installedPkgTable.destroy();
 			installedPkgTable = null;
 		}
+		allPackagesLoaded = false;
 		const el = document.getElementById('installed-packages-table');
 		if (el) el.innerHTML = '<div id="installed-packages-loading" class="flex items-center gap-2 p-4 text-sm text-gray-500 dark:text-slate-400"><svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Loading installed packages...</div>';
 		setTimeout(loadInstalledPackages, 500);

@@ -1523,6 +1523,34 @@ func (c *Client) RemovePackage(name string, purge bool) (*InstallPackageResponse
 	return &resp, nil
 }
 
+// HoldPackage marks a package as held so it won't be upgraded.
+func (c *Client) HoldPackage(name string) (*HoldPackageResponse, error) {
+	req := HoldPackageRequest{Name: name}
+	body, err := c.doRequestWithBody("POST", "/api/v1/system/packages/hold", req)
+	if err != nil {
+		return nil, err
+	}
+	var resp HoldPackageResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse hold package response: %w", err)
+	}
+	return &resp, nil
+}
+
+// UnholdPackage removes the hold from a package.
+func (c *Client) UnholdPackage(name string) (*HoldPackageResponse, error) {
+	req := HoldPackageRequest{Name: name}
+	body, err := c.doRequestWithBody("POST", "/api/v1/system/packages/unhold", req)
+	if err != nil {
+		return nil, err
+	}
+	var resp HoldPackageResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse unhold package response: %w", err)
+	}
+	return &resp, nil
+}
+
 // Pipx Methods
 
 // GetPipxStatus returns pipx availability and installed packages.

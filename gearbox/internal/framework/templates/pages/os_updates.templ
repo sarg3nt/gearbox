@@ -184,181 +184,71 @@ templ OSUpdatesPage(data OSUpdatesPageData) {
 					</div>
 				</div>
 
-				<!-- Action Buttons -->
-				if data.CanAction && data.UpdateStatus.TotalUpdates > 0 {
-					<div class="bg-white dark:bg-slate-800 rounded-lg shadow p-4">
-						<div class="flex flex-wrap gap-3">
-							<button
-								onclick="installAllUpdates()"
-								class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
-							>
-								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
-								</svg>
-								Install All Updates ({ fmt.Sprintf("%d", data.UpdateStatus.TotalUpdates) })
-							</button>
-							if data.UpdateStatus.SecurityUpdates > 0 {
-								<button
-									onclick="installSecurityUpdates()"
-									class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors flex items-center gap-2"
-								>
-									<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
-									</svg>
-									Install Security Updates ({ fmt.Sprintf("%d", data.UpdateStatus.SecurityUpdates) })
-								</button>
-							}
-							<button
-								onclick="createSnapshot('manual')"
-								class="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors flex items-center gap-2"
-							>
-								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path>
-								</svg>
-								Create Snapshot
-							</button>
-						</div>
-					</div>
-				}
-
 				<!-- OS Packages -->
 				<div class="bg-white dark:bg-slate-800 rounded-lg shadow">
 					<div class="p-4 border-b border-gray-200 dark:border-slate-700">
-						<div class="flex justify-between items-center">
+						<div class="flex justify-between items-center gap-3 flex-wrap">
 							<div>
 								<h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">OS Packages</h3>
 								<p class="text-sm text-gray-500 dark:text-gray-400">System package management</p>
 							</div>
-							if data.CanAction {
-								<button
-									onclick="showAptInstallModal()"
-									class="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-								>
-									Install Package
-								</button>
-							}
-						</div>
-					</div>
-
-					<!-- Available Updates subsection -->
-					<div class="p-4 border-b border-gray-200 dark:border-slate-700">
-						<div class="flex justify-between items-center mb-3">
-							<div>
-								<h4 class="font-semibold text-gray-800 dark:text-gray-200">Available Updates</h4>
-								<p class="text-xs text-gray-500 dark:text-gray-400">Packages that can be upgraded</p>
-							</div>
-							<input
-								type="text"
-								id="package-search"
-								placeholder="Filter..."
-								oninput="filterPackages(this.value)"
-								class="w-40 px-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-							/>
-						</div>
-						<!-- Install Progress Bar (hidden by default) -->
-						<div id="install-progress-container" class="hidden relative h-1 bg-gray-200 dark:bg-slate-700 mb-2">
-							<div id="install-progress-bar" class="absolute left-0 top-0 h-full bg-green-500 transition-all duration-300 ease-out" style="width: 0%"></div>
-						</div>
-						<div class="overflow-x-auto rounded-lg border border-gray-200 dark:border-slate-600">
-							<table class="w-full text-sm">
-								<thead class="bg-gray-50 dark:bg-slate-700 border-b border-gray-200 dark:border-slate-600">
-									<tr>
-										if data.CanAction {
-											<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 w-10">
-												<input type="checkbox" id="select-all-packages" onchange="toggleSelectAllPackages(this.checked)" class="w-4 h-4 rounded border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700"/>
-											</th>
-										}
-										<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase w-6"></th>
-										<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Package</th>
-										<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Current</th>
-										<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Available</th>
-										<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Type</th>
-										<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Size</th>
-										<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Info</th>
-									</tr>
-								</thead>
-								<tbody id="packages-table" class="divide-y divide-gray-200 dark:divide-slate-600">
-									if len(data.Packages) == 0 {
-										<tr>
-											<td colspan="8" class="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
-												No updates available - system is up to date!
-											</td>
-										</tr>
-									} else {
-										for _, pkg := range data.Packages {
-											<tr class="package-row hover:bg-gray-50 dark:hover:bg-slate-700 transition-opacity duration-300" data-package-name={ pkg.Name } data-package-size={ fmt.Sprintf("%d", pkg.Size) }>
-												if data.CanAction {
-													<td class="px-4 py-3">
-														<input type="checkbox" class="package-checkbox w-4 h-4 rounded border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700" data-package={ pkg.Name }/>
-													</td>
-												}
-												<td class="px-4 py-3 package-status-cell">
-													<!-- Status indicator: spinner for installing, checkmark for done -->
-												</td>
-												<td class="px-4 py-3 text-gray-800 dark:text-gray-200 font-medium package-name-cell">{ pkg.Name }</td>
-												<td class="px-4 py-3 text-gray-600 dark:text-gray-400 font-mono text-xs">{ pkg.CurrentVersion }</td>
-												<td class="px-4 py-3 text-gray-600 dark:text-gray-400 font-mono text-xs">{ pkg.AvailableVersion }</td>
-												<td class="px-4 py-3">
-													if pkg.IsSecurityUpdate {
-														<span class="px-2 py-1 text-xs bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded">Security</span>
-													} else {
-														<span class="px-2 py-1 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded">Standard</span>
-													}
-												</td>
-												<td class="px-4 py-3 text-gray-600 dark:text-gray-400">{ formatBytesOSUpdates(pkg.Size) }</td>
-												<td class="px-4 py-3">
-													<button
-														class="package-info-btn p-1.5 rounded hover:bg-gray-100 dark:hover:bg-slate-600 text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-														data-package-name={ pkg.Name }
-														data-package-current={ pkg.CurrentVersion }
-														data-package-available={ pkg.AvailableVersion }
-														data-package-arch={ pkg.Architecture }
-														data-package-repo={ pkg.Repository }
-														data-package-size={ formatBytesOSUpdates(pkg.Size) }
-														data-package-security={ boolToString(pkg.IsSecurityUpdate) }
-														data-changelog-url={ pkg.ChangelogURL }
-														title="View package info"
-													>
-														<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-															<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-														</svg>
-													</button>
-												</td>
-											</tr>
-										}
-									}
-								</tbody>
-							</table>
-						</div>
-						if data.CanAction && len(data.Packages) > 0 {
-							<div id="selected-packages-actions" class="hidden mt-2 p-3 bg-gray-50 dark:bg-slate-700 rounded-lg border border-gray-200 dark:border-slate-600">
-								<div class="flex items-center gap-4">
-									<span id="selected-count" class="text-sm text-gray-600 dark:text-gray-400">0 packages selected</span>
+							<div class="flex items-center gap-2 flex-wrap">
+								if data.CanAction {
 									<button
-										onclick="installSelectedPackages()"
-										class="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+										id="pkg-update-all-btn"
+										onclick="installAllUpdates()"
+										class="hidden px-3 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-1.5"
 									>
-										Install Selected
+										<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+										</svg>
+										<span id="pkg-update-all-label">Update All</span>
 									</button>
-								</div>
+									if data.UpdateStatus.SecurityUpdates > 0 {
+										<button
+											id="pkg-update-security-btn"
+											onclick="installSecurityUpdates()"
+											class="hidden px-3 py-2 text-sm bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors flex items-center gap-1.5"
+										>
+											<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+											</svg>
+											Security ({ fmt.Sprintf("%d", data.UpdateStatus.SecurityUpdates) })
+										</button>
+									}
+								}
+								<select
+									id="pkg-view-filter"
+									onchange="onPkgViewFilterChange(this.value)"
+									class="h-[38px] px-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+								>
+									<option value="updates">Updates</option>
+									<option value="all">All Packages</option>
+								</select>
+								if data.CanAction {
+									<button
+										onclick="showAptInstallModal()"
+										class="px-3 py-2 text-sm bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+									>
+										Install Package
+									</button>
+								}
 							</div>
-						}
-					</div>
-
-					<!-- Installed Packages subsection -->
-					<div class="p-4">
-						<div class="mb-3">
-							<h4 class="font-semibold text-gray-800 dark:text-gray-200">Installed Packages</h4>
-							<p class="text-xs text-gray-500 dark:text-gray-400">All packages currently installed on this system — click column headers to sort, type to filter</p>
 						</div>
-						<!-- Tabulator mounts here -->
+						<!-- Install progress bar (hidden by default) -->
+						<div id="install-progress-container" class="hidden mt-2 h-1 bg-gray-200 dark:bg-slate-700 rounded-full">
+							<div id="install-progress-bar" class="h-full bg-green-500 rounded-full transition-all duration-300 ease-out" style="width: 0%"></div>
+						</div>
+					</div>
+					<div class="p-4">
 						<div id="installed-packages-table" class="rounded-lg border border-gray-200 dark:border-slate-600 overflow-hidden">
 							<div id="installed-packages-loading" class="p-8 text-center text-gray-500 dark:text-gray-400 flex items-center justify-center gap-2">
 								<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-								Loading installed packages...
+								Loading packages...
 							</div>
 						</div>
 						<input type="hidden" id="can-action-installed" value={ boolToString(data.CanAction) }/>
+						<input type="hidden" id="total-updates-count" value={ fmt.Sprintf("%d", data.UpdateStatus.TotalUpdates) }/>
 					</div>
 				</div>
 
@@ -814,6 +704,7 @@ templ OSUpdatesPage(data OSUpdatesPageData) {
 								</svg>
 							</button>
 							<button
+								id="update-log-close-btn"
 								onclick="hideUpdateLogModal()"
 								class="p-1.5 rounded hover:bg-slate-700 text-gray-400 hover:text-gray-200 transition-colors"
 								title="Close"
@@ -872,16 +763,17 @@ templ OSUpdatesPage(data OSUpdatesPageData) {
 						</div>
 					</div>
 					<div class="p-4 border-t border-gray-200 dark:border-slate-700 flex justify-end gap-3">
-						<button onclick="hideRebootModal()" class="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">
+						<button id="reboot-cancel-btn" onclick="hideRebootModal()" class="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">
 							Cancel
 						</button>
-						<button onclick="confirmReboot()" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors">
+						<button id="reboot-confirm-btn" onclick="confirmReboot()" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors">
 							Schedule Reboot
 						</button>
 					</div>
 				</div>
 			</div>
 
+			<!-- Revert Package Modal -->
 			<!-- Apt Install Modal -->
 			<div id="apt-install-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
 				<div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-lg w-full mx-4">
@@ -1078,7 +970,7 @@ templ OSUpdatesPage(data OSUpdatesPageData) {
 						</div>
 					</div>
 					<div class="p-4 border-t border-gray-200 dark:border-slate-700 flex justify-end">
-						<button onclick="hidePackageInfoModal()" class="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">
+						<button id="package-info-close-btn" onclick="hidePackageInfoModal()" class="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">
 							Close
 						</button>
 					</div>
@@ -1175,7 +1067,7 @@ templ OSUpdatesPage(data OSUpdatesPageData) {
 						</div>
 					</div>
 					<div class="p-4 border-t border-gray-200 dark:border-slate-700 flex justify-end">
-						<button onclick="hidePreviewModal()" class="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">
+						<button id="preview-close-btn" onclick="hidePreviewModal()" class="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">
 							Close
 						</button>
 					</div>

@@ -821,6 +821,77 @@ func (h *Handler) APIRemovePackageHandler(w http.ResponseWriter, r *http.Request
 	h.jsonResponseOK(w, result)
 }
 
+// APIHoldPackageHandler handles POST /api/os-updates/packages/hold.
+func (h *Handler) APIHoldPackageHandler(w http.ResponseWriter, r *http.Request) {
+	if !h.authManager.HasPermission(r, models.ComponentOSUpdates, models.PermissionAction) {
+		h.jsonError(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" {
+		boxID = h.getDefaultServerID()
+	}
+	server, err := h.db.GetBoxByBoxID(boxID)
+	if err != nil || server == nil {
+		h.jsonError(w, "Server not found", http.StatusNotFound)
+		return
+	}
+	var req agent.HoldPackageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
+		h.jsonError(w, "name is required", http.StatusBadRequest)
+		return
+	}
+	client, err := h.getAgentClient(server)
+	if err != nil {
+		h.jsonError(w, "Failed to connect to agent", http.StatusServiceUnavailable)
+		return
+	}
+	result, err := client.HoldPackage(req.Name)
+	if err != nil {
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	user, _ := auth.GetUserFromContext(r.Context())
+	h.logger.Info("AUDIT: package hold", "user_id", user.ID, "action", "os_updates_package_hold", "package", req.Name)
+	h.jsonResponseOK(w, result)
+}
+
+// APIUnholdPackageHandler handles POST /api/os-updates/packages/unhold.
+func (h *Handler) APIUnholdPackageHandler(w http.ResponseWriter, r *http.Request) {
+	if !h.authManager.HasPermission(r, models.ComponentOSUpdates, models.PermissionAction) {
+		h.jsonError(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" {
+		boxID = h.getDefaultServerID()
+	}
+	server, err := h.db.GetBoxByBoxID(boxID)
+	if err != nil || server == nil {
+		h.jsonError(w, "Server not found", http.StatusNotFound)
+		return
+	}
+	var req agent.HoldPackageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
+		h.jsonError(w, "name is required", http.StatusBadRequest)
+		return
+	}
+	client, err := h.getAgentClient(server)
+	if err != nil {
+		h.jsonError(w, "Failed to connect to agent", http.StatusServiceUnavailable)
+		return
+	}
+	result, err := client.UnholdPackage(req.Name)
+	if err != nil {
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	user, _ := auth.GetUserFromContext(r.Context())
+	h.logger.Info("AUDIT: package unhold", "user_id", user.ID, "action", "os_updates_package_unhold", "package", req.Name)
+	h.jsonResponseOK(w, result)
+}
+
+
 // APIPipxStatusHandler handles GET /api/os-updates/pipx.
 func (h *Handler) APIPipxStatusHandler(w http.ResponseWriter, r *http.Request) {
 	boxID := r.URL.Query().Get("server")

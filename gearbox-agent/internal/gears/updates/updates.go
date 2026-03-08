@@ -42,18 +42,25 @@ type Package struct {
 	Repository       string `json:"repository"`
 	Size             int64  `json:"size_bytes"`    // Download size in bytes
 	ChangelogURL     string `json:"changelog_url"` // URL to package changelog (Launchpad)
+	PackageURL       string `json:"package_url,omitempty"` // Link to package info page
 }
 
 // InstalledPackage represents a manually installed package.
 type InstalledPackage struct {
-	Name         string    `json:"name"`
-	Version      string    `json:"version"`
-	Architecture string    `json:"architecture"`
-	Description  string    `json:"description,omitempty"`
-	InstalledAt  time.Time `json:"installed_at,omitempty"` // May not be available
-	AutoInstall  bool      `json:"auto_install"`           // Automatically installed as dependency
-	Installed    bool      `json:"installed,omitempty"`    // True if currently installed (for search results)
+	Name             string    `json:"name"`
+	Version          string    `json:"version"`
+	Architecture     string    `json:"architecture"`
+	Description      string    `json:"description,omitempty"`
+	InstalledAt      time.Time `json:"installed_at,omitempty"` // May not be available
+	AutoInstall      bool      `json:"auto_install"`           // Automatically installed as dependency
+	Installed        bool      `json:"installed,omitempty"`    // True if currently installed (for search results)
+	UpdateAvailable  bool      `json:"update_available,omitempty"`
+	AvailableVersion string    `json:"available_version,omitempty"`
+	IsSecurityUpdate bool      `json:"is_security_update,omitempty"`
+	IsHeld           bool      `json:"is_held,omitempty"` // Package is held (pinned) by dpkg/apt-mark
+	PackageURL       string    `json:"package_url,omitempty"` // Link to package info page
 }
+
 
 // UpdateHistoryEntry represents a past update action.
 type UpdateHistoryEntry struct {
@@ -85,29 +92,37 @@ type AptSnapshot struct {
 // UpdatesCollector collects OS update information.
 type UpdatesCollector struct {
 	commandTimeout time.Duration
+	pm             PackageManager // detected package manager; nil = use DetectPackageManager()
 }
 
 // NewUpdatesCollector creates a new updates collector.
 func NewUpdatesCollector() *UpdatesCollector {
 	return &UpdatesCollector{
-		commandTimeout: 120 * time.Second, // 2 minute timeout for apt operations
+		commandTimeout: 120 * time.Second,
 	}
+}
+
+// PM returns the detected PackageManager, initializing it on first call.
+func (c *UpdatesCollector) PM() PackageManager {
+	if c.pm == nil {
+		c.pm = DetectPackageManager()
+	}
+	return c.pm
 }
 
 // runCommand runs a command with context and timeout.
 // Returns the raw combined stdout/stderr output and any error.
 // Callers that discard the output on error should use runCommandWithOutput instead.
-// For apt/apt-get commands, DEBIAN_FRONTEND=noninteractive is set automatically.
+// Environment variables required by the active package manager are applied automatically.
 func (c *UpdatesCollector) runCommand(name string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.commandTimeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, name, args...)
 
-	// Set noninteractive frontend for apt commands to prevent prompts and
-	// ensure consistent behavior when running under systemd.
-	if name == "apt" || name == "apt-get" || name == "apt-cache" {
-		cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
+	// Apply PM-specific environment variables (e.g. DEBIAN_FRONTEND=noninteractive for apt).
+	if envVars := c.PM().EnvVars(); len(envVars) > 0 {
+		cmd.Env = append(os.Environ(), envVars...)
 	}
 
 	output, err := cmd.CombinedOutput()
@@ -216,154 +231,17 @@ func (c *UpdatesCollector) runPipxCommandWithOutput(args ...string) ([]byte, err
 
 // CheckUpdates retrieves the current update status.
 func (c *UpdatesCollector) CheckUpdates() (*UpdateInfo, error) {
-	info := &UpdateInfo{
-		Available: true,
-		LastCheck: time.Now(),
-	}
-
-	// Check if apt is available
-	if _, err := exec.LookPath("apt"); err != nil {
-		info.Available = false
-		return info, nil
-	}
-
-	// Get list of upgradable packages
-	output, err := c.runCommand("apt", "list", "--upgradable")
-	if err != nil {
-		// Not a fatal error - might just be no updates
-		info.TotalUpdates = 0
-	} else {
-		packages := c.parseAptListOutput(string(output))
-		info.TotalUpdates = len(packages)
-
-		// Count security updates
-		for _, pkg := range packages {
-			if pkg.IsSecurityUpdate {
-				info.SecurityUpdates++
-			}
-		}
-	}
-
-	// Check if reboot is required
-	if _, err := os.Stat("/var/run/reboot-required"); err == nil {
-		info.RebootRequired = true
-	}
-
-	// Check if unattended-upgrades is active
-	info.UnattendedActive = c.isUnattendedUpgradesActive()
-
-	return info, nil
+	return c.PM().CheckUpdates()
 }
 
 // ListUpgradable returns the list of packages that can be upgraded.
 func (c *UpdatesCollector) ListUpgradable() ([]Package, error) {
-	output, err := c.runCommand("apt", "list", "--upgradable")
-	if err != nil {
-		return nil, fmt.Errorf("failed to list upgradable packages: %w", err)
-	}
-
-	packages := c.parseAptListOutput(string(output))
-
-	// Fetch sizes for all packages in one batch using apt-cache show
-	c.fetchPackageSizes(packages)
-
-	return packages, nil
+	return c.PM().ListUpgradable()
 }
 
-// fetchPackageSizes fetches download sizes for packages using apt-cache show.
-func (c *UpdatesCollector) fetchPackageSizes(packages []Package) {
-	if len(packages) == 0 {
-		return
-	}
-
-	// Build list of package names with versions
-	var packageSpecs []string
-	for _, pkg := range packages {
-		packageSpecs = append(packageSpecs, pkg.Name+"="+pkg.AvailableVersion)
-	}
-
-	// Run apt-cache show for all packages at once
-	args := append([]string{"show"}, packageSpecs...)
-	output, err := c.runCommand("apt-cache", args...)
-	if err != nil {
-		// Non-fatal, sizes will remain 0
-		return
-	}
-
-	// Parse the output to extract sizes
-	// Format: "Size: 12345" (in bytes)
-	sizeMap := make(map[string]int64)
-	var currentPackage string
-
-	scanner := bufio.NewScanner(strings.NewReader(string(output)))
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "Package: ") {
-			currentPackage = strings.TrimPrefix(line, "Package: ")
-		} else if strings.HasPrefix(line, "Size: ") && currentPackage != "" {
-			sizeStr := strings.TrimPrefix(line, "Size: ")
-			if size, err := strconv.ParseInt(sizeStr, 10, 64); err == nil {
-				sizeMap[currentPackage] = size
-			}
-		}
-	}
-
-	// Update package sizes
-	for i := range packages {
-		if size, ok := sizeMap[packages[i].Name]; ok {
-			packages[i].Size = size
-		}
-	}
-}
-
-// parseAptListOutput parses output from 'apt list --upgradable'.
-// Format: package/repo version arch [upgradable from: old_version]
-func (c *UpdatesCollector) parseAptListOutput(output string) []Package {
-	var packages []Package
-
-	// Pattern: name/repo version arch [upgradable from: old_version]
-	re := regexp.MustCompile(`^([^/]+)/([^\s]+)\s+([^\s]+)\s+([^\s]+)\s+\[upgradable from:\s+([^\]]+)\]`)
-
-	scanner := bufio.NewScanner(strings.NewReader(output))
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" || strings.HasPrefix(line, "Listing...") {
-			continue
-		}
-
-		matches := re.FindStringSubmatch(line)
-		if len(matches) >= 6 {
-			pkg := Package{
-				Name:             matches[1],
-				Repository:       matches[2],
-				AvailableVersion: matches[3],
-				Architecture:     matches[4],
-				CurrentVersion:   matches[5],
-				ChangelogURL:     generateChangelogURL(matches[1]),
-			}
-
-			// Check if it's a security update
-			if strings.Contains(matches[2], "security") {
-				pkg.IsSecurityUpdate = true
-				pkg.Priority = "high"
-			} else {
-				pkg.Priority = "medium"
-			}
-
-			packages = append(packages, pkg)
-		}
-	}
-
-	return packages
-}
-
-// TriggerUpdateCheck triggers a fresh 'apt-get update' to refresh package lists.
+// TriggerUpdateCheck triggers a fresh package cache refresh.
 func (c *UpdatesCollector) TriggerUpdateCheck() error {
-	_, err := c.runCommandWithOutput("apt-get", "update")
-	if err != nil {
-		return fmt.Errorf("apt update failed: %w", err)
-	}
-	return nil
+	return c.PM().TriggerUpdateCheck()
 }
 
 // InstallUpdates installs available updates.
@@ -371,150 +249,25 @@ func (c *UpdatesCollector) TriggerUpdateCheck() error {
 // If packages is non-empty, only those specific packages are upgraded.
 // Returns the list of packages that were updated.
 func (c *UpdatesCollector) InstallUpdates(securityOnly bool, packages []string) ([]string, error) {
-	var args []string
-
-	if len(packages) > 0 {
-		// Install specific packages
-		args = append([]string{"install", "-y"}, packages...)
-	} else if securityOnly {
-		// Use unattended-upgrade for security-only updates
-		output, err := c.runCommand("unattended-upgrade", "--dry-run", "-d")
-		if err != nil {
-			return nil, fmt.Errorf("failed to check security updates: %w", err)
-		}
-
-		// Parse which packages would be upgraded
-		securityPackages := c.parseUnattendedUpgradeOutput(string(output))
-		if len(securityPackages) == 0 {
-			return nil, nil // No security updates
-		}
-
-		// Actually install them
-		_, err = c.runCommand("unattended-upgrade")
-		if err != nil {
-			return nil, fmt.Errorf("failed to install security updates: %w", err)
-		}
-
-		return securityPackages, nil
-	} else {
-		// Full upgrade
-		args = []string{"upgrade", "-y"}
-	}
-
-	_, err := c.runCommandWithOutput("apt-get", args...)
-	if err != nil {
-		return nil, fmt.Errorf("apt upgrade failed: %w", err)
-	}
-
-	// Return list of upgraded packages (we'd need to compare before/after for accuracy)
-	return packages, nil
+	return c.PM().InstallUpdates(securityOnly, packages)
 }
 
-// parseUnattendedUpgradeOutput extracts package names from unattended-upgrade dry-run output.
-func (c *UpdatesCollector) parseUnattendedUpgradeOutput(output string) []string {
-	var packages []string
-
-	// Look for lines like "Packages that will be upgraded:"
-	inList := false
-	scanner := bufio.NewScanner(strings.NewReader(output))
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.Contains(line, "Packages that will be upgraded:") ||
-			strings.Contains(line, "Packages that are upgraded:") {
-			inList = true
-			continue
-		}
-		if inList {
-			// Package names are listed on subsequent lines
-			if strings.TrimSpace(line) == "" {
-				break
-			}
-			packages = append(packages, strings.Fields(line)...)
-		}
-	}
-
-	return packages
-}
-
-// isUnattendedUpgradesActive checks if unattended-upgrades is running.
-func (c *UpdatesCollector) isUnattendedUpgradesActive() bool {
-	err := exec.Command("systemctl", "is-active", "--quiet", "unattended-upgrades").Run()
-	return err == nil
-}
-
-// GetUnattendedUpgradesConfig retrieves the current unattended-upgrades configuration.
+// GetUnattendedUpgradesConfig retrieves the current auto-update configuration.
+// Kept for backwards compatibility; delegates to PM.GetAutoUpdateConfig().
 func (c *UpdatesCollector) GetUnattendedUpgradesConfig() (map[string]any, error) {
-	config := make(map[string]any)
-
-	// Check if enabled
-	config["enabled"] = c.isUnattendedUpgradesActive()
-
-	// Read auto-update config
-	autoUpdateConfig := "/etc/apt/apt.conf.d/20auto-upgrades"
-	if data, err := os.ReadFile(autoUpdateConfig); err == nil {
-		content := string(data)
-		config["auto_update"] = strings.Contains(content, `APT::Periodic::Update-Package-Lists "1"`)
-		config["auto_upgrade"] = strings.Contains(content, `APT::Periodic::Unattended-Upgrade "1"`)
-	}
-
-	// Read unattended-upgrades config
-	unattendedConfig := "/etc/apt/apt.conf.d/50unattended-upgrades"
-	if data, err := os.ReadFile(unattendedConfig); err == nil {
-		content := string(data)
-		config["auto_reboot"] = strings.Contains(content, `Unattended-Upgrade::Automatic-Reboot "true"`)
-		config["mail_on_error"] = strings.Contains(content, `Unattended-Upgrade::Mail`)
-	}
-
-	return config, nil
+	return c.PM().GetAutoUpdateConfig()
 }
 
-// ConfigureUnattendedUpgrades configures automatic security updates.
+// ConfigureUnattendedUpgrades configures automatic updates.
+// Kept for backwards compatibility; delegates to PM.ConfigureAutoUpdate().
 func (c *UpdatesCollector) ConfigureUnattendedUpgrades(enabled, autoReboot bool) error {
-	if !enabled {
-		// Disable unattended-upgrades
-		_, err := c.runCommandWithOutput("systemctl", "disable", "--now", "unattended-upgrades")
-		return err
-	}
-
-	// Enable unattended-upgrades
-	_, err := c.runCommandWithOutput("systemctl", "enable", "--now", "unattended-upgrades")
-	if err != nil {
-		return fmt.Errorf("failed to enable unattended-upgrades: %w", err)
-	}
-
-	// Configure auto-upgrades
-	autoUpdateContent := `APT::Periodic::Update-Package-Lists "1";
-APT::Periodic::Unattended-Upgrade "1";
-APT::Periodic::AutocleanInterval "7";
-`
-	err = os.WriteFile("/etc/apt/apt.conf.d/20auto-upgrades", []byte(autoUpdateContent), 0644)
-	if err != nil {
-		return fmt.Errorf("failed to write auto-upgrades config: %w", err)
-	}
-
-	return nil
+	return c.PM().ConfigureAutoUpdate(enabled, autoReboot)
 }
 
 // GetRebootRequiredPackages returns the packages that triggered a reboot requirement.
 func (c *UpdatesCollector) GetRebootRequiredPackages() ([]string, error) {
-	data, err := os.ReadFile("/var/run/reboot-required.pkgs")
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("failed to read reboot-required.pkgs: %w", err)
-	}
-
-	var packages []string
-	scanner := bufio.NewScanner(strings.NewReader(string(data)))
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line != "" {
-			packages = append(packages, line)
-		}
-	}
-
-	return packages, nil
+	_, pkgs, err := c.PM().GetRebootRequired()
+	return pkgs, err
 }
 
 // ScheduleReboot schedules a system reboot at the specified time.
@@ -545,50 +298,12 @@ func (c *UpdatesCollector) CancelReboot() error {
 	return err
 }
 
-// --- APT Snapshot Management ---
+// --- Snapshot Management ---
 
-// CreateSnapshot creates an APT snapshot for rollback capability.
+// CreateSnapshot creates a package snapshot for rollback capability.
+// The snapshot format depends on the active package manager.
 func (c *UpdatesCollector) CreateSnapshot(reason string) (*AptSnapshot, error) {
-	timestamp := time.Now()
-	snapshotID := timestamp.Format("20060102-150405")
-	snapshotDir := "/var/lib/gearbox-agent/snapshots"
-
-	// Ensure snapshot directory exists
-	if err := os.MkdirAll(snapshotDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create snapshot directory: %w", err)
-	}
-
-	// Save current package selections
-	output, err := c.runCommand("dpkg", "--get-selections")
-	if err != nil {
-		return nil, fmt.Errorf("failed to get package selections: %w", err)
-	}
-
-	snapshotFile := fmt.Sprintf("%s/%s.selections", snapshotDir, snapshotID)
-	if err := os.WriteFile(snapshotFile, output, 0644); err != nil {
-		return nil, fmt.Errorf("failed to save snapshot: %w", err)
-	}
-
-	// Save installed package versions for version-aware restore.
-	// Format: "package\tversion\n" for each installed package.
-	versionsOutput, err := c.runCommand("dpkg-query", "-W", "-f", "${Package}\t${Version}\n")
-	if err == nil {
-		versionsFile := fmt.Sprintf("%s/%s.versions", snapshotDir, snapshotID)
-		_ = os.WriteFile(versionsFile, versionsOutput, 0644)
-	}
-
-	// Save metadata
-	metaContent := fmt.Sprintf("timestamp=%s\nreason=%s\n", timestamp.Format(time.RFC3339), reason)
-	metaFile := fmt.Sprintf("%s/%s.meta", snapshotDir, snapshotID)
-	if err := os.WriteFile(metaFile, []byte(metaContent), 0644); err != nil {
-		return nil, fmt.Errorf("failed to save snapshot metadata: %w", err)
-	}
-
-	return &AptSnapshot{
-		ID:        snapshotID,
-		CreatedAt: timestamp,
-		Reason:    reason,
-	}, nil
+	return c.PM().CreateSnapshot(reason)
 }
 
 // ListSnapshots returns available APT snapshots.
@@ -647,58 +362,9 @@ func (c *UpdatesCollector) ListSnapshots() ([]AptSnapshot, error) {
 }
 
 // RestoreSnapshot restores packages to a previous snapshot state.
-// This is a potentially dangerous operation.
+// This is a potentially dangerous operation; use AptRunner.StartRestore for streaming.
 func (c *UpdatesCollector) RestoreSnapshot(snapshotID string) error {
-	snapshotDir := "/var/lib/gearbox-agent/snapshots"
-	snapshotFile := fmt.Sprintf("%s/%s.selections", snapshotDir, snapshotID)
-
-	// Verify snapshot exists
-	if _, err := os.Stat(snapshotFile); err != nil {
-		return fmt.Errorf("snapshot not found: %s", snapshotID)
-	}
-
-	// Set package selections
-	selectionsData, err := os.ReadFile(snapshotFile)
-	if err != nil {
-		return fmt.Errorf("failed to read snapshot: %w", err)
-	}
-
-	// Write selections to dpkg
-	ctx, cancel := context.WithTimeout(context.Background(), c.commandTimeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "dpkg", "--set-selections")
-	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
-	cmd.Stdin = strings.NewReader(string(selectionsData))
-	if output, err := cmd.CombinedOutput(); err != nil {
-		if ctx.Err() == context.DeadlineExceeded {
-			return fmt.Errorf("dpkg --set-selections timed out")
-		}
-		errDetail := extractErrorLines(output)
-		if errDetail != "" {
-			return fmt.Errorf("failed to set package selections: %s: %w", errDetail, err)
-		}
-		return fmt.Errorf("failed to set package selections: %w", err)
-	}
-
-	// Apply the selections — this can take a long time
-	_, err = c.runCommandWithOutput("apt-get", "dselect-upgrade", "-y")
-	if err != nil {
-		return fmt.Errorf("failed to restore packages: %w", err)
-	}
-
-	// Version-aware downgrade: if we have a .versions file, downgrade packages
-	// that are currently at a newer version than what the snapshot recorded.
-	versionsFile := fmt.Sprintf("%s/%s.versions", snapshotDir, snapshotID)
-	if downgrades := computeDowngrades(versionsFile); len(downgrades) > 0 {
-		args := append([]string{"install", "-y", "--allow-downgrades"}, downgrades...)
-		_, _ = c.runCommandWithOutput("apt-get", args...)
-	}
-
-	// Refresh package cache so the available updates list is accurate
-	_, _ = c.runCommandWithOutput("apt-get", "update")
-
-	return nil
+	return c.PM().RestoreSnapshot(snapshotID)
 }
 
 // computeDowngrades compares a snapshot's .versions file against currently
@@ -912,405 +578,32 @@ func (c *UpdatesCollector) PreviewRestore(snapshotID string) (*SnapshotPreview, 
 
 // --- Update History ---
 
-// GetUpdateHistory returns recent package update history from dpkg and apt logs.
-// Reads both /var/log/dpkg.log and /var/log/apt/history.log for comprehensive history
-// regardless of whether updates were performed via Gearbox or directly via SSH.
+// GetUpdateHistory returns recent package update history from the package manager logs.
 func (c *UpdatesCollector) GetUpdateHistory(limit int) ([]UpdateHistoryEntry, error) {
-	var history []UpdateHistoryEntry
-
-	// Primary source: dpkg.log — logs every individual package operation
-	dpkgHistory := c.parseDpkgLogs()
-	history = append(history, dpkgHistory...)
-
-	// Fallback/supplement: apt history.log — provides higher-level context
-	aptHistory := c.parseAptHistoryLogs()
-
-	// Merge apt history entries that aren't already captured by dpkg
-	// dpkg is more granular so prefer it, but apt history captures the "why"
-	if len(history) == 0 {
-		history = aptHistory
-	}
-
-	// Sort by timestamp, most recent first
-	sort.Slice(history, func(i, j int) bool {
-		return history[i].Timestamp.After(history[j].Timestamp)
-	})
-
-	// Deduplicate entries with same timestamp+package+action
-	if len(history) > 1 {
-		deduped := []UpdateHistoryEntry{history[0]}
-		for i := 1; i < len(history); i++ {
-			prev := deduped[len(deduped)-1]
-			curr := history[i]
-			if curr.Package != prev.Package || curr.Action != prev.Action ||
-				!curr.Timestamp.Equal(prev.Timestamp) {
-				deduped = append(deduped, curr)
-			}
-		}
-		history = deduped
-	}
-
-	// Apply limit
-	if limit > 0 && len(history) > limit {
-		history = history[:limit]
-	}
-
-	return history, nil
+	return c.PM().GetUpdateHistory(limit)
 }
 
-// parseDpkgLogs parses /var/log/dpkg.log and rotated versions.
-// dpkg.log format: "2024-01-15 10:30:45 status installed package-name:amd64 1.2.3-1"
-func (c *UpdatesCollector) parseDpkgLogs() []UpdateHistoryEntry {
-	var history []UpdateHistoryEntry
-
-	// Read rotated logs first (older), then current log (newest)
-	logFiles := []string{
-		"/var/log/dpkg.log.1",
-		"/var/log/dpkg.log",
-	}
-
-	for _, logFile := range logFiles {
-		entries := c.parseSingleDpkgLog(logFile)
-		history = append(history, entries...)
-	}
-
-	return history
-}
-
-func (c *UpdatesCollector) parseSingleDpkgLog(logFile string) []UpdateHistoryEntry {
-	var history []UpdateHistoryEntry
-
-	file, err := os.Open(logFile)
-	if err != nil {
-		return history
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	// Increase buffer size for long lines
-	scanner.Buffer(make([]byte, 0, 64*1024), 256*1024)
-
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		// dpkg.log format: "2024-01-15 10:30:45 <action> <status> <package>:<arch> <version>"
-		// We care about lines with specific status transitions
-		parts := strings.Fields(line)
-		if len(parts) < 4 {
-			continue
-		}
-
-		// Parse timestamp (first two fields)
-		dateStr := parts[0] + " " + parts[1]
-		t, err := time.Parse("2006-01-02 15:04:05", dateStr)
-		if err != nil {
-			continue
-		}
-
-		action := parts[2]
-		status := parts[3]
-
-		// Filter to meaningful status transitions
-		var entry UpdateHistoryEntry
-		entry.Timestamp = t
-		entry.Status = "success"
-
-		switch {
-		case action == "install" && status == "installed":
-			entry.Action = "install"
-			if len(parts) >= 5 {
-				entry.Package = strings.Split(parts[4], ":")[0]
-			}
-			if len(parts) >= 6 {
-				entry.ToVersion = parts[5]
-			}
-		case action == "upgrade" && status == "installed":
-			// Upgrade completion: "upgrade <pkg>:<arch> <old-version> <new-version>"
-			entry.Action = "upgrade"
-			if len(parts) >= 5 {
-				entry.Package = strings.Split(parts[4], ":")[0]
-			}
-			if len(parts) >= 6 {
-				entry.ToVersion = parts[5]
-			}
-		case action == "status" && status == "installed" && len(parts) >= 6:
-			// "status installed <pkg>:<arch> <version>" — final state after install/upgrade
-			entry.Action = "install"
-			entry.Package = strings.Split(parts[4], ":")[0]
-			entry.ToVersion = parts[5]
-		case action == "remove" && status == "removed":
-			entry.Action = "remove"
-			if len(parts) >= 5 {
-				entry.Package = strings.Split(parts[4], ":")[0]
-			}
-			if len(parts) >= 6 {
-				entry.FromVersion = parts[5]
-			}
-		case action == "purge" && status == "purged":
-			entry.Action = "remove"
-			if len(parts) >= 5 {
-				entry.Package = strings.Split(parts[4], ":")[0]
-			}
-		default:
-			continue
-		}
-
-		if entry.Package != "" {
-			history = append(history, entry)
-		}
-	}
-
-	return history
-}
-
-// parseAptHistoryLogs parses /var/log/apt/history.log and rotated versions.
-func (c *UpdatesCollector) parseAptHistoryLogs() []UpdateHistoryEntry {
-	var history []UpdateHistoryEntry
-
-	logFiles := []string{
-		"/var/log/apt/history.log.1.gz",
-		"/var/log/apt/history.log",
-	}
-
-	for _, logFile := range logFiles {
-		if strings.HasSuffix(logFile, ".gz") {
-			// Skip gzipped logs for now — only read plain text
-			continue
-		}
-		entries := c.parseSingleAptHistoryLog(logFile)
-		history = append(history, entries...)
-	}
-
-	return history
-}
-
-func (c *UpdatesCollector) parseSingleAptHistoryLog(logFile string) []UpdateHistoryEntry {
-	var history []UpdateHistoryEntry
-
-	file, err := os.Open(logFile)
-	if err != nil {
-		return history
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 0, 64*1024), 256*1024)
-
-	var currentTimestamp time.Time
-	var currentAction string
-	var currentStatus string
-	inEntry := false
-
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		if strings.HasPrefix(line, "Start-Date:") {
-			dateStr := strings.TrimSpace(strings.TrimPrefix(line, "Start-Date:"))
-			if t, err := time.Parse("2006-01-02  15:04:05", dateStr); err == nil {
-				currentTimestamp = t
-				currentStatus = "success"
-				currentAction = ""
-				inEntry = true
-			}
-		} else if strings.HasPrefix(line, "Commandline:") && inEntry {
-			cmdLine := strings.TrimPrefix(line, "Commandline: ")
-			if strings.Contains(cmdLine, "upgrade") || strings.Contains(cmdLine, "dist-upgrade") {
-				currentAction = "upgrade"
-			} else if strings.Contains(cmdLine, "install") {
-				currentAction = "install"
-			} else if strings.Contains(cmdLine, "remove") || strings.Contains(cmdLine, "purge") {
-				currentAction = "remove"
-			}
-		} else if inEntry && (strings.HasPrefix(line, "Upgrade:") || strings.HasPrefix(line, "Install:") || strings.HasPrefix(line, "Remove:") || strings.HasPrefix(line, "Purge:")) {
-			// Parse individual packages from the line
-			// Format: "pkg1:arch (old-ver, new-ver), pkg2:arch (old-ver, new-ver), ..."
-			var action string
-			var pkgLine string
-			if strings.HasPrefix(line, "Upgrade:") {
-				action = "upgrade"
-				pkgLine = strings.TrimPrefix(line, "Upgrade: ")
-			} else if strings.HasPrefix(line, "Install:") {
-				action = "install"
-				pkgLine = strings.TrimPrefix(line, "Install: ")
-			} else if strings.HasPrefix(line, "Remove:") {
-				action = "remove"
-				pkgLine = strings.TrimPrefix(line, "Remove: ")
-			} else if strings.HasPrefix(line, "Purge:") {
-				action = "remove"
-				pkgLine = strings.TrimPrefix(line, "Purge: ")
-			}
-
-			if action == "" {
-				continue
-			}
-			if currentAction == "" {
-				currentAction = action
-			}
-
-			// Parse comma-separated package entries
-			pkgEntries := strings.Split(pkgLine, "),")
-			for _, entry := range pkgEntries {
-				entry = strings.TrimSpace(entry)
-				if entry == "" {
-					continue
-				}
-
-				he := UpdateHistoryEntry{
-					Timestamp: currentTimestamp,
-					Action:    action,
-					Status:    currentStatus,
-				}
-
-				// Parse "pkgname:arch (old-ver, new-ver)" or "pkgname:arch (ver)"
-				if parenIdx := strings.Index(entry, " ("); parenIdx > 0 {
-					pkgPart := entry[:parenIdx]
-					he.Package = strings.Split(strings.TrimSpace(pkgPart), ":")[0]
-
-					verPart := strings.TrimRight(entry[parenIdx+2:], ")")
-					versions := strings.Split(verPart, ", ")
-					if len(versions) == 2 {
-						he.FromVersion = strings.TrimSpace(versions[0])
-						he.ToVersion = strings.TrimSpace(versions[1])
-					} else if len(versions) == 1 {
-						he.ToVersion = strings.TrimSpace(versions[0])
-					}
-				} else {
-					he.Package = strings.Split(strings.TrimSpace(entry), ":")[0]
-				}
-
-				if he.Package != "" {
-					history = append(history, he)
-				}
-			}
-		} else if strings.HasPrefix(line, "Error:") && inEntry {
-			currentStatus = "failed"
-		} else if strings.HasPrefix(line, "End-Date:") && inEntry {
-			inEntry = false
-		}
-	}
-
-	return history
-}
 
 // --- Package Search ---
 
-// ListInstalledPackages returns all installed packages using dpkg-query.
+// ListInstalledPackages returns all installed packages.
 func (c *UpdatesCollector) ListInstalledPackages() ([]InstalledPackage, error) {
-	// Format: name\tversion\tarchitecture\tauto\tdescription
-	output, err := c.runCommand("dpkg-query", "-W",
-		"-f", "${Package}\t${Version}\t${Architecture}\t${db:Status-Abbrev}\t${binary:Summary}\n")
-	if err != nil {
-		return nil, fmt.Errorf("dpkg-query failed: %w", err)
-	}
-
-	var packages []InstalledPackage
-	scanner := bufio.NewScanner(strings.NewReader(string(output)))
-	for scanner.Scan() {
-		line := scanner.Text()
-		parts := strings.SplitN(line, "\t", 5)
-		if len(parts) < 4 {
-			continue
-		}
-		// Status abbrev is "ii" for installed, skip others
-		status := strings.TrimSpace(parts[3])
-		if !strings.HasPrefix(status, "ii") {
-			continue
-		}
-		pkg := InstalledPackage{
-			Name:         parts[0],
-			Version:      parts[1],
-			Architecture: parts[2],
-			Installed:    true,
-		}
-		if len(parts) == 5 {
-			pkg.Description = strings.TrimSpace(parts[4])
-		}
-		packages = append(packages, pkg)
-	}
-
-	return packages, nil
+	return c.PM().ListInstalledPackages()
 }
 
-// SearchPackages searches for packages matching a query using apt-cache search.
-// Results include whether each package is currently installed.
+// SearchPackages searches for packages matching a query.
 func (c *UpdatesCollector) SearchPackages(query string, limit int) ([]InstalledPackage, error) {
-	if limit <= 0 {
-		limit = 50
-	}
-
-	// Use apt-cache search for fuzzy matching — returns name + description
-	output, err := c.runCommand("apt-cache", "search", query)
-	if err != nil {
-		return nil, fmt.Errorf("apt-cache search failed: %w", err)
-	}
-
-	// Build installed set for marking results
-	installedSet := make(map[string]bool)
-	if installedOutput, err := c.runCommand("dpkg-query", "-W", "-f", "${Package}\t${db:Status-Abbrev}\n"); err == nil {
-		sc := bufio.NewScanner(strings.NewReader(string(installedOutput)))
-		for sc.Scan() {
-			parts := strings.SplitN(sc.Text(), "\t", 2)
-			if len(parts) == 2 && strings.HasPrefix(strings.TrimSpace(parts[1]), "ii") {
-				installedSet[parts[0]] = true
-			}
-		}
-	}
-
-	var packages []InstalledPackage
-	scanner := bufio.NewScanner(strings.NewReader(string(output)))
-
-	for scanner.Scan() && len(packages) < limit {
-		line := scanner.Text()
-		// Format: package_name - description
-		parts := strings.SplitN(line, " - ", 2)
-		if len(parts) < 1 {
-			continue
-		}
-		pkg := InstalledPackage{
-			Name:      strings.TrimSpace(parts[0]),
-			Installed: installedSet[strings.TrimSpace(parts[0])],
-		}
-		if len(parts) == 2 {
-			pkg.Description = strings.TrimSpace(parts[1])
-		}
-		packages = append(packages, pkg)
-	}
-
-	return packages, nil
+	return c.PM().SearchPackages(query, limit)
 }
 
 // InstallPackage installs a new package.
 func (c *UpdatesCollector) InstallPackage(name string) error {
-	// Validate package name
-	if !isValidPackageName(name) {
-		return fmt.Errorf("invalid package name: %s", name)
-	}
-
-	_, err := c.runCommandWithOutput("apt-get", "install", "-y", name)
-	if err != nil {
-		return fmt.Errorf("failed to install package %s: %w", name, err)
-	}
-
-	return nil
+	return c.PM().InstallPackage(name)
 }
 
 // RemovePackage removes a package.
 func (c *UpdatesCollector) RemovePackage(name string, purge bool) error {
-	if !isValidPackageName(name) {
-		return fmt.Errorf("invalid package name: %s", name)
-	}
-
-	action := "remove"
-	if purge {
-		action = "purge"
-	}
-
-	_, err := c.runCommandWithOutput("apt-get", action, "-y", name)
-	if err != nil {
-		return fmt.Errorf("failed to remove package %s: %w", name, err)
-	}
-
-	return nil
+	return c.PM().RemovePackage(name, purge)
 }
 
 // --- Pipx Package Management ---

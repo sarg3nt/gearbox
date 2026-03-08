@@ -942,6 +942,7 @@
 			const text = document.getElementById('marker-error-text');
 			text.textContent = message;
 			modal.classList.remove('hidden');
+			setTimeout(() => document.getElementById('close-marker-error-btn')?.focus(), 50);
 		}
 
 		// Hide marker error dialog
@@ -949,7 +950,7 @@
 			document.getElementById('marker-error-modal').classList.add('hidden');
 		}
 
-		// Show validation result modal
+		// Show validation result modal (focus close button)
 		function showValidationModal(isSuccess, title, message) {
 			const modal = document.getElementById('validation-modal');
 			const header = document.getElementById('validation-modal-header');
@@ -974,6 +975,7 @@
 			}
 
 			modal.classList.remove('hidden');
+			setTimeout(() => document.getElementById('close-validation-modal-btn')?.focus(), 50);
 		}
 
 		// Hide validation modal
@@ -1391,6 +1393,7 @@ May your configs be valid and your uptime eternal. 🙏`
 			const modal = document.getElementById('backups-modal');
 			const list = document.getElementById('backups-list');
 			modal.classList.remove('hidden');
+			setTimeout(() => document.getElementById('close-backups-btn')?.focus(), 50);
 
 			try {
 				const response = await fetch(`/api/${boxID}/haproxy/config/backups`);
@@ -1641,12 +1644,21 @@ May your configs be valid and your uptime eternal. 🙏`
 				});
 			}
 
-			// Escape key closes snippets modal
+			// Escape key closes any open modal
 			document.addEventListener('keydown', function(e) {
-				if (e.key === 'Escape') {
-					const snippetsModal = document.getElementById('snippets-modal');
-					if (!snippetsModal.classList.contains('hidden')) {
-						hideSnippets();
+				if (e.key !== 'Escape') return;
+				const modals = [
+					{ id: 'snippets-modal',      hide: hideSnippets },
+					{ id: 'backups-modal',        hide: hideBackups },
+					{ id: 'validation-modal',     hide: hideValidationModal },
+					{ id: 'marker-error-modal',   hide: hideMarkerError },
+					{ id: 'save-reason-modal',    hide: cancelSaveReason },
+				];
+				for (const m of modals) {
+					const el = document.getElementById(m.id);
+					if (el && !el.classList.contains('hidden')) {
+						m.hide();
+						break;
 					}
 				}
 			});

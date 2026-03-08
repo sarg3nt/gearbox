@@ -85,6 +85,8 @@ func (p *Gear) RegisterRoutes(r chi.Router) {
 	r.Get("/api/v1/system/packages/search", p.handleSearchPackages)
 	r.Post("/api/v1/system/packages/install", p.handleInstallPackage)
 	r.Post("/api/v1/system/packages/remove", p.handleRemovePackage)
+	r.Post("/api/v1/system/packages/hold", p.handleHoldPackage)
+	r.Post("/api/v1/system/packages/unhold", p.handleUnholdPackage)
 
 	// Pipx
 	r.Get("/api/v1/system/pipx", p.handlePipxStatus)
@@ -353,6 +355,13 @@ func (p *Gear) handleListUpgradable(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	pmName := p.collector.PM().Name()
+	for i := range packages {
+		if packages[i].PackageURL == "" {
+			packages[i].PackageURL = PackageURL(pmName, packages[i].Name)
+		}
 	}
 
 	resp := PackageListResponse{
@@ -697,6 +706,37 @@ func (p *Gear) handleListInstalledPackages(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	pmName := p.collector.PM().Name()
+
+	// Cross-reference with upgradable packages to populate update fields.
+	// Failures here are non-fatal — installed list is still returned.
+	upgradable, _ := p.collector.ListUpgradable()
+	updateMap := make(map[string]*Package, len(upgradable))
+	for i := range upgradable {
+		updateMap[upgradable[i].Name] = &upgradable[i]
+	}
+
+	// Cross-reference with held packages.
+	heldNames, _ := p.collector.PM().ListHeldPackages()
+	heldSet := make(map[string]bool, len(heldNames))
+	for _, n := range heldNames {
+		heldSet[n] = true
+	}
+
+	for i := range packages {
+		if upd, ok := updateMap[packages[i].Name]; ok {
+			packages[i].UpdateAvailable = true
+			packages[i].AvailableVersion = upd.AvailableVersion
+			packages[i].IsSecurityUpdate = upd.IsSecurityUpdate
+		}
+		if heldSet[packages[i].Name] {
+			packages[i].IsHeld = true
+		}
+		if packages[i].PackageURL == "" {
+			packages[i].PackageURL = PackageURL(pmName, packages[i].Name)
+		}
 	}
 
 	resp := PackageSearchResponse{
@@ -1338,3 +1378,37 @@ func (p *Gear) GetAptRunner() *AptRunner {
 
 // Ensure plugin implements required interfaces.
 var _ gear.Gear = (*Gear)(nil)
+
+// ── Package hold / version handlers ───────────────────────────────────────────
+
+type holdPackageRequest struct {
+	Name string `json:"name"`
+}
+
+func (p *Gear) handleHoldPackage(w http.ResponseWriter, r *http.Request) {
+	var req holdPackageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
+		jsonError(w, "name is required", http.StatusBadRequest)
+		return
+	}
+	if err := p.collector.PM().HoldPackage(req.Name); err != nil {
+		jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "name": req.Name, "held": true})
+}
+
+func (p *Gear) handleUnholdPackage(w http.ResponseWriter, r *http.Request) {
+	var req holdPackageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
+		jsonError(w, "name is required", http.StatusBadRequest)
+		return
+	}
+	if err := p.collector.PM().UnholdPackage(req.Name); err != nil {
+		jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "name": req.Name, "held": false})
+}

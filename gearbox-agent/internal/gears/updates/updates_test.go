@@ -23,8 +23,7 @@ func TestParseSingleDpkgLog(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	c := NewUpdatesCollector()
-	entries := c.parseSingleDpkgLog(logFile)
+	entries := parseDpkgLog(logFile)
 
 	// Should parse: install(nginx), status installed(nginx), upgrade(curl), remove(vim), purge(vim-common)
 	// "status half-configured" should be skipped
@@ -40,8 +39,8 @@ func TestParseSingleDpkgLog(t *testing.T) {
 		fromVer string
 	}{
 		{0, "install", "nginx", "1.24.0-1", ""},
-		{1, "install", "nginx", "1.24.0-1", ""},          // status installed
-		{2, "upgrade", "curl", "7.88.1-10+deb12u5", ""},   // upgrade completed
+		{1, "install", "nginx", "1.24.0-1", ""},         // status installed
+		{2, "upgrade", "curl", "7.88.1-10+deb12u5", ""}, // upgrade completed
 		{3, "remove", "vim", "", "9.0.1378-2"},
 		{4, "remove", "vim-common", "", ""},
 	}
@@ -69,9 +68,7 @@ func TestParseSingleDpkgLog(t *testing.T) {
 }
 
 func TestParseSingleDpkgLog_MissingFile(t *testing.T) {
-	c := NewUpdatesCollector()
-	entries := c.parseSingleDpkgLog("/nonexistent/dpkg.log")
-
+	entries := parseDpkgLog("/nonexistent/dpkg.log")
 	if len(entries) != 0 {
 		t.Errorf("expected 0 entries for missing file, got %d", len(entries))
 	}
@@ -89,8 +86,7 @@ not-a-date 10:30:45 install installed foo:amd64 1.0
 		t.Fatal(err)
 	}
 
-	c := NewUpdatesCollector()
-	entries := c.parseSingleDpkgLog(logFile)
+	entries := parseDpkgLog(logFile)
 
 	// Only the last line should parse
 	if len(entries) != 1 {
@@ -124,8 +120,7 @@ End-Date: 2024-01-17  14:00:30
 		t.Fatal(err)
 	}
 
-	c := NewUpdatesCollector()
-	entries := c.parseSingleAptHistoryLog(logFile)
+	entries := parseAptHistoryLog(logFile)
 
 	// Should have: curl upgrade, libcurl4 upgrade, nginx install, vim remove
 	if len(entries) != 4 {
@@ -182,8 +177,7 @@ End-Date: 2024-01-15  10:31:00
 		t.Fatal(err)
 	}
 
-	c := NewUpdatesCollector()
-	entries := c.parseSingleAptHistoryLog(logFile)
+	entries := parseAptHistoryLog(logFile)
 
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(entries))
@@ -197,9 +191,7 @@ End-Date: 2024-01-15  10:31:00
 }
 
 func TestParseSingleAptHistoryLog_MissingFile(t *testing.T) {
-	c := NewUpdatesCollector()
-	entries := c.parseSingleAptHistoryLog("/nonexistent/history.log")
-
+	entries := parseAptHistoryLog("/nonexistent/history.log")
 	if len(entries) != 0 {
 		t.Errorf("expected 0 entries for missing file, got %d", len(entries))
 	}
@@ -218,8 +210,7 @@ End-Date: 2024-01-15  10:31:00
 		t.Fatal(err)
 	}
 
-	c := NewUpdatesCollector()
-	entries := c.parseSingleAptHistoryLog(logFile)
+	entries := parseAptHistoryLog(logFile)
 
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(entries))
@@ -234,11 +225,9 @@ End-Date: 2024-01-15  10:31:00
 }
 
 func TestGetUpdateHistory_Deduplication(t *testing.T) {
-	// Create temp log files that will produce duplicate entries
 	tmpDir := t.TempDir()
 	dpkgLog := filepath.Join(tmpDir, "dpkg.log")
 
-	// Write entries with same timestamp, package, and action
 	content := `2024-01-15 10:30:45 install installed nginx:amd64 1.24.0-1
 2024-01-15 10:30:45 status installed nginx:amd64 1.24.0-1
 2024-01-15 10:30:46 install installed curl:amd64 7.88.1
@@ -247,8 +236,7 @@ func TestGetUpdateHistory_Deduplication(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	c := NewUpdatesCollector()
-	entries := c.parseSingleDpkgLog(dpkgLog)
+	entries := parseDpkgLog(dpkgLog)
 
 	// Before dedup: 3 entries (install nginx, status nginx with same timestamp+action, install curl)
 	if len(entries) != 3 {
@@ -264,7 +252,7 @@ func TestGetUpdateHistory_Sorting(t *testing.T) {
 	// the method doesn't panic with missing files
 	history, err := c.GetUpdateHistory(10)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Skipf("package manager not available: %v", err)
 	}
 
 	// On a dev machine, there may be real dpkg logs
@@ -283,7 +271,7 @@ func TestGetUpdateHistory_Limit(t *testing.T) {
 
 	history, err := c.GetUpdateHistory(1)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Skipf("package manager not available: %v", err)
 	}
 
 	if len(history) > 1 {
@@ -296,7 +284,7 @@ func TestGetUpdateHistory_ZeroLimit(t *testing.T) {
 
 	history, err := c.GetUpdateHistory(0)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Skipf("package manager not available: %v", err)
 	}
 
 	// Zero limit should return all entries
@@ -305,12 +293,11 @@ func TestGetUpdateHistory_ZeroLimit(t *testing.T) {
 
 func TestUpdateHistoryEntry_Fields(t *testing.T) {
 	entry := UpdateHistoryEntry{
-		Timestamp:   time.Date(2024, 1, 15, 10, 30, 45, 0, time.UTC),
-		Action:      "install",
-		Package:     "nginx",
-		FromVersion: "",
-		ToVersion:   "1.24.0-1",
-		Status:      "success",
+		Timestamp: time.Date(2024, 1, 15, 10, 30, 45, 0, time.UTC),
+		Action:    "install",
+		Package:   "nginx",
+		ToVersion: "1.24.0-1",
+		Status:    "success",
 	}
 
 	if entry.Timestamp.Year() != 2024 {
@@ -336,13 +323,10 @@ func TestNewUpdatesCollector(t *testing.T) {
 }
 
 // TestRunCommand_FailureOutputPreserved verifies that runCommand captures
-// combined stdout/stderr when a command fails. This output is essential
-// for diagnosing failures like apt returning "E: The repository does not
-// have a Release file."
+// combined stdout/stderr when a command fails.
 func TestRunCommand_FailureOutputPreserved(t *testing.T) {
 	c := NewUpdatesCollector()
 
-	// Simulate apt failing: prints diagnostic to stderr, exits non-zero
 	output, err := c.runCommand("sh", "-c", "echo 'E: Some apt error message' >&2; exit 100")
 	if err == nil {
 		t.Fatal("expected error from failing command")
@@ -354,12 +338,10 @@ func TestRunCommand_FailureOutputPreserved(t *testing.T) {
 }
 
 // TestRunCommandWithOutput_IncludesStderr verifies that runCommandWithOutput
-// wraps a failing command's error with its stderr/stdout so the caller gets
-// a useful error message instead of bare "exit status N".
+// wraps a failing command's error with its stderr/stdout.
 func TestRunCommandWithOutput_IncludesStderr(t *testing.T) {
 	c := NewUpdatesCollector()
 
-	// Simulate apt failing with meaningful error output
 	_, err := c.runCommandWithOutput("sh", "-c",
 		"echo 'Hit:1 http://archive.ubuntu.com jammy InRelease'; "+
 			"echo 'E: The repository does not have a Release file.' >&2; "+
@@ -370,12 +352,10 @@ func TestRunCommandWithOutput_IncludesStderr(t *testing.T) {
 
 	errMsg := err.Error()
 
-	// Must include the actual error output
 	if !strings.Contains(errMsg, "E: The repository does not have a Release file") {
 		t.Errorf("error message missing apt output\n  got: %q\n  want: should contain apt's error text", errMsg)
 	}
 
-	// Must NOT be ONLY "exit status 100" — the apt output must be present too
 	if errMsg == "exit status 100" {
 		t.Errorf("error is just exit status with no diagnostic info\n  got: %q", errMsg)
 	}
@@ -411,7 +391,6 @@ func TestRunCommandWithOutput_NoOutput(t *testing.T) {
 	}
 
 	errMsg := err.Error()
-	// With no output, the exit status is all we have — that's OK
 	if !strings.Contains(errMsg, "exit status 42") {
 		t.Errorf("expected exit status in error, got: %q", errMsg)
 	}
@@ -434,26 +413,14 @@ func TestRunCommandWithOutput_FallbackToLastLine(t *testing.T) {
 	}
 }
 
-// TestTriggerUpdateCheck_ErrorIncludesAptOutput verifies that when apt update
-// fails, the error message returned to the caller includes apt's stderr output,
-// not just "exit status N".
-//
-// BUG: TriggerUpdateCheck was doing:
-//
-//	_, err := c.runCommand("apt", "update")  // output DISCARDED with _
-//	return fmt.Errorf("apt update failed: %w", err)
-//
-// So the user saw: "apt update failed: exit status 100"
-// But apt printed "E: The repository does not have a Release file" to stderr,
-// which was thrown away by the underscore.
-//
-// FIX: Use runCommandWithOutput which wraps the error with the command's output.
+// TestTriggerUpdateCheck_ErrorIncludesAptOutput verifies that when the package
+// manager update check fails, the error message includes useful output.
 func TestTriggerUpdateCheck_ErrorIncludesAptOutput(t *testing.T) {
 	c := NewUpdatesCollector()
 
 	err := c.TriggerUpdateCheck()
 	if err == nil {
-		t.Skip("apt update succeeded — can't test error path")
+		t.Skip("package manager update check succeeded — can't test error path")
 	}
 
 	errMsg := err.Error()
@@ -462,26 +429,19 @@ func TestTriggerUpdateCheck_ErrorIncludesAptOutput(t *testing.T) {
 	if strings.HasSuffix(errMsg, "exit status 100") ||
 		strings.HasSuffix(errMsg, "exit status 1") ||
 		strings.HasSuffix(errMsg, "exit status 2") {
-		t.Errorf("error ends with bare exit status — apt output was discarded\n"+
+		t.Errorf("error ends with bare exit status — output was discarded\n"+
 			"  got: %q\n"+
-			"  want: message to include apt's actual error output", errMsg)
-	}
-
-	if !strings.Contains(errMsg, "apt update failed:") {
-		t.Errorf("expected 'apt update failed:' prefix, got: %q", errMsg)
+			"  want: message to include the actual error output", errMsg)
 	}
 }
 
 // TestFullErrorChain_CheckForUpdates simulates the complete error chain from
 // agent → dashboard → JS toast and verifies the final message is useful.
-//
-// Chain: apt fails → TriggerUpdateCheck() → handler jsonError → dashboard
-// client → dashboard handler jsonError → JS "Failed to check for updates: <msg>"
 func TestFullErrorChain_CheckForUpdates(t *testing.T) {
 	c := NewUpdatesCollector()
 	err := c.TriggerUpdateCheck()
 	if err == nil {
-		t.Skip("apt available — can't test error chain")
+		t.Skip("package manager available — can't test error chain")
 	}
 
 	agentErrorMsg := err.Error()

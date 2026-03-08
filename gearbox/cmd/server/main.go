@@ -722,6 +722,8 @@ func main() {
 			r.Get("/os-updates/packages/search", h.APISearchPackagesHandler)
 			r.Post("/os-updates/packages/install", h.APIInstallPackageHandler)
 			r.Post("/os-updates/packages/remove", h.APIRemovePackageHandler)
+			r.Post("/os-updates/packages/hold", h.APIHoldPackageHandler)
+			r.Post("/os-updates/packages/unhold", h.APIUnholdPackageHandler)
 			r.Get("/os-updates/pipx", h.APIPipxStatusHandler)
 			r.Post("/os-updates/pipx/install", h.APIPipxInstallHandler)
 			r.Post("/os-updates/pipx/uninstall", h.APIPipxUninstallHandler)

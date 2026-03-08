@@ -670,6 +670,7 @@ type Package struct {
 	Repository       string `json:"repository"`
 	Size             int64  `json:"size_bytes"`
 	ChangelogURL     string `json:"changelog_url"`
+	PackageURL       string `json:"package_url,omitempty"`
 }
 
 // PackageListResponse represents a list of packages.
@@ -821,13 +822,31 @@ type SnapshotPreviewResponse struct {
 
 // InstalledPackage represents a package that can be installed.
 type InstalledPackage struct {
-	Name         string `json:"name"`
-	Version      string `json:"version"`
-	Architecture string `json:"architecture"`
-	Description  string `json:"description,omitempty"`
-	AutoInstall  bool   `json:"auto_install"`
-	Installed    bool   `json:"installed,omitempty"`
+	Name             string `json:"name"`
+	Version          string `json:"version"`
+	Architecture     string `json:"architecture"`
+	Description      string `json:"description,omitempty"`
+	AutoInstall      bool   `json:"auto_install"`
+	Installed        bool   `json:"installed,omitempty"`
+	UpdateAvailable  bool   `json:"update_available,omitempty"`
+	AvailableVersion string `json:"available_version,omitempty"`
+	IsSecurityUpdate bool   `json:"is_security_update,omitempty"`
+	IsHeld           bool   `json:"is_held,omitempty"`
+	PackageURL       string `json:"package_url,omitempty"`
 }
+
+// HoldPackageRequest represents a package hold/unhold request.
+type HoldPackageRequest struct {
+	Name string `json:"name"`
+}
+
+// HoldPackageResponse represents the result of a hold/unhold operation.
+type HoldPackageResponse struct {
+	Success bool   `json:"success"`
+	Name    string `json:"name"`
+	Held    bool   `json:"held"`
+}
+
 
 // InstalledPackagesResponse wraps the list of installed packages.
 type InstalledPackagesResponse struct {
