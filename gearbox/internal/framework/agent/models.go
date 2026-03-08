@@ -824,7 +824,15 @@ type InstalledPackage struct {
 	Name         string `json:"name"`
 	Version      string `json:"version"`
 	Architecture string `json:"architecture"`
+	Description  string `json:"description,omitempty"`
 	AutoInstall  bool   `json:"auto_install"`
+	Installed    bool   `json:"installed,omitempty"`
+}
+
+// InstalledPackagesResponse wraps the list of installed packages.
+type InstalledPackagesResponse struct {
+	Packages []InstalledPackage `json:"packages"`
+	Count    int                `json:"count"`
 }
 
 // PackageSearchResponse represents package search results.

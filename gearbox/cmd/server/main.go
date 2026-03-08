@@ -718,6 +718,7 @@ func main() {
 			r.Post("/os-updates/snapshots/restore", h.APIRestoreSnapshotHandler)
 			r.Get("/os-updates/snapshots/{id}/preview", h.APIPreviewSnapshotHandler)
 			r.Delete("/os-updates/snapshots/{id}", h.APIDeleteSnapshotHandler)
+			r.Get("/os-updates/packages/installed", h.APIListInstalledPackagesHandler)
 			r.Get("/os-updates/packages/search", h.APISearchPackagesHandler)
 			r.Post("/os-updates/packages/install", h.APIInstallPackageHandler)
 			r.Post("/os-updates/packages/remove", h.APIRemovePackageHandler)

@@ -171,6 +171,11 @@ document.addEventListener('DOMContentLoaded', function() {
 		setTimeout(loadPythonVersions, 200);
 	}
 
+	// Lazily load installed packages table
+	if (document.getElementById('installed-packages-loading')) {
+		setTimeout(loadInstalledPackages, 300);
+	}
+
 	// Auto-check for updates on page load (if user has action permissions)
 	const canAction = document.getElementById('can-action');
 	if (canAction && canAction.value === 'true' && currentServerID) {
@@ -2185,5 +2190,254 @@ function copyLogOutput() {
 		}).catch(() => {
 			showToast('Failed to copy output', 'error');
 		});
+	}
+}
+
+// ── Installed Packages ────────────────────────────────────────────────────────
+
+// ── Installed Packages (Tabulator data grid) ──────────────────────────────────
+
+let installedPkgTable = null;
+
+async function loadInstalledPackages() {
+	const el = document.getElementById('installed-packages-table');
+	if (!el) return;
+
+	try {
+		const resp = await fetch('/api/os-updates/packages/installed?server=' + currentServerID);
+		if (!resp.ok) {
+			document.getElementById('installed-packages-loading').textContent = 'Failed to load installed packages.';
+			return;
+		}
+		const data = await resp.json();
+		const packages = data.packages || [];
+		const canAction = document.getElementById('can-action-installed')?.value === 'true';
+		initInstalledPackagesGrid(el, packages, canAction);
+	} catch {
+		const loading = document.getElementById('installed-packages-loading');
+		if (loading) loading.textContent = 'Failed to load installed packages.';
+	}
+}
+
+function initInstalledPackagesGrid(el, packages, canAction) {
+	// Remove loading spinner — Tabulator renders into the div directly
+	const loading = document.getElementById('installed-packages-loading');
+	if (loading) loading.remove();
+
+	// Row height × 20 visible rows + header (~42px) + header filter row (~34px)
+	const ROW_HEIGHT = 36;
+	const VISIBLE_ROWS = 12;
+	const gridHeight = (ROW_HEIGHT * VISIBLE_ROWS) + 42 + 34;
+
+	const columns = [
+		{
+			title: 'Package',
+			field: 'name',
+			sorter: 'string',
+			headerFilter: 'input',
+			headerFilterPlaceholder: 'filter...',
+			minWidth: 180,
+			formatter: function(cell) {
+				return '<span class="font-mono text-xs font-medium">' + escapeHtml(cell.getValue()) + '</span>';
+			}
+		},
+		{
+			title: 'Version',
+			field: 'version',
+			sorter: 'string',
+			headerFilter: 'input',
+			headerFilterPlaceholder: 'filter...',
+			width: 160,
+			formatter: function(cell) {
+				return '<span class="font-mono text-xs">' + escapeHtml(cell.getValue() || '') + '</span>';
+			}
+		},
+		{
+			title: 'Description',
+			field: 'description',
+			sorter: 'string',
+			headerFilter: 'input',
+			headerFilterPlaceholder: 'filter...',
+			minWidth: 200,
+			formatter: function(cell) {
+				return '<span class="text-xs">' + escapeHtml(cell.getValue() || '') + '</span>';
+			}
+		},
+	];
+
+	if (canAction) {
+		columns.push({
+			title: '',
+			field: 'name',
+			headerSort: false,
+			width: 90,
+			hozAlign: 'right',
+			formatter: function(cell) {
+				return '<button class="pkg-remove-btn px-2.5 py-1 text-xs bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 rounded transition-colors">Remove</button>';
+			},
+			cellClick: function(e, cell) {
+				if (e.target.classList.contains('pkg-remove-btn')) {
+					removeInstalledPackageTabulator(cell, cell.getValue());
+				}
+			}
+		});
+	}
+
+	installedPkgTable = new Tabulator(el, {
+		data: packages,
+		columns: columns,
+		layout: 'fitColumns',
+		height: gridHeight + 'px',
+		virtualDom: true,
+		virtualDomBuffer: 180,
+		rowHeight: ROW_HEIGHT,
+		sortMode: 'local',
+		filterMode: 'local',
+		initialSort: [{ column: 'name', dir: 'asc' }],
+		placeholder: 'No packages found',
+	});
+}
+
+function removeInstalledPackageTabulator(cell, name) {
+	showConfirmModal({
+		title: 'Remove Package',
+		message: 'Remove ' + name + '? This will uninstall the package from the system.',
+		type: 'danger',
+		confirmText: 'Remove',
+		onConfirm: async () => {
+			try {
+				const resp = await fetch('/api/os-updates/packages/remove?server=' + currentServerID, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ name: name })
+				});
+				if (!resp.ok) {
+					const errMsg = await extractErrorMessage(resp);
+					throw new Error(errMsg);
+				}
+				showToast('Package ' + name + ' removed', 'success');
+				// Delete the row from the live grid without a reload
+				cell.getRow().delete();
+			} catch (err) {
+				showToast('Failed to remove package: ' + err.message, 'error');
+			}
+		}
+	});
+}
+
+// ── Apt Install Modal ─────────────────────────────────────────────────────────
+
+let aptSearchTimer = null;
+let aptSelectedPackage = null;
+
+function showAptInstallModal() {
+	document.getElementById('apt-install-modal').classList.remove('hidden');
+	document.getElementById('apt-package-name').focus();
+}
+
+function hideAptInstallModal() {
+	document.getElementById('apt-install-modal').classList.add('hidden');
+	document.getElementById('apt-package-name').value = '';
+	document.getElementById('apt-search-results').classList.add('hidden');
+	document.getElementById('apt-search-results').innerHTML = '';
+	document.getElementById('apt-selected-info').classList.add('hidden');
+	document.getElementById('apt-no-results').classList.add('hidden');
+	document.getElementById('apt-install-confirm-btn').disabled = true;
+	aptSelectedPackage = null;
+}
+
+function onAptSearchInput(value) {
+	clearTimeout(aptSearchTimer);
+	aptSelectedPackage = null;
+	document.getElementById('apt-install-confirm-btn').disabled = true;
+	document.getElementById('apt-selected-info').classList.add('hidden');
+	document.getElementById('apt-search-results').classList.add('hidden');
+	document.getElementById('apt-no-results').classList.add('hidden');
+
+	const trimmed = value.trim();
+	if (trimmed.length < 2) return;
+
+	aptSearchTimer = setTimeout(() => searchAptPackages(trimmed), 350);
+}
+
+async function searchAptPackages(query) {
+	const spinner = document.getElementById('apt-search-spinner');
+	const results = document.getElementById('apt-search-results');
+	const noResults = document.getElementById('apt-no-results');
+
+	if (spinner) spinner.classList.remove('hidden');
+
+	try {
+		const resp = await fetch('/api/os-updates/packages/search?server=' + currentServerID + '&q=' + encodeURIComponent(query) + '&limit=20');
+		if (spinner) spinner.classList.add('hidden');
+		if (!resp.ok) return;
+		const data = await resp.json();
+		const packages = data.packages || [];
+
+		if (packages.length === 0) {
+			noResults.classList.remove('hidden');
+			return;
+		}
+
+		results.innerHTML = packages.map(pkg => `
+			<div class="apt-result-item px-4 py-2.5 hover:bg-blue-50 dark:hover:bg-blue-900/20 cursor-pointer flex items-start gap-3"
+				 data-name="${escapeHtml(pkg.name)}" data-desc="${escapeHtml(pkg.description || '')}"
+				 onclick="selectAptPackage('${escapeHtml(pkg.name)}', '${escapeHtml(pkg.description || '')}')">
+				<div class="flex-1 min-w-0">
+					<div class="flex items-center gap-2">
+						<span class="font-mono text-sm font-medium text-gray-800 dark:text-gray-100">${escapeHtml(pkg.name)}</span>
+						${pkg.installed ? '<span class="px-1.5 py-0.5 text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded">installed</span>' : ''}
+					</div>
+					${pkg.description ? `<span class="text-xs text-gray-500 dark:text-gray-400 truncate">${escapeHtml(pkg.description)}</span>` : ''}
+				</div>
+			</div>
+		`).join('');
+		results.classList.remove('hidden');
+	} catch {
+		if (spinner) spinner.classList.add('hidden');
+	}
+}
+
+function selectAptPackage(name, description) {
+	aptSelectedPackage = name;
+	document.getElementById('apt-package-name').value = name;
+	document.getElementById('apt-search-results').classList.add('hidden');
+	document.getElementById('apt-selected-name').textContent = name;
+	document.getElementById('apt-selected-desc').textContent = description;
+	document.getElementById('apt-selected-info').classList.remove('hidden');
+	document.getElementById('apt-install-confirm-btn').disabled = false;
+}
+
+async function confirmAptInstall() {
+	const name = aptSelectedPackage || document.getElementById('apt-package-name').value.trim();
+	if (!name) {
+		showToast('Please select a package to install', 'warning');
+		return;
+	}
+
+	const btn = document.getElementById('apt-install-confirm-btn');
+	hideAptInstallModal();
+
+	try {
+		const resp = await fetch('/api/os-updates/packages/install?server=' + currentServerID, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ name: name })
+		});
+		if (!resp.ok) {
+			const errMsg = await extractErrorMessage(resp);
+			throw new Error(errMsg);
+		}
+		showToast('Package ' + name + ' installed successfully', 'success');
+		// Destroy and reload the Tabulator grid
+		if (installedPkgTable) {
+			installedPkgTable.destroy();
+			installedPkgTable = null;
+		}
+		const el = document.getElementById('installed-packages-table');
+		if (el) el.innerHTML = '<div id="installed-packages-loading" class="flex items-center gap-2 p-4 text-sm text-gray-500 dark:text-slate-400"><svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Loading installed packages...</div>';
+		setTimeout(loadInstalledPackages, 500);
+	} catch (err) {
+		showToast('Failed to install package: ' + err.message, 'error');
 	}
 }

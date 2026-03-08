@@ -1455,6 +1455,21 @@ func (c *Client) PreviewSnapshot(snapshotID string) (*SnapshotPreviewResponse, e
 
 // Package Management Methods
 
+// GetInstalledPackages returns all currently installed system packages.
+func (c *Client) GetInstalledPackages() (*InstalledPackagesResponse, error) {
+	body, err := c.doRequest("GET", "/api/v1/system/packages/installed", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp InstalledPackagesResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse installed packages response: %w", err)
+	}
+
+	return &resp, nil
+}
+
 // SearchPackages searches for available packages.
 func (c *Client) SearchPackages(query string, limit int) (*PackageSearchResponse, error) {
 	params := url.Values{}

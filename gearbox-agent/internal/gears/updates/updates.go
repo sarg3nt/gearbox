@@ -49,8 +49,10 @@ type InstalledPackage struct {
 	Name         string    `json:"name"`
 	Version      string    `json:"version"`
 	Architecture string    `json:"architecture"`
+	Description  string    `json:"description,omitempty"`
 	InstalledAt  time.Time `json:"installed_at,omitempty"` // May not be available
 	AutoInstall  bool      `json:"auto_install"`           // Automatically installed as dependency
+	Installed    bool      `json:"installed,omitempty"`    // True if currently installed (for search results)
 }
 
 // UpdateHistoryEntry represents a past update action.
@@ -1192,16 +1194,66 @@ func (c *UpdatesCollector) parseSingleAptHistoryLog(logFile string) []UpdateHist
 
 // --- Package Search ---
 
-// SearchPackages searches for packages matching a query.
+// ListInstalledPackages returns all installed packages using dpkg-query.
+func (c *UpdatesCollector) ListInstalledPackages() ([]InstalledPackage, error) {
+	// Format: name\tversion\tarchitecture\tauto\tdescription
+	output, err := c.runCommand("dpkg-query", "-W",
+		"-f", "${Package}\t${Version}\t${Architecture}\t${db:Status-Abbrev}\t${binary:Summary}\n")
+	if err != nil {
+		return nil, fmt.Errorf("dpkg-query failed: %w", err)
+	}
+
+	var packages []InstalledPackage
+	scanner := bufio.NewScanner(strings.NewReader(string(output)))
+	for scanner.Scan() {
+		line := scanner.Text()
+		parts := strings.SplitN(line, "\t", 5)
+		if len(parts) < 4 {
+			continue
+		}
+		// Status abbrev is "ii" for installed, skip others
+		status := strings.TrimSpace(parts[3])
+		if !strings.HasPrefix(status, "ii") {
+			continue
+		}
+		pkg := InstalledPackage{
+			Name:         parts[0],
+			Version:      parts[1],
+			Architecture: parts[2],
+			Installed:    true,
+		}
+		if len(parts) == 5 {
+			pkg.Description = strings.TrimSpace(parts[4])
+		}
+		packages = append(packages, pkg)
+	}
+
+	return packages, nil
+}
+
+// SearchPackages searches for packages matching a query using apt-cache search.
+// Results include whether each package is currently installed.
 func (c *UpdatesCollector) SearchPackages(query string, limit int) ([]InstalledPackage, error) {
 	if limit <= 0 {
 		limit = 50
 	}
 
-	// Use apt-cache search for fuzzy matching
+	// Use apt-cache search for fuzzy matching — returns name + description
 	output, err := c.runCommand("apt-cache", "search", query)
 	if err != nil {
 		return nil, fmt.Errorf("apt-cache search failed: %w", err)
+	}
+
+	// Build installed set for marking results
+	installedSet := make(map[string]bool)
+	if installedOutput, err := c.runCommand("dpkg-query", "-W", "-f", "${Package}\t${db:Status-Abbrev}\n"); err == nil {
+		sc := bufio.NewScanner(strings.NewReader(string(installedOutput)))
+		for sc.Scan() {
+			parts := strings.SplitN(sc.Text(), "\t", 2)
+			if len(parts) == 2 && strings.HasPrefix(strings.TrimSpace(parts[1]), "ii") {
+				installedSet[parts[0]] = true
+			}
+		}
 	}
 
 	var packages []InstalledPackage
@@ -1211,12 +1263,17 @@ func (c *UpdatesCollector) SearchPackages(query string, limit int) ([]InstalledP
 		line := scanner.Text()
 		// Format: package_name - description
 		parts := strings.SplitN(line, " - ", 2)
-		if len(parts) >= 1 {
-			pkg := InstalledPackage{
-				Name: strings.TrimSpace(parts[0]),
-			}
-			packages = append(packages, pkg)
+		if len(parts) < 1 {
+			continue
 		}
+		pkg := InstalledPackage{
+			Name:      strings.TrimSpace(parts[0]),
+			Installed: installedSet[strings.TrimSpace(parts[0])],
+		}
+		if len(parts) == 2 {
+			pkg.Description = strings.TrimSpace(parts[1])
+		}
+		packages = append(packages, pkg)
 	}
 
 	return packages, nil

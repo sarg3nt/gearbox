@@ -240,6 +240,14 @@ templ Base(title string, user *models.User, currentPath ...string) {
 			.dark .tabulator .tabulator-header .tabulator-col:hover .tabulator-col-title {
 				color: #ffffff !important;
 			}
+			.tabulator .tabulator-header .tabulator-header-filter input,
+			.tabulator .tabulator-header .tabulator-header-filter select {
+				padding-top: 2px;
+				padding-bottom: 2px;
+				min-height: unset;
+				height: 24px;
+				font-size: 0.75rem;
+			}
 			.dark .tabulator .tabulator-header .tabulator-header-filter input,
 			.dark .tabulator .tabulator-header .tabulator-header-filter select {
 				background-color: #1e293b;

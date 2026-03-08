@@ -81,6 +81,7 @@ func (p *Gear) RegisterRoutes(r chi.Router) {
 	r.Delete("/api/v1/system/updates/snapshots/{id}", p.handleDeleteSnapshot)
 
 	// Package management
+	r.Get("/api/v1/system/packages/installed", p.handleListInstalledPackages)
 	r.Get("/api/v1/system/packages/search", p.handleSearchPackages)
 	r.Post("/api/v1/system/packages/install", p.handleInstallPackage)
 	r.Post("/api/v1/system/packages/remove", p.handleRemovePackage)
@@ -690,6 +691,22 @@ func (p *Gear) handlePreviewSnapshot(w http.ResponseWriter, r *http.Request) {
 }
 
 // Package management handlers
+
+func (p *Gear) handleListInstalledPackages(w http.ResponseWriter, r *http.Request) {
+	packages, err := p.collector.ListInstalledPackages()
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := PackageSearchResponse{
+		Packages: packages,
+		Count:    len(packages),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
 
 func (p *Gear) handleSearchPackages(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query().Get("query")

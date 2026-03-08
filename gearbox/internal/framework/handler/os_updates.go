@@ -641,6 +641,34 @@ func (h *Handler) APIPreviewSnapshotHandler(w http.ResponseWriter, r *http.Reque
 	h.jsonResponseOK(w, preview)
 }
 
+// APIListInstalledPackagesHandler handles GET /api/os-updates/packages/installed.
+func (h *Handler) APIListInstalledPackagesHandler(w http.ResponseWriter, r *http.Request) {
+	boxID := r.URL.Query().Get("server")
+	if boxID == "" {
+		boxID = h.getDefaultServerID()
+	}
+
+	server, err := h.db.GetBoxByBoxID(boxID)
+	if err != nil || server == nil {
+		h.jsonError(w, "Server not found", http.StatusNotFound)
+		return
+	}
+
+	client, err := h.getAgentClient(server)
+	if err != nil {
+		h.jsonError(w, "Failed to connect to agent", http.StatusServiceUnavailable)
+		return
+	}
+
+	packages, err := client.GetInstalledPackages()
+	if err != nil {
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	h.jsonResponseOK(w, packages)
+}
+
 // APISearchPackagesHandler handles GET /api/os-updates/packages/search.
 func (h *Handler) APISearchPackagesHandler(w http.ResponseWriter, r *http.Request) {
 	boxID := r.URL.Query().Get("server")
