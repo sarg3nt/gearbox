@@ -19,8 +19,8 @@ RUN templ generate
 # Stage 2: Build Go binary
 FROM golang:1.26-alpine AS go-builder
 
-# Install build dependencies (gcc and musl-dev required for CGO/sqlite3)
-RUN apk add --no-cache git ca-certificates tzdata gcc musl-dev
+# Install build dependencies
+RUN apk add --no-cache git ca-certificates tzdata
 
 WORKDIR /build
 
@@ -36,8 +36,8 @@ ARG VERSION=dev
 ARG COMMIT_SHA=unknown
 ARG BUILD_DATE=unknown
 
-# Build the application with CGO enabled for sqlite3
-RUN CGO_ENABLED=1 GOOS=linux GOARCH=${TARGETARCH} go build \
+# Build the application with CGO disabled (pure-Go sqlite via modernc.org/sqlite)
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
     -ldflags="-s -w -X main.Version=${VERSION} -X main.CommitSHA=${COMMIT_SHA} -X main.BuildDate=${BUILD_DATE}" \
     -o gearbox \
     ./cmd/server
@@ -45,8 +45,8 @@ RUN CGO_ENABLED=1 GOOS=linux GOARCH=${TARGETARCH} go build \
 # Stage 3: Final runtime image
 FROM alpine:3.23@sha256:5b10f432ef3da1b8d4c7eb6c487f2f5a8f096bc91145e68878dd4a5019afde11
 
-# Install runtime dependencies (sqlite-libs for CGO-built binary)
-RUN apk add --no-cache ca-certificates tzdata wget sqlite-libs
+# Install runtime dependencies
+RUN apk add --no-cache ca-certificates tzdata wget
 
 # Create non-root user
 RUN addgroup -g 1000 appuser && \
