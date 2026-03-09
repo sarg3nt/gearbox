@@ -340,6 +340,13 @@ func (c *UpdatesCollector) ListSnapshots() ([]AptSnapshot, error) {
 			continue
 		}
 
+		// Validate the base snapshot ID embedded in the filename to prevent
+		// path traversal if the on-disk directory is ever tampered with.
+		snapshotID := strings.TrimSuffix(entry.Name(), ".meta")
+		if err := validateSnapshotID(snapshotID); err != nil {
+			continue
+		}
+
 		metaFile := fmt.Sprintf("%s/%s", snapshotDir, entry.Name())
 		data, err := os.ReadFile(metaFile)
 		if err != nil {
@@ -347,7 +354,7 @@ func (c *UpdatesCollector) ListSnapshots() ([]AptSnapshot, error) {
 		}
 
 		snapshot := AptSnapshot{
-			ID: strings.TrimSuffix(entry.Name(), ".meta"),
+			ID: snapshotID,
 		}
 
 		// Parse metadata

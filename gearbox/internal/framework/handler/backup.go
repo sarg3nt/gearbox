@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sarg3nt/gearbox/internal/framework/database"
@@ -111,7 +112,7 @@ func (h *Handler) APIRestoreBackup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Convert to absolute paths for comparison
-	absBackupDir, err := filepath.Abs(backupDir)
+	absBackupDir, err := filepath.Abs(filepath.Clean(backupDir))
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{ //#nosec G104
@@ -120,7 +121,7 @@ func (h *Handler) APIRestoreBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	absBackupPath, err := filepath.Abs(req.BackupPath)
+	absBackupPath, err := filepath.Abs(filepath.Clean(req.BackupPath))
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{ //#nosec G104
@@ -129,8 +130,9 @@ func (h *Handler) APIRestoreBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ensure the backup file is within the backup directory
-	if filepath.Dir(absBackupPath) != absBackupDir {
+	// Ensure the backup file is within the backup directory (HasPrefix guards
+	// against traversal that lands in a sibling directory with a shared prefix).
+	if !strings.HasPrefix(absBackupPath, absBackupDir+string(filepath.Separator)) {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{ //#nosec G104
 			"error": "Backup file must be in the backup directory",
@@ -138,8 +140,8 @@ func (h *Handler) APIRestoreBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Restore from backup
-	if err := h.db.RestoreFromBackup(req.BackupPath); err != nil {
+	// Restore from backup using the validated absolute path
+	if err := h.db.RestoreFromBackup(absBackupPath); err != nil {
 		apperrors.WriteHTTPError(w, h.logger, apperrors.Internal("restore backup", err))
 		return
 	}
@@ -178,7 +180,7 @@ func (h *Handler) APIDeleteBackup(w http.ResponseWriter, r *http.Request) {
 		backupDir = "/data/backups"
 	}
 
-	absBackupDir, err := filepath.Abs(backupDir)
+	absBackupDir, err := filepath.Abs(filepath.Clean(backupDir))
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{ //#nosec G104
@@ -187,7 +189,7 @@ func (h *Handler) APIDeleteBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	absBackupPath, err := filepath.Abs(backupPath)
+	absBackupPath, err := filepath.Abs(filepath.Clean(backupPath))
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{ //#nosec G104
@@ -196,7 +198,7 @@ func (h *Handler) APIDeleteBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if filepath.Dir(absBackupPath) != absBackupDir {
+	if !strings.HasPrefix(absBackupPath, absBackupDir+string(filepath.Separator)) {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{ //#nosec G104
 			"error": "Backup file must be in the backup directory",
@@ -204,13 +206,13 @@ func (h *Handler) APIDeleteBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Delete backup
-	if err := database.DeleteBackup(backupPath); err != nil {
+	// Delete backup using the validated absolute path
+	if err := database.DeleteBackup(absBackupPath); err != nil {
 		apperrors.WriteHTTPError(w, h.logger, apperrors.Internal("delete backup", err))
 		return
 	}
 
-	h.logAudit(r, user.ID, "backup_deleted", fmt.Sprintf("Deleted database backup: %s", filepath.Base(backupPath)))
+	h.logAudit(r, user.ID, "backup_deleted", fmt.Sprintf("Deleted database backup: %s", filepath.Base(absBackupPath)))
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{ //#nosec G104
@@ -241,33 +243,33 @@ func (h *Handler) APIDownloadBackup(w http.ResponseWriter, r *http.Request) {
 		backupDir = "/data/backups"
 	}
 
-	absBackupDir, err := filepath.Abs(backupDir)
+	absBackupDir, err := filepath.Abs(filepath.Clean(backupDir))
 	if err != nil {
 		http.Error(w, "Failed to resolve backup directory", http.StatusInternalServerError)
 		return
 	}
 
-	absBackupPath, err := filepath.Abs(backupPath)
+	absBackupPath, err := filepath.Abs(filepath.Clean(backupPath))
 	if err != nil {
 		http.Error(w, "Invalid backup path", http.StatusBadRequest)
 		return
 	}
 
-	if filepath.Dir(absBackupPath) != absBackupDir {
+	if !strings.HasPrefix(absBackupPath, absBackupDir+string(filepath.Separator)) {
 		http.Error(w, "Backup file must be in the backup directory", http.StatusBadRequest)
 		return
 	}
 
-	// Check if file exists
-	if _, err := os.Stat(backupPath); os.IsNotExist(err) {
+	// Check if file exists using the validated absolute path
+	if _, err := os.Stat(absBackupPath); os.IsNotExist(err) {
 		http.Error(w, "Backup file not found", http.StatusNotFound)
 		return
 	}
 
-	h.logAudit(r, user.ID, "backup_downloaded", fmt.Sprintf("Downloaded database backup: %s", filepath.Base(backupPath)))
+	h.logAudit(r, user.ID, "backup_downloaded", fmt.Sprintf("Downloaded database backup: %s", filepath.Base(absBackupPath)))
 
-	// Serve the file
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filepath.Base(backupPath)))
+	// Serve the file; quote the filename to handle spaces and special chars safely
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filepath.Base(absBackupPath)))
 	w.Header().Set("Content-Type", "application/octet-stream")
-	http.ServeFile(w, r, backupPath)
+	http.ServeFile(w, r, absBackupPath)
 }

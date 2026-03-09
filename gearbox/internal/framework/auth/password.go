@@ -179,8 +179,15 @@ func GenerateRandomPassword() (string, error) {
 	return password, nil
 }
 
+// MinTokenBytes is the minimum number of random bytes for a secure token (256 bits).
+const MinTokenBytes = 32
+
 // GenerateSecureToken generates a cryptographically secure random token.
+// length is the number of random bytes; it must be at least MinTokenBytes (32).
 func GenerateSecureToken(length int) (string, error) {
+	if length < MinTokenBytes {
+		length = MinTokenBytes
+	}
 	b := make([]byte, length)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
