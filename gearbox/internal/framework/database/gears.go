@@ -19,6 +19,7 @@ const (
 	GearAlerts       = "alerts"
 	GearOSUpdates    = "os_updates"
 	GearHome         = "home"
+	GearContainers   = "containers"
 )
 
 // SystemServerID is the sentinel server_id used for rows that represent
@@ -170,6 +171,11 @@ type HomeConfig struct {
 	AttributionShown bool `json:"attribution_shown"`
 }
 
+// ContainersConfig holds container management integration configuration.
+type ContainersConfig struct {
+	StatsInterval int `json:"stats_interval"` // Seconds between stats collection (default: 10)
+}
+
 // OSUpdatesConfig holds OS updates integration configuration.
 type OSUpdatesConfig struct {
 	CheckFrequencyMinutes  int  `json:"check_frequency_minutes"`  // How often to check for updates (default: 60)
@@ -300,6 +306,16 @@ func DefaultGears(serverID string) []Gear {
 			Description: "Monitor and manage system packages, security updates, and pipx packages with rollback support",
 			Enabled:     false, // Disabled by default
 			Config:      json.RawMessage(`{"check_frequency_minutes":60,"auto_security_updates":false,"auto_reboot":false,"alert_on_available":true,"alert_threshold":0,"security_alert_threshold":0,"create_snapshot_before":true,"show_pipx":true,"history_retention_days":90}`),
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		},
+		{
+			ServerID:    serverID,
+			Name:        GearContainers,
+			DisplayName: "Containers",
+			Description: "Monitor and manage Docker containers and Compose stacks",
+			Enabled:     false, // Disabled by default
+			Config:      json.RawMessage(`{"stats_interval":10}`),
 			CreatedAt:   now,
 			UpdatedAt:   now,
 		},

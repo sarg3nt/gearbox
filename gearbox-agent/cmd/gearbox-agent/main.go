@@ -42,6 +42,7 @@ import (
 
 	// Import plugins - blank identifier triggers init() registration
 	_ "github.com/sarg3nt/gearbox-agent/internal/gears/certs"
+	_ "github.com/sarg3nt/gearbox-agent/internal/gears/containers"
 	_ "github.com/sarg3nt/gearbox-agent/internal/gears/haproxy"
 	_ "github.com/sarg3nt/gearbox-agent/internal/gears/logs"
 	_ "github.com/sarg3nt/gearbox-agent/internal/gears/metrics"
