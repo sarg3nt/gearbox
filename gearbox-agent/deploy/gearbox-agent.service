@@ -17,6 +17,10 @@ Environment=HOME=/root
 Environment=HAPROXY_AGENT_LISTEN=0.0.0.0:8405
 Environment=HAPROXY_AGENT_DATA_DIR=/var/lib/gearbox-agent
 Environment=HAPROXY_AGENT_LOG_LEVEL=info
+# pipx derives its log dir from XDG_STATE_HOME ($XDG_STATE_HOME/pipx/log).
+# Redirect to /tmp so ProtectHome=read-only doesn't cause pipx to crash before
+# listing packages. PrivateTmp=true ensures cleanup on service stop.
+Environment=XDG_STATE_HOME=/tmp/xdg-state
 
 # Optional: Load additional environment from file
 EnvironmentFile=-/etc/default/gearbox-agent
