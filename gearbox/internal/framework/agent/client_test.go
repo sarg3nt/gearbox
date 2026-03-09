@@ -2,6 +2,7 @@ package agent
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -920,5 +921,382 @@ func TestRestoreFirewallConfig(t *testing.T) {
 
 	if !resp.Success {
 		t.Error("expected success for restore")
+	}
+}
+
+func TestListUpdateLogs(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/system/updates/logs" {
+			t.Errorf("expected path /api/v1/system/updates/logs, got %s", r.URL.Path)
+		}
+		if r.Method != "GET" {
+			t.Errorf("expected GET method, got %s", r.Method)
+		}
+
+		// Verify limit query parameter
+		limit := r.URL.Query().Get("limit")
+		if limit != "10" {
+			t.Errorf("expected limit=10, got %s", limit)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(UpdateLogsResponse{
+			Logs: []UpdateLogEntry{
+				{
+					ID:          "log-1",
+					Type:        "install",
+					Status:      "completed",
+					StartedAt:   "2024-01-15T10:30:45Z",
+					CompletedAt: "2024-01-15T10:35:00Z",
+					Packages:    []string{"nginx", "curl"},
+					ExitCode:    0,
+				},
+				{
+					ID:        "log-2",
+					Type:      "check",
+					Status:    "completed",
+					StartedAt: "2024-01-15T09:00:00Z",
+					ExitCode:  0,
+				},
+			},
+			Count: 2,
+		})
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-key")
+	resp, err := client.ListUpdateLogs(10)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp.Count != 2 {
+		t.Errorf("expected count 2, got %d", resp.Count)
+	}
+	if len(resp.Logs) != 2 {
+		t.Fatalf("expected 2 logs, got %d", len(resp.Logs))
+	}
+	if resp.Logs[0].ID != "log-1" {
+		t.Errorf("expected first log ID 'log-1', got %s", resp.Logs[0].ID)
+	}
+	if resp.Logs[0].Type != "install" {
+		t.Errorf("expected type 'install', got %s", resp.Logs[0].Type)
+	}
+	if len(resp.Logs[0].Packages) != 2 {
+		t.Errorf("expected 2 packages, got %d", len(resp.Logs[0].Packages))
+	}
+}
+
+func TestListUpdateLogs_Empty(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(UpdateLogsResponse{
+			Logs:  []UpdateLogEntry{},
+			Count: 0,
+		})
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-key")
+	resp, err := client.ListUpdateLogs(0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp.Count != 0 {
+		t.Errorf("expected count 0, got %d", resp.Count)
+	}
+	if len(resp.Logs) != 0 {
+		t.Errorf("expected 0 logs, got %d", len(resp.Logs))
+	}
+}
+
+func TestListUpdateLogs_ServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-key")
+	_, err := client.ListUpdateLogs(10)
+	if err == nil {
+		t.Fatal("expected error for server error response")
+	}
+}
+
+func TestGetUpdateLog(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The path should be /api/v1/system/updates/logs/<id>
+		expectedPrefix := "/api/v1/system/updates/logs/"
+		if !strings.HasPrefix(r.URL.Path, expectedPrefix) {
+			t.Errorf("expected path prefix %s, got %s", expectedPrefix, r.URL.Path)
+		}
+
+		logID := strings.TrimPrefix(r.URL.Path, expectedPrefix)
+		if logID != "test-log-id" {
+			t.Errorf("expected log ID 'test-log-id', got %s", logID)
+		}
+
+		if r.Method != "GET" {
+			t.Errorf("expected GET method, got %s", r.Method)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(UpdateLogEntry{
+			ID:          "test-log-id",
+			Type:        "install",
+			Status:      "completed",
+			StartedAt:   "2024-01-15T10:30:45Z",
+			CompletedAt: "2024-01-15T10:35:00Z",
+			Packages:    []string{"nginx"},
+			ExitCode:    0,
+			Output:      "Installing nginx...\nDone.\n",
+		})
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-key")
+	log, err := client.GetUpdateLog("test-log-id")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if log.ID != "test-log-id" {
+		t.Errorf("expected ID 'test-log-id', got %s", log.ID)
+	}
+	if log.Output != "Installing nginx...\nDone.\n" {
+		t.Errorf("expected output to match, got %s", log.Output)
+	}
+	if log.ExitCode != 0 {
+		t.Errorf("expected exit code 0, got %d", log.ExitCode)
+	}
+}
+
+func TestGetUpdateLog_NotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "log not found", http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-key")
+	_, err := client.GetUpdateLog("nonexistent")
+	if err == nil {
+		t.Fatal("expected error for not found response")
+	}
+}
+
+func TestGetUpdateLog_FailedOperation(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(UpdateLogEntry{
+			ID:          "failed-log",
+			Type:        "install",
+			Status:      "failed",
+			StartedAt:   "2024-01-15T10:30:45Z",
+			CompletedAt: "2024-01-15T10:31:00Z",
+			ExitCode:    1,
+			Error:       "apt install failed: exit status 1",
+			Output:      "E: Unable to locate package broken-pkg\n",
+		})
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-key")
+	log, err := client.GetUpdateLog("failed-log")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if log.Status != "failed" {
+		t.Errorf("expected status 'failed', got %s", log.Status)
+	}
+	if log.ExitCode != 1 {
+		t.Errorf("expected exit code 1, got %d", log.ExitCode)
+	}
+	if log.Error != "apt install failed: exit status 1" {
+		t.Errorf("expected error message, got %s", log.Error)
+	}
+}
+
+func TestUpdateLogEntry_JSONRoundtrip(t *testing.T) {
+	original := UpdateLogEntry{
+		ID:           "roundtrip-test",
+		Type:         "install",
+		Status:       "completed",
+		StartedAt:    "2024-01-15T10:30:45Z",
+		CompletedAt:  "2024-01-15T10:35:00Z",
+		Packages:     []string{"nginx", "curl", "vim"},
+		SecurityOnly: true,
+		ExitCode:     0,
+		Output:       "line 1\nline 2\nline 3\n",
+	}
+
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("failed to marshal: %v", err)
+	}
+
+	var parsed UpdateLogEntry
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if parsed.ID != original.ID {
+		t.Errorf("ID mismatch: %s vs %s", parsed.ID, original.ID)
+	}
+	if parsed.SecurityOnly != original.SecurityOnly {
+		t.Error("SecurityOnly mismatch")
+	}
+	if len(parsed.Packages) != len(original.Packages) {
+		t.Errorf("Packages length mismatch: %d vs %d", len(parsed.Packages), len(original.Packages))
+	}
+	if parsed.Output != original.Output {
+		t.Error("Output mismatch")
+	}
+}
+
+func TestUpdateLogsResponse_JSONRoundtrip(t *testing.T) {
+	original := UpdateLogsResponse{
+		Logs: []UpdateLogEntry{
+			{ID: "1", Type: "check", Status: "completed"},
+			{ID: "2", Type: "install", Status: "failed", Error: "test"},
+		},
+		Count: 2,
+	}
+
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("failed to marshal: %v", err)
+	}
+
+	var parsed UpdateLogsResponse
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if parsed.Count != 2 {
+		t.Errorf("expected count 2, got %d", parsed.Count)
+	}
+	if len(parsed.Logs) != 2 {
+		t.Errorf("expected 2 logs, got %d", len(parsed.Logs))
+	}
+}
+
+// TestHTTPErrorPlainText_doRequest verifies that doRequest preserves the
+// actual error message when the agent returns a plain-text error response
+// (via http.Error) instead of JSON.
+//
+// BUG: The agent's handlers use http.Error() which sends plain text, e.g.:
+//
+//	"Failed to trigger update check: apt update failed: exit status 100\n"
+//
+// But the client only tried to parse {"error":"..."} JSON. When JSON parse
+// failed, it fell through to a generic "HTTP 500: Internal Server Error",
+// losing the actual error message.
+func TestHTTPErrorPlainText_doRequest(t *testing.T) {
+	tests := []struct {
+		name           string
+		statusCode     int
+		body           string
+		contentType    string
+		wantSubstring  string
+		wantNotContain string
+	}{
+		{
+			name:          "plain text 500 from http.Error",
+			statusCode:    http.StatusInternalServerError,
+			body:          "apt update failed: exit status 100\n",
+			contentType:   "text/plain; charset=utf-8",
+			wantSubstring: "apt update failed: exit status 100",
+		},
+		{
+			name:          "plain text 404",
+			statusCode:    http.StatusNotFound,
+			body:          "snapshot not found\n",
+			contentType:   "text/plain; charset=utf-8",
+			wantSubstring: "snapshot not found",
+		},
+		{
+			name:          "json error field preserved",
+			statusCode:    http.StatusInternalServerError,
+			body:          `{"error":"connection refused"}`,
+			contentType:   "application/json",
+			wantSubstring: "connection refused",
+		},
+		{
+			name:          "json message field preserved",
+			statusCode:    http.StatusInternalServerError,
+			body:          `{"success":false,"message":"disk full"}`,
+			contentType:   "application/json",
+			wantSubstring: "disk full",
+		},
+		{
+			name:           "plain text not replaced by generic message",
+			statusCode:     http.StatusInternalServerError,
+			body:           "apt update failed: E: Could not open lock file\n",
+			contentType:    "text/plain; charset=utf-8",
+			wantSubstring:  "apt update failed",
+			wantNotContain: "HTTP 500",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", tt.contentType)
+				w.WriteHeader(tt.statusCode)
+				fmt.Fprint(w, tt.body)
+			}))
+			defer server.Close()
+
+			client := NewClient(server.URL, "test-key")
+			_, err := client.GetInfo()
+			if err == nil {
+				t.Fatal("expected error")
+			}
+
+			apiErr, ok := IsAPIError(err)
+			if !ok {
+				t.Fatalf("expected APIError, got %T: %v", err, err)
+			}
+
+			if !strings.Contains(apiErr.Message, tt.wantSubstring) {
+				t.Errorf("expected message to contain %q, got %q", tt.wantSubstring, apiErr.Message)
+			}
+
+			if tt.wantNotContain != "" && strings.Contains(apiErr.Message, tt.wantNotContain) {
+				t.Errorf("expected message NOT to contain %q, got %q", tt.wantNotContain, apiErr.Message)
+			}
+		})
+	}
+}
+
+// TestHTTPErrorPlainText_doRequestLongRunning verifies the same fix applies
+// to the long-running request path used by TriggerUpdateCheck.
+func TestHTTPErrorPlainText_doRequestLongRunning(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Simulate what the agent does: http.Error(w, msg, 500)
+		http.Error(w, "apt update failed: exit status 100", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-key")
+	// TriggerUpdateCheck uses doRequestLongRunning
+	_, err := client.TriggerUpdateCheck()
+	if err == nil {
+		t.Fatal("expected error from TriggerUpdateCheck")
+	}
+
+	apiErr, ok := IsAPIError(err)
+	if !ok {
+		t.Fatalf("expected APIError, got %T: %v", err, err)
+	}
+
+	if !strings.Contains(apiErr.Message, "apt update failed") {
+		t.Errorf("expected message to contain actual error, got %q", apiErr.Message)
+	}
+
+	if strings.Contains(apiErr.Message, "HTTP 500") {
+		t.Errorf("expected actual error message, not generic 'HTTP 500', got %q", apiErr.Message)
 	}
 }

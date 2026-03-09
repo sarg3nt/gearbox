@@ -30,13 +30,14 @@ const (
 	// EventCertificatesUpdated is emitted periodically with certificate metrics.
 	EventCertificatesUpdated EventType = "certificates.updated"
 
-	// EventAptStarted is emitted when an apt operation begins.
+	// EventAptStarted is emitted when a package manager operation begins.
+	// Kept as "apt.started" for backwards compatibility with existing dashboard clients.
 	EventAptStarted EventType = "apt.started"
-	// EventAptOutput is emitted for each line of apt stdout/stderr.
+	// EventAptOutput is emitted for each line of package manager stdout/stderr.
 	EventAptOutput EventType = "apt.output"
-	// EventAptCompleted is emitted when an apt operation finishes successfully.
+	// EventAptCompleted is emitted when a package manager operation finishes successfully.
 	EventAptCompleted EventType = "apt.completed"
-	// EventAptFailed is emitted when an apt operation fails.
+	// EventAptFailed is emitted when a package manager operation fails.
 	EventAptFailed EventType = "apt.failed"
 )
 

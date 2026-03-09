@@ -52,6 +52,12 @@ func (h *Handler) LoginPost(w http.ResponseWriter, r *http.Request) {
 	password := r.FormValue("password")
 	returnURL := r.FormValue("return")
 
+	// Validate field lengths
+	if len(email) > 254 || len(password) > 128 {
+		http.Redirect(w, r, "/login?error=Invalid+credentials", http.StatusSeeOther)
+		return
+	}
+
 	// Attempt login
 	user, err := h.authManager.Login(w, r, email, password)
 	if err != nil {

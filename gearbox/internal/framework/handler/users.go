@@ -43,6 +43,12 @@ func (h *Handler) RequestAccountPost(w http.ResponseWriter, r *http.Request) {
 	confirmPassword := r.FormValue("confirm_password")
 	reason := r.FormValue("reason")
 
+	// Validate field lengths
+	if len(firstName) > 100 || len(lastName) > 100 || len(email) > 254 || len(phoneNumber) > 20 || len(password) > 128 || len(reason) > 500 {
+		http.Redirect(w, r, "/request-account?error=One+or+more+fields+exceed+maximum+length", http.StatusSeeOther)
+		return
+	}
+
 	// Validate email
 	if err := auth.ValidateEmail(email); err != nil {
 		http.Redirect(w, r, "/request-account?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
@@ -132,6 +138,10 @@ func (h *Handler) ForgotPasswordPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	email := r.FormValue("email")
+	if len(email) > 254 {
+		http.Redirect(w, r, "/forgot-password?error=Email+exceeds+maximum+length", http.StatusSeeOther)
+		return
+	}
 
 	// Request password reset (this won't reveal if user exists)
 	token, user, err := h.authManager.RequestPasswordReset(email)
@@ -194,6 +204,11 @@ func (h *Handler) ResetPasswordPost(w http.ResponseWriter, r *http.Request) {
 	token := r.FormValue("token")
 	password := r.FormValue("password")
 	confirmPassword := r.FormValue("confirm_password")
+
+	if len(password) > 128 {
+		http.Redirect(w, r, "/reset-password?token="+url.QueryEscape(token)+"&error=Password+exceeds+maximum+length", http.StatusSeeOther)
+		return
+	}
 
 	if password != confirmPassword {
 		http.Redirect(w, r, "/reset-password?token="+url.QueryEscape(token)+"&error=Passwords+do+not+match", http.StatusSeeOther)
@@ -268,6 +283,12 @@ func (h *Handler) CompleteAccountSetupPost(w http.ResponseWriter, r *http.Reques
 	lastName := strings.TrimSpace(r.FormValue("last_name"))
 	phoneNumber := strings.TrimSpace(r.FormValue("phone_number"))
 
+	// Validate field lengths
+	if len(firstName) > 100 || len(lastName) > 100 || len(newEmail) > 254 || len(phoneNumber) > 20 || len(newPassword) > 128 {
+		http.Redirect(w, r, "/settings/complete-account-setup?error=One+or+more+fields+exceed+maximum+length", http.StatusSeeOther)
+		return
+	}
+
 	// Validate password match
 	if newPassword != confirmPassword {
 		http.Redirect(w, r, "/settings/complete-account-setup?error=Passwords+do+not+match", http.StatusSeeOther)
@@ -300,12 +321,10 @@ func (h *Handler) CompleteAccountSetupPost(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Set password and email (doesn't require current password)
-	h.logger.Info("🔧 DEBUG: Setting password and email", "user_id", user.ID, "new_email", newEmail)
 	if err := h.authManager.SetPasswordAndEmail(r, user.ID, newPassword, newEmail); err != nil {
 		http.Redirect(w, r, "/settings/complete-account-setup?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
-	h.logger.Info("✅ DEBUG: Password and email set successfully")
 
 	// SECURITY: Auto-delete admin credentials file after successful setup
 	credentialsFile := "data/admin-credentials.txt" //#nosec G101 -- Not a credential; this is a file path constant
@@ -322,23 +341,19 @@ func (h *Handler) CompleteAccountSetupPost(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Get updated user record (with new email and cleared MustChangePassword flag)
-	h.logger.Info("🔍 DEBUG: Fetching updated user record", "user_id", user.ID)
 	updatedUser, err := h.authManager.GetDB().GetUserByID(user.ID)
 	if err != nil {
 		h.logger.Error("Failed to get updated user after account setup", "error", err)
 		http.Redirect(w, r, "/settings/complete-account-setup?error=Setup+completed+but+session+error", http.StatusSeeOther)
 		return
 	}
-	h.logger.Info("📋 DEBUG: Updated user fetched", "must_change_password", updatedUser.MustChangePassword, "email", updatedUser.Email)
 
 	// Create a fresh session with the updated user
-	h.logger.Info("🔐 DEBUG: Creating fresh session for updated user")
 	if err := h.authManager.CreateSessionForUser(w, r, updatedUser); err != nil {
-		h.logger.Error("❌ FAILED to create session after account setup", "error", err)
+		h.logger.Error("failed to create session after account setup", "error", err)
 		http.Redirect(w, r, "/login?message=Setup+complete.+Please+log+in.", http.StatusSeeOther)
 		return
 	}
-	h.logger.Info("✅ DEBUG: Session created successfully, redirecting to /")
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
@@ -359,6 +374,11 @@ func (h *Handler) ChangePasswordPost(w http.ResponseWriter, r *http.Request) {
 	currentPassword := r.FormValue("current_password")
 	newPassword := r.FormValue("new_password")
 	confirmPassword := r.FormValue("confirm_password")
+
+	if len(currentPassword) > 128 || len(newPassword) > 128 {
+		http.Redirect(w, r, "/settings/change-password?error=Password+exceeds+maximum+length", http.StatusSeeOther)
+		return
+	}
 
 	if newPassword != confirmPassword {
 		http.Redirect(w, r, "/settings/change-password?error=Passwords+do+not+match", http.StatusSeeOther)
@@ -410,6 +430,12 @@ func (h *Handler) ProfileUpdatePost(w http.ResponseWriter, r *http.Request) {
 
 	newEmail := strings.TrimSpace(r.FormValue("email"))
 	oldEmail := user.Email
+
+	// Validate field lengths
+	if len(r.FormValue("first_name")) > 100 || len(r.FormValue("last_name")) > 100 || len(newEmail) > 254 || len(r.FormValue("phone_number")) > 20 {
+		http.Redirect(w, r, "/settings/profile?error=One+or+more+fields+exceed+maximum+length", http.StatusSeeOther)
+		return
+	}
 
 	// Validate email if it changed
 	if newEmail != oldEmail {
@@ -760,6 +786,12 @@ func (h *Handler) AdminUpdateUserPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate field lengths
+	if len(r.FormValue("first_name")) > 100 || len(r.FormValue("last_name")) > 100 || len(r.FormValue("email")) > 254 || len(r.FormValue("phone_number")) > 20 {
+		http.Redirect(w, r, fmt.Sprintf("/settings/users/%s?error=One+or+more+fields+exceed+maximum+length", userID), http.StatusSeeOther)
+		return
+	}
+
 	// Update fields from form
 	newEmail := strings.TrimSpace(r.FormValue("email"))
 	if newEmail == "" {
@@ -962,6 +994,12 @@ func (h *Handler) AdminSMTPSettingsPost(w http.ResponseWriter, r *http.Request) 
 
 	if err := r.ParseForm(); err != nil {
 		http.Redirect(w, r, "/settings/smtp?error=Invalid+request", http.StatusSeeOther)
+		return
+	}
+
+	// Validate field lengths
+	if len(r.FormValue("host")) > 253 || len(r.FormValue("username")) > 254 || len(r.FormValue("password")) > 256 || len(r.FormValue("from_address")) > 254 || len(r.FormValue("from_name")) > 100 {
+		http.Redirect(w, r, "/settings/smtp?error=One+or+more+fields+exceed+maximum+length", http.StatusSeeOther)
 		return
 	}
 

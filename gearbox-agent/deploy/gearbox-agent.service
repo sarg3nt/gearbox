@@ -13,9 +13,14 @@ Group=root
 ExecStart=/usr/local/bin/gearbox-agent
 
 # Environment variables (can be overridden in /etc/default/gearbox-agent)
+Environment=HOME=/root
 Environment=HAPROXY_AGENT_LISTEN=0.0.0.0:8405
 Environment=HAPROXY_AGENT_DATA_DIR=/var/lib/gearbox-agent
 Environment=HAPROXY_AGENT_LOG_LEVEL=info
+# pipx derives its log dir from XDG_STATE_HOME ($XDG_STATE_HOME/pipx/log).
+# Redirect to /tmp so ProtectHome=read-only doesn't cause pipx to crash before
+# listing packages. PrivateTmp=true ensures cleanup on service stop.
+Environment=XDG_STATE_HOME=/tmp/xdg-state
 
 # Optional: Load additional environment from file
 EnvironmentFile=-/etc/default/gearbox-agent
@@ -25,10 +30,14 @@ Restart=always
 RestartSec=5
 
 # Security hardening
+# Note: ProtectSystem=strict cannot be used because gearbox-agent needs write
+# access to /etc (HAProxy config, certificates) and /var (package management,
+# data dir). ProtectHome=read-only is set since the agent runs as root and only
+# needs read access to home directories.
 NoNewPrivileges=false
-ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/var/lib/gearbox-agent /etc/haproxy /etc/letsencrypt
+PrivateTmp=true
+ProtectKernelTunables=true
 
 # Logging
 StandardOutput=journal

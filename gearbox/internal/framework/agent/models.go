@@ -670,6 +670,7 @@ type Package struct {
 	Repository       string `json:"repository"`
 	Size             int64  `json:"size_bytes"`
 	ChangelogURL     string `json:"changelog_url"`
+	PackageURL       string `json:"package_url,omitempty"`
 }
 
 // PackageListResponse represents a list of packages.
@@ -729,6 +730,26 @@ type UpdateHistoryResponse struct {
 	Count   int                  `json:"count"`
 }
 
+// UpdateLogEntry represents a persisted update operation log.
+type UpdateLogEntry struct {
+	ID           string   `json:"id"`
+	Type         string   `json:"type"`
+	Status       string   `json:"status"`
+	StartedAt    string   `json:"started_at"`
+	CompletedAt  string   `json:"completed_at,omitempty"`
+	Packages     []string `json:"packages,omitempty"`
+	SecurityOnly bool     `json:"security_only,omitempty"`
+	ExitCode     int      `json:"exit_code"`
+	Error        string   `json:"error,omitempty"`
+	Output       string   `json:"output,omitempty"`
+}
+
+// UpdateLogsResponse represents a list of update logs.
+type UpdateLogsResponse struct {
+	Logs  []UpdateLogEntry `json:"logs"`
+	Count int              `json:"count"`
+}
+
 // RebootRequiredResponse represents reboot status.
 type RebootRequiredResponse struct {
 	Required bool     `json:"required"`
@@ -782,12 +803,55 @@ type RestoreSnapshotResponse struct {
 	Message string `json:"message"`
 }
 
+// PackageChange represents a version change for a single package in a snapshot preview.
+type PackageChange struct {
+	Package        string `json:"package"`
+	CurrentVersion string `json:"current_version"`
+	TargetVersion  string `json:"target_version"`
+}
+
+// SnapshotPreviewResponse represents the changes that would be applied by restoring a snapshot.
+type SnapshotPreviewResponse struct {
+	SnapshotID   string          `json:"snapshot_id"`
+	HasVersions  bool            `json:"has_versions"`
+	Downgrades   []PackageChange `json:"downgrades"`
+	Installs     []string        `json:"installs"`
+	Removals     []string        `json:"removals"`
+	TotalChanges int             `json:"total_changes"`
+}
+
 // InstalledPackage represents a package that can be installed.
 type InstalledPackage struct {
-	Name         string `json:"name"`
-	Version      string `json:"version"`
-	Architecture string `json:"architecture"`
-	AutoInstall  bool   `json:"auto_install"`
+	Name             string `json:"name"`
+	Version          string `json:"version"`
+	Architecture     string `json:"architecture"`
+	Description      string `json:"description,omitempty"`
+	AutoInstall      bool   `json:"auto_install"`
+	Installed        bool   `json:"installed,omitempty"`
+	UpdateAvailable  bool   `json:"update_available,omitempty"`
+	AvailableVersion string `json:"available_version,omitempty"`
+	IsSecurityUpdate bool   `json:"is_security_update,omitempty"`
+	IsHeld           bool   `json:"is_held,omitempty"`
+	PackageURL       string `json:"package_url,omitempty"`
+}
+
+// HoldPackageRequest represents a package hold/unhold request.
+type HoldPackageRequest struct {
+	Name string `json:"name"`
+}
+
+// HoldPackageResponse represents the result of a hold/unhold operation.
+type HoldPackageResponse struct {
+	Success bool   `json:"success"`
+	Name    string `json:"name"`
+	Held    bool   `json:"held"`
+}
+
+
+// InstalledPackagesResponse wraps the list of installed packages.
+type InstalledPackagesResponse struct {
+	Packages []InstalledPackage `json:"packages"`
+	Count    int                `json:"count"`
 }
 
 // PackageSearchResponse represents package search results.
@@ -816,10 +880,12 @@ type RemovePackageRequest struct {
 
 // PipxPackage represents a pipx-installed Python package.
 type PipxPackage struct {
-	Name       string   `json:"name"`
-	Version    string   `json:"version"`
-	PythonPath string   `json:"python_path,omitempty"`
-	Apps       []string `json:"apps,omitempty"`
+	Name            string   `json:"name"`
+	Version         string   `json:"version"`
+	LatestVersion   string   `json:"latest_version,omitempty"`
+	UpdateAvailable bool     `json:"update_available,omitempty"`
+	PythonPath      string   `json:"python_path,omitempty"`
+	Apps            []string `json:"apps,omitempty"`
 }
 
 // PipxStatusResponse represents pipx availability status.
@@ -839,6 +905,19 @@ type PipxPackageResponse struct {
 	Success bool   `json:"success"`
 	Message string `json:"message"`
 	Package string `json:"package"`
+}
+
+// PipStatusResponse represents pip availability status.
+type PipStatusResponse struct {
+	Available bool          `json:"available"`
+	Packages  []PipxPackage `json:"packages,omitempty"`
+	Count     int           `json:"count"`
+}
+
+// PythonToolsStatusResponse represents combined pip + pipx status.
+type PythonToolsStatusResponse struct {
+	Pip  PipStatusResponse  `json:"pip"`
+	Pipx PipxStatusResponse `json:"pipx"`
 }
 
 // UnattendedConfigResponse represents unattended-upgrades configuration.

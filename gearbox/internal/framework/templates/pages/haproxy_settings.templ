@@ -498,6 +498,8 @@ templ haProxyBoxForm(user *models.User, server *database.BoxDB, isEdit bool, err
 							required
 							class="mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-slate-700 dark:text-white sm:text-sm px-3 py-2"
 							placeholder="My Server"
+							maxlength="100"
+							data-charlimit="100"
 						/>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">A friendly name for this box</p>
 					</div>
@@ -516,6 +518,7 @@ templ haProxyBoxForm(user *models.User, server *database.BoxDB, isEdit bool, err
 							required
 							class="mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-slate-700 dark:text-white sm:text-sm px-3 py-2"
 							placeholder="box-01"
+							maxlength="50"
 						/>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 							Unique identifier (lowercase, no spaces)
@@ -551,6 +554,8 @@ templ haProxyBoxForm(user *models.User, server *database.BoxDB, isEdit bool, err
 							}
 							class="mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-slate-700 dark:text-white sm:text-sm px-3 py-2"
 							placeholder="e.g., Data Center 1, Rack 42"
+							maxlength="200"
+							data-charlimit="200"
 						/>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Physical or logical location of this box</p>
 					</div>
@@ -562,6 +567,8 @@ templ haProxyBoxForm(user *models.User, server *database.BoxDB, isEdit bool, err
 							id="notes"
 							name="notes"
 							rows="3"
+							maxlength="1000"
+							data-charlimit="1000"
 							class="mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-slate-700 dark:text-white sm:text-sm px-3 py-2"
 							placeholder="Additional notes about this box..."
 						>if server != nil {
@@ -589,6 +596,7 @@ templ haProxyBoxForm(user *models.User, server *database.BoxDB, isEdit bool, err
 							required
 							class="mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-slate-700 dark:text-white sm:text-sm px-3 py-2"
 							placeholder="https://server.example.com:8405"
+							maxlength="2048"
 						/>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">URL to the Gearbox Agent API (e.g., https://host:8405)</p>
 					</div>
@@ -608,6 +616,7 @@ templ haProxyBoxForm(user *models.User, server *database.BoxDB, isEdit bool, err
 									placeholder="Enter API key"
 									required
 								}
+								maxlength="256"
 								class="flex-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-slate-700 dark:text-white sm:text-sm px-3 py-2"
 							/>
 							<button

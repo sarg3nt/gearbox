@@ -168,6 +168,15 @@ func validateBackupPath(path string) error {
 	if strings.Contains(path, "'") {
 		return fmt.Errorf("path must not contain single quotes")
 	}
+	// Disallow SQL comment sequences that could break out of the VACUUM INTO
+	// string context even without quotes.
+	if strings.Contains(path, "--") {
+		return fmt.Errorf("path must not contain double-dash sequences")
+	}
+	// Disallow path traversal via consecutive dots.
+	if strings.Contains(path, "..") {
+		return fmt.Errorf("path must not contain consecutive dots")
+	}
 	if !validBackupPathRe.MatchString(path) {
 		return fmt.Errorf("path contains invalid characters")
 	}

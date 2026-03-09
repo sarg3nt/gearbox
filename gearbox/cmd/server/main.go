@@ -152,9 +152,10 @@ func main() {
 	}
 	logger.Info("authentication manager initialized")
 
-	// Enable secure cookies if TLS is configured
-	if cfg.TLSCertPath != "" && cfg.TLSKeyPath != "" {
-		authManager.SetSecure(true)
+	// Secure cookies are enabled by default; disable only when TLS is not configured
+	if cfg.TLSCertPath == "" || cfg.TLSKeyPath == "" {
+		authManager.SetSecure(false)
+		logger.Warn("TLS not configured — session cookies will be sent over HTTP (insecure)")
 	}
 
 	// Initialize email service
@@ -716,16 +717,29 @@ func main() {
 			r.Get("/os-updates/snapshots", h.APIListSnapshotsHandler)
 			r.Post("/os-updates/snapshots", h.APICreateSnapshotHandler)
 			r.Post("/os-updates/snapshots/restore", h.APIRestoreSnapshotHandler)
+			r.Get("/os-updates/snapshots/{id}/preview", h.APIPreviewSnapshotHandler)
 			r.Delete("/os-updates/snapshots/{id}", h.APIDeleteSnapshotHandler)
+			r.Get("/os-updates/packages/installed", h.APIListInstalledPackagesHandler)
 			r.Get("/os-updates/packages/search", h.APISearchPackagesHandler)
 			r.Post("/os-updates/packages/install", h.APIInstallPackageHandler)
 			r.Post("/os-updates/packages/remove", h.APIRemovePackageHandler)
+			r.Post("/os-updates/packages/hold", h.APIHoldPackageHandler)
+			r.Post("/os-updates/packages/unhold", h.APIUnholdPackageHandler)
 			r.Get("/os-updates/pipx", h.APIPipxStatusHandler)
 			r.Post("/os-updates/pipx/install", h.APIPipxInstallHandler)
 			r.Post("/os-updates/pipx/uninstall", h.APIPipxUninstallHandler)
 			r.Post("/os-updates/pipx/upgrade", h.APIPipxUpgradeHandler)
+			r.Get("/os-updates/pip", h.APIPipStatusHandler)
+			r.Post("/os-updates/pip/install", h.APIPipInstallHandler)
+			r.Post("/os-updates/pip/uninstall", h.APIPipUninstallHandler)
+			r.Post("/os-updates/pip/upgrade", h.APIPipUpgradeHandler)
+			r.Get("/os-updates/python-tools/versions", h.APIPythonToolsVersionsHandler)
+			r.Get("/os-updates/pypi-lookup", h.APIPyPILookupHandler)
 			r.Get("/os-updates/unattended", h.APIUnattendedConfigHandler)
 			r.Post("/os-updates/unattended", h.APIConfigureUnattendedHandler)
+			r.Get("/os-updates/operation/{id}", h.APIGetOperationHandler)
+			r.Get("/os-updates/logs", h.APIListUpdateLogsHandler)
+			r.Get("/os-updates/logs/{id}", h.APIGetUpdateLogHandler)
 		})
 	})
 
