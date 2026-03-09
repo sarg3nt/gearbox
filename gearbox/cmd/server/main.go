@@ -152,9 +152,10 @@ func main() {
 	}
 	logger.Info("authentication manager initialized")
 
-	// Enable secure cookies if TLS is configured
-	if cfg.TLSCertPath != "" && cfg.TLSKeyPath != "" {
-		authManager.SetSecure(true)
+	// Secure cookies are enabled by default; disable only when TLS is not configured
+	if cfg.TLSCertPath == "" || cfg.TLSKeyPath == "" {
+		authManager.SetSecure(false)
+		logger.Warn("TLS not configured — session cookies will be sent over HTTP (insecure)")
 	}
 
 	// Initialize email service

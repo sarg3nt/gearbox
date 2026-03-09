@@ -43,7 +43,7 @@ func NewManager(db *database.DB, sessionSecret string, timeout time.Duration, lo
 		Path:     "/",
 		MaxAge:   int(timeout.Seconds()),
 		HttpOnly: true,
-		Secure:   false, // Will be true if HTTPS is enabled
+		Secure:   true, // Default to secure; SetSecure(false) only for non-TLS dev environments
 		SameSite: http.SameSiteStrictMode,
 	}
 

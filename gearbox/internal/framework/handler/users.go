@@ -321,12 +321,10 @@ func (h *Handler) CompleteAccountSetupPost(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Set password and email (doesn't require current password)
-	h.logger.Info("🔧 DEBUG: Setting password and email", "user_id", user.ID, "new_email", newEmail)
 	if err := h.authManager.SetPasswordAndEmail(r, user.ID, newPassword, newEmail); err != nil {
 		http.Redirect(w, r, "/settings/complete-account-setup?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
-	h.logger.Info("✅ DEBUG: Password and email set successfully")
 
 	// SECURITY: Auto-delete admin credentials file after successful setup
 	credentialsFile := "data/admin-credentials.txt" //#nosec G101 -- Not a credential; this is a file path constant
@@ -343,23 +341,19 @@ func (h *Handler) CompleteAccountSetupPost(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Get updated user record (with new email and cleared MustChangePassword flag)
-	h.logger.Info("🔍 DEBUG: Fetching updated user record", "user_id", user.ID)
 	updatedUser, err := h.authManager.GetDB().GetUserByID(user.ID)
 	if err != nil {
 		h.logger.Error("Failed to get updated user after account setup", "error", err)
 		http.Redirect(w, r, "/settings/complete-account-setup?error=Setup+completed+but+session+error", http.StatusSeeOther)
 		return
 	}
-	h.logger.Info("📋 DEBUG: Updated user fetched", "must_change_password", updatedUser.MustChangePassword, "email", updatedUser.Email)
 
 	// Create a fresh session with the updated user
-	h.logger.Info("🔐 DEBUG: Creating fresh session for updated user")
 	if err := h.authManager.CreateSessionForUser(w, r, updatedUser); err != nil {
-		h.logger.Error("❌ FAILED to create session after account setup", "error", err)
+		h.logger.Error("failed to create session after account setup", "error", err)
 		http.Redirect(w, r, "/login?message=Setup+complete.+Please+log+in.", http.StatusSeeOther)
 		return
 	}
-	h.logger.Info("✅ DEBUG: Session created successfully, redirecting to /")
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
