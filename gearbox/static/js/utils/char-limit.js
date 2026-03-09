@@ -12,7 +12,6 @@
 function initCharLimit(el) {
     const limit = parseInt(el.getAttribute('data-charlimit'), 10);
     if (!limit || el._charLimitInit) return;
-    el._charLimitInit = true;
 
     el.maxLength = limit;
 
@@ -25,6 +24,10 @@ function initCharLimit(el) {
     // Guard against elements not yet inserted into the DOM (no parentElement).
     const parent = el.parentElement;
     if (!parent) return;
+
+    // Mark as initialized only after confirming the element is in the DOM,
+    // so callers can retry after insertion if the element wasn't ready yet.
+    el._charLimitInit = true;
     if (getComputedStyle(parent).position === 'static') {
         parent.style.position = 'relative';
     }
