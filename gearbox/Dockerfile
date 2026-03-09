@@ -20,7 +20,7 @@ RUN templ generate
 FROM golang:1.26-alpine AS go-builder
 
 # Install build dependencies
-RUN apk add --no-cache git ca-certificates tzdata
+RUN apk add --no-cache git
 
 WORKDIR /build
 
@@ -42,30 +42,22 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
     -o gearbox \
     ./cmd/server
 
+# Pre-create the default DatabasePath dir so distroless:nonroot (UID 65532) can
+# write to it on first run without a pre-chowned bind mount. Override
+# DATABASE_PATH if you mount the database elsewhere.
+RUN mkdir -p /data
+
 # Stage 3: Final runtime image
-FROM alpine:3.23@sha256:5b10f432ef3da1b8d4c7eb6c487f2f5a8f096bc91145e68878dd4a5019afde11
-
-# Install runtime dependencies
-RUN apk add --no-cache ca-certificates tzdata wget
-
-# Create non-root user
-RUN addgroup -g 1000 appuser && \
-    adduser -D -u 1000 -G appuser appuser
+FROM gcr.io/distroless/static-debian12:nonroot
 
 WORKDIR /app
 
 # Copy binary from builder (static files are embedded in the binary)
 COPY --from=go-builder /build/gearbox .
-
-# Switch to non-root user
-USER appuser
+COPY --from=go-builder --chown=65532:65532 /data /data
 
 # Expose port
 EXPOSE 3000
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD wget -q --spider http://localhost:3000/health || exit 1
 
 # Run the application
 ENTRYPOINT ["/app/gearbox"]

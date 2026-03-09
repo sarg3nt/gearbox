@@ -1,8 +1,8 @@
 # Stage 1: Build Go binary
 FROM golang:1.26-alpine AS go-builder
 
-# Install build dependencies (git for go modules, ca-certificates, tzdata for runtime)
-RUN apk add --no-cache git ca-certificates tzdata
+# Install build dependencies
+RUN apk add --no-cache git
 
 WORKDIR /build
 
@@ -24,34 +24,21 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
     -o gearbox-agent \
     ./cmd/gearbox-agent
 
+# Pre-create the default HAPROXY_AGENT_DATA_DIR so distroless:nonroot (UID 65532)
+# can write the API key on first run without a pre-chowned bind mount.
+RUN mkdir -p /var/lib/gearbox-agent
+
 # Stage 2: Final runtime image
-FROM alpine:3.23@sha256:25109184c71bdad752c8312a8623239686a9a2071e8825f20acb8f2198c3f659
-
-# Install runtime dependencies
-RUN apk add --no-cache ca-certificates tzdata
-
-# Create non-root user
-RUN addgroup -g 1000 appuser && \
-    adduser -D -u 1000 -G appuser appuser
+FROM gcr.io/distroless/static-debian12:nonroot
 
 WORKDIR /app
 
-# Create data directory with proper permissions
-RUN mkdir -p /var/lib/gearbox-agent && \
-    chown -R appuser:appuser /var/lib/gearbox-agent
-
 # Copy binary from builder
 COPY --from=go-builder /build/gearbox-agent .
-
-# Switch to non-root user
-USER appuser
+COPY --from=go-builder --chown=65532:65532 /var/lib/gearbox-agent /var/lib/gearbox-agent
 
 # Expose API port
 EXPOSE 8405
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD wget -q --spider --no-check-certificate https://localhost:8405/health || exit 1
 
 # Environment defaults (can be overridden)
 ENV HAPROXY_AGENT_LISTEN=0.0.0.0:8405 \
