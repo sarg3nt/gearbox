@@ -259,7 +259,7 @@ func (u *unsupportedPM) EnvVars() []string                               { retur
 
 func (u *unsupportedPM) HoldPackage(_ string) error                              { return errNotSupported(u.name) }
 func (u *unsupportedPM) UnholdPackage(_ string) error                            { return errNotSupported(u.name) }
-func (u *unsupportedPM) ListHeldPackages() ([]string, error)                     { return nil, nil }
+func (u *unsupportedPM) ListHeldPackages() ([]string, error)                     { return nil, errNotSupported(u.name) }
 
 // PackageURL returns a best-effort URL to the package info page for the given
 // package manager and package name. Returns empty string if no URL is known.

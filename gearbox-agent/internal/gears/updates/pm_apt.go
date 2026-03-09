@@ -603,6 +603,9 @@ func (a *aptPackageManager) parseUnattendedUpgradeOutput(output string) []string
 
 // HoldPackage marks a package as held using apt-mark, preventing upgrades.
 func (a *aptPackageManager) HoldPackage(name string) error {
+	if !isValidPackageName(name) {
+		return fmt.Errorf("invalid package name: %s", name)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "apt-mark", "hold", name)
@@ -614,6 +617,9 @@ func (a *aptPackageManager) HoldPackage(name string) error {
 
 // UnholdPackage removes the hold from a package using apt-mark.
 func (a *aptPackageManager) UnholdPackage(name string) error {
+	if !isValidPackageName(name) {
+		return fmt.Errorf("invalid package name: %s", name)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "apt-mark", "unhold", name)

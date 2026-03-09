@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -61,7 +62,9 @@ type AptRunner struct {
 // NewAptRunner creates a new apt runner.
 func NewAptRunner(eventBus *events.Bus) *AptRunner {
 	// Ensure log directory exists
-	_ = os.MkdirAll(updateLogsDir, 0750)
+	if err := os.MkdirAll(updateLogsDir, 0750); err != nil {
+		slog.Warn("failed to create update logs directory", "dir", updateLogsDir, "error", err)
+	}
 
 	runner := &AptRunner{
 		eventBus:   eventBus,

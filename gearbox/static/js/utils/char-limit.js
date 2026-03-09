@@ -21,9 +21,11 @@ function initCharLimit(el) {
     counter.className = 'char-limit-counter text-xs text-gray-400 dark:text-gray-500 absolute right-2 bottom-1 pointer-events-none select-none hidden';
     counter.style.lineHeight = '1';
 
-    // Ensure the parent has relative positioning for the counter
+    // Ensure the parent has relative positioning for the counter.
+    // Guard against elements not yet inserted into the DOM (no parentElement).
     const parent = el.parentElement;
-    if (parent && getComputedStyle(parent).position === 'static') {
+    if (!parent) return;
+    if (getComputedStyle(parent).position === 'static') {
         parent.style.position = 'relative';
     }
     // Insert counter after the input
