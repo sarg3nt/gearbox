@@ -631,6 +631,23 @@ templ haProxyBoxForm(user *models.User, server *database.BoxDB, isEdit bool, err
 							<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Leave blank to keep existing API key</p>
 						}
 					</div>
+					<div>
+						<label class="flex items-center">
+							<input
+								type="checkbox"
+								id="skip_tls_verify"
+								name="skip_tls_verify"
+								if server != nil && server.SkipTLSVerify {
+									checked
+								}
+								class="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 dark:bg-slate-700"
+							/>
+							<span class="ml-2 text-sm text-gray-700 dark:text-gray-300">Skip TLS Verification</span>
+						</label>
+						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+							Disable TLS certificate verification for this box (e.g., when the agent uses a self-signed certificate). Use with caution.
+						</p>
+					</div>
 				</div>
 			</div>
 			<!-- Form Actions -->
@@ -783,6 +800,8 @@ templ haProxyBoxForm(user *models.User, server *database.BoxDB, isEdit bool, err
 			formData.append('server_id', document.getElementById('server_id')?.value || '');
 			formData.append('agent_url', document.getElementById('agent_url')?.value || '');
 			formData.append('api_key', document.getElementById('api_key')?.value || '');
+			const skipTLS = document.getElementById('skip_tls_verify');
+			if (skipTLS && skipTLS.checked) { formData.append('skip_tls_verify', 'true'); }
 
 			try {
 				const response = await fetch('/settings/boxes/test', {

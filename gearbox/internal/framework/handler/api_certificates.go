@@ -44,7 +44,7 @@ func (h *Handler) APICertificatesHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	agentClient := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey)
+	agentClient := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey, serverConfig.SkipTLSVerify)
 	certsResp, err := agentClient.GetCertificates()
 	if err != nil {
 		apperrors.WriteHTTPError(w, h.logger, apperrors.Internal("get certificates", err))
@@ -81,7 +81,7 @@ func (h *Handler) APICertificateRefreshHandler(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	agentClient := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey)
+	agentClient := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey, serverConfig.SkipTLSVerify)
 	result, err := agentClient.RefreshCertificate(domain)
 	if err != nil {
 		apperrors.WriteHTTPError(w, h.logger, apperrors.Internal("refresh certificate", err))
@@ -118,7 +118,7 @@ func (h *Handler) APICertificateDownloadHandler(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	agentClient := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey)
+	agentClient := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey, serverConfig.SkipTLSVerify)
 	certData, filename, err := agentClient.DownloadCertificate(domain)
 	if err != nil {
 		apperrors.WriteHTTPError(w, h.logger, apperrors.Internal("download certificate", err))

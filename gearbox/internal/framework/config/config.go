@@ -22,7 +22,6 @@ var secretEnvVars = map[string]bool{
 	"WEBAUTHN_RP_DISPLAY":    false,
 	"WEBAUTHN_RP_ORIGINS":    false,
 	"AGENT_CA_CERT_PATH":     false,
-	"GEARBOX_INSECURE_TLS":   false,
 	"CSP_REPORT_URI":         false,
 	"CSP_EXTRA_SOURCES":      false,
 	"AGENT_ALLOWED_ORIGINS":  false,

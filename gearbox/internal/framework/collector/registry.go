@@ -76,7 +76,7 @@ func (r *Registry) AddCollector(serverConfig models.BoxConfig) error {
 	}
 
 	// Create Agent client
-	agentClient := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey)
+	agentClient := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey, serverConfig.SkipTLSVerify)
 
 	// Create collector manager with Agent client
 	manager := NewManager(
@@ -139,7 +139,7 @@ func (r *Registry) ReloadCollector(serverConfig models.BoxConfig) error {
 	}
 
 	// Create Agent client
-	agentClient := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey)
+	agentClient := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey, serverConfig.SkipTLSVerify)
 
 	// Create collector manager with Agent client
 	manager := NewManager(

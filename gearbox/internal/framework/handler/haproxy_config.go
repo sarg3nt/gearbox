@@ -95,13 +95,14 @@ func (h *Handler) HAProxyBoxCreatePost(w http.ResponseWriter, r *http.Request) {
 
 	// Parse form into server struct
 	server := &database.BoxDB{
-		BoxID:     strings.TrimSpace(r.FormValue("box_id")),
-		Name:      strings.TrimSpace(r.FormValue("name")),
-		Location:  strings.TrimSpace(r.FormValue("location")),
-		Notes:     strings.TrimSpace(r.FormValue("notes")),
-		AgentURL:  strings.TrimSpace(r.FormValue("agent_url")),
-		Enabled:   r.FormValue("enabled") == "on",
-		CreatedBy: &user.ID,
+		BoxID:         strings.TrimSpace(r.FormValue("box_id")),
+		Name:          strings.TrimSpace(r.FormValue("name")),
+		Location:      strings.TrimSpace(r.FormValue("location")),
+		Notes:         strings.TrimSpace(r.FormValue("notes")),
+		AgentURL:      strings.TrimSpace(r.FormValue("agent_url")),
+		Enabled:       r.FormValue("enabled") == "on",
+		SkipTLSVerify: r.FormValue("skip_tls_verify") == "on",
+		CreatedBy:     &user.ID,
 	}
 
 	// Validate required fields
@@ -230,6 +231,7 @@ func (h *Handler) HAProxyBoxUpdatePost(w http.ResponseWriter, r *http.Request) {
 	server.Notes = strings.TrimSpace(r.FormValue("notes"))
 	server.AgentURL = strings.TrimSpace(r.FormValue("agent_url"))
 	server.Enabled = r.FormValue("enabled") == "on"
+	server.SkipTLSVerify = r.FormValue("skip_tls_verify") == "on"
 
 	// Update API key if provided
 	apiKey := strings.TrimSpace(r.FormValue("api_key"))
@@ -450,8 +452,10 @@ func (h *Handler) HAProxyBoxTestConnectionPost(w http.ResponseWriter, r *http.Re
 
 	h.logger.Debug("test connection", "agent_url", agentURL)
 
+	skipTLSVerify := r.FormValue("skip_tls_verify") == "true" || r.FormValue("skip_tls_verify") == "on"
+
 	// Create Agent client and test connection
-	client := agent.NewClient(agentURL, apiKey)
+	client := agent.NewClient(agentURL, apiKey, skipTLSVerify)
 
 	// Step 1: Test health endpoint (no auth required)
 	_, err := client.Health()
@@ -569,7 +573,7 @@ func (h *Handler) HAProxyBoxLogSettingsPage(w http.ResponseWriter, r *http.Reque
 		encryptor, err := h.getEncryptor()
 		if err == nil {
 			apiKey, _ := encryptor.DecryptString(server.APIKeyEncrypted)
-			client := agent.NewClient(server.AgentURL, apiKey)
+			client := agent.NewClient(server.AgentURL, apiKey, server.SkipTLSVerify)
 			sourcesResp, err := client.GetLogSources()
 			if err == nil && sourcesResp != nil {
 				agentSources = sourcesResp.Sources
@@ -637,7 +641,7 @@ func (h *Handler) HAProxyBoxLogSettingsPost(w http.ResponseWriter, r *http.Reque
 		encryptor, err := h.getEncryptor()
 		if err == nil {
 			apiKey, _ := encryptor.DecryptString(server.APIKeyEncrypted)
-			client := agent.NewClient(server.AgentURL, apiKey)
+			client := agent.NewClient(server.AgentURL, apiKey, server.SkipTLSVerify)
 			sourcesResp, err := client.GetLogSources()
 			if err == nil && sourcesResp != nil {
 				for _, src := range sourcesResp.Sources {
@@ -682,7 +686,7 @@ func (h *Handler) renderLogSettingsWithError(w http.ResponseWriter, r *http.Requ
 		encryptor, err := h.getEncryptor()
 		if err == nil {
 			apiKey, _ := encryptor.DecryptString(server.APIKeyEncrypted)
-			client := agent.NewClient(server.AgentURL, apiKey)
+			client := agent.NewClient(server.AgentURL, apiKey, server.SkipTLSVerify)
 			sourcesResp, err := client.GetLogSources()
 			if err == nil && sourcesResp != nil {
 				agentSources = sourcesResp.Sources

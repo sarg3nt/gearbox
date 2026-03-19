@@ -41,7 +41,7 @@ func (h *Handler) APITrafficAnalysisHandler(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Get traffic data from agent
-	agentClient := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey)
+	agentClient := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey, serverConfig.SkipTLSVerify)
 	trafficData, err := agentClient.GetTraffic(1000, 25)
 	if err != nil {
 		apperrors.WriteHTTPError(w, h.logger, apperrors.Internal("get traffic data", err))
@@ -241,7 +241,7 @@ func (h *Handler) APITrafficNetworkHandler(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Get traffic data from agent
-	agentClient := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey)
+	agentClient := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey, serverConfig.SkipTLSVerify)
 	trafficData, err := agentClient.GetTraffic(100, 15)
 	if err != nil {
 		h.logger.Error("Failed to get traffic data for network view", "error", err)

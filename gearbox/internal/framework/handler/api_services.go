@@ -79,7 +79,7 @@ func (h *Handler) APIServicesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch from agent
-	agentClient := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey)
+	agentClient := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey, serverConfig.SkipTLSVerify)
 	servicesResp, err := agentClient.GetServices(svcNames)
 	if err != nil {
 		apperrors.WriteHTTPError(w, h.logger, apperrors.Internal("get services", err))
@@ -145,7 +145,7 @@ func (h *Handler) APIServiceControlHandler(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Forward to agent
-	agentClient := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey)
+	agentClient := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey, serverConfig.SkipTLSVerify)
 	resp, err := agentClient.ServiceControl(req.Service, req.Action)
 	if err != nil {
 		apperrors.WriteHTTPError(w, h.logger, apperrors.Internal("control service", err))
@@ -162,7 +162,7 @@ func (h *Handler) fetchServicesFromAgent(boxID string) (*agent.ServicesResponse,
 		return nil, apperrors.NotFound("server", nil)
 	}
 
-	agentClient := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey)
+	agentClient := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey, serverConfig.SkipTLSVerify)
 	return agentClient.GetServices(nil)
 }
 

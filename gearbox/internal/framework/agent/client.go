@@ -36,18 +36,16 @@ type Client struct {
 }
 
 // NewClient creates a new HAProxy Agent API client.
-func NewClient(baseURL, apiKey string) *Client {
-	return NewClientWithTimeout(baseURL, apiKey, DefaultTimeout)
+func NewClient(baseURL, apiKey string, skipTLSVerify bool) *Client {
+	return NewClientWithTimeout(baseURL, apiKey, skipTLSVerify, DefaultTimeout)
 }
 
 // NewClientWithTimeout creates a new HAProxy Agent API client with a custom timeout.
-func NewClientWithTimeout(baseURL, apiKey string, timeout time.Duration) *Client {
+func NewClientWithTimeout(baseURL, apiKey string, skipTLSVerify bool, timeout time.Duration) *Client {
 	// Ensure baseURL doesn't have trailing slash
 	baseURL = strings.TrimSuffix(baseURL, "/")
 
-	// SECURITY FIX: Implement certificate pinning instead of InsecureSkipVerify
-	// Create TLS configuration with certificate verification
-	tlsConfig := createTLSConfig()
+	tlsConfig := createTLSConfig(skipTLSVerify)
 
 	transport := &http.Transport{
 		TLSClientConfig: tlsConfig,
@@ -99,19 +97,12 @@ func NewClientWithTimeout(baseURL, apiKey string, timeout time.Duration) *Client
 }
 
 // createTLSConfig creates a TLS configuration with certificate verification.
-// Supports three modes via environment variables:
-// 1. AGENT_CA_CERT_PATH: Path to CA certificate for validation (RECOMMENDED)
-// 2. GEARBOX_INSECURE_TLS=true: Skip verification (NOT RECOMMENDED for production)
-// 3. Default: Use system certificate pool
-func createTLSConfig() *tls.Config {
-	// Check if user wants to skip TLS verification (insecure mode)
-	if os.Getenv("GEARBOX_INSECURE_TLS") == "true" {
-		// Log warning about insecure mode
-		// Note: In production code, use a proper logger
-		fmt.Fprintf(os.Stderr, "WARNING: TLS certificate verification is DISABLED (GEARBOX_INSECURE_TLS=true)\n")
-		fmt.Fprintf(os.Stderr, "WARNING: This is NOT recommended for production use\n")
+// If skipTLSVerify is true, certificate verification is disabled for this connection only.
+// Supports AGENT_CA_CERT_PATH env var for custom CA certificates.
+func createTLSConfig(skipTLSVerify bool) *tls.Config {
+	if skipTLSVerify {
 		return &tls.Config{
-			InsecureSkipVerify: true, //#nosec G402 -- User explicitly opted in via GEARBOX_INSECURE_TLS env var
+			InsecureSkipVerify: true, //#nosec G402 -- User explicitly opted in per-box via UI setting
 			MinVersion:         tls.VersionTLS12,
 		}
 	}

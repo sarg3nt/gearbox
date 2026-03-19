@@ -6,8 +6,9 @@ type BoxConfig struct {
 	Name string `json:"name"`
 
 	// Agent API connection
-	AgentURL string `json:"agent_url,omitempty"` // e.g., "https://light-hugger.sarg3.net:8405"
-	APIKey   string `json:"api_key,omitempty"`   // Bearer token for Agent API
+	AgentURL       string `json:"agent_url,omitempty"`        // e.g., "https://light-hugger.sarg3.net:8405"
+	APIKey         string `json:"api_key,omitempty"`          // Bearer token for Agent API
+	SkipTLSVerify  bool   `json:"skip_tls_verify,omitempty"`  // Skip TLS certificate verification (for self-signed certs)
 }
 
 // UsesAgentAPI returns true if this box is configured to use the Agent API.
