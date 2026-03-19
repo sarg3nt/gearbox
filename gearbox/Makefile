@@ -1,7 +1,8 @@
-.PHONY: help build test test-coverage lint clean clean-data run dev templ-generate fmt tidy deps install-tools dev-assets deploy deploy-build deploy-restart
+.PHONY: help build test test-coverage lint clean clean-data run dev templ-generate fmt tidy deps install-tools dev-assets deploy deploy-build deploy-restart docker-push-dev
 
 # Variables
 APP_NAME := gearbox
+IMAGE := ghcr.io/sarg3nt/gearbox/gearbox
 VERSION ?= dev
 COMMIT_SHA ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -93,6 +94,17 @@ install-tools: ## Install development tools
 	@go install github.com/a-h/templ/cmd/templ@latest
 	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	@go install github.com/air-verse/air@latest
+
+docker-push-dev: ## Build and push Docker image to ghcr.io with the 'dev' tag
+	@echo "Building and pushing $(IMAGE):dev..."
+	@docker build \
+		--build-arg VERSION=dev \
+		--build-arg COMMIT_SHA=$(COMMIT_SHA) \
+		--build-arg BUILD_DATE=$(BUILD_DATE) \
+		-t $(IMAGE):dev \
+		.
+	@docker push $(IMAGE):dev
+	@echo "✓ Pushed $(IMAGE):dev"
 
 dev-assets: ## Download CDN assets locally for secure development (CSP-compliant)
 	@echo "Downloading CDN assets for local development..."
