@@ -588,10 +588,12 @@ func main() {
 			r.Get("/backup", h.BackupPage)
 		})
 
+		// Root redirect - sends "/" to the first enabled gear in nav order
+		r.Get("/", h.RootHandler)
+
 		// Gear-registered routes
-		// Gears handle: / (haproxy overview), /status-grid (haproxy), /logs (logs),
-		// /services (services), /history (metrics), /certificates (certificates),
-		// /traffic (traffic), /alerts (alerts)
+		// Gears handle: /haproxy (overview), /status-grid, /logs, /services,
+		// /history (metrics), /certificates, /traffic, /alerts, /containers
 		gearManager.RegisterRoutes(r)
 
 		// Page routes (non-gear)
