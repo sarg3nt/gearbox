@@ -97,13 +97,14 @@ install-tools: ## Install development tools
 
 docker-push-dev: ## Build and push Docker image to ghcr.io with the 'dev' tag
 	@echo "Building and pushing $(IMAGE):dev..."
-	@docker build \
+	@docker buildx build \
+		--platform linux/amd64 \
 		--build-arg VERSION=dev \
 		--build-arg COMMIT_SHA=$(COMMIT_SHA) \
 		--build-arg BUILD_DATE=$(BUILD_DATE) \
 		-t $(IMAGE):dev \
+		--push \
 		.
-	@docker push $(IMAGE):dev
 	@echo "✓ Pushed $(IMAGE):dev"
 
 dev-assets: ## Download CDN assets locally for secure development (CSP-compliant)
