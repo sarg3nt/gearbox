@@ -457,7 +457,7 @@ func (h *Handler) HAProxyBoxTestConnectionPost(w http.ResponseWriter, r *http.Re
 	// Create Agent client and test connection
 	client := agent.NewClient(agentURL, apiKey, skipTLSVerify)
 
-	// Step 1: Test health endpoint (no auth required)
+	// Step 1: Test health endpoint (no auth required) — verifies connectivity and TLS
 	_, err := client.Health()
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -468,8 +468,8 @@ func (h *Handler) HAProxyBoxTestConnectionPost(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// Step 2: Test authenticated endpoint
-	_, err = client.GetInfo()
+	// Step 2: Test authenticated endpoint — verifies the API key is valid
+	_, err = client.GetMetrics()
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		if agent.IsUnauthorized(err) {
