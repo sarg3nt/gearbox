@@ -1,5 +1,5 @@
 # Stage 1: Build Templ templates
-FROM golang:1.25-alpine AS templ-builder
+FROM golang:1.26-alpine AS templ-builder
 
 WORKDIR /build
 
@@ -13,7 +13,7 @@ COPY . .
 RUN templ generate
 
 # Stage 2: Build Go binary
-FROM golang:1.25-alpine AS go-builder
+FROM golang:1.26-alpine AS go-builder
 
 # Install build dependencies (gcc and musl-dev required for CGO/sqlite3)
 RUN apk add --no-cache git ca-certificates tzdata gcc musl-dev
