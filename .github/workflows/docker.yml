@@ -5,24 +5,77 @@ on:
     branches: [main]
     tags:
       - 'v*'
-    paths:
-      - 'gearbox/**'
-      - '.github/workflows/docker.yml'
   pull_request:
     branches: [main]
-    paths:
-      - 'gearbox/**'
-      - '.github/workflows/docker.yml'
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}/gearbox
+# Cancel superseded PR runs; let main/tag builds finish (they push images).
+concurrency:
+  group: docker-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions: {}
 
+env:
+  REGISTRY: ghcr.io
+
 jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      apps: ${{ steps.apps.outputs.apps }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
+
+      - name: Filter changed paths
+        id: filter
+        # Tag pushes have no base ref to diff against, so always-build is the
+        # safe default (a tag means we want to release both images).
+        if: github.event_name != 'push' || github.ref_type != 'tag'
+        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        with:
+          filters: |
+            gearbox:
+              - 'gearbox/**'
+              - '.github/workflows/docker.yml'
+            gearbox-agent:
+              - 'gearbox-agent/**'
+              - '.github/workflows/docker.yml'
+
+      - name: Build matrix from filter results
+        id: apps
+        env:
+          IS_TAG: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
+          GEARBOX: ${{ steps.filter.outputs.gearbox }}
+          AGENT: ${{ steps.filter.outputs.gearbox-agent }}
+        run: |
+          if [ "$IS_TAG" = "true" ]; then
+            echo 'apps=["gearbox","gearbox-agent"]' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          apps=()
+          [ "$GEARBOX" = "true" ] && apps+=("gearbox")
+          [ "$AGENT" = "true" ] && apps+=("gearbox-agent")
+          if [ ${#apps[@]} -eq 0 ]; then
+            echo "apps=[]" >> "$GITHUB_OUTPUT"
+          else
+            printf -v joined '"%s",' "${apps[@]}"
+            echo "apps=[${joined%,}]" >> "$GITHUB_OUTPUT"
+          fi
+
   build-and-push:
-    name: Build and Push Docker Image
+    name: Build and Push (${{ matrix.app }})
+    needs: changes
+    if: needs.changes.outputs.apps != '[]'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -30,6 +83,14 @@ jobs:
       attestations: write
       id-token: write
       security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.changes.outputs.apps) }}
+
+    env:
+      IMAGE_NAME: ${{ github.repository }}/${{ matrix.app }}
 
     steps:
       - name: Harden runner
@@ -46,14 +107,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
-      - name: Log in to Container Registry
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
@@ -68,55 +121,97 @@ jobs:
             type=sha,prefix=sha-
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: Build and push Docker image
-        id: build
+      # Build amd64-only locally so we can scan it before deciding to push.
+      # Cache is shared with the multi-platform push step below, so the
+      # incremental cost of the second build is essentially zero.
+      - name: Build image for scan
+        id: scan-build
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6
         with:
-          context: ./gearbox
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          build-args: |
-            VERSION=${{ github.ref_name }}
-            COMMIT_SHA=${{ github.sha }}
-            BUILD_DATE=${{ github.event.repository.updated_at }}
-          platforms: linux/amd64,linux/arm64
-          load: false
-
-      - name: Build single-platform image for scanning
-        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6
-        with:
-          context: ./gearbox
+          context: ./${{ matrix.app }}
           push: false
           load: true
-          tags: gearbox:scan
-          cache-from: type=gha
+          tags: ${{ matrix.app }}:scan
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.app }}
           build-args: |
             VERSION=${{ github.ref_name }}
             COMMIT_SHA=${{ github.sha }}
             BUILD_DATE=${{ github.event.repository.updated_at }}
 
-      - name: Run Trivy image scan
-        uses: aquasecurity/trivy-action@6c175e9c4083a92bbca2f9724c8a5e33bc2d97a5 # 0.30.0
+      # Gating scan: fail the build on CRITICAL/HIGH unfixed-or-fixed in
+      # production releases, but only warn on PRs (so authors can iterate
+      # without being blocked by upstream-only CVEs).
+      - name: Run Trivy image scan (gating)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: gearbox:scan
+          image-ref: ${{ matrix.app }}:scan
           format: 'sarif'
           output: 'trivy-image-results.sarif'
           severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+          exit-code: ${{ github.event_name == 'pull_request' && '0' || '1' }}
 
       - name: Upload Trivy results to GitHub Security
         uses: github/codeql-action/upload-sarif@b20883b0cd1f46c72ae0ba6d1090936928f9fa30 # v4
         if: always()
         with:
           sarif_file: 'trivy-image-results.sarif'
-          category: trivy-docker-gearbox
+          category: trivy-docker-${{ matrix.app }}
+
+      - name: Log in to Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Multi-platform build + push, only after the scan has passed. Reuses
+      # the cache from the scan build so amd64 layers are essentially free.
+      - name: Build and push (multi-platform)
+        id: push
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6
+        with:
+          context: ./${{ matrix.app }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.app }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            COMMIT_SHA=${{ github.sha }}
+            BUILD_DATE=${{ github.event.repository.updated_at }}
+          platforms: linux/amd64,linux/arm64
 
       - name: Generate artifact attestation
         if: github.event_name != 'pull_request' && !github.event.repository.private
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
         with:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          subject-digest: ${{ steps.build.outputs.digest }}
+          subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
+
+  docker-status:
+    name: Docker Status
+    needs: [changes, build-and-push]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Verify required jobs succeeded or skipped intentionally
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          BUILD: ${{ needs.build-and-push.result }}
+        run: |
+          fail=0
+          for job in CHANGES BUILD; do
+            result="${!job}"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "::error::Job $job ended with result: $result"; fail=1 ;;
+            esac
+          done
+          exit $fail

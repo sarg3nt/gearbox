@@ -5,7 +5,16 @@ on:
     tags:
       - 'v*'
 
+# A tag should never race with itself, but keep guard against accidental
+# manual re-pushes.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions: {}
+
+env:
+  TEMPL_VERSION: v0.3.977
 
 jobs:
   create-release:
@@ -78,7 +87,7 @@ jobs:
           cache-dependency-path: gearbox/go.sum
 
       - name: Install Templ
-        run: go install github.com/a-h/templ/cmd/templ@v0.3.977
+        run: go install github.com/a-h/templ/cmd/templ@${{ env.TEMPL_VERSION }}
 
       - name: Download dependencies
         run: go mod download

@@ -1,10 +1,14 @@
 # Stage 1: Build Templ templates
 FROM golang:1.25-alpine AS templ-builder
 
+# Pinned to match CI (.github/workflows/ci.yml TEMPL_VERSION).
+# Bump in lockstep when upgrading.
+ARG TEMPL_VERSION=v0.3.977
+
 WORKDIR /build
 
 # Install templ
-RUN go install github.com/a-h/templ/cmd/templ@latest
+RUN go install github.com/a-h/templ/cmd/templ@${TEMPL_VERSION}
 
 # Copy all source files (includes all .templ files in framework/plugins)
 COPY . .
