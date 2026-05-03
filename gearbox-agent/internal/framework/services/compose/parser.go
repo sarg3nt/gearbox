@@ -252,7 +252,7 @@ func (p *Parser) extractBackendConfig(labels map[string]string, appName, service
 	checkInterval := getValidatedOrDefault(labels, LabelPrefix+"backend.check.interval", "5s", validDuration)
 	checkFall := getValidatedOrDefault(labels, LabelPrefix+"backend.check.fall", "3", validInteger)
 	checkRise := getValidatedOrDefault(labels, LabelPrefix+"backend.check.rise", "2", validInteger)
-	rateLimit := getValidatedOrDefault(labels, LabelPrefix+"rate_limit", "100", validRateLimit)
+	rateLimit := getValidatedOrDefault(labels, LabelPrefix+"rate_limit", "1000", validRateLimit)
 	sslVerify := getValidatedOrDefault(labels, LabelPrefix+"backend.ssl.verify", "none", validSSLVerify)
 
 	config := &BackendConfig{
