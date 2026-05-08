@@ -94,6 +94,14 @@ templ IndexPage(d IndexPageData) {
 				</div>
 				<div class="flex items-center gap-2">
 					<button
+						id="home-add-board"
+						type="button"
+						class="text-sm px-3 py-1.5 rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-600"
+						title="Add a new board"
+					>
+						+ Board
+					</button>
+					<button
 						id="home-landing-toggle"
 						type="button"
 						class={ "text-sm px-3 py-1.5 rounded-md border", landingButtonClasses(d.HomeIsLanding) }
@@ -123,6 +131,26 @@ templ IndexPage(d IndexPageData) {
 					</button>
 				</div>
 			</div>
+
+			<!-- Search bar — DuckDuckGo by default. Press '/' to focus from
+			     anywhere on the page. The submit handler in home.js falls
+			     back to bookmark-search when the query exactly matches a
+			     tile name. -->
+			<form id="home-search" action="https://duckduckgo.com/" method="get" target="_blank" class="mb-4">
+				<div class="relative max-w-2xl mx-auto">
+					<svg class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+					</svg>
+					<input
+						id="home-search-input"
+						name="q"
+						type="text"
+						placeholder="Search… (press /)"
+						class="w-full pl-10 pr-3 py-2 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+						autocomplete="off"
+					/>
+				</div>
+			</form>
 
 			if len(d.Tiles) == 0 {
 				<div id="home-empty-state" class="border-2 border-dashed border-gray-300 dark:border-slate-700 rounded-xl py-16 text-center">

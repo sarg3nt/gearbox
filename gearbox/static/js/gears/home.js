@@ -301,6 +301,74 @@
     });
   }
 
+  /* --- Add board --- */
+
+  const addBoardBtn = document.getElementById("home-add-board");
+  if (addBoardBtn) {
+    addBoardBtn.addEventListener("click", async () => {
+      const name = prompt("Board name:");
+      if (!name) return;
+      // Slug: lowercase, alphanumeric + dashes only.
+      const slug = name
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+      if (!slug) {
+        alert("That name doesn't produce a valid slug. Try plain text.");
+        return;
+      }
+      const res = await fetch("/home/api/boards", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug, name, sort_order: 99 }),
+      });
+      if (!res.ok) {
+        alert("Failed to create board: " + (await res.text()));
+        return;
+      }
+      window.location.href = `/home/b/${encodeURIComponent(slug)}`;
+    });
+  }
+
+  /* --- Search bar — '/' to focus, bookmark-search on Enter --- */
+
+  const searchForm = document.getElementById("home-search");
+  const searchInput = document.getElementById("home-search-input");
+
+  if (searchInput) {
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key !== "/") return;
+      const tag = (document.activeElement && document.activeElement.tagName) || "";
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      ev.preventDefault();
+      searchInput.focus();
+      searchInput.select();
+    });
+  }
+
+  if (searchForm) {
+    searchForm.addEventListener("submit", (ev) => {
+      const q = (searchInput && searchInput.value.trim().toLowerCase()) || "";
+      if (!q) return;
+      // Bookmark-search: if any tile's display name contains the query,
+      // open the first match instead of doing a web search.
+      let matched = null;
+      grid.querySelectorAll(".home-tile-name").forEach((el) => {
+        if (matched) return;
+        if (el.textContent.toLowerCase().includes(q)) {
+          const a = el.closest("a[data-tile-link]");
+          if (a) matched = a.href;
+        }
+      });
+      if (matched) {
+        ev.preventDefault();
+        window.open(matched, "_blank", "noopener");
+        searchInput.value = "";
+      }
+    });
+  }
+
   /* --- "Make default page" toggle --- */
 
   const landingBtn = document.getElementById("home-landing-toggle");
