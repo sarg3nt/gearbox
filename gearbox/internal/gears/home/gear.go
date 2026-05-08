@@ -48,6 +48,24 @@ func (p *Gear) Initialize(ctx context.Context, deps gear.Dependencies) error {
 // RegisterRoutes mounts the gear's HTTP routes under /home.
 func (p *Gear) RegisterRoutes(r chi.Router) {
 	r.Get("/", p.handlers.IndexPage)
+	r.Get("/b/{slug}", p.handlers.IndexPage) // board-specific render — same handler for now
+
+	r.Route("/api", func(r chi.Router) {
+		// Boards
+		r.Get("/boards", p.handlers.ListBoards)
+		r.Post("/boards", p.handlers.CreateBoard)
+		r.Patch("/boards/{id}", p.handlers.UpdateBoard)
+		r.Delete("/boards/{id}", p.handlers.DeleteBoard)
+
+		// Tiles (nested under board for create/list, flat for update/delete)
+		r.Get("/boards/{id}/tiles", p.handlers.ListTiles)
+		r.Post("/boards/{id}/tiles", p.handlers.CreateTile)
+		r.Patch("/tiles/{id}", p.handlers.UpdateTile)
+		r.Delete("/tiles/{id}", p.handlers.DeleteTile)
+
+		// Per-user landing-path setter
+		r.Post("/landing-path", p.handlers.SetLandingPath)
+	})
 }
 
 // SidebarItem describes the gear's sidebar entry.

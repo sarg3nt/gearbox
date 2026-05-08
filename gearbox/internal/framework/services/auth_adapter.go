@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/sarg3nt/gearbox/internal/framework/auth"
+	"github.com/sarg3nt/gearbox/internal/framework/database"
 	"github.com/sarg3nt/gearbox/internal/framework/gear"
 	"github.com/sarg3nt/gearbox/internal/framework/models"
 )
@@ -19,6 +20,12 @@ type AuthAdapter struct {
 // NewAuthAdapter creates a new AuthAdapter wrapping an existing auth.Manager.
 func NewAuthAdapter(manager *auth.Manager) *AuthAdapter {
 	return &AuthAdapter{manager: manager}
+}
+
+// GetDB returns the underlying typed database handle. Gears that need typed
+// access (rather than raw *sql.DB) downcast Auth to *AuthAdapter and call this.
+func (a *AuthAdapter) GetDB() *database.DB {
+	return a.manager.GetDB()
 }
 
 // IsAuthenticated checks if the request has a valid session.

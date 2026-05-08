@@ -90,6 +90,11 @@ func New(dbPath string, logger *slog.Logger) (*DB, error) {
 		return nil, fmt.Errorf("failed to initialize config schema: %w", err)
 	}
 
+	// Initialize Home dashboard schema (boards, tiles, secrets)
+	if err := d.initHomeSchema(); err != nil {
+		return nil, fmt.Errorf("failed to initialize home schema: %w", err)
+	}
+
 	// Run schema migrations AFTER all schemas are initialized
 	// (migrations may reference tables from any schema)
 	if err := d.runSchemaMigrations(); err != nil {
