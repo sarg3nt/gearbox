@@ -7,6 +7,7 @@ import (
 
 	"github.com/sarg3nt/gearbox/internal/framework/database"
 	"github.com/sarg3nt/gearbox/internal/framework/templates/layouts"
+	"github.com/sarg3nt/gearbox/internal/gears/home/widget"
 )
 
 // tileBookmarkConfig parses a tile's config JSON as a BookmarkConfig.
@@ -211,11 +212,16 @@ templ tileBody(t database.HomeTile) {
 }
 
 // launcherBody renders a launcher tile (icon + name + status dot + click → URL).
+// For app tiles whose slug has a registered widget provider, an empty
+// [data-tile-widget] container is rendered beneath the meta block — the
+// frontend fills it in once /home/api/tiles/{id}/widget responds.
 templ launcherBody(t database.HomeTile) {
 	{{
 		url := tileURL(t)
 		name := tileName(t)
 		icon := tileIcon(t)
+		appCfg := tileAppConfig(t)
+		hasWidget := t.Type == database.TileTypeApp && appCfg.AppSlug != "" && widget.HasProvider(appCfg.AppSlug)
 	}}
 	<a
 		class="home-tile-launcher"
@@ -236,12 +242,17 @@ templ launcherBody(t database.HomeTile) {
 		</div>
 		<div class="home-tile-meta">
 			<div class="home-tile-name">{ name }</div>
-			if t.Type == database.TileTypeApp && tileAppConfig(t).AppSlug != "" {
-				<div class="home-tile-sub">{ tileAppConfig(t).AppSlug }</div>
+			if t.Type == database.TileTypeApp && appCfg.AppSlug != "" {
+				<div class="home-tile-sub">{ appCfg.AppSlug }</div>
 			} else if url != "" {
 				<div class="home-tile-sub">{ shortHost(url) }</div>
 			}
 		</div>
+		if hasWidget {
+			<div class="home-tile-widget" data-tile-widget data-tile-slug={ appCfg.AppSlug }>
+				<span class="home-tile-widget-empty">…</span>
+			</div>
+		}
 	</a>
 }
 

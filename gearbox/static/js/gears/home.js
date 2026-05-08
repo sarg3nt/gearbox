@@ -357,6 +357,52 @@
     });
   }
 
+  /* --- Widget data: one-shot fetch + SSE subscription --- */
+
+  function applyWidget(tileId, fields) {
+    const panel = grid.querySelector(
+      `[data-tile-id="${tileId}"] [data-tile-widget]`,
+    );
+    if (!panel) return;
+    panel.innerHTML = "";
+    if (!fields || Object.keys(fields).length === 0) {
+      const empty = document.createElement("span");
+      empty.className = "home-tile-widget-empty";
+      empty.textContent = "…";
+      panel.appendChild(empty);
+      return;
+    }
+    for (const [key, value] of Object.entries(fields)) {
+      const wrap = document.createElement("span");
+      wrap.className = "home-tile-widget-field";
+      const lbl = document.createElement("span");
+      lbl.className = "home-tile-widget-label";
+      lbl.textContent = key;
+      const val = document.createElement("span");
+      val.className = "home-tile-widget-value";
+      val.textContent = value;
+      wrap.appendChild(lbl);
+      wrap.appendChild(val);
+      panel.appendChild(wrap);
+    }
+  }
+
+  function loadInitialWidgets() {
+    grid.querySelectorAll("[data-tile-widget]").forEach(async (el) => {
+      const id = el.closest("[data-tile-id]").dataset.tileId;
+      try {
+        const res = await fetch(`/home/api/tiles/${id}/widget`, {
+          credentials: "same-origin",
+        });
+        if (!res.ok) return;
+        const evt = await res.json();
+        applyWidget(id, evt.fields || {});
+      } catch (_e) {
+        /* ignore */
+      }
+    });
+  }
+
   let sseSource = null;
   function openSSE() {
     if (sseSource) return;
@@ -365,6 +411,14 @@
       try {
         const evt = JSON.parse(msg.data);
         applyStatus(evt.tile_id, evt.status);
+      } catch (_e) {
+        /* ignore */
+      }
+    });
+    sseSource.addEventListener("tile.widget", (msg) => {
+      try {
+        const evt = JSON.parse(msg.data);
+        applyWidget(evt.tile_id, evt.fields || {});
       } catch (_e) {
         /* ignore */
       }
@@ -381,6 +435,7 @@
   }
 
   loadInitialStatuses();
+  loadInitialWidgets();
   openSSE();
 
   /* --- HTTP helpers --- */

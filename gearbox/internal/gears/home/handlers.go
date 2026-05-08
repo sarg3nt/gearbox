@@ -8,13 +8,16 @@ import (
 	"github.com/sarg3nt/gearbox/internal/framework/database"
 	"github.com/sarg3nt/gearbox/internal/framework/gear"
 	"github.com/sarg3nt/gearbox/internal/framework/models"
+	"github.com/sarg3nt/gearbox/internal/framework/services"
+	"github.com/sarg3nt/gearbox/internal/framework/services/crypto"
 )
 
 // Handlers serves the Home dashboard pages and APIs.
 type Handlers struct {
-	deps   gear.Dependencies
-	hub    *sseHub
-	worker *statusWorker
+	deps         gear.Dependencies
+	hub          *sseHub
+	worker       *statusWorker
+	widgetRunner *widgetRunner
 }
 
 // NewHandlers builds a Handlers using the gear dependencies.
@@ -22,6 +25,16 @@ type Handlers struct {
 // once the worker has been constructed.
 func NewHandlers(deps gear.Dependencies) *Handlers {
 	return &Handlers{deps: deps, hub: newSSEHub()}
+}
+
+// encryptor returns the secrets encryptor via the AuthAdapter facade. Returns
+// nil when the adapter is missing or no encryptor was configured.
+func (h *Handlers) encryptor() *crypto.Encryptor {
+	a, ok := h.deps.Auth.(*services.AuthAdapter)
+	if !ok {
+		return nil
+	}
+	return a.GetEncryptor()
 }
 
 // IndexPage renders a board. The slug URL parameter selects which board;

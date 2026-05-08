@@ -391,6 +391,96 @@ func (h *Handlers) DeleteTile(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// secretRequest is the body shape for PUT /home/api/tiles/{id}/secret.
+type secretRequest struct {
+	// Secret is the API key / token / password (depending on the app's auth mode).
+	Secret string `json:"secret"`
+	// BasicUsername is set for providers that need both username + password
+	// (e.g. qBittorrent). Stored alongside the secret as "<user>\n<secret>".
+	BasicUsername string `json:"basic_username,omitempty"`
+}
+
+// SetTileSecret encrypts and stores a tile's secret. To clear, send an empty
+// secret. The browser never sees the encrypted value back; subsequent reads
+// only ever return has_secret: true.
+func (h *Handlers) SetTileSecret(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePerm(w, r, "edit") {
+		return
+	}
+	id, err := pathID(r, "id")
+	if err != nil {
+		http.Error(w, "invalid tile id", http.StatusBadRequest)
+		return
+	}
+	var req secretRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	db := h.db()
+	if db == nil {
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+
+	if req.Secret == "" {
+		if err := db.SetHomeTileSecret(id, nil); err != nil {
+			h.deps.Logger.Error("clear tile secret failed", "error", err)
+			http.Error(w, "Internal error", http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	enc := h.encryptor()
+	if enc == nil {
+		http.Error(w, "secrets encryptor not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	plain := req.Secret
+	if req.BasicUsername != "" {
+		// Encode "<username>\n<secret>" so a single blob covers both halves.
+		plain = req.BasicUsername + "\n" + req.Secret
+	}
+	encrypted, err := enc.EncryptString(plain)
+	if err != nil {
+		h.deps.Logger.Error("encrypt tile secret failed", "error", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	if err := db.SetHomeTileSecret(id, encrypted); err != nil {
+		h.deps.Logger.Error("store tile secret failed", "error", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// TileWidget returns the most recent widget data snapshot for a tile.
+// Used by the browser on page load to populate widget tiles before the
+// first SSE event arrives.
+func (h *Handlers) TileWidget(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePerm(w, r, "view") {
+		return
+	}
+	id, err := pathID(r, "id")
+	if err != nil {
+		http.Error(w, "invalid tile id", http.StatusBadRequest)
+		return
+	}
+	if h.widgetRunner == nil {
+		h.writeJSON(w, http.StatusOK, map[string]any{"tile_id": id, "fields": map[string]string{}})
+		return
+	}
+	if evt, ok := h.widgetRunner.snapshot(id); ok {
+		h.writeJSON(w, http.StatusOK, evt)
+		return
+	}
+	h.writeJSON(w, http.StatusOK, map[string]any{"tile_id": id, "fields": map[string]string{}})
+}
+
 // CatalogList returns the predefined apps catalog.
 func (h *Handlers) CatalogList(w http.ResponseWriter, r *http.Request) {
 	if !h.requirePerm(w, r, "view") {

@@ -19,8 +19,9 @@ func init() {
 // (Info.Scope == ScopeSystem) — there is one row per install, not one per box.
 type Gear struct {
 	gear.BaseGear
-	handlers *Handlers
-	worker   *statusWorker
+	handlers     *Handlers
+	worker       *statusWorker
+	widgetRunner *widgetRunner
 }
 
 // Info returns gear metadata.
@@ -37,30 +38,38 @@ func (p *Gear) Info() gear.Info {
 	}
 }
 
-// Initialize wires the request handlers and the status worker.
+// Initialize wires the request handlers and the background workers.
 func (p *Gear) Initialize(ctx context.Context, deps gear.Dependencies) error {
 	if err := p.BaseGear.Initialize(ctx, deps); err != nil {
 		return err
 	}
 	p.handlers = NewHandlers(deps)
 	p.worker = newStatusWorker(deps.Logger.With("component", "home-status"), p.handlers.hub, p.handlers.db)
+	p.widgetRunner = newWidgetRunner(p.handlers.hub, p.handlers.db, p.handlers.encryptor)
 	p.handlers.worker = p.worker
+	p.handlers.widgetRunner = p.widgetRunner
 	return nil
 }
 
 // Start launches background tasks for the Home gear.
 func (p *Gear) Start(ctx context.Context) error {
+	bg := context.Background()
 	if p.worker != nil {
-		// Use a detached context so the worker survives request-scoped cancellations.
-		p.worker.Start(context.Background())
+		p.worker.Start(bg)
+	}
+	if p.widgetRunner != nil {
+		p.widgetRunner.Start(bg)
 	}
 	return nil
 }
 
-// Stop signals the status worker to wind down.
+// Stop signals the background workers to wind down.
 func (p *Gear) Stop(ctx context.Context) error {
 	if p.worker != nil {
 		p.worker.Stop()
+	}
+	if p.widgetRunner != nil {
+		p.widgetRunner.Stop()
 	}
 	return nil
 }
@@ -87,8 +96,11 @@ func (p *Gear) RegisterRoutes(r chi.Router) {
 		r.Get("/catalog", p.handlers.CatalogList)
 		r.Get("/probe", p.handlers.Probe)
 
-		// Per-tile status snapshot (one-shot)
+		// Per-tile status & widget snapshot (one-shot)
 		r.Get("/tiles/{id}/status", p.handlers.TileStatus)
+		r.Get("/tiles/{id}/widget", p.handlers.TileWidget)
+		r.Put("/tiles/{id}/secret", p.handlers.SetTileSecret)
+		r.Delete("/tiles/{id}/secret", p.handlers.SetTileSecret)
 
 		// SSE stream of tile.status events
 		r.Get("/events", p.handlers.EventsStream)

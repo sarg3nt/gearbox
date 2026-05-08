@@ -10,22 +10,37 @@ import (
 	"github.com/sarg3nt/gearbox/internal/framework/database"
 	"github.com/sarg3nt/gearbox/internal/framework/gear"
 	"github.com/sarg3nt/gearbox/internal/framework/models"
+	"github.com/sarg3nt/gearbox/internal/framework/services/crypto"
 )
 
 // AuthAdapter wraps the auth.Manager to implement gear.AuthChecker.
 type AuthAdapter struct {
-	manager *auth.Manager
+	manager   *auth.Manager
+	encryptor *crypto.Encryptor
 }
 
 // NewAuthAdapter creates a new AuthAdapter wrapping an existing auth.Manager.
+// The encryptor is optional — pass nil if no encryption is configured.
 func NewAuthAdapter(manager *auth.Manager) *AuthAdapter {
 	return &AuthAdapter{manager: manager}
+}
+
+// SetEncryptor wires the secrets encryptor onto the adapter. Gears that
+// store API keys / passwords downcast Auth to *AuthAdapter and call
+// GetEncryptor() to encrypt at rest.
+func (a *AuthAdapter) SetEncryptor(e *crypto.Encryptor) {
+	a.encryptor = e
 }
 
 // GetDB returns the underlying typed database handle. Gears that need typed
 // access (rather than raw *sql.DB) downcast Auth to *AuthAdapter and call this.
 func (a *AuthAdapter) GetDB() *database.DB {
 	return a.manager.GetDB()
+}
+
+// GetEncryptor returns the secrets encryptor, or nil when none is configured.
+func (a *AuthAdapter) GetEncryptor() *crypto.Encryptor {
+	return a.encryptor
 }
 
 // IsAuthenticated checks if the request has a valid session.

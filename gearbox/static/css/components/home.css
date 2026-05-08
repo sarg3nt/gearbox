@@ -173,3 +173,56 @@
 .home-disable-click {
     pointer-events: none;
 }
+
+/* Tier-1 widget data panel that appears beneath the meta block. */
+.home-tile-widget {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.5rem;
+    justify-content: center;
+    margin-top: 0.25rem;
+    font-size: 0.7rem;
+    color: rgb(75 85 99);
+}
+
+.dark .home-tile-widget {
+    color: rgb(203 213 225);
+}
+
+.home-tile-widget-field {
+    display: inline-flex;
+    gap: 0.25rem;
+    align-items: baseline;
+    padding: 0.125rem 0.375rem;
+    background: rgb(243 244 246);
+    border-radius: 0.25rem;
+    line-height: 1.1;
+}
+
+.dark .home-tile-widget-field {
+    background: rgb(51 65 85);
+}
+
+.home-tile-widget-label {
+    color: rgb(107 114 128);
+    font-size: 0.625rem;
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+}
+
+.dark .home-tile-widget-label {
+    color: rgb(148 163 184);
+}
+
+.home-tile-widget-value {
+    font-weight: 600;
+    color: rgb(17 24 39);
+}
+
+.dark .home-tile-widget-value {
+    color: rgb(241 245 249);
+}
+
+.home-tile-widget-empty {
+    color: rgb(156 163 175);
+}

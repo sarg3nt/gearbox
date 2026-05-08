@@ -363,6 +363,7 @@ func main() {
 
 	// Create gear dependencies
 	authAdapter := services.NewAuthAdapter(authManager)
+	authAdapter.SetEncryptor(encryptor)
 	eventsAdapter := services.NewEventsAdapter(eventHub)
 	serverAdapter := services.NewServerAdapter(db, encryptor, servers, logger)
 
