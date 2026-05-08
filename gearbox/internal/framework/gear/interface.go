@@ -56,6 +56,19 @@ type Gear interface {
 	Migrations() []Migration
 }
 
+// Scope describes whether a gear is scoped to a specific monitored box
+// or applies system-wide. Box-scoped gears (the default) have one row per
+// (server_id, name) in the gears table. System-scoped gears have a single
+// row keyed by the SystemServerID sentinel.
+type Scope string
+
+const (
+	// ScopeBox indicates the gear is enabled per-box (default).
+	ScopeBox Scope = "box"
+	// ScopeSystem indicates the gear is enabled globally for the whole install.
+	ScopeSystem Scope = "system"
+)
+
 // Info contains metadata about a gear.
 type Info struct {
 	// Name is the internal identifier (e.g., "logs", "metrics").
@@ -85,6 +98,18 @@ type Info struct {
 
 	// Core indicates this is a core gear that cannot be disabled.
 	Core bool
+
+	// Scope controls whether the gear is per-box or system-wide.
+	// Empty value is treated as ScopeBox for backward compatibility.
+	Scope Scope
+}
+
+// EffectiveScope returns the Scope, defaulting to ScopeBox when unset.
+func (i Info) EffectiveScope() Scope {
+	if i.Scope == "" {
+		return ScopeBox
+	}
+	return i.Scope
 }
 
 // HealthStatus represents the health state of a gear.

@@ -1,0 +1,31 @@
+package home
+
+import (
+	"github.com/sarg3nt/gearbox/internal/framework/models"
+	"github.com/sarg3nt/gearbox/internal/framework/templates/layouts"
+)
+
+// IndexPlaceholder renders a stub Home dashboard while the tile renderer
+// (Phase 3) is under construction.
+templ IndexPlaceholder(user *models.User) {
+	@layouts.Base("Home", user, "/home") {
+		<div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+			<div class="text-center">
+				<div class="mx-auto h-16 w-16 text-blue-500 mb-4">
+					@HomeIcon()
+				</div>
+				<h1 class="text-3xl font-bold text-gray-900 dark:text-white">Home</h1>
+				<p class="mt-3 text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
+					Your app dashboard. Tiles, widgets, and bookmarks for everything you self-host —
+					all in one place. The tile renderer is being built; check back soon.
+				</p>
+				<div class="mt-8 inline-flex items-center gap-2 rounded-lg bg-blue-50 dark:bg-blue-900/30 px-4 py-3 text-sm text-blue-700 dark:text-blue-300">
+					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+					</svg>
+					<span>Phase 1 scaffold — gear registered, routes wired, tiles coming next.</span>
+				</div>
+			</div>
+		</div>
+	}
+}

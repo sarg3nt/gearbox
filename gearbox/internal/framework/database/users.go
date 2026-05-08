@@ -47,6 +47,7 @@ func (d *DB) initUserSchema() error {
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		approved_by TEXT, -- UUID
 		approved_at DATETIME,
+		default_landing_path TEXT, -- per-user post-login redirect override (NULL = use system default)
 		FOREIGN KEY (approved_by) REFERENCES users(id)
 	);
 
@@ -158,7 +159,63 @@ func (d *DB) initUserSchema() error {
 	// Migration: add backup_eligible and backup_state columns if they don't exist
 	// SQLite doesn't support ADD COLUMN IF NOT EXISTS, so we check and add manually
 	d.migratePasskeysTable()
+	d.migrateUsersDefaultLandingPath()
 
+	return nil
+}
+
+// migrateUsersDefaultLandingPath adds the default_landing_path column to existing
+// installations. Idempotent — safe to call on every startup.
+func (d *DB) migrateUsersDefaultLandingPath() {
+	if _, err := d.db.Exec(`SELECT default_landing_path FROM users LIMIT 1`); err != nil {
+		_, _ = d.db.Exec(`ALTER TABLE users ADD COLUMN default_landing_path TEXT`)
+	}
+}
+
+// GetUserDefaultLandingPath returns the user's preferred post-login redirect
+// path. Empty string means the user has no preference set; callers should
+// fall back to the system default. Errors are returned so callers can decide
+// whether to log/fall back.
+func (d *DB) GetUserDefaultLandingPath(userID string) (string, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	var path sql.NullString
+	err := d.db.QueryRow(
+		`SELECT default_landing_path FROM users WHERE id = ?`, userID,
+	).Scan(&path)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to get user default landing path: %w", err)
+	}
+	if !path.Valid {
+		return "", nil
+	}
+	return path.String, nil
+}
+
+// SetUserDefaultLandingPath updates (or clears, when path is empty) the user's
+// post-login redirect override.
+func (d *DB) SetUserDefaultLandingPath(userID, path string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	var value any
+	if path == "" {
+		value = nil
+	} else {
+		value = path
+	}
+
+	_, err := d.db.Exec(
+		`UPDATE users SET default_landing_path = ?, updated_at = ? WHERE id = ?`,
+		value, time.Now(), userID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update user default landing path: %w", err)
+	}
 	return nil
 }
 

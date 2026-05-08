@@ -207,20 +207,37 @@ func (h *Handler) InjectIntegrationStatus(next http.Handler) http.Handler {
 				return
 			}
 
+			// Merge in system-wide (box-agnostic) gears so the sidebar can show them.
+			systemGears, err := h.db.GetGears(database.SystemServerID)
+			if err != nil {
+				h.logger.Warn("failed to load system gears for sidebar", "error", err)
+			}
+
 			// Build status map for backward compatibility
 			status := make(map[string]bool)
 			for _, i := range integrations {
 				status[i.Name] = i.Enabled
 			}
+			for _, i := range systemGears {
+				status[i.Name] = i.Enabled
+			}
 
-			// Build ordered list for sidebar
-			orderedIntegrations := make([]auth.SidebarIntegration, len(integrations))
-			for idx, i := range integrations {
-				orderedIntegrations[idx] = auth.SidebarIntegration{
+			// Build ordered list for sidebar (box gears first, then system gears
+			// at the head — Home should sit at the top of navigation when enabled).
+			orderedIntegrations := make([]auth.SidebarIntegration, 0, len(integrations)+len(systemGears))
+			for _, i := range systemGears {
+				orderedIntegrations = append(orderedIntegrations, auth.SidebarIntegration{
 					Name:      i.Name,
 					Enabled:   i.Enabled,
 					SortOrder: i.SortOrder,
-				}
+				})
+			}
+			for _, i := range integrations {
+				orderedIntegrations = append(orderedIntegrations, auth.SidebarIntegration{
+					Name:      i.Name,
+					Enabled:   i.Enabled,
+					SortOrder: i.SortOrder,
+				})
 			}
 
 			ctx = auth.SetGearStatus(ctx, status)

@@ -18,7 +18,26 @@ const (
 	GearTraffic      = "traffic"
 	GearAlerts       = "alerts"
 	GearOSUpdates    = "os_updates"
+	GearHome         = "home"
 )
+
+// SystemServerID is the sentinel server_id used for rows that represent
+// system-wide (box-agnostic) gear configuration. Real boxes never use
+// this value because their IDs are UUIDs.
+const SystemServerID = "__system__"
+
+// IsSystemGear returns true for gears that are box-agnostic.
+// Keeping the list local to the database package avoids a circular
+// import on the gear framework package while letting the seeding logic
+// distinguish which gears belong on each box vs the system row.
+func IsSystemGear(name string) bool {
+	switch name {
+	case GearHome:
+		return true
+	default:
+		return false
+	}
+}
 
 // CertbotRenewalMethod represents how certbot renewal is configured.
 type CertbotRenewalMethod string
@@ -137,6 +156,20 @@ type AlertsConfig struct {
 	ShowRulesInAlerts   bool `json:"show_rules_in_alerts"`  // Show rules section in alerts page (legacy mode)
 }
 
+// HomeConfig holds configuration for the box-agnostic Home (dashboard) gear.
+type HomeConfig struct {
+	// SystemDefaultLandingPath is the system-wide fallback path used when a
+	// user has no per-user default_landing_path. Empty means no system default.
+	SystemDefaultLandingPath string `json:"system_default_landing_path"`
+	// HealthChecksEnabled toggles the server-side reachability probes for tiles.
+	HealthChecksEnabled bool `json:"health_checks_enabled"`
+	// DefaultStatusIntervalSeconds is the default status-check cadence for new tiles.
+	DefaultStatusIntervalSeconds int `json:"default_status_interval_seconds"`
+	// AttributionShown records whether the user has acknowledged the icon-set
+	// attribution panel; cosmetic only.
+	AttributionShown bool `json:"attribution_shown"`
+}
+
 // OSUpdatesConfig holds OS updates integration configuration.
 type OSUpdatesConfig struct {
 	CheckFrequencyMinutes  int  `json:"check_frequency_minutes"`  // How often to check for updates (default: 60)
@@ -163,6 +196,25 @@ type Gear struct {
 	CreatedAt   time.Time       `json:"created_at"`
 	UpdatedAt   time.Time       `json:"updated_at"`
 	UpdatedBy   *string         `json:"updated_by,omitempty"`
+}
+
+// DefaultSystemGears returns the default configurations for system-wide
+// (box-agnostic) gears. They are seeded once with server_id = SystemServerID
+// instead of being duplicated across every monitored box.
+func DefaultSystemGears() []Gear {
+	now := time.Now()
+	return []Gear{
+		{
+			ServerID:    SystemServerID,
+			Name:        GearHome,
+			DisplayName: "Home",
+			Description: "App dashboard with launcher tiles, service widgets, and bookmarks",
+			Enabled:     false, // Disabled by default — admin opts in.
+			Config:      json.RawMessage(`{"system_default_landing_path":"","health_checks_enabled":true,"default_status_interval_seconds":30,"attribution_shown":false}`),
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		},
+	}
 }
 
 // DefaultGears returns the default integration configurations for a server.
@@ -423,6 +475,46 @@ func (d *DB) GetGears(serverID string) ([]Gear, error) {
 	}
 
 	return plugins, rows.Err()
+}
+
+// EnsureSystemGears seeds default rows for box-agnostic gears under the
+// SystemServerID sentinel. Idempotent: only inserts gears that don't yet
+// have a row. Should be called once at startup.
+func (d *DB) EnsureSystemGears() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	existingNames := make(map[string]bool)
+	rows, err := d.db.Query("SELECT name FROM gears WHERE server_id = ?", SystemServerID)
+	if err != nil {
+		return fmt.Errorf("failed to query existing system gears: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return fmt.Errorf("failed to scan system gear name: %w", err)
+		}
+		existingNames[name] = true
+	}
+
+	defaults := DefaultSystemGears()
+	addedCount := 0
+	for i, g := range defaults {
+		if existingNames[g.Name] {
+			continue
+		}
+		if err := d.createGearWithSortOrderLocked(&g, i); err != nil {
+			return fmt.Errorf("failed to seed system gear %s: %w", g.Name, err)
+		}
+		addedCount++
+	}
+
+	if addedCount > 0 {
+		d.logger.Info("added missing system gears", "count", addedCount)
+	}
+	return nil
 }
 
 // EnsureServerGears ensures that default plugins exist for a server.

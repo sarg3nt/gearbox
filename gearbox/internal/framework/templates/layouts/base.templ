@@ -1473,6 +1473,12 @@ templ SidebarIconOSUpdates() {
 	</svg>
 }
 
+templ SidebarIconHome() {
+	<svg class="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+		<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7m-9 11V10m-2 11h4a2 2 0 002-2v-7m-8 9H5a2 2 0 01-2-2v-7"></path>
+	</svg>
+}
+
 templ SidebarIconHAProxy() {
 	<svg class="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 		<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path>
@@ -1622,6 +1628,8 @@ func hasAnyEnabledIntegration(ctx context.Context) bool {
 // integrationPath returns the URL path for a given integration name.
 func integrationPath(name string) string {
 	switch name {
+	case "home":
+		return "/home"
 	case "haproxy":
 		return "/haproxy"
 	case "metrics":
@@ -1662,6 +1670,8 @@ func firstEnabledIntegrationPath(ctx context.Context) string {
 // Maps integration names to component View permissions.
 func canViewIntegration(ctx context.Context, integrationName string) bool {
 	switch integrationName {
+	case "home":
+		return true // Home is visible to all authenticated users when enabled.
 	case "metrics":
 		return auth.HasPermissionFromContext(ctx, models.ComponentMetrics, models.PermissionView)
 	case "logs":
@@ -1723,6 +1733,8 @@ templ OrderedIntegrationLinks(currentPath string) {
 // renderIntegrationLink renders a single integration link based on the integration name.
 templ renderIntegrationLink(name string, currentPath string) {
 	switch name {
+		case "home":
+			@SidebarLinkDraggable("/home", "Home", SidebarIconHome(), currentPath, "home")
 		case "haproxy":
 			@SidebarLinkDraggable("/haproxy", "HAProxy", SidebarIconHAProxy(), currentPath, "haproxy")
 		case "metrics":
