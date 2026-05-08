@@ -331,6 +331,45 @@
     });
   }
 
+  /* --- Import (Export is just a normal anchor link) --- */
+
+  const importBtn = document.getElementById("home-import");
+  const importFile = document.getElementById("home-import-file");
+  if (importBtn && importFile) {
+    importBtn.addEventListener("click", () => importFile.click());
+    importFile.addEventListener("change", async () => {
+      const file = importFile.files && importFile.files[0];
+      if (!file) return;
+      if (
+        !confirm(
+          "Importing replaces all boards and tiles on this dashboard. " +
+            "Encrypted API keys and passwords are NOT included in backups — " +
+            "you'll need to re-enter them after import. Continue?",
+        )
+      ) {
+        importFile.value = "";
+        return;
+      }
+      try {
+        const text = await file.text();
+        const res = await fetch("/home/api/import", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: text,
+        });
+        if (!res.ok) {
+          alert("Import failed: " + (await res.text()));
+          return;
+        }
+        window.location.href = "/home/";
+      } catch (e) {
+        alert("Import failed: " + e.message);
+      } finally {
+        importFile.value = "";
+      }
+    });
+  }
+
   /* --- Search bar — '/' to focus, bookmark-search on Enter --- */
 
   const searchForm = document.getElementById("home-search");

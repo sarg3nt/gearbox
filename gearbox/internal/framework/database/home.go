@@ -217,6 +217,40 @@ func (d *DB) UpdateHomeBoard(id int64, name string, sortOrder int) error {
 	return nil
 }
 
+// RenameHomeBoard updates a board's slug, name, and sort_order in one go.
+// Used by the import path when remapping the survivor board onto the first
+// imported board's identity.
+func (d *DB) RenameHomeBoard(id int64, slug, name string, sortOrder int) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_, err := d.db.Exec(
+		`UPDATE home_boards SET slug = ?, name = ?, sort_order = ?, updated_at = ? WHERE id = ?`,
+		slug, name, sortOrder, time.Now(), id,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to rename home board: %w", err)
+	}
+	return nil
+}
+
+// UpdateGearConfig overwrites a gear's config JSON. Used by the Home gear's
+// import path to apply the snapshot's system_default_landing_path etc.
+func (d *DB) UpdateGearConfig(serverID, name string, config []byte) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if len(config) == 0 {
+		config = []byte("{}")
+	}
+	_, err := d.db.Exec(
+		`UPDATE gears SET config = ?, updated_at = CURRENT_TIMESTAMP WHERE server_id = ? AND name = ?`,
+		string(config), serverID, name,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update gear config: %w", err)
+	}
+	return nil
+}
+
 // DeleteHomeBoard removes a board, its tiles, and any associated secrets.
 // SQLite FK enforcement is off project-wide, so we cascade explicitly.
 // Refuses to delete the last remaining board so the dashboard always has somewhere to render.

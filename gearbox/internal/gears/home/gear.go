@@ -97,6 +97,10 @@ func (p *Gear) RegisterRoutes(r chi.Router) {
 		r.Get("/probe", p.handlers.Probe)
 		r.Post("/customapi/preview", p.handlers.CustomAPIPreview)
 
+		// Schema-versioned import/export
+		r.Get("/export", p.handlers.Export)
+		r.Post("/import", p.handlers.Import)
+
 		// Per-tile status & widget snapshot (one-shot)
 		r.Get("/tiles/{id}/status", p.handlers.TileStatus)
 		r.Get("/tiles/{id}/widget", p.handlers.TileWidget)

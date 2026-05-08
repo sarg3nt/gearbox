@@ -101,6 +101,23 @@ templ IndexPage(d IndexPageData) {
 					>
 						+ Board
 					</button>
+					<a
+						id="home-export"
+						href="/home/api/export"
+						class="text-sm px-3 py-1.5 rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-600"
+						title="Download a JSON backup of all boards & tiles (secrets excluded)"
+					>
+						Export
+					</a>
+					<button
+						id="home-import"
+						type="button"
+						class="text-sm px-3 py-1.5 rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-600"
+						title="Replace boards & tiles from a Gearbox Home backup"
+					>
+						Import
+					</button>
+					<input id="home-import-file" type="file" accept="application/json" class="hidden"/>
 					<button
 						id="home-landing-toggle"
 						type="button"

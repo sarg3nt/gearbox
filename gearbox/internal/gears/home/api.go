@@ -483,6 +483,63 @@ func (h *Handlers) TileWidget(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusOK, map[string]any{"tile_id": id, "fields": map[string]string{}})
 }
 
+// Export returns the full dashboard state as a downloadable JSON file.
+// Excludes secrets — the destination must re-enter API keys.
+func (h *Handlers) Export(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePerm(w, r, "view") {
+		return
+	}
+	db := h.db()
+	if db == nil {
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	snap, err := buildSnapshot(db)
+	if err != nil {
+		h.deps.Logger.Error("buildSnapshot failed", "error", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", `attachment; filename="gearbox-home-`+
+		time.Now().UTC().Format("20060102-150405")+`.json"`)
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(snap); err != nil {
+		h.deps.Logger.Error("snapshot encode failed", "error", err)
+	}
+}
+
+// Import accepts a JSON snapshot, runs migrations, and replaces the
+// dashboard. Destructive: existing boards & tiles are wiped first.
+func (h *Handlers) Import(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePerm(w, r, "admin") {
+		return
+	}
+	db := h.db()
+	if db == nil {
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	defer func() { _ = r.Body.Close() }()
+	body, err := io.ReadAll(io.LimitReader(r.Body, 16<<20))
+	if err != nil {
+		http.Error(w, "read body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	var snap Snapshot
+	if err := json.Unmarshal(body, &snap); err != nil {
+		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := importSnapshot(db, &snap); err != nil {
+		h.deps.Logger.Error("importSnapshot failed", "error", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // CustomAPIPreview fetches a JSON URL with the same auth options the
 // customapi widget will use at runtime, then returns the parsed JSON
 // (truncated) so the browser can render a clickable tree-picker.
