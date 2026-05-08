@@ -1,0 +1,175 @@
+/* Home dashboard styles. Pairs with gridstack vendor CSS. */
+
+#home-grid {
+    min-height: 200px;
+    background: transparent;
+}
+
+.home-tile {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    border-radius: 0.75rem;
+    background: rgb(255 255 255);
+    border: 1px solid rgb(229 231 235);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 4%);
+    overflow: hidden;
+    transition: box-shadow 120ms ease, transform 120ms ease;
+}
+
+.dark .home-tile {
+    background: rgb(30 41 59);
+    border-color: rgb(51 65 85);
+}
+
+.home-tile:hover {
+    box-shadow: 0 4px 10px rgb(0 0 0 / 8%);
+}
+
+.home-tile-launcher {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+    width: 100%;
+    text-decoration: none;
+    color: inherit;
+    padding: 0.75rem;
+    gap: 0.5rem;
+}
+
+.home-tile-icon-wrapper {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.home-tile-icon {
+    width: 2.5rem;
+    height: 2.5rem;
+    object-fit: contain;
+    border-radius: 0.5rem;
+}
+
+.home-tile-icon-default {
+    color: rgb(107 114 128);
+}
+
+.dark .home-tile-icon-default {
+    color: rgb(148 163 184);
+}
+
+.home-tile-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    min-width: 0;
+}
+
+.home-tile-name {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: rgb(31 41 55);
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+
+.dark .home-tile-name {
+    color: rgb(241 245 249);
+}
+
+.home-tile-sub {
+    font-size: 0.7rem;
+    color: rgb(107 114 128);
+    margin-top: 0.125rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+
+.dark .home-tile-sub {
+    color: rgb(148 163 184);
+}
+
+.home-tile-status {
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+    width: 0.625rem;
+    height: 0.625rem;
+    border-radius: 9999px;
+    box-shadow: 0 0 0 2px rgb(255 255 255);
+}
+
+.dark .home-tile-status {
+    box-shadow: 0 0 0 2px rgb(30 41 59);
+}
+
+.home-tile-status-up {
+    background: rgb(34 197 94);
+}
+
+.home-tile-status-down {
+    background: rgb(239 68 68);
+}
+
+.home-tile-status-degraded {
+    background: rgb(234 179 8);
+}
+
+.home-tile-status-unknown {
+    background: rgb(156 163 175);
+}
+
+.home-tile-placeholder {
+    padding: 0.75rem;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    text-align: center;
+}
+
+.home-tile-delete {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 9999px;
+    background: rgb(239 68 68);
+    color: white;
+    border: 0;
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+    z-index: 5;
+}
+
+.home-tile-delete:hover {
+    background: rgb(220 38 38);
+}
+
+/* Edit-mode visual hints. */
+.home-grid-edit .grid-stack-item {
+    cursor: move;
+    outline: 2px dashed rgb(59 130 246 / 50%);
+    outline-offset: -2px;
+    border-radius: 0.75rem;
+}
+
+.home-grid-edit .home-tile {
+    user-select: none;
+}
+
+/* Block accidental navigation while in edit mode. */
+.home-disable-click {
+    pointer-events: none;
+}
