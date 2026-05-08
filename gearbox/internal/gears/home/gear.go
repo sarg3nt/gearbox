@@ -20,6 +20,7 @@ func init() {
 type Gear struct {
 	gear.BaseGear
 	handlers *Handlers
+	worker   *statusWorker
 }
 
 // Info returns gear metadata.
@@ -36,12 +37,31 @@ func (p *Gear) Info() gear.Info {
 	}
 }
 
-// Initialize wires the request handlers.
+// Initialize wires the request handlers and the status worker.
 func (p *Gear) Initialize(ctx context.Context, deps gear.Dependencies) error {
 	if err := p.BaseGear.Initialize(ctx, deps); err != nil {
 		return err
 	}
 	p.handlers = NewHandlers(deps)
+	p.worker = newStatusWorker(deps.Logger.With("component", "home-status"), p.handlers.hub, p.handlers.db)
+	p.handlers.worker = p.worker
+	return nil
+}
+
+// Start launches background tasks for the Home gear.
+func (p *Gear) Start(ctx context.Context) error {
+	if p.worker != nil {
+		// Use a detached context so the worker survives request-scoped cancellations.
+		p.worker.Start(context.Background())
+	}
+	return nil
+}
+
+// Stop signals the status worker to wind down.
+func (p *Gear) Stop(ctx context.Context) error {
+	if p.worker != nil {
+		p.worker.Stop()
+	}
 	return nil
 }
 
@@ -62,6 +82,12 @@ func (p *Gear) RegisterRoutes(r chi.Router) {
 		r.Post("/boards/{id}/tiles", p.handlers.CreateTile)
 		r.Patch("/tiles/{id}", p.handlers.UpdateTile)
 		r.Delete("/tiles/{id}", p.handlers.DeleteTile)
+
+		// Per-tile status snapshot (one-shot)
+		r.Get("/tiles/{id}/status", p.handlers.TileStatus)
+
+		// SSE stream of tile.status events
+		r.Get("/events", p.handlers.EventsStream)
 
 		// Per-user landing-path setter
 		r.Post("/landing-path", p.handlers.SetLandingPath)

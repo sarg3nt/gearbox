@@ -195,6 +195,68 @@
     });
   }
 
+  /* --- Status dots: one-shot fetch + SSE subscription --- */
+
+  function applyStatus(tileId, status) {
+    const dot = grid.querySelector(
+      `[data-tile-id="${tileId}"] [data-tile-status]`,
+    );
+    if (!dot) return;
+    dot.classList.remove(
+      "home-tile-status-up",
+      "home-tile-status-down",
+      "home-tile-status-degraded",
+      "home-tile-status-unknown",
+    );
+    dot.classList.add(`home-tile-status-${status || "unknown"}`);
+    dot.title = status ? `Status: ${status}` : "Status: unknown";
+  }
+
+  // Pull each tile's last-known status on load so dots aren't grey for the
+  // first 30s before the worker probes them. /home/api/tiles/{id}/status
+  // returns "unknown" when the worker hasn't probed yet — harmless.
+  function loadInitialStatuses() {
+    grid.querySelectorAll("[data-tile-id]").forEach(async (el) => {
+      const id = el.dataset.tileId;
+      try {
+        const res = await fetch(`/home/api/tiles/${id}/status`, {
+          credentials: "same-origin",
+        });
+        if (!res.ok) return;
+        const evt = await res.json();
+        applyStatus(id, evt.status);
+      } catch (_e) {
+        /* ignore */
+      }
+    });
+  }
+
+  let sseSource = null;
+  function openSSE() {
+    if (sseSource) return;
+    sseSource = new EventSource("/home/api/events");
+    sseSource.addEventListener("tile.status", (msg) => {
+      try {
+        const evt = JSON.parse(msg.data);
+        applyStatus(evt.tile_id, evt.status);
+      } catch (_e) {
+        /* ignore */
+      }
+    });
+    sseSource.addEventListener("error", () => {
+      // EventSource auto-reconnects; close+null so a manual retry button
+      // could reopen it later if we add one.
+      if (sseSource && sseSource.readyState === EventSource.CLOSED) {
+        sseSource = null;
+        // Wait a beat so we don't tight-loop if the server is down.
+        setTimeout(openSSE, 5000);
+      }
+    });
+  }
+
+  loadInitialStatuses();
+  openSSE();
+
   /* --- HTTP helpers --- */
 
   async function patchTileLayout(id, x, y, w, h) {

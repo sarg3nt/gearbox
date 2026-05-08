@@ -391,6 +391,35 @@ func (h *Handlers) DeleteTile(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// TileStatus returns the most recent status snapshot for a tile, or unknown
+// when the worker has not yet probed it. The browser hits this on page load
+// to populate status dots before the SSE stream catches up.
+func (h *Handlers) TileStatus(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePerm(w, r, "view") {
+		return
+	}
+	id, err := pathID(r, "id")
+	if err != nil {
+		http.Error(w, "invalid tile id", http.StatusBadRequest)
+		return
+	}
+	if h.worker == nil {
+		h.writeJSON(w, http.StatusOK, map[string]any{
+			"tile_id": id,
+			"status":  StatusUnknown,
+		})
+		return
+	}
+	if evt, ok := h.worker.snapshot(id); ok {
+		h.writeJSON(w, http.StatusOK, evt)
+		return
+	}
+	h.writeJSON(w, http.StatusOK, map[string]any{
+		"tile_id": id,
+		"status":  StatusUnknown,
+	})
+}
+
 // SetLandingPath sets the calling user's per-user default_landing_path.
 // Empty string clears it. The browser POSTs this from a "Make Home my default
 // page" toggle on the Home settings panel.

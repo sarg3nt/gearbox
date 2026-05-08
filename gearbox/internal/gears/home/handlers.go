@@ -12,12 +12,16 @@ import (
 
 // Handlers serves the Home dashboard pages and APIs.
 type Handlers struct {
-	deps gear.Dependencies
+	deps   gear.Dependencies
+	hub    *sseHub
+	worker *statusWorker
 }
 
 // NewHandlers builds a Handlers using the gear dependencies.
+// The SSE hub is created here; the worker is wired up later in Gear.Initialize
+// once the worker has been constructed.
 func NewHandlers(deps gear.Dependencies) *Handlers {
-	return &Handlers{deps: deps}
+	return &Handlers{deps: deps, hub: newSSEHub()}
 }
 
 // IndexPage renders a board. The slug URL parameter selects which board;
