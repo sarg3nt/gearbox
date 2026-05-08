@@ -203,12 +203,53 @@ templ tileBody(t database.HomeTile) {
 	switch t.Type {
 		case database.TileTypeBookmark, database.TileTypeApp:
 			@launcherBody(t)
+		case database.TileTypeCustomAPI:
+			@customAPIBody(t)
 		default:
 			<div class="home-tile-placeholder">
 				<div class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">{ string(t.Type) }</div>
 				<div class="mt-1 text-sm text-gray-700 dark:text-gray-200">Coming soon</div>
 			</div>
 	}
+}
+
+// customAPIBody renders a customapi tile. The widget container is always
+// present; the runtime fills it in via /home/api/tiles/{id}/widget + SSE.
+templ customAPIBody(t database.HomeTile) {
+	{{
+		var cfg CustomAPIConfig
+		_ = json.Unmarshal(t.Config, &cfg)
+		name := cfg.Name
+		if name == "" {
+			name = "Custom"
+		}
+		icon := cfg.IconURL
+	}}
+	<a
+		class="home-tile-launcher"
+		href={ templ.SafeURL(cfg.URL) }
+		target="_blank"
+		rel="noopener noreferrer"
+		data-tile-link
+	>
+		<div class="home-tile-icon-wrapper">
+			if icon != "" {
+				<img src={ icon } alt={ name + " icon" } class="home-tile-icon" loading="lazy"/>
+			} else {
+				<div class="home-tile-icon home-tile-icon-default">
+					<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+				</div>
+			}
+			<span class="home-tile-status home-tile-status-unknown" title="Status unknown" data-tile-status></span>
+		</div>
+		<div class="home-tile-meta">
+			<div class="home-tile-name">{ name }</div>
+			<div class="home-tile-sub">custom api</div>
+		</div>
+		<div class="home-tile-widget" data-tile-widget>
+			<span class="home-tile-widget-empty">…</span>
+		</div>
+	</a>
 }
 
 // launcherBody renders a launcher tile (icon + name + status dot + click → URL).

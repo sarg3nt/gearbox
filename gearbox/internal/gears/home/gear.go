@@ -95,6 +95,7 @@ func (p *Gear) RegisterRoutes(r chi.Router) {
 		// Predefined apps catalog and URL fingerprinter
 		r.Get("/catalog", p.handlers.CatalogList)
 		r.Get("/probe", p.handlers.Probe)
+		r.Post("/customapi/preview", p.handlers.CustomAPIPreview)
 
 		// Per-tile status & widget snapshot (one-shot)
 		r.Get("/tiles/{id}/status", p.handlers.TileStatus)

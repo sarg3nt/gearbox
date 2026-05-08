@@ -3,9 +3,11 @@ package home
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -479,6 +481,103 @@ func (h *Handlers) TileWidget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.writeJSON(w, http.StatusOK, map[string]any{"tile_id": id, "fields": map[string]string{}})
+}
+
+// CustomAPIPreview fetches a JSON URL with the same auth options the
+// customapi widget will use at runtime, then returns the parsed JSON
+// (truncated) so the browser can render a clickable tree-picker.
+//
+// Body is the same shape as a customapi tile config. The (optional) secret
+// is supplied inline because there's no tile yet to attach one to — once
+// the user saves the tile, it goes through the encrypted secret store.
+func (h *Handlers) CustomAPIPreview(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePerm(w, r, "edit") {
+		return
+	}
+	type previewRequest struct {
+		URL           string            `json:"url"`
+		Method        string            `json:"method,omitempty"`
+		Headers       map[string]string `json:"headers,omitempty"`
+		RequestBody   string            `json:"request_body,omitempty"`
+		Auth          string            `json:"auth,omitempty"`
+		BasicUsername string            `json:"basic_username,omitempty"`
+		HeaderName    string            `json:"header_name,omitempty"`
+		Secret        string            `json:"secret,omitempty"`
+	}
+	var req previewRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.URL) == "" {
+		http.Error(w, "url is required", http.StatusBadRequest)
+		return
+	}
+
+	method := req.Method
+	if method == "" {
+		method = http.MethodGet
+	}
+	var body io.Reader
+	if req.RequestBody != "" {
+		body = strings.NewReader(req.RequestBody)
+	}
+	httpReq, err := http.NewRequestWithContext(r.Context(), method, req.URL, body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	httpReq.Header.Set("Accept", "application/json")
+	for k, v := range req.Headers {
+		httpReq.Header.Set(k, v)
+	}
+	switch req.Auth {
+	case "basic":
+		if req.BasicUsername != "" && req.Secret != "" {
+			httpReq.SetBasicAuth(req.BasicUsername, req.Secret)
+		}
+	case "bearer":
+		if req.Secret != "" {
+			httpReq.Header.Set("Authorization", "Bearer "+req.Secret)
+		}
+	case "header":
+		if req.HeaderName != "" && req.Secret != "" {
+			httpReq.Header.Set(req.HeaderName, req.Secret)
+		}
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	out := map[string]any{
+		"http_status": resp.StatusCode,
+	}
+	var doc any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		out["error"] = "response is not JSON"
+		out["raw_preview"] = string(raw[:min(len(raw), 4096)])
+	} else {
+		out["json"] = doc
+	}
+	h.writeJSON(w, http.StatusOK, out)
+}
+
+// min returns the smaller of two ints. (Go 1.21+ has min() built in;
+// kept here for clarity.)
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // CatalogList returns the predefined apps catalog.

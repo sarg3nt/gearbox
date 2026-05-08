@@ -106,20 +106,22 @@ func (r *widgetRunner) runDue(ctx context.Context) {
 			continue
 		}
 		for _, t := range tiles {
-			if t.Type != database.TileTypeApp {
-				continue
-			}
-			cfg := tileAppConfigJSON(t)
-			if cfg.AppSlug == "" || !widget.HasProvider(cfg.AppSlug) {
-				continue
-			}
 			r.mu.Lock()
 			when, ok := r.nextRun[t.ID]
 			r.mu.Unlock()
 			if ok && now.Before(when) {
 				continue
 			}
-			go r.fetchAndPublish(ctx, db, t, cfg)
+			switch t.Type {
+			case database.TileTypeApp:
+				cfg := tileAppConfigJSON(t)
+				if cfg.AppSlug == "" || !widget.HasProvider(cfg.AppSlug) {
+					continue
+				}
+				go r.fetchAndPublish(ctx, db, t, cfg)
+			case database.TileTypeCustomAPI:
+				go r.fetchCustomAPI(ctx, db, t)
+			}
 		}
 	}
 }
@@ -148,6 +150,57 @@ func (r *widgetRunner) fetchAndPublish(ctx context.Context, db *database.DB, til
 	evt := WidgetEvent{
 		TileID:    tile.ID,
 		Slug:      cfg.AppSlug,
+		Fields:    res.Fields,
+		FetchedAt: time.Now(),
+	}
+	if err != nil {
+		evt.Error = err.Error()
+	}
+	r.mu.Lock()
+	r.lastResult[tile.ID] = evt
+	r.mu.Unlock()
+	r.hub.publish("tile.widget", evt)
+}
+
+// fetchCustomAPI runs one customapi tile fetch.
+func (r *widgetRunner) fetchCustomAPI(ctx context.Context, db *database.DB, tile database.HomeTile) {
+	r.mu.Lock()
+	r.nextRun[tile.ID] = time.Now().Add(widgetCadence)
+	r.mu.Unlock()
+
+	var cfg CustomAPIConfig
+	if err := json.Unmarshal(tile.Config, &cfg); err != nil {
+		return
+	}
+	secret, basicUser := r.loadSecret(db, tile.ID)
+	wcfg := widget.CustomAPIConfig{
+		URL:           cfg.URL,
+		Method:        cfg.Method,
+		Headers:       cfg.Headers,
+		RequestBody:   cfg.RequestBody,
+		Auth:          string(cfg.Auth),
+		BasicUsername: cfg.BasicUsername,
+		HeaderName:    cfg.HeaderName,
+	}
+	if cfg.Auth == CustomAPIAuthBasic && basicUser != "" {
+		wcfg.BasicUsername = basicUser
+	}
+	for _, m := range cfg.Mappings {
+		wcfg.Mappings = append(wcfg.Mappings, widget.CustomAPIMapping{
+			Field:  m.Field,
+			Label:  m.Label,
+			Format: m.Format,
+			Prefix: m.Prefix,
+			Suffix: m.Suffix,
+		})
+	}
+
+	fetchCtx, cancel := context.WithTimeout(ctx, 6*time.Second)
+	defer cancel()
+	res, err := widget.FetchCustomAPI(fetchCtx, cfg.URL, secret, wcfg, nil)
+	evt := WidgetEvent{
+		TileID:    tile.ID,
+		Slug:      "customapi",
 		Fields:    res.Fields,
 		FetchedAt: time.Now(),
 	}
