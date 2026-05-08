@@ -102,6 +102,59 @@
     });
   });
 
+  /* --- Catalog picker (loaded once, used inside the add-tile modal) --- */
+
+  let catalogCache = null;
+  async function loadCatalog() {
+    if (catalogCache) return catalogCache;
+    const res = await fetch("/home/api/catalog", {
+      credentials: "same-origin",
+    });
+    if (!res.ok) {
+      catalogCache = [];
+    } else {
+      catalogCache = await res.json();
+    }
+    return catalogCache;
+  }
+
+  // renderCatalogList renders matching catalog entries into a list element.
+  // Each entry is a clickable row that fills the form's name/icon/app_slug.
+  function renderCatalogList(listEl, entries, query, onPick) {
+    listEl.innerHTML = "";
+    const q = (query || "").toLowerCase();
+    const filtered = !q
+      ? entries.slice(0, 20)
+      : entries
+          .filter(
+            (e) =>
+              e.name.toLowerCase().includes(q) ||
+              e.slug.toLowerCase().includes(q) ||
+              (e.category || "").toLowerCase().includes(q),
+          )
+          .slice(0, 20);
+    if (filtered.length === 0) {
+      const li = document.createElement("li");
+      li.className = "px-3 py-2 text-sm text-gray-500 dark:text-gray-400";
+      li.textContent = "No matches. Use the form fields below to enter a custom app.";
+      listEl.appendChild(li);
+      return;
+    }
+    for (const e of filtered) {
+      const li = document.createElement("li");
+      li.className =
+        "flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700";
+      li.innerHTML =
+        `<img src="${e.icon_url}" alt="" class="w-5 h-5"/>` +
+        `<span class="font-medium text-gray-900 dark:text-white">${e.name}</span>` +
+        (e.category
+          ? `<span class="text-xs text-gray-400">${e.category}</span>`
+          : "");
+      li.addEventListener("click", () => onPick(e));
+      listEl.appendChild(li);
+    }
+  }
+
   /* --- Add tile modal --- */
 
   const addBtn = document.getElementById("home-add-tile");
@@ -112,8 +165,62 @@
     if (!modal) return;
     modal.classList.remove("hidden");
     modal.classList.add("flex");
-    const firstInput = modal.querySelector('input[name="name"]');
+    // Reset detection panel + catalog list each time we open.
+    const detection = modal.querySelector("[data-detection]");
+    if (detection) detection.classList.add("hidden");
+    const catalogList = modal.querySelector("[data-catalog-list]");
+    if (catalogList) {
+      loadCatalog().then((entries) =>
+        renderCatalogList(catalogList, entries, "", pickFromCatalog),
+      );
+    }
+    const firstInput = modal.querySelector('input[name="url"]');
     if (firstInput) firstInput.focus();
+  }
+
+  // pickFromCatalog fills the form with the chosen catalog entry and closes
+  // the picker section.
+  function pickFromCatalog(entry) {
+    if (!form) return;
+    const typeSel = form.querySelector('select[name="type"]');
+    const nameIn = form.querySelector('input[name="name"]');
+    const iconIn = form.querySelector('input[name="icon_url"]');
+    const slugIn = form.querySelector('input[name="app_slug"]');
+    if (typeSel) typeSel.value = "app";
+    if (nameIn) nameIn.value = entry.name;
+    if (iconIn) iconIn.value = entry.icon_url || "";
+    if (slugIn) slugIn.value = entry.slug;
+    const detection = modal.querySelector("[data-detection]");
+    if (detection) {
+      detection.classList.remove("hidden");
+      const detName = detection.querySelector("[data-detection-name]");
+      if (detName) detName.textContent = entry.name;
+    }
+  }
+
+  // probeURL hits /home/api/probe to fingerprint the entered URL. On a hit,
+  // it pre-fills the form via pickFromCatalog. Triggered on URL input blur
+  // (debounced) and on the explicit "Detect" button.
+  let probeTimer = null;
+  function debouncedProbe() {
+    if (probeTimer) clearTimeout(probeTimer);
+    probeTimer = setTimeout(probeURL, 600);
+  }
+  async function probeURL() {
+    if (!form) return;
+    const urlIn = form.querySelector('input[name="url"]');
+    if (!urlIn || !urlIn.value || urlIn.value.length < 7) return;
+    try {
+      const res = await fetch(
+        `/home/api/probe?url=${encodeURIComponent(urlIn.value)}`,
+        { credentials: "same-origin" },
+      );
+      if (!res.ok) return;
+      const body = await res.json();
+      if (body.matched && body.app) pickFromCatalog(body.app);
+    } catch (_e) {
+      /* ignore */
+    }
   }
   function hideModal() {
     if (!modal) return;
@@ -135,28 +242,47 @@
     });
   }
   if (form) {
+    // Trigger fingerprint on URL change (debounced) and on Detect button.
+    const urlIn = form.querySelector('input[name="url"]');
+    if (urlIn) {
+      urlIn.addEventListener("input", debouncedProbe);
+      urlIn.addEventListener("blur", probeURL);
+    }
+    const detectBtn = modal.querySelector("[data-detect-btn]");
+    if (detectBtn) detectBtn.addEventListener("click", probeURL);
+
+    // Catalog search box filters the list as you type.
+    const searchIn = modal.querySelector("[data-catalog-search]");
+    const catalogList = modal.querySelector("[data-catalog-list]");
+    if (searchIn && catalogList) {
+      searchIn.addEventListener("input", () =>
+        loadCatalog().then((entries) =>
+          renderCatalogList(catalogList, entries, searchIn.value, pickFromCatalog),
+        ),
+      );
+    }
+
     form.addEventListener("submit", async (ev) => {
       ev.preventDefault();
       const data = new FormData(form);
+      const type = String(data.get("type") || "bookmark");
+      const config = {
+        url: String(data.get("url") || ""),
+        name: String(data.get("name") || ""),
+        icon_url: String(data.get("icon_url") || ""),
+      };
+      if (type === "app") {
+        const slug = String(data.get("app_slug") || "");
+        if (slug) config.app_slug = slug;
+      }
       const payload = {
-        type: String(data.get("type") || "bookmark"),
+        type,
         x: 0,
         y: 0,
         w: 2,
         h: 1,
-        config: JSON.stringify({
-          url: String(data.get("url") || ""),
-          name: String(data.get("name") || ""),
-          icon_url: String(data.get("icon_url") || ""),
-        }),
+        config,
       };
-      // The API accepts a json.RawMessage on `config`; turn the string into
-      // an object so it's nested rather than escaped.
-      try {
-        payload.config = JSON.parse(payload.config);
-      } catch (_e) {
-        payload.config = {};
-      }
       const res = await fetch(
         `/home/api/boards/${encodeURIComponent(boardId)}/tiles`,
         {

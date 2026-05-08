@@ -1,0 +1,458 @@
+[
+  {
+    "slug": "sonarr",
+    "name": "Sonarr",
+    "category": "media",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/sonarr.svg",
+    "default_ports": [8989],
+    "fingerprint": {
+      "path": "/api/v3/system/status",
+      "type": "json",
+      "field": "appName",
+      "equals": "Sonarr"
+    },
+    "auth": "apikey",
+    "widget_fields": [
+      { "key": "wanted",  "label": "Wanted",  "default": true },
+      { "key": "queued",  "label": "Queued",  "default": true },
+      { "key": "series",  "label": "Series",  "default": true },
+      { "key": "missing", "label": "Missing", "default": false }
+    ]
+  },
+  {
+    "slug": "radarr",
+    "name": "Radarr",
+    "category": "media",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/radarr.svg",
+    "default_ports": [7878],
+    "fingerprint": {
+      "path": "/api/v3/system/status",
+      "type": "json",
+      "field": "appName",
+      "equals": "Radarr"
+    },
+    "auth": "apikey",
+    "widget_fields": [
+      { "key": "wanted",  "label": "Wanted",  "default": true },
+      { "key": "missing", "label": "Missing", "default": true },
+      { "key": "queued",  "label": "Queued",  "default": true },
+      { "key": "movies",  "label": "Movies",  "default": false }
+    ]
+  },
+  {
+    "slug": "prowlarr",
+    "name": "Prowlarr",
+    "category": "media",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/prowlarr.svg",
+    "default_ports": [9696],
+    "fingerprint": {
+      "path": "/api/v1/system/status",
+      "type": "json",
+      "field": "appName",
+      "equals": "Prowlarr"
+    },
+    "auth": "apikey",
+    "widget_fields": [
+      { "key": "numIndexers",    "label": "Indexers",    "default": true },
+      { "key": "numGrabs",       "label": "Grabs",       "default": true },
+      { "key": "numQueries",     "label": "Queries",     "default": true },
+      { "key": "numFailQueries", "label": "Fail",        "default": false }
+    ]
+  },
+  {
+    "slug": "lidarr",
+    "name": "Lidarr",
+    "category": "media",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/lidarr.svg",
+    "default_ports": [8686],
+    "fingerprint": {
+      "path": "/api/v1/system/status",
+      "type": "json",
+      "field": "appName",
+      "equals": "Lidarr"
+    },
+    "auth": "apikey",
+    "widget_fields": [
+      { "key": "wanted",  "label": "Wanted",  "default": true },
+      { "key": "queued",  "label": "Queued",  "default": true },
+      { "key": "artists", "label": "Artists", "default": true }
+    ]
+  },
+  {
+    "slug": "readarr",
+    "name": "Readarr",
+    "category": "media",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/readarr.svg",
+    "default_ports": [8787],
+    "fingerprint": {
+      "path": "/api/v1/system/status",
+      "type": "json",
+      "field": "appName",
+      "equals": "Readarr"
+    },
+    "auth": "apikey",
+    "widget_fields": [
+      { "key": "wanted", "label": "Wanted", "default": true },
+      { "key": "queued", "label": "Queued", "default": true },
+      { "key": "books",  "label": "Books",  "default": true }
+    ]
+  },
+  {
+    "slug": "bazarr",
+    "name": "Bazarr",
+    "category": "media",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/bazarr.svg",
+    "default_ports": [6767],
+    "auth": "apikey",
+    "widget_fields": [
+      { "key": "missingEpisodes", "label": "Missing Eps",    "default": true },
+      { "key": "missingMovies",   "label": "Missing Movies", "default": true }
+    ]
+  },
+  {
+    "slug": "qbittorrent",
+    "name": "qBittorrent",
+    "category": "downloads",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/qbittorrent.svg",
+    "default_ports": [8080],
+    "fingerprint": {
+      "path": "/api/v2/app/version",
+      "type": "body_contains",
+      "value": "v"
+    },
+    "auth": "basic",
+    "widget_fields": [
+      { "key": "leech",    "label": "Leech",    "default": true },
+      { "key": "download", "label": "Down",     "default": true },
+      { "key": "seed",     "label": "Seed",     "default": true },
+      { "key": "upload",   "label": "Up",       "default": true }
+    ]
+  },
+  {
+    "slug": "sabnzbd",
+    "name": "SABnzbd",
+    "category": "downloads",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/sabnzbd.svg",
+    "default_ports": [8081],
+    "auth": "apikey",
+    "widget_fields": [
+      { "key": "rate",     "label": "Rate",     "default": true },
+      { "key": "queue",    "label": "Queue",    "default": true },
+      { "key": "timeleft", "label": "ETA",      "default": true }
+    ]
+  },
+  {
+    "slug": "nzbget",
+    "name": "NZBGet",
+    "category": "downloads",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/nzbget.svg",
+    "default_ports": [6789],
+    "auth": "basic",
+    "widget_fields": [
+      { "key": "rate",     "label": "Rate",     "default": true },
+      { "key": "queue",    "label": "Queue",    "default": true },
+      { "key": "timeleft", "label": "ETA",      "default": true }
+    ]
+  },
+  {
+    "slug": "deluge",
+    "name": "Deluge",
+    "category": "downloads",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/deluge.svg",
+    "default_ports": [8112],
+    "auth": "basic",
+    "widget_fields": [
+      { "key": "leech",    "label": "Leech",    "default": true },
+      { "key": "download", "label": "Down",     "default": true },
+      { "key": "seed",     "label": "Seed",     "default": true },
+      { "key": "upload",   "label": "Up",       "default": true }
+    ]
+  },
+  {
+    "slug": "transmission",
+    "name": "Transmission",
+    "category": "downloads",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/transmission.svg",
+    "default_ports": [9091],
+    "auth": "basic",
+    "widget_fields": [
+      { "key": "leech",    "label": "Leech",    "default": true },
+      { "key": "download", "label": "Down",     "default": true },
+      { "key": "seed",     "label": "Seed",     "default": true },
+      { "key": "upload",   "label": "Up",       "default": true }
+    ]
+  },
+  {
+    "slug": "plex",
+    "name": "Plex",
+    "category": "media",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/plex.svg",
+    "default_ports": [32400],
+    "fingerprint": {
+      "path": "/identity",
+      "type": "body_contains",
+      "value": "machineIdentifier"
+    },
+    "auth": "apikey",
+    "widget_fields": [
+      { "key": "streams", "label": "Streams", "default": true },
+      { "key": "movies",  "label": "Movies",  "default": false },
+      { "key": "tv",      "label": "Shows",   "default": false }
+    ]
+  },
+  {
+    "slug": "jellyfin",
+    "name": "Jellyfin",
+    "category": "media",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/jellyfin.svg",
+    "default_ports": [8096],
+    "fingerprint": {
+      "path": "/System/Info/Public",
+      "type": "json",
+      "field": "ProductName",
+      "equals": "Jellyfin Server"
+    },
+    "auth": "apikey",
+    "widget_fields": [
+      { "key": "movies",   "label": "Movies",   "default": true },
+      { "key": "series",   "label": "Series",   "default": true },
+      { "key": "episodes", "label": "Episodes", "default": false },
+      { "key": "songs",    "label": "Songs",    "default": false }
+    ]
+  },
+  {
+    "slug": "tautulli",
+    "name": "Tautulli",
+    "category": "media",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/tautulli.svg",
+    "default_ports": [8181],
+    "auth": "apikey",
+    "widget_fields": [
+      { "key": "streams", "label": "Streams", "default": true }
+    ]
+  },
+  {
+    "slug": "audiobookshelf",
+    "name": "Audiobookshelf",
+    "category": "media",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/audiobookshelf.svg",
+    "default_ports": [13378],
+    "auth": "apikey",
+    "widget_fields": [
+      { "key": "books",         "label": "Books",    "default": true },
+      { "key": "podcasts",      "label": "Podcasts", "default": true },
+      { "key": "booksDuration", "label": "Duration", "default": false }
+    ]
+  },
+  {
+    "slug": "immich",
+    "name": "Immich",
+    "category": "media",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/immich.svg",
+    "default_ports": [2283, 3001],
+    "auth": "apikey",
+    "widget_fields": [
+      { "key": "users",   "label": "Users",   "default": true },
+      { "key": "photos",  "label": "Photos",  "default": true },
+      { "key": "videos",  "label": "Videos",  "default": true },
+      { "key": "storage", "label": "Storage", "default": false }
+    ]
+  },
+  {
+    "slug": "pihole",
+    "name": "Pi-hole",
+    "category": "network",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/pi-hole.svg",
+    "default_ports": [80],
+    "fingerprint": {
+      "path": "/admin/api.php?summary",
+      "type": "json",
+      "field": "domains_being_blocked",
+      "exists": true
+    },
+    "auth": "apikey",
+    "widget_fields": [
+      { "key": "queries",         "label": "Queries", "default": true },
+      { "key": "blocked",         "label": "Blocked", "default": true },
+      { "key": "blocked_percent", "label": "%",       "default": true },
+      { "key": "gravity",         "label": "Gravity", "default": false }
+    ]
+  },
+  {
+    "slug": "adguard",
+    "name": "AdGuard Home",
+    "category": "network",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/adguard-home.svg",
+    "default_ports": [3000, 80],
+    "fingerprint": {
+      "path": "/control/status",
+      "type": "json",
+      "field": "version",
+      "exists": true
+    },
+    "auth": "basic",
+    "widget_fields": [
+      { "key": "queries",  "label": "Queries", "default": true },
+      { "key": "blocked",  "label": "Blocked", "default": true },
+      { "key": "filtered", "label": "Filtered","default": false },
+      { "key": "latency",  "label": "Latency", "default": false }
+    ]
+  },
+  {
+    "slug": "proxmox",
+    "name": "Proxmox",
+    "category": "infra",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/proxmox.svg",
+    "default_ports": [8006],
+    "auth": "apikey",
+    "widget_fields": [
+      { "key": "vms",  "label": "VMs",  "default": true },
+      { "key": "lxc",  "label": "LXC",  "default": true },
+      { "key": "cpu",  "label": "CPU",  "default": true },
+      { "key": "mem",  "label": "Mem",  "default": true }
+    ]
+  },
+  {
+    "slug": "portainer",
+    "name": "Portainer",
+    "category": "infra",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/portainer.svg",
+    "default_ports": [9000, 9443],
+    "fingerprint": {
+      "path": "/api/system/version",
+      "type": "json",
+      "field": "ServerVersion",
+      "exists": true
+    },
+    "auth": "apikey",
+    "widget_fields": [
+      { "key": "running", "label": "Running", "default": true },
+      { "key": "stopped", "label": "Stopped", "default": true },
+      { "key": "total",   "label": "Total",   "default": false }
+    ]
+  },
+  {
+    "slug": "nextcloud",
+    "name": "Nextcloud",
+    "category": "productivity",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/nextcloud.svg",
+    "default_ports": [80, 443],
+    "fingerprint": {
+      "path": "/status.php",
+      "type": "json",
+      "field": "productname",
+      "equals": "Nextcloud"
+    },
+    "auth": "basic",
+    "widget_fields": [
+      { "key": "freespace",    "label": "Free",     "default": true },
+      { "key": "activeusers",  "label": "Active",   "default": true },
+      { "key": "numfiles",     "label": "Files",    "default": false },
+      { "key": "numshares",    "label": "Shares",   "default": false }
+    ]
+  },
+  {
+    "slug": "unifi",
+    "name": "UniFi Controller",
+    "category": "network",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/unifi.svg",
+    "default_ports": [8443, 443],
+    "auth": "apikey",
+    "widget_fields": [
+      { "key": "lan_users",  "label": "LAN",  "default": true },
+      { "key": "wlan_users", "label": "WiFi", "default": true },
+      { "key": "uptime",     "label": "Uptime","default": false },
+      { "key": "wan",        "label": "WAN",  "default": false }
+    ]
+  },
+  {
+    "slug": "traefik",
+    "name": "Traefik",
+    "category": "network",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/traefik.svg",
+    "default_ports": [8080],
+    "auth": "none",
+    "widget_fields": [
+      { "key": "routers",    "label": "Routers",    "default": true },
+      { "key": "services",   "label": "Services",   "default": true },
+      { "key": "middleware", "label": "Middleware", "default": false }
+    ]
+  },
+  {
+    "slug": "uptime-kuma",
+    "name": "Uptime Kuma",
+    "category": "monitoring",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/uptime-kuma.svg",
+    "default_ports": [3001],
+    "auth": "none",
+    "widget_fields": [
+      { "key": "up",      "label": "Up",      "default": true },
+      { "key": "down",    "label": "Down",    "default": true },
+      { "key": "paused",  "label": "Paused",  "default": false },
+      { "key": "pending", "label": "Pending", "default": false }
+    ]
+  },
+  {
+    "slug": "gotify",
+    "name": "Gotify",
+    "category": "monitoring",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/gotify.svg",
+    "default_ports": [80],
+    "auth": "apikey",
+    "widget_fields": [
+      { "key": "apps",     "label": "Apps",     "default": true },
+      { "key": "clients",  "label": "Clients",  "default": true },
+      { "key": "messages", "label": "Messages", "default": true }
+    ]
+  },
+  {
+    "slug": "watchtower",
+    "name": "Watchtower",
+    "category": "infra",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/watchtower.svg",
+    "default_ports": [8080],
+    "auth": "bearer",
+    "widget_fields": [
+      { "key": "containers_scanned",  "label": "Scanned", "default": true },
+      { "key": "containers_updated",  "label": "Updated", "default": true },
+      { "key": "containers_failed",   "label": "Failed",  "default": false }
+    ]
+  },
+  {
+    "slug": "speedtest-tracker",
+    "name": "Speedtest Tracker",
+    "category": "monitoring",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/speedtest-tracker.svg",
+    "default_ports": [80],
+    "auth": "bearer",
+    "widget_fields": [
+      { "key": "download", "label": "Down", "default": true },
+      { "key": "upload",   "label": "Up",   "default": true },
+      { "key": "ping",     "label": "Ping", "default": true }
+    ]
+  },
+  { "slug": "vaultwarden",      "name": "Vaultwarden",      "category": "productivity", "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/vaultwarden.svg",      "default_ports": [80],     "auth": "none" },
+  { "slug": "bitwarden",        "name": "Bitwarden",        "category": "productivity", "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/bitwarden.svg",        "default_ports": [80],     "auth": "none" },
+  { "slug": "paperless-ngx",    "name": "Paperless-ngx",    "category": "productivity", "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/paperless-ngx.svg",    "default_ports": [8000],   "auth": "none" },
+  { "slug": "mealie",           "name": "Mealie",           "category": "productivity", "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/mealie.svg",           "default_ports": [9000],   "auth": "none" },
+  { "slug": "frigate",          "name": "Frigate",          "category": "media",        "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/frigate.svg",          "default_ports": [5000],   "auth": "none" },
+  { "slug": "home-assistant",   "name": "Home Assistant",   "category": "home",         "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/home-assistant.svg",   "default_ports": [8123],   "auth": "bearer" },
+  { "slug": "syncthing",        "name": "Syncthing",        "category": "productivity", "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/syncthing.svg",        "default_ports": [8384],   "auth": "apikey" },
+  { "slug": "freshrss",         "name": "FreshRSS",         "category": "productivity", "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/freshrss.svg",         "default_ports": [80],     "auth": "none" },
+  { "slug": "authelia",         "name": "Authelia",         "category": "security",     "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/authelia.svg",         "default_ports": [9091],   "auth": "none" },
+  { "slug": "authentik",        "name": "Authentik",        "category": "security",     "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/authentik.svg",        "default_ports": [9000],   "auth": "bearer" },
+  { "slug": "keycloak",         "name": "Keycloak",         "category": "security",     "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/keycloak.svg",         "default_ports": [8080],   "auth": "bearer" },
+  { "slug": "navidrome",        "name": "Navidrome",        "category": "media",        "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/navidrome.svg",        "default_ports": [4533],   "auth": "none" },
+  { "slug": "grafana",          "name": "Grafana",          "category": "monitoring",   "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/grafana.svg",          "default_ports": [3000],   "auth": "bearer" },
+  { "slug": "prometheus",       "name": "Prometheus",       "category": "monitoring",   "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/prometheus.svg",       "default_ports": [9090],   "auth": "none" },
+  { "slug": "minio",            "name": "MinIO",            "category": "infra",        "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/minio.svg",            "default_ports": [9001],   "auth": "none" },
+  { "slug": "truenas",          "name": "TrueNAS",          "category": "infra",        "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/truenas-core.svg",     "default_ports": [443, 80],"auth": "apikey" },
+  { "slug": "openmediavault",   "name": "OpenMediaVault",   "category": "infra",        "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/openmediavault.svg",   "default_ports": [80],     "auth": "none" },
+  { "slug": "dozzle",           "name": "Dozzle",           "category": "infra",        "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/dozzle.svg",           "default_ports": [8080],   "auth": "none" },
+  { "slug": "ntfy",             "name": "ntfy",             "category": "monitoring",   "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/ntfy.svg",             "default_ports": [80],     "auth": "none" },
+  { "slug": "n8n",              "name": "n8n",              "category": "productivity", "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/n8n.svg",              "default_ports": [5678],   "auth": "none" },
+  { "slug": "code-server",      "name": "code-server",      "category": "productivity", "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/code-server.svg",      "default_ports": [8080],   "auth": "none" },
+  { "slug": "gitea",            "name": "Gitea",            "category": "productivity", "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/gitea.svg",            "default_ports": [3000],   "auth": "bearer" },
+  { "slug": "forgejo",          "name": "Forgejo",          "category": "productivity", "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/forgejo.svg",          "default_ports": [3000],   "auth": "bearer" },
+  { "slug": "mastodon",         "name": "Mastodon",         "category": "productivity", "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/mastodon.svg",         "default_ports": [3000],   "auth": "bearer" }
+]

@@ -255,8 +255,10 @@ func shortHost(s string) string {
 	return s
 }
 
-// addTileModal renders a hidden modal for creating a tile. v1 supports the
-// bookmark type; the form's "type" select hides everything else for now.
+// addTileModal renders a hidden modal for creating a tile. The flow is:
+// (1) user enters a URL, (2) browser auto-fingerprints against the catalog
+// and pre-fills the form on a match, (3) on no match user can search the
+// catalog or fall back to manual entry.
 templ addTileModal(b *database.HomeBoard) {
 	<div
 		id="home-add-tile-modal"
@@ -264,31 +266,61 @@ templ addTileModal(b *database.HomeBoard) {
 		role="dialog"
 		aria-modal="true"
 	>
-		<div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-md p-6">
+		<div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
 			<div class="flex items-center justify-between mb-4">
 				<h2 class="text-lg font-semibold text-gray-900 dark:text-white">Add tile</h2>
 				<button type="button" class="text-gray-400 hover:text-gray-700 dark:hover:text-gray-200" data-home-modal-close>×</button>
 			</div>
 			<form id="home-add-tile-form" class="space-y-3" data-board-id={ fmt.Sprintf("%d", b.ID) }>
-				<label class="block text-sm">
-					<span class="text-gray-700 dark:text-gray-200">Tile type</span>
-					<select name="type" class="mt-1 w-full rounded border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-white px-2 py-1.5">
-						<option value="bookmark">Bookmark (link only)</option>
-						<option value="app">App (URL + icon, status dot)</option>
-					</select>
-				</label>
-				<label class="block text-sm">
-					<span class="text-gray-700 dark:text-gray-200">Name</span>
-					<input name="name" required class="mt-1 w-full rounded border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-white px-2 py-1.5" placeholder="My App"/>
-				</label>
-				<label class="block text-sm">
-					<span class="text-gray-700 dark:text-gray-200">URL</span>
-					<input name="url" required type="url" class="mt-1 w-full rounded border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-white px-2 py-1.5" placeholder="https://app.example.com"/>
-				</label>
-				<label class="block text-sm">
-					<span class="text-gray-700 dark:text-gray-200">Icon URL <span class="text-gray-400">(optional)</span></span>
-					<input name="icon_url" type="url" class="mt-1 w-full rounded border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-white px-2 py-1.5" placeholder="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/sonarr.svg"/>
-				</label>
+				<div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+					<label class="block text-sm md:col-span-1">
+						<span class="text-gray-700 dark:text-gray-200">Type</span>
+						<select name="type" class="mt-1 w-full rounded border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-white px-2 py-1.5">
+							<option value="bookmark">Bookmark</option>
+							<option value="app">App</option>
+						</select>
+					</label>
+					<label class="block text-sm md:col-span-2">
+						<span class="text-gray-700 dark:text-gray-200">URL</span>
+						<div class="flex gap-2 mt-1">
+							<input name="url" required type="url" class="flex-1 rounded border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-white px-2 py-1.5" placeholder="https://app.example.com"/>
+							<button type="button" data-detect-btn class="px-3 py-1.5 text-sm rounded border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-700">Detect</button>
+						</div>
+					</label>
+				</div>
+
+				<div data-detection class="hidden text-sm rounded-md bg-emerald-50 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-200 px-3 py-2">
+					Detected: <span data-detection-name class="font-semibold"></span>
+					<span class="text-emerald-600 dark:text-emerald-300">— pre-filled the fields below.</span>
+				</div>
+
+				<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+					<label class="block text-sm">
+						<span class="text-gray-700 dark:text-gray-200">Name</span>
+						<input name="name" required class="mt-1 w-full rounded border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-white px-2 py-1.5" placeholder="My App"/>
+					</label>
+					<label class="block text-sm">
+						<span class="text-gray-700 dark:text-gray-200">Icon URL <span class="text-gray-400">(optional)</span></span>
+						<input name="icon_url" type="url" class="mt-1 w-full rounded border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-white px-2 py-1.5" placeholder="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/sonarr.svg"/>
+					</label>
+				</div>
+				<input type="hidden" name="app_slug"/>
+
+				<details class="border border-gray-200 dark:border-slate-700 rounded-md">
+					<summary class="cursor-pointer px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 select-none">
+						Or pick from catalog
+					</summary>
+					<div class="px-3 pb-3 space-y-2">
+						<input
+							type="text"
+							placeholder="Search apps…"
+							data-catalog-search
+							class="w-full rounded border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-white px-2 py-1.5 text-sm"
+						/>
+						<ul data-catalog-list class="max-h-64 overflow-y-auto divide-y divide-gray-100 dark:divide-slate-700"></ul>
+					</div>
+				</details>
+
 				<div class="pt-2 flex justify-end gap-2">
 					<button type="button" data-home-modal-close class="px-3 py-1.5 text-sm rounded border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-200">Cancel</button>
 					<button type="submit" class="px-3 py-1.5 text-sm rounded bg-blue-600 hover:bg-blue-700 text-white">Add tile</button>

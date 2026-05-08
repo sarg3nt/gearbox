@@ -391,6 +391,45 @@ func (h *Handlers) DeleteTile(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// CatalogList returns the predefined apps catalog.
+func (h *Handlers) CatalogList(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePerm(w, r, "view") {
+		return
+	}
+	entries, err := Catalog()
+	if err != nil {
+		h.deps.Logger.Error("Catalog load failed", "error", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	h.writeJSON(w, http.StatusOK, entries)
+}
+
+// Probe fingerprints a URL against the catalog and returns the matched
+// app entry (or null when nothing matched). The browser calls this after
+// the user pastes a URL in the add-tile modal.
+func (h *Handlers) Probe(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePerm(w, r, "view") {
+		return
+	}
+	target := strings.TrimSpace(r.URL.Query().Get("url"))
+	if target == "" {
+		http.Error(w, "url is required", http.StatusBadRequest)
+		return
+	}
+	prober := newFingerprintProber()
+	slug, ok := prober.Detect(r.Context(), target)
+	if !ok {
+		h.writeJSON(w, http.StatusOK, map[string]any{"matched": false})
+		return
+	}
+	entry, _ := CatalogBySlug(slug)
+	h.writeJSON(w, http.StatusOK, map[string]any{
+		"matched": true,
+		"app":     entry,
+	})
+}
+
 // TileStatus returns the most recent status snapshot for a tile, or unknown
 // when the worker has not yet probed it. The browser hits this on page load
 // to populate status dots before the SSE stream catches up.

@@ -83,6 +83,10 @@ func (p *Gear) RegisterRoutes(r chi.Router) {
 		r.Patch("/tiles/{id}", p.handlers.UpdateTile)
 		r.Delete("/tiles/{id}", p.handlers.DeleteTile)
 
+		// Predefined apps catalog and URL fingerprinter
+		r.Get("/catalog", p.handlers.CatalogList)
+		r.Get("/probe", p.handlers.Probe)
+
 		// Per-tile status snapshot (one-shot)
 		r.Get("/tiles/{id}/status", p.handlers.TileStatus)
 
