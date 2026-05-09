@@ -197,7 +197,12 @@ updateDoneButton();
 
 	// Toggle integration via AJAX - allows multiple toasts without page reload
 	function toggleGear(gearName, displayName, button) {
-const boxID = document.getElementById('current-server-id').value;
+// Each card carries its own server-id so system-scoped gears (server-id =
+// "__system__") route to the right row regardless of the box selector.
+const card = button.closest('.gear-card');
+const cardServerID = card && card.dataset.serverId;
+const fallbackEl = document.getElementById('current-server-id');
+const boxID = cardServerID || (fallbackEl ? fallbackEl.value : '');
 const currentEnabled = button.dataset.enabled === 'true';
 const newEnabled = !currentEnabled;
 
