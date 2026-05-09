@@ -13,6 +13,7 @@ import (
 
 	"github.com/sarg3nt/gearbox/internal/framework/database"
 	"github.com/sarg3nt/gearbox/internal/framework/services"
+	"github.com/sarg3nt/gearbox/internal/gears/home/widget"
 )
 
 // db returns the typed database handle, downcasting through the AuthAdapter.
@@ -265,11 +266,27 @@ func (h *Handlers) CreateTile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid tile type", http.StatusBadRequest)
 		return
 	}
+	// Pick a sensible default size when the client sends auto (W or H 0).
+	// Plain launcher tiles → 2×2 (square, vertical layout).
+	// App tiles whose slug has a Tier-1 widget provider → 4×2 (horizontal
+	// layout, three widget pills fit inline below the icon+meta row).
+	// See home.css for the W>=3 grid switch.
+	wantsWidget := false
+	if req.Type == string(database.TileTypeApp) && len(req.Config) > 0 {
+		var cfg AppConfig
+		if json.Unmarshal(req.Config, &cfg) == nil && cfg.AppSlug != "" && widget.HasProvider(cfg.AppSlug) {
+			wantsWidget = true
+		}
+	}
 	if req.W <= 0 {
-		req.W = 2
+		if wantsWidget {
+			req.W = 4
+		} else {
+			req.W = 2
+		}
 	}
 	if req.H <= 0 {
-		req.H = 1
+		req.H = 2
 	}
 	tile := &database.HomeTile{
 		BoardID:   boardID,
@@ -293,7 +310,23 @@ func (h *Handlers) CreateTile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tile.ID = id
+	// Sync the status worker so the new tile gets probed on the next 1s
+	// tick instead of waiting up to 60 seconds for the periodic refresh.
+	// Without this, a freshly-added reachable tile shows "unknown" for a
+	// minute even when the upstream is healthy.
+	h.kickStatusRefresh()
 	h.writeJSON(w, http.StatusCreated, tile)
+}
+
+// kickStatusRefresh asks the status worker to resync its tile set from the
+// database. Cheap and safe to call from any tile-mutation handler — the
+// worker dedupes by tile id and the call returns immediately, so we don't
+// gate the API response on it.
+func (h *Handlers) kickStatusRefresh() {
+	if h.worker == nil {
+		return
+	}
+	go h.worker.refreshTiles()
 }
 
 // UpdateTile patches a tile. Layout fields and/or config can be supplied;
@@ -365,6 +398,9 @@ func (h *Handlers) UpdateTile(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Internal error", http.StatusInternalServerError)
 			return
 		}
+		// Config edits can change the URL — refresh so the worker drops
+		// the stale URL and probes the new one immediately.
+		h.kickStatusRefresh()
 	}
 
 	w.WriteHeader(http.StatusNoContent)
@@ -390,6 +426,9 @@ func (h *Handlers) DeleteTile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
+	// Drop the deleted tile from the worker's state map so it stops
+	// probing a URL that no longer has a tile pointing at it.
+	h.kickStatusRefresh()
 	w.WriteHeader(http.StatusNoContent)
 }
 

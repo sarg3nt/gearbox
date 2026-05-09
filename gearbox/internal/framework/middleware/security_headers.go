@@ -74,7 +74,8 @@ func buildCSP() string {
 			"default-src 'self'",
 			"script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://unpkg.com https://cdn.jsdelivr.net https://d3js.org",
 			"style-src 'self' 'unsafe-inline' https://unpkg.com",
-			"img-src 'self' data: blob:",
+			// Home gear app catalog hosts SVG icons on jsDelivr (selfh.st/icons).
+			"img-src 'self' data: blob: https://cdn.jsdelivr.net",
 			"font-src 'self' data:",
 			"connect-src 'self' ws: wss:",
 			"frame-ancestors 'none'",

@@ -81,6 +81,17 @@ func (h *Handlers) IndexPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Whether each tile has an encrypted secret on file. Used by the
+	// edit-tile modal to decide whether to show "API Key (saved — leave
+	// blank to keep)" vs "API Key (optional)" and whether to expose the
+	// "Clear" button. The actual secret never leaves the server.
+	secrets := make(map[int64]bool, len(tiles))
+	for _, t := range tiles {
+		if has, err := db.HasHomeTileSecret(t.ID); err == nil {
+			secrets[t.ID] = has
+		}
+	}
+
 	boards, err := db.ListHomeBoards()
 	if err != nil {
 		h.deps.Logger.Error("ListHomeBoards failed", "error", err)
@@ -92,11 +103,12 @@ func (h *Handlers) IndexPage(w http.ResponseWriter, r *http.Request) {
 		currentLanding == "/home/b/"+board.Slug
 
 	IndexPage(IndexPageData{
-		User:           user,
-		Board:          board,
-		Tiles:          tiles,
-		Boards:         boards,
-		HomeIsLanding:  homeIsLanding,
+		User:          user,
+		Board:         board,
+		Tiles:         tiles,
+		Secrets:       secrets,
+		Boards:        boards,
+		HomeIsLanding: homeIsLanding,
 	}).Render(r.Context(), w) //nolint:errcheck
 }
 
@@ -116,9 +128,13 @@ func (h *Handlers) activeBoardLocked(db *database.DB) (*database.HomeBoard, erro
 // here (rather than spreading parameters) keeps the templ signature stable
 // as we add fields like search-engine prefs in later phases.
 type IndexPageData struct {
-	User          *models.User
-	Board         *database.HomeBoard
-	Tiles         []database.HomeTile
+	User  *models.User
+	Board *database.HomeBoard
+	Tiles []database.HomeTile
+	// Secrets[tileID] is true when an encrypted API key / token is on file
+	// for that tile. The actual secret is never exposed; this just drives
+	// edit-modal hints and the "Clear" button.
+	Secrets       map[int64]bool
 	Boards        []database.HomeBoard
 	HomeIsLanding bool
 }

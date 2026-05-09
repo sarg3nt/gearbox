@@ -3,12 +3,25 @@ package home
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/sarg3nt/gearbox/internal/framework/database"
 	"github.com/sarg3nt/gearbox/internal/framework/templates/layouts"
 	"github.com/sarg3nt/gearbox/internal/gears/home/widget"
 )
+
+// fieldControlClasses is the shared Tailwind class string for inputs,
+// selects, and the Detect button in the add/edit-tile modal. Matches
+// the global 42px form control height set in base.templ's <style> block
+// (`select, input[type="text"|"email"|"password"|...] { height: 42px }`).
+//
+// That global rule misses `type="url"` and untyped inputs, which is why
+// the modal had a mix of 34px and 42px controls before this constant
+// existed. Forcing `h-[42px] min-h-[42px]` here covers the gaps and
+// keeps every control in lockstep with the rest of the app.
+const fieldControlClasses = "h-[42px] min-h-[42px] px-3 text-sm rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
 
 // tileBookmarkConfig parses a tile's config JSON as a BookmarkConfig.
 // Falls back to a zero value on errors so the page never panics.
@@ -76,99 +89,164 @@ templ IndexPage(d IndexPageData) {
 	@layouts.Base("Home", d.User, "/home") {
 		<link rel="stylesheet" href="/static/css/vendor/gridstack/gridstack.min.css"/>
 		<link rel="stylesheet" href="/static/css/components/home.css"/>
-		<div class="px-4 sm:px-6 lg:px-8 py-6">
-			<div class="flex items-center justify-between mb-4 gap-2 flex-wrap">
-				<div class="flex items-center gap-3">
-					<h1 class="text-2xl font-bold text-gray-900 dark:text-white">{ d.Board.Name }</h1>
+
+		<!-- Top-bar slot: title (left), search (centered), controls (right).
+		     Children are hoisted into #header-page-content by home.js on
+		     DOMContentLoaded, matching the pattern used by other pages
+		     (see haproxy_gear_settings.templ and pages/logs.templ). -->
+		<div id="page-header-source" class="hidden">
+			<!-- Left: just the active board's name (no redundant "Home :"
+			     prefix — the gear is already labelled "Home" in the
+			     sidebar). When more than one board exists this becomes
+			     a dropdown so the user can switch between them. The
+			     chevron is rendered explicitly: appearance-none strips
+			     the native one, and without a visible affordance the
+			     title looks like static text (issue: "I clicked the
+			     Home icon ... and there does not seem to be a way to
+			     navigate between boards"). -->
+			<div class="flex items-center gap-3 flex-shrink-0">
+				<h2 class="text-xl font-bold text-gray-800 dark:text-gray-100 whitespace-nowrap">
 					if len(d.Boards) > 1 {
-						<select
-							id="home-board-select"
-							class="text-sm rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-white px-2 py-1"
-							onchange="window.location.href = this.value"
-						>
-							for _, b := range d.Boards {
-								<option value={ boardLink(b.Slug) } selected?={ b.Slug == d.Board.Slug }>{ b.Name }</option>
-							}
-						</select>
+						<span class="inline-flex items-center relative group">
+							<select
+								id="home-board-select"
+								class="appearance-none bg-transparent text-xl font-bold text-gray-800 dark:text-gray-100 cursor-pointer focus:outline-none hover:text-blue-600 dark:hover:text-blue-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors pr-6"
+								onchange="window.location.href = this.value"
+								aria-label="Switch board"
+							>
+								for _, b := range d.Boards {
+									<option value={ boardLink(b.Slug) } selected?={ b.Slug == d.Board.Slug }>{ b.Name }</option>
+								}
+							</select>
+							<svg
+								class="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500 group-hover:text-blue-500 dark:group-hover:text-blue-400 pointer-events-none transition-colors"
+								fill="none"
+								stroke="currentColor"
+								viewBox="0 0 24 24"
+								aria-hidden="true"
+							>
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+							</svg>
+						</span>
+					} else {
+						{ d.Board.Name }
 					}
-				</div>
-				<div class="flex items-center gap-2">
-					<button
-						id="home-add-board"
-						type="button"
-						class="text-sm px-3 py-1.5 rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-600"
-						title="Add a new board"
-					>
-						+ Board
-					</button>
-					<a
-						id="home-export"
-						href="/home/api/export"
-						class="text-sm px-3 py-1.5 rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-600"
-						title="Download a JSON backup of all boards & tiles (secrets excluded)"
-					>
-						Export
-					</a>
-					<button
-						id="home-import"
-						type="button"
-						class="text-sm px-3 py-1.5 rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-600"
-						title="Replace boards & tiles from a Gearbox Home backup"
-					>
-						Import
-					</button>
-					<input id="home-import-file" type="file" accept="application/json" class="hidden"/>
-					<button
-						id="home-landing-toggle"
-						type="button"
-						class={ "text-sm px-3 py-1.5 rounded-md border", landingButtonClasses(d.HomeIsLanding) }
-						data-active?={ d.HomeIsLanding }
-						title="Make Home your default page after login"
-					>
-						if d.HomeIsLanding {
-							Default page ✓
-						} else {
-							Make default page
-						}
-					</button>
-					<button
-						id="home-edit-toggle"
-						type="button"
-						class="text-sm px-3 py-1.5 rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-800 dark:text-white hover:bg-gray-50 dark:hover:bg-slate-600"
-					>
-						<span class="home-edit-off-label">Edit layout</span>
-						<span class="home-edit-on-label hidden">Done</span>
-					</button>
-					<button
-						id="home-add-tile"
-						type="button"
-						class="text-sm px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white"
-					>
-						+ Add tile
-					</button>
-				</div>
+				</h2>
 			</div>
 
-			<!-- Search bar — DuckDuckGo by default. Press '/' to focus from
-			     anywhere on the page. The submit handler in home.js falls
-			     back to bookmark-search when the query exactly matches a
-			     tile name. -->
-			<form id="home-search" action="https://duckduckgo.com/" method="get" target="_blank" class="mb-4">
-				<div class="relative max-w-2xl mx-auto">
-					<svg class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+			<!-- Center: search bar. Takes the remaining horizontal space and
+			     caps at max-w-xl so it doesn't dominate wide viewports.
+			     Press '/' anywhere to focus; bookmark-search on Enter when
+			     the query matches a tile name.
+
+			     Placeholder is a pseudo-overlay (not the native
+			     `placeholder` attribute) so we can render a real <kbd>
+			     keycap inside it, GitHub-style: "Type / to search". The
+			     input has `peer` + a single-space placeholder; the
+			     overlay sibling shows only while the input is empty
+			     (`peer-placeholder-shown`) and not focused (`peer-focus:`
+			     hides it). pointer-events-none on the overlay so clicks
+			     pass through to the input. -->
+			<form id="home-search" action="https://duckduckgo.com/" method="get" target="_blank" class="flex-1 mx-4 min-w-0">
+				<div class="relative max-w-xl mx-auto">
+					<svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 z-10 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
 					</svg>
 					<input
 						id="home-search-input"
 						name="q"
 						type="text"
-						placeholder="Search… (press /)"
-						class="w-full pl-10 pr-3 py-2 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+						placeholder=" "
+						class="peer w-full pl-9 pr-3 h-[34px] rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
 						autocomplete="off"
 					/>
+					<div
+						aria-hidden="true"
+						class="absolute left-9 top-1/2 -translate-y-1/2 flex items-center gap-1.5 text-sm text-gray-400 dark:text-gray-500 pointer-events-none opacity-0 peer-placeholder-shown:opacity-100 peer-focus:opacity-0 transition-opacity"
+					>
+						<span>Type</span>
+						<kbd class="inline-flex items-center justify-center min-w-[1.25rem] h-[1.25rem] px-1 rounded border border-gray-300 dark:border-slate-500 bg-gray-50 dark:bg-slate-800 text-[0.7rem] font-sans font-medium text-gray-600 dark:text-gray-300 shadow-sm">/</kbd>
+						<span>to search</span>
+					</div>
 				</div>
 			</form>
 
+			<!-- Right: management controls. Buttons with .home-edit-only are
+			     hidden until the user enters edit mode (home.js toggles). -->
+			<div class="flex items-center gap-2 flex-shrink-0">
+				<button
+					id="home-add-board"
+					type="button"
+					class="home-edit-only hidden text-sm px-3 py-1.5 rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-600"
+					title="Add a new board"
+				>
+					+ Board
+				</button>
+				if len(d.Boards) > 1 {
+					<!-- Only render the Delete button when more than one
+					     board exists. Server refuses to delete the last
+					     one anyway (409), but hiding the affordance
+					     keeps the UI honest. -->
+					<button
+						id="home-delete-board"
+						type="button"
+						data-board-id={ strconv.FormatInt(d.Board.ID, 10) }
+						data-board-name={ d.Board.Name }
+						class="home-edit-only hidden text-sm px-3 py-1.5 rounded-md border border-red-300 dark:border-red-900 bg-white dark:bg-slate-700 text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/30"
+						title="Delete the active board (and all its tiles)"
+					>
+						Delete board
+					</button>
+				}
+				<a
+					id="home-export"
+					href="/home/api/export"
+					class="home-edit-only hidden text-sm px-3 py-1.5 rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-600"
+					title="Download a JSON backup of all boards & tiles (secrets excluded)"
+				>
+					Export
+				</a>
+				<button
+					id="home-import"
+					type="button"
+					class="home-edit-only hidden text-sm px-3 py-1.5 rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-600"
+					title="Replace boards & tiles from a Gearbox Home backup"
+				>
+					Import
+				</button>
+				<input id="home-import-file" type="file" accept="application/json" class="hidden"/>
+				<button
+					id="home-landing-toggle"
+					type="button"
+					class={ "home-edit-only hidden text-sm px-3 py-1.5 rounded-md border", landingButtonClasses(d.HomeIsLanding) }
+					data-active?={ d.HomeIsLanding }
+					title="Make Home your default page after login"
+				>
+					if d.HomeIsLanding {
+						Default page ✓
+					} else {
+						Make default page
+					}
+				</button>
+				<button
+					id="home-edit-toggle"
+					type="button"
+					class="text-sm px-3 py-1.5 rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-800 dark:text-white hover:bg-gray-50 dark:hover:bg-slate-600"
+				>
+					<span class="home-edit-off-label">Edit</span>
+					<span class="home-edit-on-label hidden">Done</span>
+				</button>
+				<button
+					id="home-add-tile"
+					type="button"
+					class="text-sm px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white whitespace-nowrap"
+				>
+					+ Add tile
+				</button>
+			</div>
+		</div>
+
+		<div class="px-4 sm:px-6 lg:px-8 py-6">
 			if len(d.Tiles) == 0 {
 				<div id="home-empty-state" class="border-2 border-dashed border-gray-300 dark:border-slate-700 rounded-xl py-16 text-center">
 					<div class="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500 mb-3">
@@ -196,7 +274,7 @@ templ IndexPage(d IndexPageData) {
 				data-board-slug={ d.Board.Slug }
 			>
 				for _, t := range d.Tiles {
-					@tileNode(t)
+					@tileNode(t, d.Secrets[t.ID])
 				}
 			</div>
 		</div>
@@ -220,7 +298,17 @@ func landingButtonClasses(active bool) string {
 
 // tileNode renders a single grid item. The wrapping divs follow the
 // gridstack convention: .grid-stack-item > .grid-stack-item-content.
-templ tileNode(t database.HomeTile) {
+//
+// The status dot is hoisted out of tileBody and rendered as a direct child
+// of .home-tile so it can sit absolute-positioned in the tile's top-right
+// corner regardless of which body template (launcher / customapi /
+// placeholder) is in use. Public tile config (URL, name, icon URL, app
+// slug) is also hoisted onto the .grid-stack-item as data attributes so
+// the edit-tile modal can pre-populate without an extra round trip. No
+// secrets are emitted — those live in home_tile_secrets, decrypted only
+// inside backend handlers.
+templ tileNode(t database.HomeTile, hasSecret bool) {
+	{{ tc := tileConfigSummary(t) }}
 	<div
 		class="grid-stack-item"
 		gs-id={ strconv.FormatInt(t.ID, 10) }
@@ -230,17 +318,86 @@ templ tileNode(t database.HomeTile) {
 		gs-h={ strconv.Itoa(t.H) }
 		data-tile-id={ strconv.FormatInt(t.ID, 10) }
 		data-tile-type={ string(t.Type) }
+		data-tile-name={ tc.Name }
+		data-tile-url={ tc.URL }
+		data-tile-icon-url={ tc.IconURL }
+		data-tile-app-slug={ tc.AppSlug }
+		data-tile-has-secret={ boolToStr(hasSecret) }
 	>
 		<div class="grid-stack-item-content home-tile" data-tile-type={ string(t.Type) }>
 			@tileBody(t)
+			if tileShowsStatus(t) {
+				<span class="home-tile-status home-tile-status-unknown" title="Status: unknown" data-tile-status></span>
+			}
+			<button
+				type="button"
+				class="home-tile-edit hidden"
+				title="Edit tile"
+				data-tile-edit={ strconv.FormatInt(t.ID, 10) }
+				aria-label="Edit tile"
+			>
+				<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+				</svg>
+			</button>
 			<button
 				type="button"
 				class="home-tile-delete hidden"
 				title="Delete tile"
 				data-tile-delete={ strconv.FormatInt(t.ID, 10) }
+				aria-label="Delete tile"
 			>×</button>
 		</div>
 	</div>
+}
+
+// tileConfigSummary extracts the non-sensitive launcher config fields used
+// by the edit-tile modal. Returns zero values for tile types that don't
+// expose these fields (clock, weather, search) so the data attributes are
+// still safe to render — they just end up empty.
+type tileConfigSum struct {
+	Name    string
+	URL     string
+	IconURL string
+	AppSlug string
+}
+
+func tileConfigSummary(t database.HomeTile) tileConfigSum {
+	switch t.Type {
+	case database.TileTypeBookmark:
+		c := tileBookmarkConfig(t)
+		return tileConfigSum{Name: c.Name, URL: c.URL, IconURL: c.IconURL}
+	case database.TileTypeApp:
+		c := tileAppConfig(t)
+		return tileConfigSum{Name: c.Name, URL: c.URL, IconURL: c.IconURL, AppSlug: c.AppSlug}
+	case database.TileTypeCustomAPI:
+		var c CustomAPIConfig
+		_ = json.Unmarshal(t.Config, &c)
+		return tileConfigSum{Name: c.Name, URL: c.URL, IconURL: c.IconURL}
+	default:
+		return tileConfigSum{}
+	}
+}
+
+// boolToStr renders a bool as "true"/"false" — used for data-* attributes
+// so the JS can read them with strict-equality checks.
+func boolToStr(b bool) string {
+	if b {
+		return "true"
+	}
+	return "false"
+}
+
+// tileShowsStatus reports whether a tile type participates in the
+// reachability worker. Bookmark / app / customapi tiles get a status dot;
+// clock / weather / search and other passive tile types do not.
+func tileShowsStatus(t database.HomeTile) bool {
+	switch t.Type {
+	case database.TileTypeBookmark, database.TileTypeApp, database.TileTypeCustomAPI:
+		return true
+	default:
+		return false
+	}
 }
 
 // tileBody chooses the right inner template per tile type.
@@ -285,15 +442,20 @@ templ customAPIBody(t database.HomeTile) {
 					<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
 				</div>
 			}
-			<span class="home-tile-status home-tile-status-unknown" title="Status unknown" data-tile-status></span>
 		</div>
 		<div class="home-tile-meta">
 			<div class="home-tile-name">{ name }</div>
-			<div class="home-tile-sub">custom api</div>
+			if cfg.URL != "" {
+				<div class="home-tile-sub">{ shortHost(cfg.URL) }</div>
+			} else {
+				<div class="home-tile-sub">custom api</div>
+			}
 		</div>
-		<div class="home-tile-widget" data-tile-widget>
-			<span class="home-tile-widget-empty">…</span>
-		</div>
+		// Widget panel container. Stays empty until the runtime fills it
+		// from /home/api/tiles/{id}/widget + SSE — no "loading" placeholder
+		// is rendered, so tiles that never get widget data (e.g. missing
+		// API key) show nothing here instead of a permanent ellipsis.
+		<div class="home-tile-widget" data-tile-widget></div>
 	</a>
 }
 
@@ -324,35 +486,66 @@ templ launcherBody(t database.HomeTile) {
 					<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0zM3.6 9h16.8M3.6 15h16.8M12 3a14 14 0 010 18M12 3a14 14 0 000 18"></path></svg>
 				</div>
 			}
-			<span class="home-tile-status home-tile-status-unknown" title="Status unknown" data-tile-status></span>
 		</div>
 		<div class="home-tile-meta">
 			<div class="home-tile-name">{ name }</div>
-			if t.Type == database.TileTypeApp && appCfg.AppSlug != "" {
-				<div class="home-tile-sub">{ appCfg.AppSlug }</div>
-			} else if url != "" {
-				<div class="home-tile-sub">{ shortHost(url) }</div>
+			// Sub-line shows the host the tile points at — actionable info.
+			// Skipped when the host is just a case-variant of the name (e.g.
+			// "Plex"/"plex" in dev, where the URL has no real host part) so
+			// we don't print the title twice.
+			if sub := tileSub(name, url); sub != "" {
+				<div class="home-tile-sub">{ sub }</div>
 			}
 		</div>
 		if hasWidget {
-			<div class="home-tile-widget" data-tile-widget data-tile-slug={ appCfg.AppSlug }>
-				<span class="home-tile-widget-empty">…</span>
-			</div>
+			// Empty until the widget runner publishes data. See note in
+			// customAPIBody — no permanent placeholder.
+			<div class="home-tile-widget" data-tile-widget data-tile-slug={ appCfg.AppSlug }></div>
 		}
 	</a>
 }
 
-// shortHost extracts a host:port-ish display string from a URL for the tile sub-line.
-// Failing parses (or empty inputs) return the original string truncated.
-func shortHost(s string) string {
-	const max = 40
-	if len(s) > max {
-		return s[:max-1] + "…"
+// tileSub picks the sub-line text for a launcher tile. Returns the URL's
+// short host when meaningful, but suppresses it when the host would just
+// echo the display name (case-insensitive). Empty result means no sub-line.
+func tileSub(name, urlStr string) string {
+	host := shortHost(urlStr)
+	if host == "" {
+		return ""
 	}
-	return s
+	if strings.EqualFold(host, strings.TrimSpace(name)) {
+		return ""
+	}
+	return host
 }
 
-// addTileModal renders a hidden modal for creating a tile. The flow is:
+// shortHost extracts a host:port display string from a URL for the tile
+// sub-line. For "https://radarr.sarg3.net/foo" it returns "radarr.sarg3.net";
+// for "http://10.0.0.5:32400/web" it returns "10.0.0.5:32400". Falls back to
+// a truncated raw string when parsing fails or the URL has no host (e.g.
+// scheme-relative or schemeless input).
+func shortHost(s string) string {
+	const max = 40
+	truncate := func(x string) string {
+		if len(x) > max {
+			return x[:max-1] + "…"
+		}
+		return x
+	}
+	if s == "" {
+		return ""
+	}
+	u, err := url.Parse(s)
+	if err == nil && u.Host != "" {
+		return truncate(u.Host)
+	}
+	return truncate(s)
+}
+
+// addTileModal renders a hidden modal used for both creating and editing
+// a tile. The default state is "Add tile" — home.js retitles the modal
+// and switches the form to PATCH /home/api/tiles/{id} when an edit is
+// triggered from a tile's pencil button. The flow for create is:
 // (1) user enters a URL, (2) browser auto-fingerprints against the catalog
 // and pre-fills the form on a match, (3) on no match user can search the
 // catalog or fall back to manual entry.
@@ -365,43 +558,108 @@ templ addTileModal(b *database.HomeBoard) {
 	>
 		<div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
 			<div class="flex items-center justify-between mb-4">
-				<h2 class="text-lg font-semibold text-gray-900 dark:text-white">Add tile</h2>
+				<h2 id="home-modal-title" class="text-lg font-semibold text-gray-900 dark:text-white">Add tile</h2>
 				<button type="button" class="text-gray-400 hover:text-gray-700 dark:hover:text-gray-200" data-home-modal-close>×</button>
 			</div>
 			<form id="home-add-tile-form" class="space-y-3" data-board-id={ fmt.Sprintf("%d", b.ID) }>
 				<div class="grid grid-cols-1 md:grid-cols-3 gap-3">
 					<label class="block text-sm md:col-span-1">
 						<span class="text-gray-700 dark:text-gray-200">Type</span>
-						<select name="type" class="mt-1 w-full rounded border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-white px-2 py-1.5">
-							<option value="bookmark">Bookmark</option>
+						<select name="type" class={ fieldControlClasses, "mt-1 w-full" }>
 							<option value="app">App</option>
+							<option value="bookmark">Bookmark</option>
 						</select>
 					</label>
 					<label class="block text-sm md:col-span-2">
 						<span class="text-gray-700 dark:text-gray-200">URL</span>
 						<div class="flex gap-2 mt-1">
-							<input name="url" required type="url" class="flex-1 rounded border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-white px-2 py-1.5" placeholder="https://app.example.com"/>
-							<button type="button" data-detect-btn class="px-3 py-1.5 text-sm rounded border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-700">Detect</button>
+							<input name="url" required type="url" class={ fieldControlClasses, "flex-1" } placeholder="https://app.example.com"/>
+							<button type="button" data-detect-btn class={ fieldControlClasses, "hover:bg-gray-50 dark:hover:bg-slate-600" }>Detect</button>
 						</div>
 					</label>
 				</div>
 
-				<div data-detection class="hidden text-sm rounded-md bg-emerald-50 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-200 px-3 py-2">
-					Detected: <span data-detection-name class="font-semibold"></span>
-					<span class="text-emerald-600 dark:text-emerald-300">— pre-filled the fields below.</span>
+				<!-- Detection banner. JS toggles `hidden` and fills the
+				     icon + name + slug after a successful /probe. The
+				     icon makes it obvious at a glance that the catalog
+				     entry was matched (vs guessing from the name). -->
+				<div data-detection class="hidden flex items-center gap-3 text-sm rounded-md bg-emerald-50 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-200 px-3 py-2">
+					<img
+						data-detection-icon
+						alt=""
+						class="w-8 h-8 rounded-md bg-white dark:bg-slate-700 p-1 flex-shrink-0"
+					/>
+					<div class="flex-1 min-w-0">
+						Detected: <span data-detection-name class="font-semibold"></span>
+						<span class="text-emerald-600 dark:text-emerald-300">— pre-filled the fields below.</span>
+					</div>
 				</div>
 
 				<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
 					<label class="block text-sm">
 						<span class="text-gray-700 dark:text-gray-200">Name</span>
-						<input name="name" required class="mt-1 w-full rounded border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-white px-2 py-1.5" placeholder="My App"/>
+						<input name="name" required class={ fieldControlClasses, "mt-1 w-full" } placeholder="My App"/>
 					</label>
 					<label class="block text-sm">
 						<span class="text-gray-700 dark:text-gray-200">Icon URL <span class="text-gray-400">(optional)</span></span>
-						<input name="icon_url" type="url" class="mt-1 w-full rounded border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-white px-2 py-1.5" placeholder="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/sonarr.svg"/>
+						<input name="icon_url" type="url" class={ fieldControlClasses, "mt-1 w-full" } placeholder="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/sonarr.svg"/>
 					</label>
 				</div>
 				<input type="hidden" name="app_slug"/>
+
+				<!-- API Key / Secret. Shown for type=app/customapi (bookmarks
+				     don't fetch upstream data). The browser never sees
+				     stored secrets back from the server — has_secret on
+				     the tile drives the "saved" state and the Clear
+				     button. Encrypted at rest with the install's master
+				     key (AES-256-GCM via crypto.Encryptor).
+
+				     Note: do NOT add Tailwind's `block` class here. It
+				     wins over the `hidden` HTML attribute via specificity
+				     and the section ends up always visible. The JS
+				     toggles `hidden` directly via `section.hidden = ...`. -->
+				<div class="text-sm" data-secret-section hidden>
+					<div class="flex items-baseline justify-between gap-2">
+						<span class="text-gray-700 dark:text-gray-200">
+							API Key
+							<span class="text-gray-400" data-secret-hint>(optional)</span>
+						</span>
+						<button
+							type="button"
+							class="hidden text-xs text-red-600 dark:text-red-400 hover:underline"
+							data-secret-clear
+						>
+							Clear saved key
+						</button>
+					</div>
+					<input
+						name="secret"
+						type="password"
+						autocomplete="new-password"
+						class={ fieldControlClasses, "mt-1 w-full" }
+						placeholder="paste API key / token"
+					/>
+					<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+						Required for widget data on Sonarr / Radarr / Pi-hole / qBittorrent etc. Encrypted at rest.
+					</p>
+				</div>
+
+				<!-- Tile size presets. The hidden inputs carry W/H to the
+				     submit handler; the radio chips style themselves via
+				     :checked + sibling label pattern. Default = "auto"
+				     which lets the server pick H based on whether the app
+				     slug has a Tier-1 widget provider. -->
+				<fieldset class="border border-gray-200 dark:border-slate-700 rounded-md p-3">
+					<legend class="px-1 text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Size</legend>
+					<div class="flex flex-wrap gap-2" data-size-presets>
+						@sizePresetChip("auto", "Auto", "Server picks: 2×2 launcher, 4×2 horizontal for apps with widget data", true)
+						@sizePresetChip("compact", "Compact 2×1", "Tight icon-only row — bookmarks", false)
+						@sizePresetChip("standard", "Square 2×2", "Vertical: icon, name, URL", false)
+						@sizePresetChip("tall", "Tall 2×3", "Vertical with widget pills stacked below", false)
+						@sizePresetChip("wide", "Wide 4×2", "Horizontal: icon left, name+URL right, widget pills inline", false)
+					</div>
+					<input type="hidden" name="size_preset" value="auto"/>
+				</fieldset>
 
 				<details class="border border-gray-200 dark:border-slate-700 rounded-md">
 					<summary class="cursor-pointer px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 select-none">
@@ -412,7 +670,7 @@ templ addTileModal(b *database.HomeBoard) {
 							type="text"
 							placeholder="Search apps…"
 							data-catalog-search
-							class="w-full rounded border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-white px-2 py-1.5 text-sm"
+							class={ fieldControlClasses, "w-full" }
 						/>
 						<ul data-catalog-list class="max-h-64 overflow-y-auto divide-y divide-gray-100 dark:divide-slate-700"></ul>
 					</div>
@@ -420,9 +678,26 @@ templ addTileModal(b *database.HomeBoard) {
 
 				<div class="pt-2 flex justify-end gap-2">
 					<button type="button" data-home-modal-close class="px-3 py-1.5 text-sm rounded border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-200">Cancel</button>
-					<button type="submit" class="px-3 py-1.5 text-sm rounded bg-blue-600 hover:bg-blue-700 text-white">Add tile</button>
+					<button id="home-modal-submit" type="submit" class="px-3 py-1.5 text-sm rounded bg-blue-600 hover:bg-blue-700 text-white">Add tile</button>
 				</div>
 			</form>
 		</div>
 	</div>
+}
+
+// sizePresetChip renders one preset as a label-wrapped radio button so we
+// can style the selected state with peer-checked: classes.
+templ sizePresetChip(value, label, hint string, defaultChecked bool) {
+	<label class="cursor-pointer text-sm" title={ hint }>
+		<input
+			type="radio"
+			name="size_preset_radio"
+			value={ value }
+			class="peer sr-only"
+			checked?={ defaultChecked }
+		/>
+		<span class="inline-block px-3 py-1.5 rounded-md border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-700 peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-600">
+			{ label }
+		</span>
+	</label>
 }

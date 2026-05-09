@@ -6,10 +6,9 @@
     "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/sonarr.svg",
     "default_ports": [8989],
     "fingerprint": {
-      "path": "/api/v3/system/status",
-      "type": "json",
-      "field": "appName",
-      "equals": "Sonarr"
+      "path": "/login",
+      "type": "body_contains",
+      "value": "Login - Sonarr"
     },
     "auth": "apikey",
     "widget_fields": [
@@ -26,10 +25,9 @@
     "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/radarr.svg",
     "default_ports": [7878],
     "fingerprint": {
-      "path": "/api/v3/system/status",
-      "type": "json",
-      "field": "appName",
-      "equals": "Radarr"
+      "path": "/login",
+      "type": "body_contains",
+      "value": "Login - Radarr"
     },
     "auth": "apikey",
     "widget_fields": [
@@ -46,10 +44,9 @@
     "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/prowlarr.svg",
     "default_ports": [9696],
     "fingerprint": {
-      "path": "/api/v1/system/status",
-      "type": "json",
-      "field": "appName",
-      "equals": "Prowlarr"
+      "path": "/login",
+      "type": "body_contains",
+      "value": "Login - Prowlarr"
     },
     "auth": "apikey",
     "widget_fields": [
@@ -66,10 +63,9 @@
     "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/lidarr.svg",
     "default_ports": [8686],
     "fingerprint": {
-      "path": "/api/v1/system/status",
-      "type": "json",
-      "field": "appName",
-      "equals": "Lidarr"
+      "path": "/login",
+      "type": "body_contains",
+      "value": "Login - Lidarr"
     },
     "auth": "apikey",
     "widget_fields": [
@@ -85,10 +81,9 @@
     "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/readarr.svg",
     "default_ports": [8787],
     "fingerprint": {
-      "path": "/api/v1/system/status",
-      "type": "json",
-      "field": "appName",
-      "equals": "Readarr"
+      "path": "/login",
+      "type": "body_contains",
+      "value": "Login - Readarr"
     },
     "auth": "apikey",
     "widget_fields": [
@@ -116,9 +111,9 @@
     "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/qbittorrent.svg",
     "default_ports": [8080],
     "fingerprint": {
-      "path": "/api/v2/app/version",
+      "path": "/",
       "type": "body_contains",
-      "value": "v"
+      "value": "qBittorrent WebUI"
     },
     "auth": "basic",
     "widget_fields": [
@@ -285,10 +280,9 @@
     "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/adguard-home.svg",
     "default_ports": [3000, 80],
     "fingerprint": {
-      "path": "/control/status",
-      "type": "json",
-      "field": "version",
-      "exists": true
+      "path": "/",
+      "type": "body_contains",
+      "value": "AdGuard Home"
     },
     "auth": "basic",
     "widget_fields": [
@@ -321,7 +315,7 @@
     "fingerprint": {
       "path": "/api/system/version",
       "type": "json",
-      "field": "ServerVersion",
+      "field": "ServerEdition",
       "exists": true
     },
     "auth": "apikey",
