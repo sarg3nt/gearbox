@@ -94,6 +94,8 @@ func (p *Gear) RegisterRoutes(r chi.Router) {
 
 		// Predefined apps catalog and URL fingerprinter
 		r.Get("/catalog", p.handlers.CatalogList)
+		r.Get("/icons", p.handlers.IconLibrary)
+		r.Get("/icons/suggest", p.handlers.IconSuggest)
 		r.Get("/probe", p.handlers.Probe)
 		r.Post("/customapi/preview", p.handlers.CustomAPIPreview)
 

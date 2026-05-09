@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -688,6 +689,61 @@ func (h *Handlers) CatalogList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.writeJSON(w, http.StatusOK, entries)
+}
+
+// IconLibrary returns the cached selfh.st/icons index for the icon picker.
+// The browser fetches this once and filters client-side. We set a one-hour
+// browser cache header — the server-side cache TTL is six hours, so this
+// just smooths repeat picker opens within a session.
+func (h *Handlers) IconLibrary(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePerm(w, r, "view") {
+		return
+	}
+	if h.icons == nil {
+		h.writeJSON(w, http.StatusOK, []IconEntry{})
+		return
+	}
+	entries, err := h.icons.List(r.Context())
+	if err != nil {
+		h.deps.Logger.Error("icon library load failed", "error", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	h.writeJSON(w, http.StatusOK, entries)
+}
+
+// IconSuggest returns the best icon match for a URL by exact-matching
+// each host label (e.g. "google.com" → label "google" → Google icon).
+// Used to auto-fill the icon URL on bookmark and uncatalogued-app tiles
+// the moment the user pastes a URL — no probe of the upstream needed,
+// just string matching against the cached library. Returns null when
+// nothing matched (browser leaves the field empty).
+func (h *Handlers) IconSuggest(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePerm(w, r, "view") {
+		return
+	}
+	if h.icons == nil {
+		h.writeJSON(w, http.StatusOK, nil)
+		return
+	}
+	target := strings.TrimSpace(r.URL.Query().Get("url"))
+	if target == "" {
+		http.Error(w, "url is required", http.StatusBadRequest)
+		return
+	}
+	// Warm the cache if needed; ignore errors so the suggester silently
+	// returns nothing rather than 500ing on transient upstream failures.
+	if _, err := h.icons.List(r.Context()); err != nil {
+		h.deps.Logger.Warn("icon library list failed (suggest will return null)", "error", err)
+	}
+	parsed, err := url.Parse(target)
+	if err != nil || parsed.Host == "" {
+		h.writeJSON(w, http.StatusOK, nil)
+		return
+	}
+	match := h.icons.Suggest(parsed.Hostname())
+	h.writeJSON(w, http.StatusOK, match)
 }
 
 // Probe fingerprints a URL against the catalog and returns the matched

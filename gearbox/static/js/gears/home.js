@@ -33,34 +33,147 @@
 
   const boardId = grid.dataset.boardId;
 
-  /** Initialize gridstack. */
+  /** Cell sizing. The grid uses a fixed pixel cell height/width (so a
+   *  W=2 tile is always ~152px wide regardless of viewport), and the
+   *  column count grows with the container so wider screens fit more
+   *  tiles per row instead of stretching each one. With a hard
+   *  `column: 12` like before, doubling the viewport doubled every
+   *  tile's size — see issue: "tiles grow in size and they should not". */
+  const TARGET_CELL_PX = 76;     // tile cell width target (close to old default at 1280px viewport)
+  const MIN_COLUMNS = 6;         // narrowest sane grid; below this we stop adding columns
+  const MAX_COLUMNS = 60;        // safety ceiling on ultrawide displays
+
+  // computeColumns returns the column count for the current grid container
+  // width. Aim for ~76px per cell, clamped between MIN/MAX.
+  function computeColumns() {
+    const w = grid.clientWidth || window.innerWidth;
+    const cols = Math.floor(w / TARGET_CELL_PX);
+    return Math.max(MIN_COLUMNS, Math.min(MAX_COLUMNS, cols));
+  }
+
+  // Gridstack's vendor CSS only ships percentage-width rules for `gs-1`
+  // and `gs-12` (matching the historical default column counts). With
+  // dynamic column counts we'd otherwise see tiles render at 0px wide
+  // for any other count. Generate the missing rules on demand and
+  // memoize them so we never re-emit the same column-count's stylesheet.
+  const injectedColCSS = new Set();
+  function ensureColumnCSS(n) {
+    if (n === 1 || n === 12 || injectedColCSS.has(n)) return;
+    const css = [];
+    for (let i = 1; i <= n; i++) {
+      const pct = ((i / n) * 100).toFixed(4);
+      // width for tiles spanning i columns
+      css.push(`.gs-${n} > .grid-stack-item[gs-w="${i}"]{width:${pct}%}`);
+      // left for tiles starting at column i (skip i=n which would be off-grid)
+      if (i < n) {
+        css.push(`.gs-${n} > .grid-stack-item[gs-x="${i}"]{left:${pct}%}`);
+      }
+    }
+    const style = document.createElement("style");
+    style.dataset.gsDynamicCols = String(n);
+    style.textContent = css.join("");
+    document.head.appendChild(style);
+    injectedColCSS.add(n);
+  }
+
+  /** Initialize gridstack with the dynamic column count.
+   *
+   *  - `column: <computed>` so cell width stays ~76px regardless of
+   *    viewport (tiles don't grow when the window grows).
+   *  - `float: false` so a tile dragged on a wide viewport doesn't
+   *    leave gaps when the viewport narrows — gridstack auto-compacts.
+   *  - `columnOpts.layout: "list"` so when the column count changes
+   *    (resize, narrow viewport), tiles re-flow into the available
+   *    columns in their stored order rather than overflowing or
+   *    being scaled. The user's drag arrangement is preserved
+   *    within a given viewport size; on resize we treat saved
+   *    positions as ordering hints, not absolute coordinates. */
+  const initialCols = computeColumns();
+  ensureColumnCSS(initialCols);
   const gs = GridStack.init(
     {
-      column: 12,
+      column: initialCols,
       cellHeight: 80,
       margin: 16,
       float: false,
       staticGrid: true, // Read-only until the user enters edit mode.
       acceptWidgets: false,
       animate: true,
+      columnOpts: { layout: "list" },
     },
     grid,
   );
 
+  /** Track of tiles whose layout the server already knows about, so the
+   *  initial gridstack pass doesn't re-PATCH every existing tile. Declared
+   *  before the reflow/column-change helpers since they read it. */
+  let suppressChange = true;
+  setTimeout(() => {
+    suppressChange = false;
+  }, 100);
+
+  /** reflowTiles re-runs the "list" auto-flow over the current tile
+   *  positions. Used at init (saved x,y from a wider viewport could
+   *  overflow the current grid) and on resize (column count changed).
+   *  The reflow is layout-only and shouldn't be persisted back to the
+   *  server — wrapped in `suppressChange` so the change handler that
+   *  PATCHes user drags doesn't fire for viewport-driven moves. */
+  function reflowTiles() {
+    suppressChange = true;
+    gs.compact("list", true);
+    setTimeout(() => {
+      suppressChange = false;
+    }, 50);
+  }
+
+  // Force one reflow on init. Saved gs-x/gs-y are rendered verbatim
+  // from the server, so a position written when the viewport was
+  // wider can overflow the current grid (issue: "a tile is cut off
+  // and should have wrapped to the next row"). compact() drops them
+  // back into valid columns in their stored DOM order.
+  reflowTiles();
+
+  /** changeColumns wraps gs.column() to switch column count without
+   *  persisting the resulting position changes back to the server. */
+  function changeColumns(next) {
+    if (next === gs.getColumn()) return;
+    ensureColumnCSS(next);
+    suppressChange = true;
+    gs.column(next, "list");
+    setTimeout(() => {
+      suppressChange = false;
+    }, 50);
+  }
+
+  // Recompute column count when the grid container resizes. ResizeObserver
+  // fires on layout-driven resizes (sidebar collapse, viewport change,
+  // even programmatic window resizes) — more reliable than `window.resize`,
+  // which doesn't fire in some embedded contexts. Debounced so the handler
+  // doesn't thrash during a continuous drag.
+  let resizeTimer = null;
+  const resizeObserver = new ResizeObserver(() => {
+    if (resizeTimer) clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      changeColumns(computeColumns());
+    }, 120);
+  });
+  resizeObserver.observe(grid);
+
   // findNextSlot scans gridstack's current nodes for the first empty
-  // (x, y) where a w×h tile fits within the 12-column grid, top-to-bottom
-  // and left-to-right. Without this, a new tile POSTed at (0, 0) collides
-  // with the tile already there and gridstack ends up stacking them
-  // vertically on reload — see issue: "should default to the right".
+  // (x, y) where a w×h tile fits, top-to-bottom and left-to-right.
+  // Honors the live column count (which now varies with viewport
+  // width). Without this a new tile POSTed at (0, 0) would collide
+  // with the existing tile there and gridstack would stack them
+  // vertically on reload.
   function findNextSlot(w, h) {
-    const cols = 12;
+    const cols = gs.getColumn();
     if (w > cols) w = cols;
     const occupied = new Set();
     let maxY = 0;
     (gs.engine.nodes || []).forEach((n) => {
       for (let dy = 0; dy < n.h; dy++) {
         for (let dx = 0; dx < n.w; dx++) {
-          occupied.add(`${n.x + dx},${n.y + dy}`);
+          occupied.add((n.x + dx) + "," + (n.y + dy));
         }
       }
       if (n.y + n.h > maxY) maxY = n.y + n.h;
@@ -71,7 +184,7 @@
         let fits = true;
         for (let dy = 0; dy < h && fits; dy++) {
           for (let dx = 0; dx < w && fits; dx++) {
-            if (occupied.has(`${x + dx},${y + dy}`)) fits = false;
+            if (occupied.has((x + dx) + "," + (y + dy))) fits = false;
           }
         }
         if (fits) return { x, y };
@@ -79,13 +192,6 @@
     }
     return { x: 0, y: maxY };
   }
-
-  /** Track of tiles whose layout the server already knows about, so the
-   *  initial gridstack pass doesn't re-PATCH every existing tile. */
-  let suppressChange = true;
-  setTimeout(() => {
-    suppressChange = false;
-  }, 100);
 
   /** Persist layout changes back to the server. */
   gs.on("change", (_event, items) => {
@@ -167,6 +273,157 @@
     // If we just emptied the board, reload to surface the empty state.
     if (gs.engine.nodes.length === 0) window.location.reload();
   });
+
+  /* --- Icon picker (selfh.st/icons browser) ---
+     Fetches /home/api/icons once per session, filters client-side as
+     the user types, and on selection writes the icon URL into the
+     [name="icon_url"] input on the add-tile form. Designed to stack
+     on top of the add-tile modal — z-index higher, doesn't close the
+     parent modal when dismissed. */
+
+  const iconPicker = document.getElementById("home-icon-picker");
+  const iconSearchInput = iconPicker?.querySelector("[data-icon-picker-search]");
+  const iconGrid = iconPicker?.querySelector("[data-icon-picker-grid]");
+  const iconStatus = iconPicker?.querySelector("[data-icon-picker-status]");
+  const ICON_RENDER_LIMIT = 96; // virtualization-lite — render a window, not all 2,700+
+
+  let iconLibraryCache = null;
+  let iconFilterTimer = null;
+
+  async function loadIconLibrary() {
+    if (iconLibraryCache) return iconLibraryCache;
+    try {
+      const res = await fetch("/home/api/icons", { credentials: "same-origin" });
+      if (!res.ok) return (iconLibraryCache = []);
+      iconLibraryCache = await res.json();
+    } catch (_e) {
+      iconLibraryCache = [];
+    }
+    return iconLibraryCache;
+  }
+
+  function renderIconGrid(query) {
+    if (!iconGrid || !iconStatus) return;
+    const lib = iconLibraryCache || [];
+    const q = (query || "").trim().toLowerCase();
+    const matches = q
+      ? lib.filter((e) =>
+          (e.name + " " + e.slug + " " + (e.tags || "") + " " + (e.category || ""))
+            .toLowerCase()
+            .includes(q),
+        )
+      : lib;
+    const shown = matches.slice(0, ICON_RENDER_LIMIT);
+    iconGrid.innerHTML = "";
+    if (lib.length === 0) {
+      iconStatus.textContent = "Icon library couldn't load — check your network.";
+      return;
+    }
+    if (matches.length === 0) {
+      iconStatus.textContent = `No icons match "${q}"`;
+      return;
+    }
+    iconStatus.textContent = q
+      ? `${matches.length} match${matches.length === 1 ? "" : "es"} for "${q}"` +
+        (matches.length > shown.length ? ` (showing first ${shown.length})` : "")
+      : `${lib.length} icons — type to filter`;
+    const frag = document.createDocumentFragment();
+    for (const e of shown) {
+      const tile = document.createElement("button");
+      tile.type = "button";
+      tile.dataset.iconUrl = e.url;
+      tile.title = e.name + (e.category ? " — " + e.category : "");
+      tile.className =
+        "flex flex-col items-center gap-1.5 p-2 rounded-md border border-gray-200 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-500 hover:bg-blue-50/40 dark:hover:bg-slate-700 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500";
+      const img = document.createElement("img");
+      img.src = e.url;
+      img.alt = "";
+      img.loading = "lazy";
+      img.className = "w-10 h-10 object-contain";
+      img.onerror = () => {
+        tile.style.display = "none";
+      };
+      const label = document.createElement("span");
+      label.className = "text-[0.7rem] truncate w-full text-center text-gray-600 dark:text-gray-300";
+      label.textContent = e.name;
+      tile.appendChild(img);
+      tile.appendChild(label);
+      frag.appendChild(tile);
+    }
+    iconGrid.appendChild(frag);
+  }
+
+  async function openIconPicker() {
+    if (!iconPicker) return;
+    iconPicker.classList.remove("hidden");
+    iconPicker.classList.add("flex");
+    if (iconSearchInput) {
+      iconSearchInput.value = "";
+      setTimeout(() => iconSearchInput.focus(), 50);
+    }
+    if (iconStatus) iconStatus.textContent = "Loading…";
+    if (iconGrid) iconGrid.innerHTML = "";
+    await loadIconLibrary();
+    renderIconGrid("");
+  }
+
+  function closeIconPicker() {
+    if (!iconPicker) return;
+    iconPicker.classList.add("hidden");
+    iconPicker.classList.remove("flex");
+  }
+
+  // Open trigger lives on the icon URL row inside the add-tile modal.
+  document.addEventListener("click", (ev) => {
+    const browseBtn = ev.target.closest && ev.target.closest("[data-icon-browse-btn]");
+    if (browseBtn) {
+      ev.preventDefault();
+      openIconPicker();
+      return;
+    }
+    const closeBtn = ev.target.closest && ev.target.closest("[data-icon-picker-close]");
+    if (closeBtn) {
+      ev.preventDefault();
+      closeIconPicker();
+    }
+  });
+
+  // Click-outside to dismiss.
+  if (iconPicker) {
+    iconPicker.addEventListener("click", (ev) => {
+      if (ev.target === iconPicker) closeIconPicker();
+    });
+  }
+  // Escape closes the picker (without closing the underlying add-tile modal).
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape" && iconPicker && !iconPicker.classList.contains("hidden")) {
+      ev.stopPropagation();
+      closeIconPicker();
+    }
+  });
+
+  // Debounced filter on input.
+  if (iconSearchInput) {
+    iconSearchInput.addEventListener("input", () => {
+      if (iconFilterTimer) clearTimeout(iconFilterTimer);
+      iconFilterTimer = setTimeout(() => renderIconGrid(iconSearchInput.value), 80);
+    });
+  }
+
+  // Click an icon tile → write the URL into the icon_url input + close.
+  if (iconGrid) {
+    iconGrid.addEventListener("click", (ev) => {
+      const tile = ev.target.closest("[data-icon-url]");
+      if (!tile) return;
+      ev.preventDefault();
+      const iconInput = document.querySelector('input[name="icon_url"]');
+      if (iconInput) {
+        iconInput.value = tile.dataset.iconUrl;
+        iconInput.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      closeIconPicker();
+    });
+  }
 
   /* --- Catalog picker (loaded once, used inside the add-tile modal) --- */
 
@@ -420,27 +677,34 @@
     if (nameIn) nameIn.value = entry.name;
     if (iconIn) iconIn.value = entry.icon_url || "";
     if (slugIn) slugIn.value = entry.slug;
+    showDetectionBanner(entry.name, entry.icon_url);
+  }
+
+  // showDetectionBanner reveals the green "Detected: <name>" panel above
+  // the form fields with the matched icon preview. Used by both the
+  // catalog fingerprinter (pickFromCatalog) and the icon-name suggester
+  // — same affordance, same affordance, same affordance, regardless of
+  // which detection path matched. Hiding the broken-image alt on 404
+  // keeps the panel clean when an icon URL goes stale.
+  function showDetectionBanner(name, iconURL) {
+    if (!modal) return;
     const detection = modal.querySelector("[data-detection]");
-    if (detection) {
-      detection.classList.remove("hidden");
-      const detName = detection.querySelector("[data-detection-name]");
-      const detIcon = detection.querySelector("[data-detection-icon]");
-      if (detName) detName.textContent = entry.name;
-      // Show the matched catalog icon to make the match obvious at a
-      // glance. If it 404s, hide rather than show the broken-image alt.
-      if (detIcon) {
-        if (entry.icon_url) {
-          detIcon.src = entry.icon_url;
-          detIcon.alt = entry.name + " icon";
-          detIcon.style.display = "";
-          detIcon.onerror = () => {
-            detIcon.style.display = "none";
-          };
-        } else {
-          detIcon.removeAttribute("src");
-          detIcon.style.display = "none";
-        }
-      }
+    if (!detection) return;
+    detection.classList.remove("hidden");
+    const detName = detection.querySelector("[data-detection-name]");
+    if (detName) detName.textContent = name;
+    const detIcon = detection.querySelector("[data-detection-icon]");
+    if (!detIcon) return;
+    if (iconURL) {
+      detIcon.src = iconURL;
+      detIcon.alt = name + " icon";
+      detIcon.style.display = "";
+      detIcon.onerror = () => {
+        detIcon.style.display = "none";
+      };
+    } else {
+      detIcon.removeAttribute("src");
+      detIcon.style.display = "none";
     }
   }
 
@@ -454,24 +718,71 @@
   }
   async function probeURL() {
     if (!form) return;
-    // Skip auto-detection for bookmarks. A "bookmark" is by definition
-    // any URL — running self-hosted-app fingerprints against google.com
-    // can only produce false positives (and pickFromCatalog would
-    // forcibly switch the type back to "app" against the user's intent).
-    const typeSel = form.querySelector('select[name="type"]');
-    if (typeSel && typeSel.value === "bookmark") return;
     const urlIn = form.querySelector('input[name="url"]');
     if (!urlIn || !urlIn.value || urlIn.value.length < 7) return;
-    try {
-      const res = await fetch(
-        `/home/api/probe?url=${encodeURIComponent(urlIn.value)}`,
-        { credentials: "same-origin" },
-      );
-      if (!res.ok) return;
-      const body = await res.json();
-      if (body.matched && body.app) pickFromCatalog(body.app);
-    } catch (_e) {
-      /* ignore */
+    const typeSel = form.querySelector('select[name="type"]');
+    const tileType = (typeSel && typeSel.value) || "app";
+
+    let catalogMatched = false;
+
+    // App tiles run the catalog fingerprint first — that's the
+    // high-confidence path (probes the actual upstream and looks for an
+    // app-specific signature). Bookmarks skip this entirely; their URL
+    // is by definition arbitrary and a fingerprint match against
+    // google.com can only be a false positive.
+    if (tileType !== "bookmark") {
+      try {
+        const res = await fetch(
+          `/home/api/probe?url=${encodeURIComponent(urlIn.value)}`,
+          { credentials: "same-origin" },
+        );
+        if (res.ok) {
+          const body = await res.json();
+          if (body.matched && body.app) {
+            pickFromCatalog(body.app);
+            catalogMatched = true;
+          }
+        }
+      } catch (_e) {
+        /* ignore — fall through to icon suggester */
+      }
+    }
+
+    // Icon-name suggester fallback: scan the URL host's labels against
+    // the selfh.st icon library by exact slug/name match. Catches the
+    // common case of "google.com → Google icon" for bookmarks, plus
+    // self-hosted apps not in our predefined catalog (e.g. "navidrome.
+    // sarg3.net" → Navidrome icon). Only fills empty fields so the
+    // user's manual choices win — and only reveals the green detection
+    // banner when at least one field was actually filled, otherwise the
+    // banner would be misleading ("Detected: Google" while the user has
+    // already typed their own name).
+    if (!catalogMatched) {
+      try {
+        const res = await fetch(
+          `/home/api/icons/suggest?url=${encodeURIComponent(urlIn.value)}`,
+          { credentials: "same-origin" },
+        );
+        if (res.ok) {
+          const match = await res.json();
+          if (match && match.url) {
+            const iconIn = form.querySelector('input[name="icon_url"]');
+            const nameIn = form.querySelector('input[name="name"]');
+            let filled = false;
+            if (iconIn && !iconIn.value) {
+              iconIn.value = match.url;
+              filled = true;
+            }
+            if (nameIn && !nameIn.value) {
+              nameIn.value = match.name;
+              filled = true;
+            }
+            if (filled) showDetectionBanner(match.name, match.url);
+          }
+        }
+      } catch (_e) {
+        /* ignore — empty fields stay empty, user fills manually */
+      }
     }
   }
   function hideModal() {
@@ -843,7 +1154,11 @@
         body: JSON.stringify({ path }),
       });
       if (!res.ok) {
-        alert("Failed to update default landing page");
+        await showAlertDialog({
+          title: "Failed to update default landing page",
+          message: res.statusText || "The server rejected the request.",
+          type: "error",
+        });
         return;
       }
       window.location.reload();
@@ -1031,7 +1346,11 @@
   async function deleteTile(id) {
     const res = await fetch(`/home/api/tiles/${id}`, { method: "DELETE" });
     if (!res.ok) {
-      alert("Failed to delete tile: " + res.statusText);
+      await showAlertDialog({
+        title: "Failed to delete tile",
+        message: res.statusText || "The server rejected the delete request.",
+        type: "error",
+      });
       throw new Error("delete failed");
     }
   }

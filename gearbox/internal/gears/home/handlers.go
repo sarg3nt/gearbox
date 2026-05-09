@@ -18,13 +18,14 @@ type Handlers struct {
 	hub          *sseHub
 	worker       *statusWorker
 	widgetRunner *widgetRunner
+	icons        *iconLibrary
 }
 
 // NewHandlers builds a Handlers using the gear dependencies.
 // The SSE hub is created here; the worker is wired up later in Gear.Initialize
 // once the worker has been constructed.
 func NewHandlers(deps gear.Dependencies) *Handlers {
-	return &Handlers{deps: deps, hub: newSSEHub()}
+	return &Handlers{deps: deps, hub: newSSEHub(), icons: newIconLibrary()}
 }
 
 // encryptor returns the secrets encryptor via the AuthAdapter facade. Returns

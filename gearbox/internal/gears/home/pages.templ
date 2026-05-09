@@ -282,6 +282,12 @@ templ IndexPage(d IndexPageData) {
 		<!-- Add-tile modal (hidden until the button is clicked) -->
 		@addTileModal(d.Board)
 
+		<!-- Icon picker modal — selfh.st/icons browser. Fills the
+		     [name="icon_url"] input on selection. Lives at the page
+		     level so the add-tile and (future) edit-customapi modals
+		     can both invoke it. -->
+		@iconPickerModal()
+
 		<script src="/static/js/vendor/gridstack/gridstack-all.js" defer></script>
 		<script src="/static/js/gears/home.js" defer></script>
 	}
@@ -602,7 +608,23 @@ templ addTileModal(b *database.HomeBoard) {
 					</label>
 					<label class="block text-sm">
 						<span class="text-gray-700 dark:text-gray-200">Icon URL <span class="text-gray-400">(optional)</span></span>
-						<input name="icon_url" type="url" class={ fieldControlClasses, "mt-1 w-full" } placeholder="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/sonarr.svg"/>
+						<!-- Direct URL input + a Browse button that opens the
+						     selfh.st/icons picker. Either path fills the same
+						     input, so manual paste keeps working. -->
+						<div class="flex gap-2 mt-1">
+							<input name="icon_url" type="url" class={ fieldControlClasses, "flex-1" } placeholder="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/sonarr.svg"/>
+							<button
+								type="button"
+								data-icon-browse-btn
+								class={ fieldControlClasses, "hover:bg-gray-50 dark:hover:bg-slate-600 inline-flex items-center gap-1.5" }
+								title="Browse the selfh.st icon library"
+							>
+								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+								</svg>
+								Browse
+							</button>
+						</div>
 					</label>
 				</div>
 				<input type="hidden" name="app_slug"/>
@@ -700,4 +722,53 @@ templ sizePresetChip(value, label, hint string, defaultChecked bool) {
 			{ label }
 		</span>
 	</label>
+}
+
+// iconPickerModal renders the selfh.st/icons browser. JS fetches the icon
+// list from /home/api/icons (cached), filters client-side as the user
+// types, and on selection writes the icon URL into [name="icon_url"] on
+// the add-tile form. Higher z-index than the add-tile modal so it can
+// stack on top. Stays in the DOM but display:none until opened.
+templ iconPickerModal() {
+	<div
+		id="home-icon-picker"
+		class="hidden fixed inset-0 bg-black/40 z-[60] items-center justify-center p-4"
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="home-icon-picker-title"
+	>
+		<div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-3xl flex flex-col max-h-[85vh]">
+			<div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-slate-700 flex-shrink-0">
+				<div>
+					<h2 id="home-icon-picker-title" class="text-lg font-semibold text-gray-900 dark:text-white">Browse icons</h2>
+					<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+						<a href="https://selfh.st/icons/" target="_blank" rel="noopener noreferrer" class="hover:underline">selfh.st/icons</a>
+						— search by name, slug, or category
+					</p>
+				</div>
+				<button type="button" data-icon-picker-close class="text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 text-2xl leading-none">×</button>
+			</div>
+			<div class="p-4 flex-shrink-0">
+				<input
+					type="text"
+					data-icon-picker-search
+					placeholder="Search icons…"
+					autocomplete="off"
+					class={ fieldControlClasses, "w-full" }
+				/>
+				<p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+					<span data-icon-picker-status>Loading…</span>
+				</p>
+			</div>
+			<div class="flex-1 overflow-y-auto px-4 pb-4 min-h-0">
+				<div
+					data-icon-picker-grid
+					class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3"
+				></div>
+			</div>
+			<div class="flex justify-end gap-2 p-4 border-t border-gray-200 dark:border-slate-700 flex-shrink-0">
+				<button type="button" data-icon-picker-close class="px-3 py-1.5 text-sm rounded border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-700">Cancel</button>
+			</div>
+		</div>
+	</div>
 }
