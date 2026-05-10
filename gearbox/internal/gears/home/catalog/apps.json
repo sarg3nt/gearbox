@@ -16,7 +16,18 @@
       { "key": "queued",  "label": "Queued",  "default": true },
       { "key": "series",  "label": "Series",  "default": true },
       { "key": "missing", "label": "Missing", "default": false }
-    ]
+    ],
+    "api_help": {
+      "title": "Find your Sonarr API key",
+      "settings_path": "/settings/general",
+      "steps": [
+        "Open Sonarr's `Settings → General` page (use the link below).",
+        "Scroll to the `Security` section.",
+        "Copy the `API Key` value (click the field to reveal it).",
+        "Paste it into the API Key field on this dialog and click Save."
+      ],
+      "note": "The API key never expires unless you click `Reset`. Treat it like a password — anyone with it can fully control Sonarr."
+    }
   },
   {
     "slug": "radarr",
@@ -35,7 +46,18 @@
       { "key": "missing", "label": "Missing", "default": true },
       { "key": "queued",  "label": "Queued",  "default": true },
       { "key": "movies",  "label": "Movies",  "default": false }
-    ]
+    ],
+    "api_help": {
+      "title": "Find your Radarr API key",
+      "settings_path": "/settings/general",
+      "steps": [
+        "Open Radarr's `Settings → General` page (use the link below).",
+        "Scroll to the `Security` section.",
+        "Copy the `API Key` value (click the field to reveal it).",
+        "Paste it into the API Key field on this dialog and click Save."
+      ],
+      "note": "Treat the API key like a password — anyone with it can fully control Radarr."
+    }
   },
   {
     "slug": "prowlarr",
@@ -54,7 +76,17 @@
       { "key": "numGrabs",       "label": "Grabs",       "default": true },
       { "key": "numQueries",     "label": "Queries",     "default": true },
       { "key": "numFailQueries", "label": "Fail",        "default": false }
-    ]
+    ],
+    "api_help": {
+      "title": "Find your Prowlarr API key",
+      "settings_path": "/settings/general",
+      "steps": [
+        "Open Prowlarr's `Settings → General` page (use the link below).",
+        "Scroll to the `Security` section.",
+        "Copy the `API Key` value (click the field to reveal it).",
+        "Paste it into the API Key field on this dialog and click Save."
+      ]
+    }
   },
   {
     "slug": "lidarr",
@@ -72,7 +104,17 @@
       { "key": "wanted",  "label": "Wanted",  "default": true },
       { "key": "queued",  "label": "Queued",  "default": true },
       { "key": "artists", "label": "Artists", "default": true }
-    ]
+    ],
+    "api_help": {
+      "title": "Find your Lidarr API key",
+      "settings_path": "/settings/general",
+      "steps": [
+        "Open Lidarr's `Settings → General` page (use the link below).",
+        "Scroll to the `Security` section.",
+        "Copy the `API Key` value.",
+        "Paste it into the API Key field on this dialog and click Save."
+      ]
+    }
   },
   {
     "slug": "readarr",
@@ -90,7 +132,17 @@
       { "key": "wanted", "label": "Wanted", "default": true },
       { "key": "queued", "label": "Queued", "default": true },
       { "key": "books",  "label": "Books",  "default": true }
-    ]
+    ],
+    "api_help": {
+      "title": "Find your Readarr API key",
+      "settings_path": "/settings/general",
+      "steps": [
+        "Open Readarr's `Settings → General` page (use the link below).",
+        "Scroll to the `Security` section.",
+        "Copy the `API Key` value.",
+        "Paste it into the API Key field on this dialog and click Save."
+      ]
+    }
   },
   {
     "slug": "bazarr",
@@ -102,7 +154,17 @@
     "widget_fields": [
       { "key": "missingEpisodes", "label": "Missing Eps",    "default": true },
       { "key": "missingMovies",   "label": "Missing Movies", "default": true }
-    ]
+    ],
+    "api_help": {
+      "title": "Find your Bazarr API key",
+      "settings_path": "/#/settings/general",
+      "steps": [
+        "Open Bazarr's `Settings → General` page (use the link below).",
+        "Scroll to the `Security Settings` section.",
+        "Copy the `API Key` value.",
+        "Paste it into the API Key field on this dialog and click Save."
+      ]
+    }
   },
   {
     "slug": "qbittorrent",
@@ -121,7 +183,18 @@
       { "key": "download", "label": "Down",     "default": true },
       { "key": "seed",     "label": "Seed",     "default": true },
       { "key": "upload",   "label": "Up",       "default": true }
-    ]
+    ],
+    "api_help": {
+      "title": "qBittorrent credentials",
+      "settings_path": "/#/preferences",
+      "steps": [
+        "qBittorrent doesn't use API keys — Gearbox signs in with your WebUI username and password.",
+        "Default WebUI login is `admin` / `adminadmin` on a fresh install. If you've changed it, use the credentials you set.",
+        "Enter your username in the `Username` field and your password in the API Key field on this dialog.",
+        "(Optional) In `Tools → Options → Web UI` you can enable `Bypass authentication for clients in whitelisted IP subnets` to avoid storing the password — set the whitelist to your Gearbox host's IP."
+      ],
+      "note": "Recommended: create a dedicated WebUI user (or set a strong password) before pasting credentials into a dashboard."
+    }
   },
   {
     "slug": "sabnzbd",
@@ -190,10 +263,27 @@
     },
     "auth": "apikey",
     "widget_fields": [
-      { "key": "streams", "label": "Streams", "default": true },
-      { "key": "movies",  "label": "Movies",  "default": false },
-      { "key": "tv",      "label": "Shows",   "default": false }
-    ]
+      { "key": "streams",    "label": "Streams",    "default": true },
+      { "key": "transcodes", "label": "Transcodes", "default": true },
+      { "key": "bandwidth",  "label": "Bandwidth",  "default": true },
+      { "key": "movies",     "label": "Movies",     "default": true },
+      { "key": "tv",         "label": "Shows",      "default": false },
+      { "key": "episodes",   "label": "Episodes",   "default": false },
+      { "key": "libraries",  "label": "Libraries",  "default": false }
+    ],
+    "api_help": {
+      "title": "Find your Plex token (X-Plex-Token)",
+      "steps": [
+        "Plex doesn't show its API token in any settings page — you have to extract it from a request the web app already makes. The easiest way:",
+        "Sign in to Plex Web at `app.plex.tv` (or your local Plex web URL) with the same account that owns this server.",
+        "Open any item in your library (a movie, episode, or anything).",
+        "Click the `...` (three-dot) menu on the item → `Get Info` → in the bottom-left of the info dialog, click `View XML`.",
+        "A new browser tab opens with raw XML. Look at that tab's URL — it contains `X-Plex-Token=` followed by a long string. Copy just the token (everything after the `=` and before the next `&`, if any).",
+        "Paste the token into the API Key field on this dialog and click Save.",
+        "Alternative method: open Plex Web, press `F12` to open DevTools, switch to the `Network` tab, click anything in the UI, find any request to `/library/...` and look at the `X-Plex-Token` request header — copy that value."
+      ],
+      "note": "The token grants the same access as your Plex account, so guard it like a password. To revoke it, sign out of all devices at `https://app.plex.tv/desktop/#!/settings/account` — Plex will issue a new token on next sign-in."
+    }
   },
   {
     "slug": "jellyfin",
@@ -213,7 +303,19 @@
       { "key": "series",   "label": "Series",   "default": true },
       { "key": "episodes", "label": "Episodes", "default": false },
       { "key": "songs",    "label": "Songs",    "default": false }
-    ]
+    ],
+    "api_help": {
+      "title": "Find your Jellyfin API key",
+      "settings_path": "/web/index.html#!/apikeys.html",
+      "steps": [
+        "Sign in to Jellyfin's web UI as an admin and open `Dashboard → API Keys` (use the link below).",
+        "Click the `+` button to create a new API key.",
+        "Give it an app name like `Gearbox` so you can identify it later, then click `Ok`.",
+        "Copy the generated key from the list.",
+        "Paste it into the API Key field on this dialog and click Save."
+      ],
+      "note": "API keys can be revoked at any time from the same page. Each key is scoped to the account that created it."
+    }
   },
   {
     "slug": "tautulli",
@@ -224,7 +326,17 @@
     "auth": "apikey",
     "widget_fields": [
       { "key": "streams", "label": "Streams", "default": true }
-    ]
+    ],
+    "api_help": {
+      "title": "Find your Tautulli API key",
+      "settings_path": "/settings#tabs_tabs-web_interface",
+      "steps": [
+        "Open Tautulli and go to `Settings → Web Interface` (use the link below).",
+        "Scroll to the `API` section and make sure `Enable API` is on.",
+        "Copy the `API Key` value.",
+        "Paste it into the API Key field on this dialog and click Save."
+      ]
+    }
   },
   {
     "slug": "audiobookshelf",
@@ -251,7 +363,17 @@
       { "key": "photos",  "label": "Photos",  "default": true },
       { "key": "videos",  "label": "Videos",  "default": true },
       { "key": "storage", "label": "Storage", "default": false }
-    ]
+    ],
+    "api_help": {
+      "title": "Find your Immich API key",
+      "settings_path": "/user-settings?isOpen=api-keys",
+      "steps": [
+        "Sign in to Immich and open `Account → API Keys` (use the link below).",
+        "Click `New API Key`, name it `Gearbox`, and select the permissions you want it to have (read-only is plenty for the dashboard).",
+        "Copy the generated key — it's only shown once.",
+        "Paste it into the API Key field on this dialog and click Save."
+      ]
+    }
   },
   {
     "slug": "pihole",
@@ -271,7 +393,18 @@
       { "key": "blocked",         "label": "Blocked", "default": true },
       { "key": "blocked_percent", "label": "%",       "default": true },
       { "key": "gravity",         "label": "Gravity", "default": false }
-    ]
+    ],
+    "api_help": {
+      "title": "Find your Pi-hole password / API token",
+      "settings_path": "/admin/settings.php?tab=api",
+      "steps": [
+        "Sign in to the Pi-hole admin UI and go to `Settings → API / Web interface` (use the link below).",
+        "On Pi-hole v6+, click `Show API token` and copy the value.",
+        "On Pi-hole v5, paste the *web admin password* you set during install — there's no separate API token; the password is the auth.",
+        "Paste the token (or password) into the API Key field on this dialog and click Save."
+      ],
+      "note": "On v6 you can also generate a scoped Application Password under `Settings → Web interface / API` that's safer than the admin password."
+    }
   },
   {
     "slug": "adguard",
@@ -290,7 +423,16 @@
       { "key": "blocked",  "label": "Blocked", "default": true },
       { "key": "filtered", "label": "Filtered","default": false },
       { "key": "latency",  "label": "Latency", "default": false }
-    ]
+    ],
+    "api_help": {
+      "title": "AdGuard Home credentials",
+      "settings_path": "/#settings",
+      "steps": [
+        "AdGuard Home doesn't issue API keys — it uses the same admin username and password you log into the web UI with.",
+        "Enter your admin username in the `Username` field and your admin password in the API Key field on this dialog.",
+        "If you've forgotten the password, reset it via the AdGuard Home config file (`/opt/adguardhome/conf/AdGuardHome.yaml`, `users:` section)."
+      ]
+    }
   },
   {
     "slug": "proxmox",
@@ -323,7 +465,18 @@
       { "key": "running", "label": "Running", "default": true },
       { "key": "stopped", "label": "Stopped", "default": true },
       { "key": "total",   "label": "Total",   "default": false }
-    ]
+    ],
+    "api_help": {
+      "title": "Find your Portainer access token",
+      "settings_path": "/#!/account/tokens",
+      "steps": [
+        "Sign in to Portainer and go to `My account → Access tokens` (use the link below — your username menu in the top-right also gets you there).",
+        "Click `Add access token`, give it a description like `Gearbox`, and click `Add access token` again.",
+        "Copy the token shown — Portainer only displays it once.",
+        "Paste it into the API Key field on this dialog and click Save."
+      ],
+      "note": "Tokens inherit your account's role. You can revoke a token any time from the same page."
+    }
   },
   {
     "slug": "nextcloud",

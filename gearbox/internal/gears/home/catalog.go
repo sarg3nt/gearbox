@@ -19,14 +19,29 @@ var catalogFS embed.FS
 
 // CatalogEntry is one row from the predefined apps catalog.
 type CatalogEntry struct {
-	Slug         string                 `json:"slug"`
-	Name         string                 `json:"name"`
-	Category     string                 `json:"category,omitempty"`
-	IconURL      string                 `json:"icon_url"`
-	DefaultPorts []int                  `json:"default_ports,omitempty"`
-	Auth         string                 `json:"auth,omitempty"`         // none | apikey | basic | bearer | header
-	Fingerprint  *Fingerprint           `json:"fingerprint,omitempty"`  // nil for catalog entries with no auto-detect probe
-	WidgetFields []CatalogWidgetField   `json:"widget_fields,omitempty"`
+	Slug         string               `json:"slug"`
+	Name         string               `json:"name"`
+	Category     string               `json:"category,omitempty"`
+	IconURL      string               `json:"icon_url"`
+	DefaultPorts []int                `json:"default_ports,omitempty"`
+	Auth         string               `json:"auth,omitempty"`        // none | apikey | basic | bearer | header
+	Fingerprint  *Fingerprint         `json:"fingerprint,omitempty"` // nil for catalog entries with no auto-detect probe
+	WidgetFields []CatalogWidgetField `json:"widget_fields,omitempty"`
+	APIHelp      *APIHelp             `json:"api_help,omitempty"` // optional: instructions for getting an API key
+}
+
+// APIHelp describes how a user can find an API key / token for a given app.
+// Surfaced in the Add/Edit-tile modal next to the green "Detected" banner so
+// the question "where do I get this key?" never sends the user out to Google.
+//
+// SettingsPath, when set, is appended to the tile's base URL to produce a
+// "Open <App> settings" deep link in the instructions dialog. Apps whose
+// token isn't fetchable from a settings page (e.g. Plex) leave it empty.
+type APIHelp struct {
+	Title        string   `json:"title,omitempty"`         // dialog header — "Find your <App> API key"
+	SettingsPath string   `json:"settings_path,omitempty"` // optional path appended to the tile's base URL for the deep-link button
+	Steps        []string `json:"steps,omitempty"`         // ordered, plain-text instructions; backticks render as inline <code>
+	Note         string   `json:"note,omitempty"`          // optional trailing context (security caveats, scope, etc.)
 }
 
 // CatalogWidgetField describes one selectable data point a tier-1 widget can render.

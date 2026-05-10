@@ -271,12 +271,21 @@ func (h *Handlers) CreateTile(w http.ResponseWriter, r *http.Request) {
 	// Plain launcher tiles → 2×2 (square, vertical layout).
 	// App tiles whose slug has a Tier-1 widget provider → 4×2 (horizontal
 	// layout, three widget pills fit inline below the icon+meta row).
-	// See home.css for the W>=3 grid switch.
+	// Apps whose catalog entry exposes many widget fields (Plex, Immich)
+	// → 4×3 so the wrap-row doesn't clip — at h=2 a 6+-pill grid runs off
+	// the bottom edge. See home.css for the W>=3 grid switch.
 	wantsWidget := false
+	bigWidget := false
 	if req.Type == string(database.TileTypeApp) && len(req.Config) > 0 {
 		var cfg AppConfig
 		if json.Unmarshal(req.Config, &cfg) == nil && cfg.AppSlug != "" && widget.HasProvider(cfg.AppSlug) {
 			wantsWidget = true
+			// Threshold: > 4 fields tends to need an extra row at our pill
+			// font size. Plex (7) is the motivating case; Immich (4)
+			// stays at 4×2.
+			if entry, ok := CatalogBySlug(cfg.AppSlug); ok && len(entry.WidgetFields) > 4 {
+				bigWidget = true
+			}
 		}
 	}
 	if req.W <= 0 {
@@ -287,7 +296,11 @@ func (h *Handlers) CreateTile(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if req.H <= 0 {
-		req.H = 2
+		if bigWidget {
+			req.H = 3
+		} else {
+			req.H = 2
+		}
 	}
 	tile := &database.HomeTile{
 		BoardID:   boardID,

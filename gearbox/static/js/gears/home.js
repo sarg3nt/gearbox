@@ -501,6 +501,7 @@
     standard: { w: 2, h: 2 },
     tall: { w: 2, h: 3 },
     wide: { w: 4, h: 2 },
+    big: { w: 4, h: 3 },
   };
 
   // Sync the radio chips to the hidden size_preset input so a single
@@ -655,8 +656,21 @@
 
     modal.classList.remove("hidden");
     modal.classList.add("flex");
+    // Detection banner: hide by default, then re-show for app tiles whose
+    // saved slug matches a catalog entry. This keeps the green "Detected:
+    // <App>" panel visible on edit so the API Instructions button is one
+    // click away — same affordance as the add flow.
     const detection = modal.querySelector("[data-detection]");
     if (detection) detection.classList.add("hidden");
+    const slug = tileNode.dataset.tileAppSlug || "";
+    if (slug) {
+      loadCatalog().then((entries) => {
+        const entry = entries.find((e) => e.slug === slug);
+        if (entry) {
+          showDetectionBanner(entry.name, entry.icon_url, entry.slug);
+        }
+      });
+    }
     if (nameIn) nameIn.focus();
   }
 
@@ -677,16 +691,19 @@
     if (nameIn) nameIn.value = entry.name;
     if (iconIn) iconIn.value = entry.icon_url || "";
     if (slugIn) slugIn.value = entry.slug;
-    showDetectionBanner(entry.name, entry.icon_url);
+    showDetectionBanner(entry.name, entry.icon_url, entry.slug);
   }
 
   // showDetectionBanner reveals the green "Detected: <name>" panel above
-  // the form fields with the matched icon preview. Used by both the
-  // catalog fingerprinter (pickFromCatalog) and the icon-name suggester
-  // — same affordance, same affordance, same affordance, regardless of
-  // which detection path matched. Hiding the broken-image alt on 404
-  // keeps the panel clean when an icon URL goes stale.
-  function showDetectionBanner(name, iconURL) {
+  // the form fields with the matched icon preview. Used by:
+  //   - the catalog fingerprinter (pickFromCatalog),
+  //   - the icon-name suggester (URL host → selfh.st icon),
+  //   - the edit-tile flow when the saved tile already has an app_slug.
+  // The third arg is optional; when set and the catalog entry for that
+  // slug has an `api_help` block, we expose the "API Instructions" link.
+  // Hiding the broken-image alt on 404 keeps the panel clean when an icon
+  // URL goes stale.
+  function showDetectionBanner(name, iconURL, slug) {
     if (!modal) return;
     const detection = modal.querySelector("[data-detection]");
     if (!detection) return;
@@ -694,18 +711,162 @@
     const detName = detection.querySelector("[data-detection-name]");
     if (detName) detName.textContent = name;
     const detIcon = detection.querySelector("[data-detection-icon]");
-    if (!detIcon) return;
-    if (iconURL) {
-      detIcon.src = iconURL;
-      detIcon.alt = name + " icon";
-      detIcon.style.display = "";
-      detIcon.onerror = () => {
+    if (detIcon) {
+      if (iconURL) {
+        detIcon.src = iconURL;
+        detIcon.alt = name + " icon";
+        detIcon.style.display = "";
+        detIcon.onerror = () => {
+          detIcon.style.display = "none";
+        };
+      } else {
+        detIcon.removeAttribute("src");
         detIcon.style.display = "none";
-      };
-    } else {
-      detIcon.removeAttribute("src");
-      detIcon.style.display = "none";
+      }
     }
+    // Toggle the "API Instructions" button. Only visible when the catalog
+    // has hand-written instructions for this slug — otherwise the button
+    // would just open an empty dialog.
+    const helpBtn = detection.querySelector("[data-detection-help]");
+    if (helpBtn) {
+      helpBtn.classList.add("hidden");
+      helpBtn.dataset.slug = slug || "";
+      if (slug) {
+        loadCatalog().then((entries) => {
+          const entry = entries.find((e) => e.slug === slug);
+          if (entry && entry.api_help) {
+            helpBtn.classList.remove("hidden");
+          }
+        });
+      }
+    }
+  }
+
+  // showAPIHelpModal renders the catalog's `api_help` block for the given
+  // slug into the dedicated dialog. The deep-link button (when the entry
+  // declares a `settings_path`) opens <tile-url><settings_path> in a new
+  // tab so the user lands directly on the page where the API key lives.
+  // Step text supports inline `code` via backticks — kept simple on purpose
+  // (no full markdown) so the catalog json stays readable.
+  function showAPIHelpModal(slug) {
+    const helpModal = document.getElementById("home-api-help");
+    if (!helpModal) return;
+    loadCatalog().then((entries) => {
+      const entry = entries.find((e) => e.slug === slug);
+      if (!entry || !entry.api_help) return;
+      const help = entry.api_help;
+
+      const titleEl = helpModal.querySelector("[data-api-help-title]");
+      if (titleEl) titleEl.textContent = help.title || `${entry.name} API key`;
+
+      const iconEl = helpModal.querySelector("[data-api-help-icon]");
+      if (iconEl) {
+        if (entry.icon_url) {
+          iconEl.src = entry.icon_url;
+          iconEl.alt = entry.name + " icon";
+          iconEl.style.display = "";
+          iconEl.onerror = () => { iconEl.style.display = "none"; };
+        } else {
+          iconEl.removeAttribute("src");
+          iconEl.style.display = "none";
+        }
+      }
+
+      const stepsEl = helpModal.querySelector("[data-api-help-steps]");
+      if (stepsEl) {
+        stepsEl.innerHTML = "";
+        for (const step of help.steps || []) {
+          const li = document.createElement("li");
+          li.innerHTML = renderInlineCode(step);
+          stepsEl.appendChild(li);
+        }
+      }
+
+      const noteEl = helpModal.querySelector("[data-api-help-note]");
+      if (noteEl) {
+        if (help.note) {
+          noteEl.innerHTML = renderInlineCode(help.note);
+          noteEl.classList.remove("hidden");
+        } else {
+          noteEl.textContent = "";
+          noteEl.classList.add("hidden");
+        }
+      }
+
+      // Deep-link button: append settings_path to the tile's URL. Skip
+      // when settings_path is empty (e.g. Plex — no settings page that
+      // shows the token) or when the user hasn't entered a URL yet.
+      const linkEl = helpModal.querySelector("[data-api-help-deeplink]");
+      const linkLabelEl = helpModal.querySelector("[data-api-help-deeplink-label]");
+      if (linkEl) {
+        linkEl.classList.add("hidden");
+        const urlIn = form && form.querySelector('input[name="url"]');
+        const baseURL = (urlIn && urlIn.value) || "";
+        if (help.settings_path && baseURL) {
+          try {
+            const u = new URL(baseURL);
+            // settings_path may include a fragment / query; preserve them
+            // verbatim by string-concatenating to the origin instead of
+            // round-tripping through URL.pathname.
+            const origin = u.origin;
+            linkEl.href = origin + help.settings_path;
+            if (linkLabelEl) {
+              linkLabelEl.textContent = `Open ${entry.name} settings`;
+            }
+            linkEl.classList.remove("hidden");
+          } catch (_e) {
+            /* invalid URL — leave the deep link hidden */
+          }
+        }
+      }
+
+      helpModal.classList.remove("hidden");
+      helpModal.classList.add("flex");
+    });
+  }
+
+  // hideAPIHelpModal closes the API instructions dialog.
+  function hideAPIHelpModal() {
+    const helpModal = document.getElementById("home-api-help");
+    if (!helpModal) return;
+    helpModal.classList.add("hidden");
+    helpModal.classList.remove("flex");
+  }
+
+  // renderInlineCode converts `backticked` segments to <code> tags. Plain
+  // text everywhere else is HTML-escaped so user-controllable strings (none
+  // today, but the catalog is loaded as data not code) can't inject
+  // markup. Keeping this tiny on purpose — anything richer is a slippery
+  // slope to a markdown dependency.
+  function renderInlineCode(input) {
+    const escape = (s) => s
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+    const parts = String(input || "").split("`");
+    return parts
+      .map((part, i) => {
+        const safe = escape(part);
+        return i % 2 === 1
+          ? `<code class="px-1 py-0.5 rounded bg-gray-100 dark:bg-slate-700 text-gray-900 dark:text-gray-100 text-xs">${safe}</code>`
+          : safe;
+      })
+      .join("");
+  }
+
+  // normalizeURLInput rewrites the URL field to include a scheme when the
+  // user typed a bare host. Called on blur (and on Detect click) so the
+  // probe always sees a valid absolute URL — `input[type=url]` validation
+  // would otherwise reject the form on submit and we'd have to rebuild
+  // state. https is the safer default in 2026; users wanting http can
+  // type it explicitly.
+  function normalizeURLInput(input) {
+    if (!input) return;
+    const raw = input.value.trim();
+    if (!raw) return;
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) return; // already has a scheme
+    input.value = "https://" + raw;
   }
 
   // probeURL hits /home/api/probe to fingerprint the entered URL. On a hit,
@@ -777,7 +938,11 @@
               nameIn.value = match.name;
               filled = true;
             }
-            if (filled) showDetectionBanner(match.name, match.url);
+            // Suggester only knows the icon's slug, not a catalog entry.
+            // We still pass it through — `showDetectionBanner` will only
+            // surface "API Instructions" when a catalog entry with
+            // api_help matches the slug, so a Google bookmark stays clean.
+            if (filled) showDetectionBanner(match.name, match.url, match.slug);
           }
         }
       } catch (_e) {
@@ -809,10 +974,45 @@
     const urlIn = form.querySelector('input[name="url"]');
     if (urlIn) {
       urlIn.addEventListener("input", debouncedProbe);
-      urlIn.addEventListener("blur", probeURL);
+      urlIn.addEventListener("blur", () => {
+        // Default to https:// so users can type "sonarr.sarg3.net" and
+        // tab out without a manual scheme. Run before probe so the
+        // detection request gets the corrected URL.
+        normalizeURLInput(urlIn);
+        probeURL();
+      });
     }
     const detectBtn = modal.querySelector("[data-detect-btn]");
-    if (detectBtn) detectBtn.addEventListener("click", probeURL);
+    if (detectBtn) {
+      detectBtn.addEventListener("click", () => {
+        if (urlIn) normalizeURLInput(urlIn);
+        probeURL();
+      });
+    }
+
+    // "API Instructions" button on the detection banner — opens the help
+    // dialog populated from the catalog's api_help block. The slug travels
+    // via dataset because the banner is also reused for the icon suggester
+    // path, where there's no catalog entry but we still want a stable hook.
+    const detectionHelpBtn = modal.querySelector("[data-detection-help]");
+    if (detectionHelpBtn) {
+      detectionHelpBtn.addEventListener("click", () => {
+        const slug = detectionHelpBtn.dataset.slug;
+        if (slug) showAPIHelpModal(slug);
+      });
+    }
+    // Close handlers for the API help dialog: × button, Close button, and
+    // backdrop click. Kept inside the form-init block so they only attach
+    // when the modal markup is on the page (Home gear pages only).
+    const apiHelpModalEl = document.getElementById("home-api-help");
+    if (apiHelpModalEl) {
+      apiHelpModalEl.querySelectorAll("[data-api-help-close]").forEach((b) => {
+        b.addEventListener("click", hideAPIHelpModal);
+      });
+      apiHelpModalEl.addEventListener("click", (ev) => {
+        if (ev.target === apiHelpModalEl) hideAPIHelpModal();
+      });
+    }
 
     // Catalog search box filters the list as you type.
     const searchIn = modal.querySelector("[data-catalog-search]");
@@ -1252,6 +1452,21 @@
 
   /* --- Widget data: one-shot fetch + SSE subscription --- */
 
+  // labelForField looks up the human-friendly label for a widget field
+  // key. Falls back to a camelCase → words split when the catalog doesn't
+  // know the slug or the field — turns "numFailQueries" into "Num Fail
+  // Queries", which the CSS then uppercases. Beats "NUMFAILQUERIES".
+  function labelForField(slug, key) {
+    if (slug && catalogCache) {
+      const entry = catalogCache.find((e) => e.slug === slug);
+      const f = entry && entry.widget_fields && entry.widget_fields.find((wf) => wf.key === key);
+      if (f && f.label) return f.label;
+    }
+    return key
+      .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+      .replace(/^./, (c) => c.toUpperCase());
+  }
+
   function applyWidget(tileId, fields) {
     const panel = grid.querySelector(
       `[data-tile-id="${tileId}"] [data-tile-widget]`,
@@ -1264,12 +1479,13 @@
     if (!fields || Object.keys(fields).length === 0) {
       return;
     }
+    const slug = panel.dataset.tileSlug || "";
     for (const [key, value] of Object.entries(fields)) {
       const wrap = document.createElement("span");
       wrap.className = "home-tile-widget-field";
       const lbl = document.createElement("span");
       lbl.className = "home-tile-widget-label";
-      lbl.textContent = key;
+      lbl.textContent = labelForField(slug, key);
       const val = document.createElement("span");
       val.className = "home-tile-widget-value";
       val.textContent = value;
@@ -1326,6 +1542,11 @@
     });
   }
 
+  // Load the catalog eagerly so widget pill labels render with their
+  // friendly names on first paint (e.g. "Fail" not "numFailQueries"). The
+  // catalog is also lazy-loaded by the Add Tile modal, but SSE widget
+  // events can arrive before the user opens that modal.
+  loadCatalog();
   loadInitialStatuses();
   loadInitialWidgets();
   openSSE();

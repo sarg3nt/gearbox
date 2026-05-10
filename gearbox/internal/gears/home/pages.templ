@@ -287,6 +287,7 @@ templ IndexPage(d IndexPageData) {
 		     level so the add-tile and (future) edit-customapi modals
 		     can both invoke it. -->
 		@iconPickerModal()
+		@apiHelpModal()
 
 		<script src="/static/js/vendor/gridstack/gridstack-all.js" defer></script>
 		<script src="/static/js/gears/home.js" defer></script>
@@ -588,7 +589,11 @@ templ addTileModal(b *database.HomeBoard) {
 				<!-- Detection banner. JS toggles `hidden` and fills the
 				     icon + name + slug after a successful /probe. The
 				     icon makes it obvious at a glance that the catalog
-				     entry was matched (vs guessing from the name). -->
+				     entry was matched (vs guessing from the name). The
+				     "API Instructions" button reveals only when the
+				     matched catalog entry has an `api_help` block —
+				     otherwise it stays hidden so we don't promise help
+				     we don't have. -->
 				<div data-detection class="hidden flex items-center gap-3 text-sm rounded-md bg-emerald-50 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-200 px-3 py-2">
 					<img
 						data-detection-icon
@@ -599,6 +604,17 @@ templ addTileModal(b *database.HomeBoard) {
 						Detected: <span data-detection-name class="font-semibold"></span>
 						<span class="text-emerald-600 dark:text-emerald-300">— pre-filled the fields below.</span>
 					</div>
+					<button
+						type="button"
+						data-detection-help
+						class="hidden inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded border border-emerald-300 dark:border-emerald-700 bg-white dark:bg-slate-800 text-emerald-800 dark:text-emerald-200 hover:bg-emerald-100 dark:hover:bg-slate-700 flex-shrink-0"
+						title="Where do I find the API key?"
+					>
+						<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+							<path stroke-linecap="round" stroke-linejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.5M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z"></path>
+						</svg>
+						API Instructions
+					</button>
 				</div>
 
 				<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -674,11 +690,12 @@ templ addTileModal(b *database.HomeBoard) {
 				<fieldset class="border border-gray-200 dark:border-slate-700 rounded-md p-3">
 					<legend class="px-1 text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Size</legend>
 					<div class="flex flex-wrap gap-2" data-size-presets>
-						@sizePresetChip("auto", "Auto", "Server picks: 2×2 launcher, 4×2 horizontal for apps with widget data", true)
+						@sizePresetChip("auto", "Auto", "Server picks: 2×2 launcher, 4×2 for most apps, 4×3 for apps with many widget fields", true)
 						@sizePresetChip("compact", "Compact 2×1", "Tight icon-only row — bookmarks", false)
 						@sizePresetChip("standard", "Square 2×2", "Vertical: icon, name, URL", false)
 						@sizePresetChip("tall", "Tall 2×3", "Vertical with widget pills stacked below", false)
 						@sizePresetChip("wide", "Wide 4×2", "Horizontal: icon left, name+URL right, widget pills inline", false)
+						@sizePresetChip("big", "Big 4×3", "Same width as Wide but taller — for apps with many widget pills (Plex, Immich, etc.)", false)
 					</div>
 					<input type="hidden" name="size_preset" value="auto"/>
 				</fieldset>
@@ -768,6 +785,51 @@ templ iconPickerModal() {
 			</div>
 			<div class="flex justify-end gap-2 p-4 border-t border-gray-200 dark:border-slate-700 flex-shrink-0">
 				<button type="button" data-icon-picker-close class="px-3 py-1.5 text-sm rounded border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-700">Cancel</button>
+			</div>
+		</div>
+	</div>
+}
+
+// apiHelpModal renders the "How do I get the API key?" walkthrough that
+// pops up from the green detection banner. JS fills in the title, steps,
+// note, and the deep-link button per catalog entry. Higher z-index than
+// the add-tile modal so it stacks on top while the user reads.
+templ apiHelpModal() {
+	<div
+		id="home-api-help"
+		class="hidden fixed inset-0 bg-black/40 z-[60] items-center justify-center p-4"
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="home-api-help-title"
+	>
+		<div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-xl flex flex-col max-h-[85vh]">
+			<div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-slate-700 flex-shrink-0">
+				<div class="flex items-center gap-3 min-w-0">
+					<img data-api-help-icon alt="" class="w-8 h-8 rounded bg-gray-50 dark:bg-slate-700 p-1 flex-shrink-0"/>
+					<h2 id="home-api-help-title" data-api-help-title class="text-lg font-semibold text-gray-900 dark:text-white truncate">
+						API instructions
+					</h2>
+				</div>
+				<button type="button" data-api-help-close class="text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 text-2xl leading-none flex-shrink-0">×</button>
+			</div>
+			<div class="p-4 overflow-y-auto min-h-0">
+				<ol data-api-help-steps class="list-decimal list-outside space-y-2 pl-5 text-sm text-gray-700 dark:text-gray-200"></ol>
+				<p data-api-help-note class="hidden mt-4 text-xs text-gray-500 dark:text-gray-400 border-l-2 border-gray-200 dark:border-slate-600 pl-3"></p>
+			</div>
+			<div class="flex justify-between items-center gap-2 p-4 border-t border-gray-200 dark:border-slate-700 flex-shrink-0">
+				<a
+					data-api-help-deeplink
+					href="#"
+					target="_blank"
+					rel="noopener noreferrer"
+					class="hidden inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-blue-600 hover:bg-blue-700 text-white"
+				>
+					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"></path>
+					</svg>
+					<span data-api-help-deeplink-label>Open settings</span>
+				</a>
+				<button type="button" data-api-help-close class="ml-auto px-3 py-1.5 text-sm rounded border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-700">Close</button>
 			</div>
 		</div>
 	</div>
