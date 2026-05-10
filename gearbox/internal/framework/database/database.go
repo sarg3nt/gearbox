@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 	"github.com/sarg3nt/gearbox/internal/framework/models"
 )
 
@@ -34,7 +34,7 @@ func New(dbPath string, logger *slog.Logger) (*DB, error) {
 		return nil, fmt.Errorf("failed to create database directory: %w", err)
 	}
 
-	db, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_busy_timeout=5000")
+	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
@@ -42,6 +42,13 @@ func New(dbPath string, logger *slog.Logger) (*DB, error) {
 	// Test connection
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
+	}
+
+	// Enable WAL + a 5s busy_timeout. modernc.org/sqlite uses _pragma=name(value)
+	// DSN syntax (not mattn's _journal_mode= / _busy_timeout=); set them via
+	// explicit PRAGMA exec so we don't depend on driver-specific DSN parsing.
+	if _, err := db.Exec("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;"); err != nil {
+		return nil, fmt.Errorf("failed to set sqlite pragmas: %w", err)
 	}
 
 	d := &DB{

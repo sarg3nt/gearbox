@@ -7,7 +7,7 @@ import (
 	"log/slog"
 
 	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/sqlite3"
+	"github.com/golang-migrate/migrate/v4/database/sqlite"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 )
 
@@ -61,11 +61,11 @@ func (m *MigrateManager) Up() error {
 		return nil
 	}
 
-	driver, err := sqlite3.WithInstance(m.db, &sqlite3.Config{
+	driver, err := sqlite.WithInstance(m.db, &sqlite.Config{
 		NoTxWrap: false,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create sqlite3 driver: %w", err)
+		return fmt.Errorf("failed to create sqlite driver: %w", err)
 	}
 
 	sourceDriver, err := iofs.New(migrationFiles, "migrations/files")
@@ -73,7 +73,7 @@ func (m *MigrateManager) Up() error {
 		return fmt.Errorf("failed to create iofs source: %w", err)
 	}
 
-	migrator, err := migrate.NewWithInstance("iofs", sourceDriver, "sqlite3", driver)
+	migrator, err := migrate.NewWithInstance("iofs", sourceDriver, "sqlite", driver)
 	if err != nil {
 		return fmt.Errorf("failed to create migrator: %w", err)
 	}
@@ -172,9 +172,9 @@ func (m *MigrateManager) migrateOldSchemaTable() error {
 
 // Version returns the current migration version
 func (m *MigrateManager) Version() (uint, bool, error) {
-	driver, err := sqlite3.WithInstance(m.db, &sqlite3.Config{})
+	driver, err := sqlite.WithInstance(m.db, &sqlite.Config{})
 	if err != nil {
-		return 0, false, fmt.Errorf("failed to create sqlite3 driver: %w", err)
+		return 0, false, fmt.Errorf("failed to create sqlite driver: %w", err)
 	}
 
 	sourceDriver, err := iofs.New(migrationFiles, "migrations/files")
@@ -182,7 +182,7 @@ func (m *MigrateManager) Version() (uint, bool, error) {
 		return 0, false, fmt.Errorf("failed to create iofs source: %w", err)
 	}
 
-	migrator, err := migrate.NewWithInstance("iofs", sourceDriver, "sqlite3", driver)
+	migrator, err := migrate.NewWithInstance("iofs", sourceDriver, "sqlite", driver)
 	if err != nil {
 		return 0, false, fmt.Errorf("failed to create migrator: %w", err)
 	}
