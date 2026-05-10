@@ -1,5 +1,5 @@
 # Stage 1: Build Templ templates
-FROM golang:1.25-alpine AS templ-builder
+FROM golang:1.26-alpine AS templ-builder
 
 # Pinned to match CI (.github/workflows/ci.yml TEMPL_VERSION).
 # Bump in lockstep when upgrading.
@@ -17,7 +17,7 @@ COPY . .
 RUN templ generate
 
 # Stage 2: Build Go binary
-FROM golang:1.25-alpine AS go-builder
+FROM golang:1.26-alpine AS go-builder
 
 # Install build dependencies (gcc and musl-dev required for CGO/sqlite3)
 RUN apk add --no-cache git ca-certificates tzdata gcc musl-dev
@@ -43,7 +43,7 @@ RUN CGO_ENABLED=1 GOOS=linux GOARCH=${TARGETARCH} go build \
     ./cmd/server
 
 # Stage 3: Final runtime image
-FROM alpine:3.23@sha256:25109184c71bdad752c8312a8623239686a9a2071e8825f20acb8f2198c3f659
+FROM alpine:3.23@sha256:5b10f432ef3da1b8d4c7eb6c487f2f5a8f096bc91145e68878dd4a5019afde11
 
 # Install runtime dependencies (sqlite-libs for CGO-built binary)
 RUN apk add --no-cache ca-certificates tzdata wget sqlite-libs
