@@ -406,6 +406,24 @@
     color: rgb(241 245 249);
 }
 
+/* Inline sparkline for `graphable: true` fields. JS appends an <svg>
+   with a polyline traced over the rolling sample buffer (see
+   renderSparkline in home.js). The width here matches the SVG
+   viewBox so the line crisps at 1× DPI; the parent pill still
+   wraps if total content exceeds the available row width. */
+.home-tile-widget-sparkline {
+    width: 38px;
+    height: 12px;
+    margin-left: 0.25rem;
+    color: rgb(59 130 246); /* blue-500 */
+    flex-shrink: 0;
+    align-self: center;
+}
+
+.dark .home-tile-widget-sparkline {
+    color: rgb(96 165 250); /* blue-400 */
+}
+
 /* W=2 + H=2 widget tiles can't fit pills cleanly — the icon + name + URL
    already fill the height, and 3 pills wrap into multiple rows that get
    clipped. Hide the panel here so 2×2 stays a clean launcher. Users

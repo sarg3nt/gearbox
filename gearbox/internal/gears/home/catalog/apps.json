@@ -500,17 +500,38 @@
   },
   {
     "slug": "unifi",
-    "name": "UniFi Controller",
+    "name": "UniFi Network",
     "category": "network",
-    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/unifi.svg",
-    "default_ports": [8443, 443],
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/ubiquiti-unifi.svg",
+    "default_ports": [443, 8443],
     "auth": "apikey",
     "widget_fields": [
-      { "key": "lan_users",  "label": "LAN",  "default": true },
-      { "key": "wlan_users", "label": "WiFi", "default": true },
-      { "key": "uptime",     "label": "Uptime","default": false },
-      { "key": "wan",        "label": "WAN",  "default": false }
-    ]
+      { "key": "clients",         "label": "Clients",  "default": true },
+      { "key": "wifi",            "label": "WiFi",     "default": true },
+      { "key": "wired",           "label": "Wired",    "default": true },
+      { "key": "vpn",             "label": "VPN",      "default": false },
+      { "key": "devices_online",  "label": "Devices",  "default": true },
+      { "key": "devices_offline", "label": "Offline",  "default": false },
+      { "key": "wan_status",      "label": "WAN",      "default": false },
+      { "key": "wan_down",        "label": "Down",     "default": false, "graphable": true },
+      { "key": "wan_up",          "label": "Up",       "default": false, "graphable": true },
+      { "key": "gateway_cpu",     "label": "GW CPU",   "default": false },
+      { "key": "gateway_mem",     "label": "GW Mem",   "default": false },
+      { "key": "uptime",          "label": "Uptime",   "default": false }
+    ],
+    "api_help": {
+      "title": "Find your UniFi Network API key",
+      "settings_path": "/network/admin/integrations",
+      "steps": [
+        "Sign in to your UniFi controller's web UI as an admin.",
+        "On UniFi OS 4.x+, open `Settings → Control Plane → Integrations` (use the link below — adjust if your controller is on a different host).",
+        "On older firmware: `Settings → System → Advanced` and look for the API section.",
+        "Click `Create API Key`, name it `Gearbox`, and copy the generated key — it's only shown once.",
+        "Paste it into the API Key field on this dialog and click Save.",
+        "Tile URL should point at the UniFi controller's HTTPS port (e.g. `https://10.0.0.254` or your controller's hostname). The widget appends `/proxy/network/integration/v1/...` automatically."
+      ],
+      "note": "API keys inherit your account's read scope. For a least-privilege setup, create a dedicated `Read-Only` admin under `Settings → Admins & Users` and generate the key while signed in as that user."
+    }
   },
   {
     "slug": "traefik",
@@ -598,7 +619,7 @@
   { "slug": "dozzle",           "name": "Dozzle",           "category": "infra",        "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/dozzle.svg",           "default_ports": [8080],   "auth": "none" },
   { "slug": "ntfy",             "name": "ntfy",             "category": "monitoring",   "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/ntfy.svg",             "default_ports": [80],     "auth": "none" },
   { "slug": "n8n",              "name": "n8n",              "category": "productivity", "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/n8n.svg",              "default_ports": [5678],   "auth": "none" },
-  { "slug": "code-server",      "name": "code-server",      "category": "productivity", "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/code-server.svg",      "default_ports": [8080],   "auth": "none" },
+  { "slug": "code-server",      "name": "code-server",      "category": "productivity", "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/coder.svg",            "default_ports": [8080],   "auth": "none" },
   { "slug": "gitea",            "name": "Gitea",            "category": "productivity", "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/gitea.svg",            "default_ports": [3000],   "auth": "bearer" },
   { "slug": "forgejo",          "name": "Forgejo",          "category": "productivity", "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/forgejo.svg",          "default_ports": [3000],   "auth": "bearer" },
   { "slug": "mastodon",         "name": "Mastodon",         "category": "productivity", "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/mastodon.svg",         "default_ports": [3000],   "auth": "bearer" }

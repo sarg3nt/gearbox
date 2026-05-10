@@ -1467,6 +1467,100 @@
       .replace(/^./, (c) => c.toUpperCase());
   }
 
+  // fieldIsGraphable reports whether the catalog flagged a field as a
+  // rate (Mbps, %, etc.) that should render a sparkline. Counts and
+  // totals leave it false — a flat line tells the user nothing.
+  function fieldIsGraphable(slug, key) {
+    if (!slug || !catalogCache) return false;
+    const entry = catalogCache.find((e) => e.slug === slug);
+    const f = entry && entry.widget_fields && entry.widget_fields.find((wf) => wf.key === key);
+    return !!(f && f.graphable);
+  }
+
+  // parseGraphValue converts a formatted widget value back to a numeric
+  // sample for the sparkline buffer. We control the formats on the
+  // server side (see formatBitsPerSec / formatBytesPerSec / "X%" in
+  // unifi.go), so the parser stays small. Bandwidth units normalize to
+  // bits/s so the trend stays continuous when the rate crosses a
+  // unit boundary (Mbps → Gbps doesn't snap the line up).
+  function parseGraphValue(formatted) {
+    if (!formatted) return 0;
+    const m = String(formatted).match(/^\s*(-?[\d.]+)\s*([A-Za-z/]*)/);
+    if (!m) return 0;
+    const n = parseFloat(m[1]);
+    if (!isFinite(n)) return 0;
+    const unit = m[2].toLowerCase();
+    switch (unit) {
+      case "kbps": return n * 1000;
+      case "mbps": return n * 1000 * 1000;
+      case "gbps": return n * 1000 * 1000 * 1000;
+      case "b/s":  return n;
+      case "kb/s": return n * 1024;
+      case "mb/s": return n * 1024 * 1024;
+      case "gb/s": return n * 1024 * 1024 * 1024;
+      default:     return n;
+    }
+  }
+
+  // widgetHistory holds rolling per-tile, per-field samples so the
+  // sparkline has data to draw. Capped at 60 points (~30 min at the
+  // 30-second widget cadence) to keep memory bounded as boards grow.
+  // Cleared on tile delete via deleteTileNode below.
+  const widgetHistory = new Map(); // key: `${tileId}:${fieldKey}` → number[]
+  const WIDGET_HISTORY_MAX = 60;
+
+  function pushHistory(tileId, key, value) {
+    const k = `${tileId}:${key}`;
+    let buf = widgetHistory.get(k);
+    if (!buf) {
+      buf = [];
+      widgetHistory.set(k, buf);
+    }
+    buf.push(value);
+    if (buf.length > WIDGET_HISTORY_MAX) buf.shift();
+    return buf;
+  }
+
+  // renderSparkline returns an SVG element whose polyline traces the
+  // given samples scaled to fit a fixed viewBox. We require ≥ 2 points
+  // before drawing — a single sample isn't a trend. Min/max scale to
+  // the buffer (not absolute), so a sleepy WAN at 0–5 Mbps reads the
+  // same visual shape as a busy one at 200–800 Mbps.
+  function renderSparkline(samples) {
+    if (!samples || samples.length < 2) return null;
+    const W = 38;
+    const H = 12;
+    let min = Infinity;
+    let max = -Infinity;
+    for (const v of samples) {
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+    // Flat line: pin to the middle of the box so the user sees the
+    // pill is being tracked, just unchanged.
+    const range = max - min || 1;
+    const n = samples.length;
+    const stepX = n > 1 ? W / (n - 1) : 0;
+    const points = samples.map((v, i) => {
+      const x = (i * stepX).toFixed(2);
+      const y = (H - ((v - min) / range) * H).toFixed(2);
+      return `${x},${y}`;
+    }).join(" ");
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    svg.setAttribute("class", "home-tile-widget-sparkline");
+    svg.setAttribute("aria-hidden", "true");
+    const poly = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+    poly.setAttribute("points", points);
+    poly.setAttribute("fill", "none");
+    poly.setAttribute("stroke", "currentColor");
+    poly.setAttribute("stroke-width", "1.5");
+    poly.setAttribute("stroke-linejoin", "round");
+    poly.setAttribute("stroke-linecap", "round");
+    svg.appendChild(poly);
+    return svg;
+  }
+
   function applyWidget(tileId, fields) {
     const panel = grid.querySelector(
       `[data-tile-id="${tileId}"] [data-tile-widget]`,
@@ -1491,6 +1585,14 @@
       val.textContent = value;
       wrap.appendChild(lbl);
       wrap.appendChild(val);
+      // Append a sparkline for rate-style fields. Buffer is updated on
+      // every applyWidget call so the trend grows from the moment the
+      // user opens the dashboard. We only draw once we have ≥ 2 points.
+      if (fieldIsGraphable(slug, key)) {
+        const buf = pushHistory(tileId, key, parseGraphValue(value));
+        const spark = renderSparkline(buf);
+        if (spark) wrap.appendChild(spark);
+      }
       panel.appendChild(wrap);
     }
   }

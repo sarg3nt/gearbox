@@ -45,10 +45,16 @@ type APIHelp struct {
 }
 
 // CatalogWidgetField describes one selectable data point a tier-1 widget can render.
+//
+// Graphable marks rate-style fields (kbps/Mbps, %CPU, etc.) that the
+// frontend should buffer over time and render as a tiny sparkline next
+// to the value. Counts (clients, devices, totals) leave it false — a
+// sparkline of "65, 65, 65, 64, 65" tells the user nothing useful.
 type CatalogWidgetField struct {
-	Key     string `json:"key"`
-	Label   string `json:"label"`
-	Default bool   `json:"default"`
+	Key       string `json:"key"`
+	Label     string `json:"label"`
+	Default   bool   `json:"default"`
+	Graphable bool   `json:"graphable,omitempty"`
 }
 
 // Fingerprint describes how to detect an app by probing a URL.
