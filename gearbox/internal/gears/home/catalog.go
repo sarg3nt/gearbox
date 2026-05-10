@@ -274,7 +274,9 @@ func walk(doc any, path string) (any, bool) {
 					return nil, false
 				}
 			}
-			fmt.Sscanf(p, "%d", &idx)
+			if _, err := fmt.Sscanf(p, "%d", &idx); err != nil {
+				return nil, false
+			}
 			if idx < 0 || idx >= len(node) {
 				return nil, false
 			}
