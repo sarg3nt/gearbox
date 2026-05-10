@@ -11,7 +11,7 @@ import (
 )
 
 func TestNewClient(t *testing.T) {
-	client := NewClient("https://example.com:8405", "test-api-key")
+	client := NewClient("https://example.com:8405", "test-api-key", false)
 
 	if client.baseURL != "https://example.com:8405" {
 		t.Errorf("expected baseURL https://example.com:8405, got %s", client.baseURL)
@@ -23,7 +23,7 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestNewClientTrimsTrailingSlash(t *testing.T) {
-	client := NewClient("https://example.com:8405/", "test-api-key")
+	client := NewClient("https://example.com:8405/", "test-api-key", false)
 
 	if client.baseURL != "https://example.com:8405" {
 		t.Errorf("expected baseURL without trailing slash, got %s", client.baseURL)
@@ -51,7 +51,7 @@ func TestHealth(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-key")
+	client := NewClient(server.URL, "test-key", false)
 	resp, err := client.Health()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -90,7 +90,7 @@ func TestGetInfo(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-key")
+	client := NewClient(server.URL, "test-key", false)
 	resp, err := client.GetInfo()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -125,7 +125,7 @@ func TestGetStats(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-key")
+	client := NewClient(server.URL, "test-key", false)
 	resp, err := client.GetStats()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -162,7 +162,7 @@ func TestGetStatsCSV(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-key")
+	client := NewClient(server.URL, "test-key", false)
 	csv, err := client.GetStatsCSV()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -196,7 +196,7 @@ func TestGetMetrics(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-key")
+	client := NewClient(server.URL, "test-key", false)
 	resp, err := client.GetMetrics()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -232,7 +232,7 @@ func TestGetServices(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-key")
+	client := NewClient(server.URL, "test-key", false)
 	resp, err := client.GetServices([]string{"haproxy", "nginx"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -263,7 +263,7 @@ func TestGetLogs(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-key")
+	client := NewClient(server.URL, "test-key", false)
 	resp, err := client.GetLogs("haproxy", 100)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -295,7 +295,7 @@ func TestGetLogsMaxLines(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-key")
+	client := NewClient(server.URL, "test-key", false)
 	_, err := client.GetLogs("haproxy", 50000) // Request more than max
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -325,7 +325,7 @@ func TestGetMetadata(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-key")
+	client := NewClient(server.URL, "test-key", false)
 	resp, err := client.GetMetadata()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -363,7 +363,7 @@ func TestGetSecuritySummary(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-key")
+	client := NewClient(server.URL, "test-key", false)
 	resp, err := client.GetSecuritySummary()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -407,7 +407,7 @@ func TestGetFail2BanStats(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-key")
+	client := NewClient(server.URL, "test-key", false)
 	resp, err := client.GetFail2BanStats(&Fail2BanOptions{
 		IncludeIPs: true,
 		Recent:     10,
@@ -439,7 +439,7 @@ func TestGetSyncStatus(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-key")
+	client := NewClient(server.URL, "test-key", false)
 	resp, err := client.GetSyncStatus()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -468,7 +468,7 @@ func TestGetWebSocketToken(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-key")
+	client := NewClient(server.URL, "test-key", false)
 	resp, err := client.GetWebSocketToken()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -491,7 +491,7 @@ func TestHTTPError401(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "bad-key")
+	client := NewClient(server.URL, "bad-key", false)
 	_, err := client.GetInfo()
 	if err == nil {
 		t.Fatal("expected error for 401 response")
@@ -521,7 +521,7 @@ func TestHTTPError404(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-key")
+	client := NewClient(server.URL, "test-key", false)
 	_, err := client.GetLogs("nonexistent", 100)
 	if err == nil {
 		t.Fatal("expected error for 404 response")
@@ -538,7 +538,7 @@ func TestHTTPError429(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-key")
+	client := NewClient(server.URL, "test-key", false)
 	_, err := client.GetStats()
 	if err == nil {
 		t.Fatal("expected error for 429 response")
@@ -555,7 +555,7 @@ func TestHTTPError503(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-key")
+	client := NewClient(server.URL, "test-key", false)
 	_, err := client.GetMetrics()
 	if err == nil {
 		t.Fatal("expected error for 503 response")
@@ -573,7 +573,7 @@ func TestClientTimeout(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClientWithTimeout(server.URL, "test-key", 50*time.Millisecond)
+	client := NewClientWithTimeout(server.URL, "test-key", false, 50*time.Millisecond)
 	_, err := client.Health()
 	if err == nil {
 		t.Fatal("expected timeout error")
@@ -607,7 +607,7 @@ func TestGetHAProxyConfig(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-key")
+	client := NewClient(server.URL, "test-key", false)
 	resp, err := client.GetHAProxyConfig()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -666,7 +666,7 @@ func TestUpdateHAProxyConfig(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-key")
+	client := NewClient(server.URL, "test-key", false)
 
 	// Test dry run
 	resp, err := client.UpdateHAProxyConfig(&HAProxyConfigUpdateRequest{
@@ -724,7 +724,7 @@ func TestGetHAProxyConfigBackups(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-key")
+	client := NewClient(server.URL, "test-key", false)
 	resp, err := client.GetHAProxyConfigBackups()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -768,7 +768,7 @@ func TestRestoreHAProxyConfig(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-key")
+	client := NewClient(server.URL, "test-key", false)
 	resp, err := client.RestoreHAProxyConfig(&HAProxyRestoreRequest{
 		BackupID: "haproxy_20240115_103000.cfg",
 		DryRun:   false,
@@ -805,7 +805,7 @@ func TestGetFirewallConfig(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-key")
+	client := NewClient(server.URL, "test-key", false)
 	resp, err := client.GetFirewallConfig()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -841,7 +841,7 @@ func TestUpdateFirewallConfig(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-key")
+	client := NewClient(server.URL, "test-key", false)
 	resp, err := client.UpdateFirewallConfig(&FirewallConfigUpdateRequest{
 		Content:      "#!/usr/sbin/nft -f\ntable inet filter {\n}",
 		ExpectedSHA:  "firewall123",
@@ -883,7 +883,7 @@ func TestGetFirewallConfigBackups(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-key")
+	client := NewClient(server.URL, "test-key", false)
 	resp, err := client.GetFirewallConfigBackups()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -910,7 +910,7 @@ func TestRestoreFirewallConfig(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-key")
+	client := NewClient(server.URL, "test-key", false)
 	resp, err := client.RestoreFirewallConfig(&FirewallRestoreRequest{
 		BackupID: "nftables_20240115_103000.conf",
 		DryRun:   false,
@@ -964,7 +964,7 @@ func TestListUpdateLogs(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-key")
+	client := NewClient(server.URL, "test-key", false)
 	resp, err := client.ListUpdateLogs(10)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -997,7 +997,7 @@ func TestListUpdateLogs_Empty(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-key")
+	client := NewClient(server.URL, "test-key", false)
 	resp, err := client.ListUpdateLogs(0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -1017,7 +1017,7 @@ func TestListUpdateLogs_ServerError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-key")
+	client := NewClient(server.URL, "test-key", false)
 	_, err := client.ListUpdateLogs(10)
 	if err == nil {
 		t.Fatal("expected error for server error response")
@@ -1055,7 +1055,7 @@ func TestGetUpdateLog(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-key")
+	client := NewClient(server.URL, "test-key", false)
 	log, err := client.GetUpdateLog("test-log-id")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -1078,7 +1078,7 @@ func TestGetUpdateLog_NotFound(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-key")
+	client := NewClient(server.URL, "test-key", false)
 	_, err := client.GetUpdateLog("nonexistent")
 	if err == nil {
 		t.Fatal("expected error for not found response")
@@ -1101,7 +1101,7 @@ func TestGetUpdateLog_FailedOperation(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-key")
+	client := NewClient(server.URL, "test-key", false)
 	log, err := client.GetUpdateLog("failed-log")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -1249,7 +1249,7 @@ func TestHTTPErrorPlainText_doRequest(t *testing.T) {
 			}))
 			defer server.Close()
 
-			client := NewClient(server.URL, "test-key")
+			client := NewClient(server.URL, "test-key", false)
 			_, err := client.GetInfo()
 			if err == nil {
 				t.Fatal("expected error")
@@ -1280,7 +1280,7 @@ func TestHTTPErrorPlainText_doRequestLongRunning(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-key")
+	client := NewClient(server.URL, "test-key", false)
 	// TriggerUpdateCheck uses doRequestLongRunning
 	_, err := client.TriggerUpdateCheck()
 	if err == nil {

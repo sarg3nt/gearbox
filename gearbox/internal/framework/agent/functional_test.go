@@ -30,7 +30,7 @@ func functionalClient(t *testing.T) *Client {
 		t.Skip("Skipping functional test: GEARBOX_FUNCTIONAL_TEST_URL and GEARBOX_FUNCTIONAL_TEST_API_KEY must be set")
 	}
 
-	return NewClient(baseURL, apiKey)
+	return NewClient(baseURL, apiKey, false)
 }
 
 // ---------- Update Status & List ----------
@@ -753,7 +753,7 @@ func TestFunctional_BadAPIKey(t *testing.T) {
 		t.Skip("Skipping: GEARBOX_FUNCTIONAL_TEST_URL not set")
 	}
 
-	c := NewClient(baseURL, "invalid-api-key-for-testing")
+	c := NewClient(baseURL, "invalid-api-key-for-testing", false)
 
 	_, err := c.GetUpdateStatus()
 	if err == nil {
@@ -774,7 +774,7 @@ func TestFunctional_NoAPIKey(t *testing.T) {
 		t.Skip("Skipping: GEARBOX_FUNCTIONAL_TEST_URL not set")
 	}
 
-	c := NewClient(baseURL, "")
+	c := NewClient(baseURL, "", false)
 
 	_, err := c.GetUpdateStatus()
 	if err == nil {
