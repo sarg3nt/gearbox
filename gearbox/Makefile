@@ -1,4 +1,4 @@
-.PHONY: help build test test-coverage lint clean clean-data run dev templ-generate fmt tidy deps install-tools dev-assets
+.PHONY: help build test test-coverage lint clean clean-data run dev templ-generate fmt tidy deps install-tools dev-assets deploy deploy-build deploy-restart
 
 # Variables
 APP_NAME := gearbox
@@ -6,6 +6,14 @@ VERSION ?= dev
 COMMIT_SHA ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -ldflags "-s -w -X main.Version=$(VERSION) -X main.CommitSHA=$(COMMIT_SHA) -X main.BuildDate=$(BUILD_DATE)"
+
+# Deploy configuration — overridable on the command line:
+#   make deploy MJOLNIR_HOST=otherbox@10.0.0.99
+MJOLNIR_HOST ?= dave@10.0.0.1
+MJOLNIR_HOMELAB_PATH ?= /mnt/StormEdge/apps/homelab
+# Match the tag the homelab compose pulls so docker compose up -d picks
+# the freshly-loaded image without any compose-file edits.
+DEPLOY_IMAGE_TAG ?= ghcr.io/sarg3nt/gearbox/gearbox:dev
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -113,3 +121,37 @@ dev-assets: ## Download CDN assets locally for secure development (CSP-compliant
 	@echo ""
 	@echo "To use local assets (CSP-compliant), set in your .env:"
 	@echo "  USE_LOCAL_ASSETS=true"
+
+# ---------------------------------------------------------------------------
+# Deployment — push the local working copy to mjolnir as a Docker image,
+# bypassing the GitHub Actions registry round-trip. Useful for fast feature-
+# branch testing.
+#
+# Build target is linux/amd64 (mjolnir runs TrueNAS SCALE on x86_64).
+# Build runs through Orbstack on the dev box; no buildx setup required.
+# The image is loaded into mjolnir's Docker daemon directly via SSH, then
+# the gearbox compose stack is recreated. ~30s round trip when the layer
+# cache is warm; no public push of WIP code.
+#
+# Override on the command line: `make deploy MJOLNIR_HOST=user@host`
+# ---------------------------------------------------------------------------
+
+deploy: deploy-build deploy-restart ## Build linux/amd64 image and deploy to mjolnir (build + ship + restart)
+	@echo "✓ Deployed $(APP_NAME) ($(VERSION) / $(COMMIT_SHA)) to $(MJOLNIR_HOST)"
+	@echo "  Tail logs with:  ssh $(MJOLNIR_HOST) 'sudo docker logs -f gearbox'"
+
+deploy-build: templ-generate ## Build the linux/amd64 image and stream it to mjolnir
+	@echo "Building $(DEPLOY_IMAGE_TAG) for linux/amd64..."
+	@docker build \
+		--platform linux/amd64 \
+		--build-arg VERSION=$(VERSION) \
+		--build-arg COMMIT_SHA=$(COMMIT_SHA) \
+		--build-arg BUILD_DATE=$(BUILD_DATE) \
+		--tag $(DEPLOY_IMAGE_TAG) \
+		.
+	@echo "Streaming image to $(MJOLNIR_HOST) (gzipped over SSH)..."
+	@docker save $(DEPLOY_IMAGE_TAG) | gzip | ssh $(MJOLNIR_HOST) 'gunzip | sudo docker load'
+
+deploy-restart: ## Recreate the gearbox container on mjolnir using the homelab compose file
+	@echo "Recreating gearbox container on $(MJOLNIR_HOST)..."
+	@ssh $(MJOLNIR_HOST) 'sudo docker compose -p gearbox -f $(MJOLNIR_HOMELAB_PATH)/apps/gearbox/docker-compose.yml up -d'

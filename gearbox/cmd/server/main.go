@@ -33,6 +33,7 @@ import (
 	_ "github.com/sarg3nt/gearbox/internal/gears/alerts"
 	_ "github.com/sarg3nt/gearbox/internal/gears/certificates"
 	_ "github.com/sarg3nt/gearbox/internal/gears/haproxy"
+	_ "github.com/sarg3nt/gearbox/internal/gears/home"
 	_ "github.com/sarg3nt/gearbox/internal/gears/logs"
 	_ "github.com/sarg3nt/gearbox/internal/gears/metrics"
 	_ "github.com/sarg3nt/gearbox/internal/gears/services"
@@ -79,6 +80,13 @@ func main() {
 	logger.Info("database initialized",
 		"path", cfg.DatabasePath,
 		"retention_hours", cfg.DatabaseRetentionHours)
+
+	// Seed default rows for system-wide gears (e.g. the Home dashboard).
+	// Box-scoped gears are seeded lazily on first access; system gears
+	// have no box to attach to, so we seed them once here.
+	if err := db.EnsureSystemGears(); err != nil {
+		logger.Error("failed to seed system gears", "error", err)
+	}
 
 	// Ensure admin user exists
 	var adminPassword string
@@ -355,6 +363,7 @@ func main() {
 
 	// Create gear dependencies
 	authAdapter := services.NewAuthAdapter(authManager)
+	authAdapter.SetEncryptor(encryptor)
 	eventsAdapter := services.NewEventsAdapter(eventHub)
 	serverAdapter := services.NewServerAdapter(db, encryptor, servers, logger)
 
@@ -502,6 +511,10 @@ func main() {
 
 		// Logout
 		r.Post("/logout", h.Logout)
+
+		// Root URL — redirect to the user's default-landing-path
+		// (per-user → system → fallback). See feature/dashboard-gear F1.
+		r.Get("/", h.RootRedirect)
 
 		// Settings routes
 		r.Route("/settings", func(r chi.Router) {

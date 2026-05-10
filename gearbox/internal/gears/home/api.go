@@ -1,0 +1,887 @@
+package home
+
+import (
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+
+	"github.com/sarg3nt/gearbox/internal/framework/database"
+	"github.com/sarg3nt/gearbox/internal/framework/services"
+	"github.com/sarg3nt/gearbox/internal/gears/home/widget"
+)
+
+// db returns the typed database handle, downcasting through the AuthAdapter.
+// Returns nil if the adapter is not the expected concrete type — handlers
+// should treat that as an internal error.
+func (h *Handlers) db() *database.DB {
+	a, ok := h.deps.Auth.(*services.AuthAdapter)
+	if !ok {
+		return nil
+	}
+	return a.GetDB()
+}
+
+// requirePerm gates a handler on a Home gear permission. Writes the appropriate
+// HTTP error and returns false if the user is not allowed.
+func (h *Handlers) requirePerm(w http.ResponseWriter, r *http.Request, action string) bool {
+	if h.deps.Auth == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return false
+	}
+	if !h.deps.Auth.HasPermission(r, "home", action) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return false
+	}
+	return true
+}
+
+// writeJSON writes v as JSON with the given status. Errors are logged but
+// not exposed to the client.
+func (h *Handlers) writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		h.deps.Logger.Error("failed to encode JSON response", "error", err)
+	}
+}
+
+// boardCreateRequest is the body shape for POST /home/api/boards.
+type boardCreateRequest struct {
+	Slug      string `json:"slug"`
+	Name      string `json:"name"`
+	SortOrder int    `json:"sort_order"`
+}
+
+// boardUpdateRequest is the body shape for PATCH /home/api/boards/{id}.
+type boardUpdateRequest struct {
+	Name      string `json:"name"`
+	SortOrder int    `json:"sort_order"`
+}
+
+// tileCreateRequest is the body shape for POST /home/api/boards/{id}/tiles.
+type tileCreateRequest struct {
+	Type      string          `json:"type"`
+	X         int             `json:"x"`
+	Y         int             `json:"y"`
+	W         int             `json:"w"`
+	H         int             `json:"h"`
+	Config    json.RawMessage `json:"config"`
+	SortOrder int             `json:"sort_order"`
+}
+
+// tileUpdateRequest is the body shape for PATCH /home/api/tiles/{id}.
+// Either layout or config (or both) may be present; nil pointers mean "leave alone".
+type tileUpdateRequest struct {
+	X         *int             `json:"x,omitempty"`
+	Y         *int             `json:"y,omitempty"`
+	W         *int             `json:"w,omitempty"`
+	H         *int             `json:"h,omitempty"`
+	SortOrder *int             `json:"sort_order,omitempty"`
+	Config    *json.RawMessage `json:"config,omitempty"`
+}
+
+// landingPathRequest sets the calling user's default_landing_path.
+type landingPathRequest struct {
+	// Path is the destination URL. Empty string clears the override.
+	Path string `json:"path"`
+}
+
+// ListBoards returns all boards on the dashboard.
+func (h *Handlers) ListBoards(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePerm(w, r, "view") {
+		return
+	}
+	db := h.db()
+	if db == nil {
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	boards, err := db.ListHomeBoards()
+	if err != nil {
+		h.deps.Logger.Error("ListHomeBoards failed", "error", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	if boards == nil {
+		boards = []database.HomeBoard{}
+	}
+	h.writeJSON(w, http.StatusOK, boards)
+}
+
+// CreateBoard inserts a new board.
+func (h *Handlers) CreateBoard(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePerm(w, r, "edit") {
+		return
+	}
+	var req boardCreateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	req.Slug = strings.TrimSpace(req.Slug)
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Slug == "" || req.Name == "" {
+		http.Error(w, "slug and name are required", http.StatusBadRequest)
+		return
+	}
+	if !validSlug(req.Slug) {
+		http.Error(w, "slug must be lowercase letters, digits, or '-'", http.StatusBadRequest)
+		return
+	}
+	db := h.db()
+	if db == nil {
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	board, err := db.CreateHomeBoard(req.Slug, req.Name, req.SortOrder)
+	if err != nil {
+		h.deps.Logger.Error("CreateHomeBoard failed", "error", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	h.writeJSON(w, http.StatusCreated, board)
+}
+
+// UpdateBoard updates a board's name and sort order.
+func (h *Handlers) UpdateBoard(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePerm(w, r, "edit") {
+		return
+	}
+	id, err := pathID(r, "id")
+	if err != nil {
+		http.Error(w, "invalid board id", http.StatusBadRequest)
+		return
+	}
+	var req boardUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+	db := h.db()
+	if db == nil {
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	if err := db.UpdateHomeBoard(id, strings.TrimSpace(req.Name), req.SortOrder); err != nil {
+		h.deps.Logger.Error("UpdateHomeBoard failed", "error", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// DeleteBoard removes a board (and cascades to its tiles). Refuses to delete
+// the last board to keep the dashboard renderable.
+func (h *Handlers) DeleteBoard(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePerm(w, r, "edit") {
+		return
+	}
+	id, err := pathID(r, "id")
+	if err != nil {
+		http.Error(w, "invalid board id", http.StatusBadRequest)
+		return
+	}
+	db := h.db()
+	if db == nil {
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	if err := db.DeleteHomeBoard(id); err != nil {
+		// "cannot delete the only remaining home board" is a user-facing constraint.
+		if strings.Contains(err.Error(), "only remaining") {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		h.deps.Logger.Error("DeleteHomeBoard failed", "error", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ListTiles returns every tile on a board.
+func (h *Handlers) ListTiles(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePerm(w, r, "view") {
+		return
+	}
+	boardID, err := pathID(r, "id")
+	if err != nil {
+		http.Error(w, "invalid board id", http.StatusBadRequest)
+		return
+	}
+	db := h.db()
+	if db == nil {
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	tiles, err := db.ListHomeTiles(boardID)
+	if err != nil {
+		h.deps.Logger.Error("ListHomeTiles failed", "error", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	if tiles == nil {
+		tiles = []database.HomeTile{}
+	}
+	// Annotate each tile with whether a secret is configured, so the
+	// browser can show a "key set" indicator without ever seeing the value.
+	type tileResp struct {
+		database.HomeTile
+		HasSecret bool `json:"has_secret"`
+	}
+	resp := make([]tileResp, 0, len(tiles))
+	for _, t := range tiles {
+		has, _ := db.HasHomeTileSecret(t.ID)
+		resp = append(resp, tileResp{HomeTile: t, HasSecret: has})
+	}
+	h.writeJSON(w, http.StatusOK, resp)
+}
+
+// CreateTile inserts a new tile on a board.
+func (h *Handlers) CreateTile(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePerm(w, r, "edit") {
+		return
+	}
+	boardID, err := pathID(r, "id")
+	if err != nil {
+		http.Error(w, "invalid board id", http.StatusBadRequest)
+		return
+	}
+	var req tileCreateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	if !validTileType(req.Type) {
+		http.Error(w, "invalid tile type", http.StatusBadRequest)
+		return
+	}
+	// Pick a sensible default size when the client sends auto (W or H 0).
+	// Plain launcher tiles → 2×2 (square, vertical layout).
+	// App tiles whose slug has a Tier-1 widget provider → 4×2 (horizontal
+	// layout, three widget pills fit inline below the icon+meta row).
+	// Apps whose catalog entry exposes many widget fields (Plex, Immich)
+	// → 4×3 so the wrap-row doesn't clip — at h=2 a 6+-pill grid runs off
+	// the bottom edge. See home.css for the W>=3 grid switch.
+	wantsWidget := false
+	bigWidget := false
+	if req.Type == string(database.TileTypeApp) && len(req.Config) > 0 {
+		var cfg AppConfig
+		if json.Unmarshal(req.Config, &cfg) == nil && cfg.AppSlug != "" && widget.HasProvider(cfg.AppSlug) {
+			wantsWidget = true
+			// Threshold: > 4 fields tends to need an extra row at our pill
+			// font size. Plex (7) is the motivating case; Immich (4)
+			// stays at 4×2.
+			if entry, ok := CatalogBySlug(cfg.AppSlug); ok && len(entry.WidgetFields) > 4 {
+				bigWidget = true
+			}
+		}
+	}
+	if req.W <= 0 {
+		if wantsWidget {
+			req.W = 4
+		} else {
+			req.W = 2
+		}
+	}
+	if req.H <= 0 {
+		if bigWidget {
+			req.H = 3
+		} else {
+			req.H = 2
+		}
+	}
+	tile := &database.HomeTile{
+		BoardID:   boardID,
+		Type:      database.HomeTileType(req.Type),
+		X:         req.X,
+		Y:         req.Y,
+		W:         req.W,
+		H:         req.H,
+		Config:    req.Config,
+		SortOrder: req.SortOrder,
+	}
+	db := h.db()
+	if db == nil {
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	id, err := db.CreateHomeTile(tile)
+	if err != nil {
+		h.deps.Logger.Error("CreateHomeTile failed", "error", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	tile.ID = id
+	// Sync the status worker so the new tile gets probed on the next 1s
+	// tick instead of waiting up to 60 seconds for the periodic refresh.
+	// Without this, a freshly-added reachable tile shows "unknown" for a
+	// minute even when the upstream is healthy.
+	h.kickStatusRefresh()
+	h.writeJSON(w, http.StatusCreated, tile)
+}
+
+// kickStatusRefresh asks the status worker to resync its tile set from the
+// database. Cheap and safe to call from any tile-mutation handler — the
+// worker dedupes by tile id and the call returns immediately, so we don't
+// gate the API response on it.
+func (h *Handlers) kickStatusRefresh() {
+	if h.worker == nil {
+		return
+	}
+	go h.worker.refreshTiles()
+}
+
+// UpdateTile patches a tile. Layout fields and/or config can be supplied;
+// missing fields are left untouched.
+func (h *Handlers) UpdateTile(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePerm(w, r, "edit") {
+		return
+	}
+	id, err := pathID(r, "id")
+	if err != nil {
+		http.Error(w, "invalid tile id", http.StatusBadRequest)
+		return
+	}
+	var req tileUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	db := h.db()
+	if db == nil {
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+
+	// Apply layout if any of x/y/w/h/sort_order were provided.
+	if req.X != nil || req.Y != nil || req.W != nil || req.H != nil || req.SortOrder != nil {
+		existing, err := db.GetHomeTile(id)
+		if err != nil {
+			h.deps.Logger.Error("GetHomeTile failed", "error", err)
+			http.Error(w, "Internal error", http.StatusInternalServerError)
+			return
+		}
+		if existing == nil {
+			http.Error(w, "tile not found", http.StatusNotFound)
+			return
+		}
+		x := existing.X
+		if req.X != nil {
+			x = *req.X
+		}
+		y := existing.Y
+		if req.Y != nil {
+			y = *req.Y
+		}
+		wv := existing.W
+		if req.W != nil && *req.W > 0 {
+			wv = *req.W
+		}
+		hv := existing.H
+		if req.H != nil && *req.H > 0 {
+			hv = *req.H
+		}
+		so := existing.SortOrder
+		if req.SortOrder != nil {
+			so = *req.SortOrder
+		}
+		if err := db.UpdateHomeTileLayout(id, x, y, wv, hv, so); err != nil {
+			h.deps.Logger.Error("UpdateHomeTileLayout failed", "error", err)
+			http.Error(w, "Internal error", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	// Apply config update independently so partial updates of either
+	// half don't require sending the other half.
+	if req.Config != nil {
+		if err := db.UpdateHomeTileConfig(id, *req.Config); err != nil {
+			h.deps.Logger.Error("UpdateHomeTileConfig failed", "error", err)
+			http.Error(w, "Internal error", http.StatusInternalServerError)
+			return
+		}
+		// Config edits can change the URL — refresh so the worker drops
+		// the stale URL and probes the new one immediately.
+		h.kickStatusRefresh()
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// DeleteTile removes a tile (and any associated secret via FK cascade).
+func (h *Handlers) DeleteTile(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePerm(w, r, "edit") {
+		return
+	}
+	id, err := pathID(r, "id")
+	if err != nil {
+		http.Error(w, "invalid tile id", http.StatusBadRequest)
+		return
+	}
+	db := h.db()
+	if db == nil {
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	if err := db.DeleteHomeTile(id); err != nil {
+		h.deps.Logger.Error("DeleteHomeTile failed", "error", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	// Drop the deleted tile from the worker's state map so it stops
+	// probing a URL that no longer has a tile pointing at it.
+	h.kickStatusRefresh()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// secretRequest is the body shape for PUT /home/api/tiles/{id}/secret.
+type secretRequest struct {
+	// Secret is the API key / token / password (depending on the app's auth mode).
+	Secret string `json:"secret"`
+	// BasicUsername is set for providers that need both username + password
+	// (e.g. qBittorrent). Stored alongside the secret as "<user>\n<secret>".
+	BasicUsername string `json:"basic_username,omitempty"`
+}
+
+// SetTileSecret encrypts and stores a tile's secret. To clear, send an empty
+// secret. The browser never sees the encrypted value back; subsequent reads
+// only ever return has_secret: true.
+func (h *Handlers) SetTileSecret(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePerm(w, r, "edit") {
+		return
+	}
+	id, err := pathID(r, "id")
+	if err != nil {
+		http.Error(w, "invalid tile id", http.StatusBadRequest)
+		return
+	}
+	var req secretRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	db := h.db()
+	if db == nil {
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+
+	if req.Secret == "" {
+		if err := db.SetHomeTileSecret(id, nil); err != nil {
+			h.deps.Logger.Error("clear tile secret failed", "error", err)
+			http.Error(w, "Internal error", http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	enc := h.encryptor()
+	if enc == nil {
+		http.Error(w, "secrets encryptor not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	plain := req.Secret
+	if req.BasicUsername != "" {
+		// Encode "<username>\n<secret>" so a single blob covers both halves.
+		plain = req.BasicUsername + "\n" + req.Secret
+	}
+	encrypted, err := enc.EncryptString(plain)
+	if err != nil {
+		h.deps.Logger.Error("encrypt tile secret failed", "error", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	if err := db.SetHomeTileSecret(id, encrypted); err != nil {
+		h.deps.Logger.Error("store tile secret failed", "error", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// TileWidget returns the most recent widget data snapshot for a tile.
+// Used by the browser on page load to populate widget tiles before the
+// first SSE event arrives.
+func (h *Handlers) TileWidget(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePerm(w, r, "view") {
+		return
+	}
+	id, err := pathID(r, "id")
+	if err != nil {
+		http.Error(w, "invalid tile id", http.StatusBadRequest)
+		return
+	}
+	if h.widgetRunner == nil {
+		h.writeJSON(w, http.StatusOK, map[string]any{"tile_id": id, "fields": map[string]string{}})
+		return
+	}
+	if evt, ok := h.widgetRunner.snapshot(id); ok {
+		h.writeJSON(w, http.StatusOK, evt)
+		return
+	}
+	h.writeJSON(w, http.StatusOK, map[string]any{"tile_id": id, "fields": map[string]string{}})
+}
+
+// Export returns the full dashboard state as a downloadable JSON file.
+// Excludes secrets — the destination must re-enter API keys.
+func (h *Handlers) Export(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePerm(w, r, "view") {
+		return
+	}
+	db := h.db()
+	if db == nil {
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	snap, err := buildSnapshot(db)
+	if err != nil {
+		h.deps.Logger.Error("buildSnapshot failed", "error", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", `attachment; filename="gearbox-home-`+
+		time.Now().UTC().Format("20060102-150405")+`.json"`)
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(snap); err != nil {
+		h.deps.Logger.Error("snapshot encode failed", "error", err)
+	}
+}
+
+// Import accepts a JSON snapshot, runs migrations, and replaces the
+// dashboard. Destructive: existing boards & tiles are wiped first.
+func (h *Handlers) Import(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePerm(w, r, "admin") {
+		return
+	}
+	db := h.db()
+	if db == nil {
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	defer func() { _ = r.Body.Close() }()
+	body, err := io.ReadAll(io.LimitReader(r.Body, 16<<20))
+	if err != nil {
+		http.Error(w, "read body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	var snap Snapshot
+	if err := json.Unmarshal(body, &snap); err != nil {
+		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := importSnapshot(db, &snap); err != nil {
+		h.deps.Logger.Error("importSnapshot failed", "error", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// CustomAPIPreview fetches a JSON URL with the same auth options the
+// customapi widget will use at runtime, then returns the parsed JSON
+// (truncated) so the browser can render a clickable tree-picker.
+//
+// Body is the same shape as a customapi tile config. The (optional) secret
+// is supplied inline because there's no tile yet to attach one to — once
+// the user saves the tile, it goes through the encrypted secret store.
+func (h *Handlers) CustomAPIPreview(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePerm(w, r, "edit") {
+		return
+	}
+	type previewRequest struct {
+		URL           string            `json:"url"`
+		Method        string            `json:"method,omitempty"`
+		Headers       map[string]string `json:"headers,omitempty"`
+		RequestBody   string            `json:"request_body,omitempty"`
+		Auth          string            `json:"auth,omitempty"`
+		BasicUsername string            `json:"basic_username,omitempty"`
+		HeaderName    string            `json:"header_name,omitempty"`
+		Secret        string            `json:"secret,omitempty"`
+	}
+	var req previewRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.URL) == "" {
+		http.Error(w, "url is required", http.StatusBadRequest)
+		return
+	}
+
+	method := req.Method
+	if method == "" {
+		method = http.MethodGet
+	}
+	var body io.Reader
+	if req.RequestBody != "" {
+		body = strings.NewReader(req.RequestBody)
+	}
+	httpReq, err := http.NewRequestWithContext(r.Context(), method, req.URL, body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	httpReq.Header.Set("Accept", "application/json")
+	for k, v := range req.Headers {
+		httpReq.Header.Set(k, v)
+	}
+	switch req.Auth {
+	case "basic":
+		if req.BasicUsername != "" && req.Secret != "" {
+			httpReq.SetBasicAuth(req.BasicUsername, req.Secret)
+		}
+	case "bearer":
+		if req.Secret != "" {
+			httpReq.Header.Set("Authorization", "Bearer "+req.Secret)
+		}
+	case "header":
+		if req.HeaderName != "" && req.Secret != "" {
+			httpReq.Header.Set(req.HeaderName, req.Secret)
+		}
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	out := map[string]any{
+		"http_status": resp.StatusCode,
+	}
+	var doc any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		out["error"] = "response is not JSON"
+		out["raw_preview"] = string(raw[:min(len(raw), 4096)])
+	} else {
+		out["json"] = doc
+	}
+	h.writeJSON(w, http.StatusOK, out)
+}
+
+// min returns the smaller of two ints. (Go 1.21+ has min() built in;
+// kept here for clarity.)
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// CatalogList returns the predefined apps catalog.
+func (h *Handlers) CatalogList(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePerm(w, r, "view") {
+		return
+	}
+	entries, err := Catalog()
+	if err != nil {
+		h.deps.Logger.Error("Catalog load failed", "error", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	h.writeJSON(w, http.StatusOK, entries)
+}
+
+// IconLibrary returns the cached selfh.st/icons index for the icon picker.
+// The browser fetches this once and filters client-side. We set a one-hour
+// browser cache header — the server-side cache TTL is six hours, so this
+// just smooths repeat picker opens within a session.
+func (h *Handlers) IconLibrary(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePerm(w, r, "view") {
+		return
+	}
+	if h.icons == nil {
+		h.writeJSON(w, http.StatusOK, []IconEntry{})
+		return
+	}
+	entries, err := h.icons.List(r.Context())
+	if err != nil {
+		h.deps.Logger.Error("icon library load failed", "error", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	h.writeJSON(w, http.StatusOK, entries)
+}
+
+// IconSuggest returns the best icon match for a URL by exact-matching
+// each host label (e.g. "google.com" → label "google" → Google icon).
+// Used to auto-fill the icon URL on bookmark and uncatalogued-app tiles
+// the moment the user pastes a URL — no probe of the upstream needed,
+// just string matching against the cached library. Returns null when
+// nothing matched (browser leaves the field empty).
+func (h *Handlers) IconSuggest(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePerm(w, r, "view") {
+		return
+	}
+	if h.icons == nil {
+		h.writeJSON(w, http.StatusOK, nil)
+		return
+	}
+	target := strings.TrimSpace(r.URL.Query().Get("url"))
+	if target == "" {
+		http.Error(w, "url is required", http.StatusBadRequest)
+		return
+	}
+	// Warm the cache if needed; ignore errors so the suggester silently
+	// returns nothing rather than 500ing on transient upstream failures.
+	if _, err := h.icons.List(r.Context()); err != nil {
+		h.deps.Logger.Warn("icon library list failed (suggest will return null)", "error", err)
+	}
+	parsed, err := url.Parse(target)
+	if err != nil || parsed.Host == "" {
+		h.writeJSON(w, http.StatusOK, nil)
+		return
+	}
+	match := h.icons.Suggest(parsed.Hostname())
+	h.writeJSON(w, http.StatusOK, match)
+}
+
+// Probe fingerprints a URL against the catalog and returns the matched
+// app entry (or null when nothing matched). The browser calls this after
+// the user pastes a URL in the add-tile modal.
+func (h *Handlers) Probe(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePerm(w, r, "view") {
+		return
+	}
+	target := strings.TrimSpace(r.URL.Query().Get("url"))
+	if target == "" {
+		http.Error(w, "url is required", http.StatusBadRequest)
+		return
+	}
+	prober := newFingerprintProber()
+	slug, ok := prober.Detect(r.Context(), target)
+	if !ok {
+		h.writeJSON(w, http.StatusOK, map[string]any{"matched": false})
+		return
+	}
+	entry, _ := CatalogBySlug(slug)
+	h.writeJSON(w, http.StatusOK, map[string]any{
+		"matched": true,
+		"app":     entry,
+	})
+}
+
+// TileStatus returns the most recent status snapshot for a tile, or unknown
+// when the worker has not yet probed it. The browser hits this on page load
+// to populate status dots before the SSE stream catches up.
+func (h *Handlers) TileStatus(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePerm(w, r, "view") {
+		return
+	}
+	id, err := pathID(r, "id")
+	if err != nil {
+		http.Error(w, "invalid tile id", http.StatusBadRequest)
+		return
+	}
+	if h.worker == nil {
+		h.writeJSON(w, http.StatusOK, map[string]any{
+			"tile_id": id,
+			"status":  StatusUnknown,
+		})
+		return
+	}
+	if evt, ok := h.worker.snapshot(id); ok {
+		h.writeJSON(w, http.StatusOK, evt)
+		return
+	}
+	h.writeJSON(w, http.StatusOK, map[string]any{
+		"tile_id": id,
+		"status":  StatusUnknown,
+	})
+}
+
+// SetLandingPath sets the calling user's per-user default_landing_path.
+// Empty string clears it. The browser POSTs this from a "Make Home my default
+// page" toggle on the Home settings panel.
+func (h *Handlers) SetLandingPath(w http.ResponseWriter, r *http.Request) {
+	if h.deps.Auth == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	user := h.deps.Auth.GetUser(r)
+	if user == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	var req landingPathRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	// Defensive: only accept relative paths starting with "/".
+	if req.Path != "" && !strings.HasPrefix(req.Path, "/") {
+		http.Error(w, "path must start with /", http.StatusBadRequest)
+		return
+	}
+	db := h.db()
+	if db == nil {
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	if err := db.SetUserDefaultLandingPath(user.ID, req.Path); err != nil {
+		h.deps.Logger.Error("SetUserDefaultLandingPath failed", "error", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// pathID extracts a numeric URL parameter.
+func pathID(r *http.Request, key string) (int64, error) {
+	raw := chi.URLParam(r, key)
+	id, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || id <= 0 {
+		return 0, errors.New("invalid id")
+	}
+	return id, nil
+}
+
+// validSlug enforces a kebab-case slug for board URLs.
+func validSlug(s string) bool {
+	if s == "" || len(s) > 64 {
+		return false
+	}
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case r >= '0' && r <= '9':
+		case r == '-':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// validTileType returns true for a known HomeTileType string.
+func validTileType(t string) bool {
+	switch database.HomeTileType(t) {
+	case database.TileTypeApp, database.TileTypeBookmark, database.TileTypeCustomAPI,
+		database.TileTypeIframe, database.TileTypeClock, database.TileTypeWeather, database.TileTypeSearch:
+		return true
+	}
+	return false
+}

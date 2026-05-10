@@ -131,6 +131,7 @@ Client gears run in the **gearbox** web application (the monitoring client) and 
 
 **Examples:**
 
+- `home` - Box-agnostic app dashboard (start page with launcher tiles, widgets, bookmarks, search)
 - `dashboard` - Main monitoring overview page (the homepage)
 - `certificates` - SSL/TLS certificate monitoring page
 - `logs` - Log viewing and analysis page
@@ -138,6 +139,26 @@ Client gears run in the **gearbox** web application (the monitoring client) and 
 - `alerts` - Alert management page
 - `services` - Service status and control page
 - `metrics` - System metrics and history page
+
+### Gear Scope: Box vs System
+
+Most gears are **box-scoped** — they monitor a specific server, and the `gears` table holds one row per `(server_id, name)`. A few gears are **system-scoped** — they apply to the whole install, with a single row keyed by the sentinel `server_id = '__system__'`.
+
+Declare the scope on `Info`:
+
+```go
+func (g *Gear) Info() gear.Info {
+    return gear.Info{
+        Name:  "home",
+        Scope: gear.ScopeSystem, // omit or set ScopeBox for the default per-box behaviour
+        // ...
+    }
+}
+```
+
+System gears are seeded once at startup via `database.EnsureSystemGears()` (called from `cmd/server/main.go`). Box gears are seeded lazily per-server via `EnsureServerGears(boxID)` on first access, just like before. The two seeding lists are kept disjoint by construction (`DefaultGears` vs `DefaultSystemGears`).
+
+The `home` gear is the first system-scoped gear and a useful reference. Its config lives in `database.HomeConfig` and is loaded at startup via the standard `gears.config` JSON column.
 
 ### Gearbox Agent Gears
 

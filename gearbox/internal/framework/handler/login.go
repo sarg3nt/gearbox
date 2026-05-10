@@ -1,12 +1,45 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/url"
 
+	"github.com/sarg3nt/gearbox/internal/framework/database"
 	"github.com/sarg3nt/gearbox/internal/framework/models"
 	"github.com/sarg3nt/gearbox/internal/framework/templates/pages"
 )
+
+// resolvePostLoginPath returns the path the user should land on after login
+// or after visiting "/" without a destination. Cascade:
+//
+//  1. The user's default_landing_path (if set).
+//  2. The home gear's system_default_landing_path config (if set and the home gear is enabled).
+//  3. "/" (caller decides what that means).
+//
+// Empty userID skips step 1. Errors are logged by the caller via the returned target;
+// this function is intentionally fail-safe — it returns "/" rather than erroring.
+func (h *Handler) resolvePostLoginPath(userID string) string {
+	if userID != "" {
+		if path, err := h.db.GetUserDefaultLandingPath(userID); err == nil && path != "" {
+			return path
+		}
+	}
+
+	homeGear, err := h.db.GetGear(database.SystemServerID, database.GearHome)
+	if err != nil || homeGear == nil || !homeGear.Enabled {
+		return "/"
+	}
+
+	var cfg database.HomeConfig
+	if err := json.Unmarshal(homeGear.Config, &cfg); err != nil {
+		return "/"
+	}
+	if cfg.SystemDefaultLandingPath != "" {
+		return cfg.SystemDefaultLandingPath
+	}
+	return "/"
+}
 
 // LoginPage serves the login page.
 func (h *Handler) LoginPage(w http.ResponseWriter, r *http.Request) {
@@ -90,12 +123,37 @@ func (h *Handler) LoginPost(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Redirect to return URL if provided, otherwise to home
-	redirectTarget := "/"
+	// Redirect to return URL if provided, otherwise honor the per-user
+	// default-landing-path with system fallback.
+	redirectTarget := h.resolvePostLoginPath(user.ID)
 	if returnURL != "" && returnURL != "/login" && returnURL != "/logout" {
 		redirectTarget = returnURL
 	}
 	http.Redirect(w, r, redirectTarget, http.StatusSeeOther)
+}
+
+// RootRedirect handles GET /. Redirects authenticated users to their
+// default-landing-path (per-user → system → fallback). The chosen fallback
+// when nothing is configured is /haproxy when at least one box is configured,
+// otherwise /settings/boxes/new for a clean first-run experience.
+func (h *Handler) RootRedirect(w http.ResponseWriter, r *http.Request) {
+	userID := ""
+	if u, err := h.authManager.GetUser(r); err == nil && u != nil {
+		userID = u.ID
+	}
+
+	target := h.resolvePostLoginPath(userID)
+	if target != "/" {
+		http.Redirect(w, r, target, http.StatusSeeOther)
+		return
+	}
+
+	// Fallback: send to haproxy if any box is configured, else to box setup.
+	if count, err := h.db.CountEnabledBoxes(); err == nil && count > 0 {
+		http.Redirect(w, r, "/haproxy", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/settings/boxes/new", http.StatusSeeOther)
 }
 
 // Logout handles user logout.

@@ -55,11 +55,21 @@ func (h *Handler) GearsPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Load system-scoped (box-agnostic) gears so they render alongside the
+	// per-box ones. They're keyed by ServerID = SystemServerID, so the
+	// template / JS will route their toggle posts to that sentinel rather
+	// than the currently selected box.
+	systemGears, err := h.db.GetGears(database.SystemServerID)
+	if err != nil {
+		h.logger.Warn("failed to load system gears for settings page", "error", err)
+		// non-fatal: just render box gears
+	}
+
 	// Get success/error messages from query params
 	successMsg := r.URL.Query().Get("success")
 	errorMsg := r.URL.Query().Get("error")
 
-	component := pages.GearsPage(user, servers, boxID, plugins, successMsg, errorMsg)
+	component := pages.GearsPage(user, servers, boxID, systemGears, plugins, successMsg, errorMsg)
 	if err := component.Render(r.Context(), w); err != nil {
 		h.logger.Error("Failed to render gears template", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -200,10 +210,21 @@ func (h *Handler) GearTogglePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	gearName := chi.URLParam(r, "name")
+
+	// System-scoped gears are keyed by SystemServerID, not by any box.
+	// Override boxID for the lookup so toggling Home (or any future system
+	// gear) hits the right row even if the client posted ?server=<box-uuid>.
+	// Keep the original boxID for the post-toggle redirect so the page comes
+	// back focused on whichever box the user was viewing.
+	gearServerID := boxID
+	if database.IsSystemGear(gearName) {
+		gearServerID = database.SystemServerID
+	}
+
 	redirectBase := "/settings/gears?server=" + url.QueryEscape(boxID)
 
 	// Get current gear
-	gearItem, err := h.db.GetGear(boxID, gearName)
+	gearItem, err := h.db.GetGear(gearServerID, gearName)
 	if err != nil {
 		h.logger.Error("failed to get gear", "gear", gearName, "error", err)
 		if isAJAXRequest(r) {
@@ -229,7 +250,7 @@ func (h *Handler) GearTogglePost(w http.ResponseWriter, r *http.Request) {
 
 	// Toggle the enabled state
 	newEnabled := !gearItem.Enabled
-	if err := h.db.SetGearEnabled(boxID, gearName, newEnabled, &user.ID); err != nil {
+	if err := h.db.SetGearEnabled(gearServerID, gearName, newEnabled, &user.ID); err != nil {
 		h.logger.Error("failed to toggle gear", "gear", gearName, "error", err)
 		if isAJAXRequest(r) {
 			w.Header().Set("Content-Type", "application/json")

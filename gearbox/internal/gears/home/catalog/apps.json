@@ -1,0 +1,626 @@
+[
+  {
+    "slug": "sonarr",
+    "name": "Sonarr",
+    "category": "media",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/sonarr.svg",
+    "default_ports": [8989],
+    "fingerprint": {
+      "path": "/login",
+      "type": "body_contains",
+      "value": "Login - Sonarr"
+    },
+    "auth": "apikey",
+    "widget_fields": [
+      { "key": "wanted",  "label": "Wanted",  "default": true },
+      { "key": "queued",  "label": "Queued",  "default": true },
+      { "key": "series",  "label": "Series",  "default": true },
+      { "key": "missing", "label": "Missing", "default": false }
+    ],
+    "api_help": {
+      "title": "Find your Sonarr API key",
+      "settings_path": "/settings/general",
+      "steps": [
+        "Open Sonarr's `Settings → General` page (use the link below).",
+        "Scroll to the `Security` section.",
+        "Copy the `API Key` value (click the field to reveal it).",
+        "Paste it into the API Key field on this dialog and click Save."
+      ],
+      "note": "The API key never expires unless you click `Reset`. Treat it like a password — anyone with it can fully control Sonarr."
+    }
+  },
+  {
+    "slug": "radarr",
+    "name": "Radarr",
+    "category": "media",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/radarr.svg",
+    "default_ports": [7878],
+    "fingerprint": {
+      "path": "/login",
+      "type": "body_contains",
+      "value": "Login - Radarr"
+    },
+    "auth": "apikey",
+    "widget_fields": [
+      { "key": "wanted",  "label": "Wanted",  "default": true },
+      { "key": "missing", "label": "Missing", "default": true },
+      { "key": "queued",  "label": "Queued",  "default": true },
+      { "key": "movies",  "label": "Movies",  "default": false }
+    ],
+    "api_help": {
+      "title": "Find your Radarr API key",
+      "settings_path": "/settings/general",
+      "steps": [
+        "Open Radarr's `Settings → General` page (use the link below).",
+        "Scroll to the `Security` section.",
+        "Copy the `API Key` value (click the field to reveal it).",
+        "Paste it into the API Key field on this dialog and click Save."
+      ],
+      "note": "Treat the API key like a password — anyone with it can fully control Radarr."
+    }
+  },
+  {
+    "slug": "prowlarr",
+    "name": "Prowlarr",
+    "category": "media",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/prowlarr.svg",
+    "default_ports": [9696],
+    "fingerprint": {
+      "path": "/login",
+      "type": "body_contains",
+      "value": "Login - Prowlarr"
+    },
+    "auth": "apikey",
+    "widget_fields": [
+      { "key": "numIndexers",    "label": "Indexers",    "default": true },
+      { "key": "numGrabs",       "label": "Grabs",       "default": true },
+      { "key": "numQueries",     "label": "Queries",     "default": true },
+      { "key": "numFailQueries", "label": "Fail",        "default": false }
+    ],
+    "api_help": {
+      "title": "Find your Prowlarr API key",
+      "settings_path": "/settings/general",
+      "steps": [
+        "Open Prowlarr's `Settings → General` page (use the link below).",
+        "Scroll to the `Security` section.",
+        "Copy the `API Key` value (click the field to reveal it).",
+        "Paste it into the API Key field on this dialog and click Save."
+      ]
+    }
+  },
+  {
+    "slug": "lidarr",
+    "name": "Lidarr",
+    "category": "media",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/lidarr.svg",
+    "default_ports": [8686],
+    "fingerprint": {
+      "path": "/login",
+      "type": "body_contains",
+      "value": "Login - Lidarr"
+    },
+    "auth": "apikey",
+    "widget_fields": [
+      { "key": "wanted",  "label": "Wanted",  "default": true },
+      { "key": "queued",  "label": "Queued",  "default": true },
+      { "key": "artists", "label": "Artists", "default": true }
+    ],
+    "api_help": {
+      "title": "Find your Lidarr API key",
+      "settings_path": "/settings/general",
+      "steps": [
+        "Open Lidarr's `Settings → General` page (use the link below).",
+        "Scroll to the `Security` section.",
+        "Copy the `API Key` value.",
+        "Paste it into the API Key field on this dialog and click Save."
+      ]
+    }
+  },
+  {
+    "slug": "readarr",
+    "name": "Readarr",
+    "category": "media",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/readarr.svg",
+    "default_ports": [8787],
+    "fingerprint": {
+      "path": "/login",
+      "type": "body_contains",
+      "value": "Login - Readarr"
+    },
+    "auth": "apikey",
+    "widget_fields": [
+      { "key": "wanted", "label": "Wanted", "default": true },
+      { "key": "queued", "label": "Queued", "default": true },
+      { "key": "books",  "label": "Books",  "default": true }
+    ],
+    "api_help": {
+      "title": "Find your Readarr API key",
+      "settings_path": "/settings/general",
+      "steps": [
+        "Open Readarr's `Settings → General` page (use the link below).",
+        "Scroll to the `Security` section.",
+        "Copy the `API Key` value.",
+        "Paste it into the API Key field on this dialog and click Save."
+      ]
+    }
+  },
+  {
+    "slug": "bazarr",
+    "name": "Bazarr",
+    "category": "media",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/bazarr.svg",
+    "default_ports": [6767],
+    "auth": "apikey",
+    "widget_fields": [
+      { "key": "missingEpisodes", "label": "Missing Eps",    "default": true },
+      { "key": "missingMovies",   "label": "Missing Movies", "default": true }
+    ],
+    "api_help": {
+      "title": "Find your Bazarr API key",
+      "settings_path": "/#/settings/general",
+      "steps": [
+        "Open Bazarr's `Settings → General` page (use the link below).",
+        "Scroll to the `Security Settings` section.",
+        "Copy the `API Key` value.",
+        "Paste it into the API Key field on this dialog and click Save."
+      ]
+    }
+  },
+  {
+    "slug": "qbittorrent",
+    "name": "qBittorrent",
+    "category": "downloads",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/qbittorrent.svg",
+    "default_ports": [8080],
+    "fingerprint": {
+      "path": "/",
+      "type": "body_contains",
+      "value": "qBittorrent WebUI"
+    },
+    "auth": "basic",
+    "widget_fields": [
+      { "key": "leech",    "label": "Leech",    "default": true },
+      { "key": "download", "label": "Down",     "default": true },
+      { "key": "seed",     "label": "Seed",     "default": true },
+      { "key": "upload",   "label": "Up",       "default": true }
+    ],
+    "api_help": {
+      "title": "qBittorrent credentials",
+      "settings_path": "/#/preferences",
+      "steps": [
+        "qBittorrent doesn't use API keys — Gearbox signs in with your WebUI username and password.",
+        "Default WebUI login is `admin` / `adminadmin` on a fresh install. If you've changed it, use the credentials you set.",
+        "Enter your username in the `Username` field and your password in the API Key field on this dialog.",
+        "(Optional) In `Tools → Options → Web UI` you can enable `Bypass authentication for clients in whitelisted IP subnets` to avoid storing the password — set the whitelist to your Gearbox host's IP."
+      ],
+      "note": "Recommended: create a dedicated WebUI user (or set a strong password) before pasting credentials into a dashboard."
+    }
+  },
+  {
+    "slug": "sabnzbd",
+    "name": "SABnzbd",
+    "category": "downloads",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/sabnzbd.svg",
+    "default_ports": [8081],
+    "auth": "apikey",
+    "widget_fields": [
+      { "key": "rate",     "label": "Rate",     "default": true },
+      { "key": "queue",    "label": "Queue",    "default": true },
+      { "key": "timeleft", "label": "ETA",      "default": true }
+    ]
+  },
+  {
+    "slug": "nzbget",
+    "name": "NZBGet",
+    "category": "downloads",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/nzbget.svg",
+    "default_ports": [6789],
+    "auth": "basic",
+    "widget_fields": [
+      { "key": "rate",     "label": "Rate",     "default": true },
+      { "key": "queue",    "label": "Queue",    "default": true },
+      { "key": "timeleft", "label": "ETA",      "default": true }
+    ]
+  },
+  {
+    "slug": "deluge",
+    "name": "Deluge",
+    "category": "downloads",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/deluge.svg",
+    "default_ports": [8112],
+    "auth": "basic",
+    "widget_fields": [
+      { "key": "leech",    "label": "Leech",    "default": true },
+      { "key": "download", "label": "Down",     "default": true },
+      { "key": "seed",     "label": "Seed",     "default": true },
+      { "key": "upload",   "label": "Up",       "default": true }
+    ]
+  },
+  {
+    "slug": "transmission",
+    "name": "Transmission",
+    "category": "downloads",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/transmission.svg",
+    "default_ports": [9091],
+    "auth": "basic",
+    "widget_fields": [
+      { "key": "leech",    "label": "Leech",    "default": true },
+      { "key": "download", "label": "Down",     "default": true },
+      { "key": "seed",     "label": "Seed",     "default": true },
+      { "key": "upload",   "label": "Up",       "default": true }
+    ]
+  },
+  {
+    "slug": "plex",
+    "name": "Plex",
+    "category": "media",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/plex.svg",
+    "default_ports": [32400],
+    "fingerprint": {
+      "path": "/identity",
+      "type": "body_contains",
+      "value": "machineIdentifier"
+    },
+    "auth": "apikey",
+    "widget_fields": [
+      { "key": "streams",    "label": "Streams",    "default": true },
+      { "key": "transcodes", "label": "Transcodes", "default": true },
+      { "key": "bandwidth",  "label": "Bandwidth",  "default": true },
+      { "key": "movies",     "label": "Movies",     "default": true },
+      { "key": "tv",         "label": "Shows",      "default": false },
+      { "key": "episodes",   "label": "Episodes",   "default": false },
+      { "key": "libraries",  "label": "Libraries",  "default": false }
+    ],
+    "api_help": {
+      "title": "Find your Plex token (X-Plex-Token)",
+      "steps": [
+        "Plex doesn't show its API token in any settings page — you have to extract it from a request the web app already makes. The easiest way:",
+        "Sign in to Plex Web at `app.plex.tv` (or your local Plex web URL) with the same account that owns this server.",
+        "Open any item in your library (a movie, episode, or anything).",
+        "Click the `...` (three-dot) menu on the item → `Get Info` → in the bottom-left of the info dialog, click `View XML`.",
+        "A new browser tab opens with raw XML. Look at that tab's URL — it contains `X-Plex-Token=` followed by a long string. Copy just the token (everything after the `=` and before the next `&`, if any).",
+        "Paste the token into the API Key field on this dialog and click Save.",
+        "Alternative method: open Plex Web, press `F12` to open DevTools, switch to the `Network` tab, click anything in the UI, find any request to `/library/...` and look at the `X-Plex-Token` request header — copy that value."
+      ],
+      "note": "The token grants the same access as your Plex account, so guard it like a password. To revoke it, sign out of all devices at `https://app.plex.tv/desktop/#!/settings/account` — Plex will issue a new token on next sign-in."
+    }
+  },
+  {
+    "slug": "jellyfin",
+    "name": "Jellyfin",
+    "category": "media",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/jellyfin.svg",
+    "default_ports": [8096],
+    "fingerprint": {
+      "path": "/System/Info/Public",
+      "type": "json",
+      "field": "ProductName",
+      "equals": "Jellyfin Server"
+    },
+    "auth": "apikey",
+    "widget_fields": [
+      { "key": "movies",   "label": "Movies",   "default": true },
+      { "key": "series",   "label": "Series",   "default": true },
+      { "key": "episodes", "label": "Episodes", "default": false },
+      { "key": "songs",    "label": "Songs",    "default": false }
+    ],
+    "api_help": {
+      "title": "Find your Jellyfin API key",
+      "settings_path": "/web/index.html#!/apikeys.html",
+      "steps": [
+        "Sign in to Jellyfin's web UI as an admin and open `Dashboard → API Keys` (use the link below).",
+        "Click the `+` button to create a new API key.",
+        "Give it an app name like `Gearbox` so you can identify it later, then click `Ok`.",
+        "Copy the generated key from the list.",
+        "Paste it into the API Key field on this dialog and click Save."
+      ],
+      "note": "API keys can be revoked at any time from the same page. Each key is scoped to the account that created it."
+    }
+  },
+  {
+    "slug": "tautulli",
+    "name": "Tautulli",
+    "category": "media",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/tautulli.svg",
+    "default_ports": [8181],
+    "auth": "apikey",
+    "widget_fields": [
+      { "key": "streams", "label": "Streams", "default": true }
+    ],
+    "api_help": {
+      "title": "Find your Tautulli API key",
+      "settings_path": "/settings#tabs_tabs-web_interface",
+      "steps": [
+        "Open Tautulli and go to `Settings → Web Interface` (use the link below).",
+        "Scroll to the `API` section and make sure `Enable API` is on.",
+        "Copy the `API Key` value.",
+        "Paste it into the API Key field on this dialog and click Save."
+      ]
+    }
+  },
+  {
+    "slug": "audiobookshelf",
+    "name": "Audiobookshelf",
+    "category": "media",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/audiobookshelf.svg",
+    "default_ports": [13378],
+    "auth": "apikey",
+    "widget_fields": [
+      { "key": "books",         "label": "Books",    "default": true },
+      { "key": "podcasts",      "label": "Podcasts", "default": true },
+      { "key": "booksDuration", "label": "Duration", "default": false }
+    ]
+  },
+  {
+    "slug": "immich",
+    "name": "Immich",
+    "category": "media",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/immich.svg",
+    "default_ports": [2283, 3001],
+    "auth": "apikey",
+    "widget_fields": [
+      { "key": "users",   "label": "Users",   "default": true },
+      { "key": "photos",  "label": "Photos",  "default": true },
+      { "key": "videos",  "label": "Videos",  "default": true },
+      { "key": "storage", "label": "Storage", "default": false }
+    ],
+    "api_help": {
+      "title": "Find your Immich API key",
+      "settings_path": "/user-settings?isOpen=api-keys",
+      "steps": [
+        "Sign in to Immich and open `Account → API Keys` (use the link below).",
+        "Click `New API Key`, name it `Gearbox`, and select the permissions you want it to have (read-only is plenty for the dashboard).",
+        "Copy the generated key — it's only shown once.",
+        "Paste it into the API Key field on this dialog and click Save."
+      ]
+    }
+  },
+  {
+    "slug": "pihole",
+    "name": "Pi-hole",
+    "category": "network",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/pi-hole.svg",
+    "default_ports": [80],
+    "fingerprint": {
+      "path": "/admin/api.php?summary",
+      "type": "json",
+      "field": "domains_being_blocked",
+      "exists": true
+    },
+    "auth": "apikey",
+    "widget_fields": [
+      { "key": "queries",         "label": "Queries", "default": true },
+      { "key": "blocked",         "label": "Blocked", "default": true },
+      { "key": "blocked_percent", "label": "%",       "default": true },
+      { "key": "gravity",         "label": "Gravity", "default": false }
+    ],
+    "api_help": {
+      "title": "Find your Pi-hole password / API token",
+      "settings_path": "/admin/settings.php?tab=api",
+      "steps": [
+        "Sign in to the Pi-hole admin UI and go to `Settings → API / Web interface` (use the link below).",
+        "On Pi-hole v6+, click `Show API token` and copy the value.",
+        "On Pi-hole v5, paste the *web admin password* you set during install — there's no separate API token; the password is the auth.",
+        "Paste the token (or password) into the API Key field on this dialog and click Save."
+      ],
+      "note": "On v6 you can also generate a scoped Application Password under `Settings → Web interface / API` that's safer than the admin password."
+    }
+  },
+  {
+    "slug": "adguard",
+    "name": "AdGuard Home",
+    "category": "network",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/adguard-home.svg",
+    "default_ports": [3000, 80],
+    "fingerprint": {
+      "path": "/",
+      "type": "body_contains",
+      "value": "AdGuard Home"
+    },
+    "auth": "basic",
+    "widget_fields": [
+      { "key": "queries",  "label": "Queries", "default": true },
+      { "key": "blocked",  "label": "Blocked", "default": true },
+      { "key": "filtered", "label": "Filtered","default": false },
+      { "key": "latency",  "label": "Latency", "default": false }
+    ],
+    "api_help": {
+      "title": "AdGuard Home credentials",
+      "settings_path": "/#settings",
+      "steps": [
+        "AdGuard Home doesn't issue API keys — it uses the same admin username and password you log into the web UI with.",
+        "Enter your admin username in the `Username` field and your admin password in the API Key field on this dialog.",
+        "If you've forgotten the password, reset it via the AdGuard Home config file (`/opt/adguardhome/conf/AdGuardHome.yaml`, `users:` section)."
+      ]
+    }
+  },
+  {
+    "slug": "proxmox",
+    "name": "Proxmox",
+    "category": "infra",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/proxmox.svg",
+    "default_ports": [8006],
+    "auth": "apikey",
+    "widget_fields": [
+      { "key": "vms",  "label": "VMs",  "default": true },
+      { "key": "lxc",  "label": "LXC",  "default": true },
+      { "key": "cpu",  "label": "CPU",  "default": true },
+      { "key": "mem",  "label": "Mem",  "default": true }
+    ]
+  },
+  {
+    "slug": "portainer",
+    "name": "Portainer",
+    "category": "infra",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/portainer.svg",
+    "default_ports": [9000, 9443],
+    "fingerprint": {
+      "path": "/api/system/version",
+      "type": "json",
+      "field": "ServerEdition",
+      "exists": true
+    },
+    "auth": "apikey",
+    "widget_fields": [
+      { "key": "running", "label": "Running", "default": true },
+      { "key": "stopped", "label": "Stopped", "default": true },
+      { "key": "total",   "label": "Total",   "default": false }
+    ],
+    "api_help": {
+      "title": "Find your Portainer access token",
+      "settings_path": "/#!/account/tokens",
+      "steps": [
+        "Sign in to Portainer and go to `My account → Access tokens` (use the link below — your username menu in the top-right also gets you there).",
+        "Click `Add access token`, give it a description like `Gearbox`, and click `Add access token` again.",
+        "Copy the token shown — Portainer only displays it once.",
+        "Paste it into the API Key field on this dialog and click Save."
+      ],
+      "note": "Tokens inherit your account's role. You can revoke a token any time from the same page."
+    }
+  },
+  {
+    "slug": "nextcloud",
+    "name": "Nextcloud",
+    "category": "productivity",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/nextcloud.svg",
+    "default_ports": [80, 443],
+    "fingerprint": {
+      "path": "/status.php",
+      "type": "json",
+      "field": "productname",
+      "equals": "Nextcloud"
+    },
+    "auth": "basic",
+    "widget_fields": [
+      { "key": "freespace",    "label": "Free",     "default": true },
+      { "key": "activeusers",  "label": "Active",   "default": true },
+      { "key": "numfiles",     "label": "Files",    "default": false },
+      { "key": "numshares",    "label": "Shares",   "default": false }
+    ]
+  },
+  {
+    "slug": "unifi",
+    "name": "UniFi Network",
+    "category": "network",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/ubiquiti-unifi.svg",
+    "default_ports": [443, 8443],
+    "auth": "apikey",
+    "widget_fields": [
+      { "key": "clients",         "label": "Clients",  "default": true },
+      { "key": "wifi",            "label": "WiFi",     "default": true },
+      { "key": "wired",           "label": "Wired",    "default": true },
+      { "key": "vpn",             "label": "VPN",      "default": false },
+      { "key": "devices_online",  "label": "Devices",  "default": true },
+      { "key": "devices_offline", "label": "Offline",  "default": false },
+      { "key": "wan_status",      "label": "WAN",      "default": false },
+      { "key": "wan_down",        "label": "Down",     "default": false, "graphable": true },
+      { "key": "wan_up",          "label": "Up",       "default": false, "graphable": true },
+      { "key": "gateway_cpu",     "label": "GW CPU",   "default": false },
+      { "key": "gateway_mem",     "label": "GW Mem",   "default": false },
+      { "key": "uptime",          "label": "Uptime",   "default": false }
+    ],
+    "api_help": {
+      "title": "Find your UniFi Network API key",
+      "settings_path": "/network/admin/integrations",
+      "steps": [
+        "Sign in to your UniFi controller's web UI as an admin.",
+        "On UniFi OS 4.x+, open `Settings → Control Plane → Integrations` (use the link below — adjust if your controller is on a different host).",
+        "On older firmware: `Settings → System → Advanced` and look for the API section.",
+        "Click `Create API Key`, name it `Gearbox`, and copy the generated key — it's only shown once.",
+        "Paste it into the API Key field on this dialog and click Save.",
+        "Tile URL should point at the UniFi controller's HTTPS port (e.g. `https://10.0.0.254` or your controller's hostname). The widget appends `/proxy/network/integration/v1/...` automatically."
+      ],
+      "note": "API keys inherit your account's read scope. For a least-privilege setup, create a dedicated `Read-Only` admin under `Settings → Admins & Users` and generate the key while signed in as that user."
+    }
+  },
+  {
+    "slug": "traefik",
+    "name": "Traefik",
+    "category": "network",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/traefik.svg",
+    "default_ports": [8080],
+    "auth": "none",
+    "widget_fields": [
+      { "key": "routers",    "label": "Routers",    "default": true },
+      { "key": "services",   "label": "Services",   "default": true },
+      { "key": "middleware", "label": "Middleware", "default": false }
+    ]
+  },
+  {
+    "slug": "uptime-kuma",
+    "name": "Uptime Kuma",
+    "category": "monitoring",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/uptime-kuma.svg",
+    "default_ports": [3001],
+    "auth": "none",
+    "widget_fields": [
+      { "key": "up",      "label": "Up",      "default": true },
+      { "key": "down",    "label": "Down",    "default": true },
+      { "key": "paused",  "label": "Paused",  "default": false },
+      { "key": "pending", "label": "Pending", "default": false }
+    ]
+  },
+  {
+    "slug": "gotify",
+    "name": "Gotify",
+    "category": "monitoring",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/gotify.svg",
+    "default_ports": [80],
+    "auth": "apikey",
+    "widget_fields": [
+      { "key": "apps",     "label": "Apps",     "default": true },
+      { "key": "clients",  "label": "Clients",  "default": true },
+      { "key": "messages", "label": "Messages", "default": true }
+    ]
+  },
+  {
+    "slug": "watchtower",
+    "name": "Watchtower",
+    "category": "infra",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/watchtower.svg",
+    "default_ports": [8080],
+    "auth": "bearer",
+    "widget_fields": [
+      { "key": "containers_scanned",  "label": "Scanned", "default": true },
+      { "key": "containers_updated",  "label": "Updated", "default": true },
+      { "key": "containers_failed",   "label": "Failed",  "default": false }
+    ]
+  },
+  {
+    "slug": "speedtest-tracker",
+    "name": "Speedtest Tracker",
+    "category": "monitoring",
+    "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/speedtest-tracker.svg",
+    "default_ports": [80],
+    "auth": "bearer",
+    "widget_fields": [
+      { "key": "download", "label": "Down", "default": true },
+      { "key": "upload",   "label": "Up",   "default": true },
+      { "key": "ping",     "label": "Ping", "default": true }
+    ]
+  },
+  { "slug": "vaultwarden",      "name": "Vaultwarden",      "category": "productivity", "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/vaultwarden.svg",      "default_ports": [80],     "auth": "none" },
+  { "slug": "bitwarden",        "name": "Bitwarden",        "category": "productivity", "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/bitwarden.svg",        "default_ports": [80],     "auth": "none" },
+  { "slug": "paperless-ngx",    "name": "Paperless-ngx",    "category": "productivity", "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/paperless-ngx.svg",    "default_ports": [8000],   "auth": "none" },
+  { "slug": "mealie",           "name": "Mealie",           "category": "productivity", "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/mealie.svg",           "default_ports": [9000],   "auth": "none" },
+  { "slug": "frigate",          "name": "Frigate",          "category": "media",        "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/frigate.svg",          "default_ports": [5000],   "auth": "none" },
+  { "slug": "home-assistant",   "name": "Home Assistant",   "category": "home",         "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/home-assistant.svg",   "default_ports": [8123],   "auth": "bearer" },
+  { "slug": "syncthing",        "name": "Syncthing",        "category": "productivity", "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/syncthing.svg",        "default_ports": [8384],   "auth": "apikey" },
+  { "slug": "freshrss",         "name": "FreshRSS",         "category": "productivity", "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/freshrss.svg",         "default_ports": [80],     "auth": "none" },
+  { "slug": "authelia",         "name": "Authelia",         "category": "security",     "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/authelia.svg",         "default_ports": [9091],   "auth": "none" },
+  { "slug": "authentik",        "name": "Authentik",        "category": "security",     "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/authentik.svg",        "default_ports": [9000],   "auth": "bearer" },
+  { "slug": "keycloak",         "name": "Keycloak",         "category": "security",     "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/keycloak.svg",         "default_ports": [8080],   "auth": "bearer" },
+  { "slug": "navidrome",        "name": "Navidrome",        "category": "media",        "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/navidrome.svg",        "default_ports": [4533],   "auth": "none" },
+  { "slug": "grafana",          "name": "Grafana",          "category": "monitoring",   "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/grafana.svg",          "default_ports": [3000],   "auth": "bearer" },
+  { "slug": "prometheus",       "name": "Prometheus",       "category": "monitoring",   "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/prometheus.svg",       "default_ports": [9090],   "auth": "none" },
+  { "slug": "minio",            "name": "MinIO",            "category": "infra",        "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/minio.svg",            "default_ports": [9001],   "auth": "none" },
+  { "slug": "truenas",          "name": "TrueNAS",          "category": "infra",        "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/truenas-core.svg",     "default_ports": [443, 80],"auth": "apikey" },
+  { "slug": "openmediavault",   "name": "OpenMediaVault",   "category": "infra",        "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/openmediavault.svg",   "default_ports": [80],     "auth": "none" },
+  { "slug": "dozzle",           "name": "Dozzle",           "category": "infra",        "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/dozzle.svg",           "default_ports": [8080],   "auth": "none" },
+  { "slug": "ntfy",             "name": "ntfy",             "category": "monitoring",   "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/ntfy.svg",             "default_ports": [80],     "auth": "none" },
+  { "slug": "n8n",              "name": "n8n",              "category": "productivity", "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/n8n.svg",              "default_ports": [5678],   "auth": "none" },
+  { "slug": "code-server",      "name": "code-server",      "category": "productivity", "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/coder.svg",            "default_ports": [8080],   "auth": "none" },
+  { "slug": "gitea",            "name": "Gitea",            "category": "productivity", "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/gitea.svg",            "default_ports": [3000],   "auth": "bearer" },
+  { "slug": "forgejo",          "name": "Forgejo",          "category": "productivity", "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/forgejo.svg",          "default_ports": [3000],   "auth": "bearer" },
+  { "slug": "mastodon",         "name": "Mastodon",         "category": "productivity", "icon_url": "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/mastodon.svg",         "default_ports": [3000],   "auth": "bearer" }
+]

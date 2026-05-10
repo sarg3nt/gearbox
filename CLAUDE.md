@@ -159,6 +159,47 @@ TASKS.md is a **scratch pad only** — not a tracking system. The GitHub Project
 - Fenced blocks provide a copy button in the IDE
 - Never use inline code for commands the user should run
 
+## UI Conventions
+
+### Modal dialogs — never use native `confirm()`, `alert()`, or `prompt()`
+
+The base layout (`internal/framework/templates/layouts/base.templ`) renders three globally-available themed dialog components — `@ConfirmDialog()`, `@PromptDialog()`, `@AlertDialog()` — with a Promise-returning JS API. Use these instead of the browser primitives so styling, dark-mode, escape-key handling, and a11y are consistent across the app.
+
+```javascript
+// Confirmations (returns boolean)
+const confirmed = await showConfirmDialog({
+    title: 'Delete board',
+    message: 'Delete "Media"? All tiles on this board will be removed. This cannot be undone.',
+    confirmText: 'Delete board',
+    type: 'danger',           // 'warning' (default) | 'danger' | 'info'
+});
+if (!confirmed) return;
+
+// Text input (returns string|null)
+const name = await showPromptDialog({
+    title: 'New board',
+    message: 'What should this board be called?',
+    placeholder: 'Media',
+    defaultValue: '',
+});
+
+// One-button alerts (returns void)
+await showAlertDialog({
+    title: 'Failed to delete board',
+    message: err.message,
+    type: 'error',            // 'error' (default) | 'success' | 'info'
+});
+```
+
+**Rules of thumb:**
+
+- `type: 'danger'` for destructive confirmations — gives a red button + warning icon.
+- For non-blocking failure feedback that doesn't need a button click, prefer `window.showToast(msg, level)` instead — the dialog API blocks until acknowledged.
+- All three return Promises; the calling event handler must be `async`.
+- Dialogs are already rendered into the DOM by `layouts.Base` — don't re-instantiate per-page.
+
+Existing reference usages: [user-pages/admin-user-detail.js](static/js/user-pages/admin-user-detail.js), [user-pages/profile-management.js](static/js/user-pages/profile-management.js), [haproxy_config/editor.js](static/js/haproxy_config/editor.js).
+
 ## Key Constraints
 
 ### NEVER

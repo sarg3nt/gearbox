@@ -17,7 +17,9 @@ coverage.out
 coverage.html
 
 # Dependency directories
-vendor/
+# (Anchored to the module root so static/js/vendor and static/css/vendor — used
+# for vendored frontend libraries like gridstack — remain tracked.)
+/vendor/
 
 # Go workspace file
 go.work

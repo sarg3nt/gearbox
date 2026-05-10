@@ -10,7 +10,12 @@ import (
 )
 
 // GearsPage renders the gears settings page.
-templ GearsPage(user *models.User, servers []models.BoxConfig, currentServerID string, integrations []database.Gear, successMsg, errorMsg string) {
+//
+// systemGears are box-agnostic gears (Info.Scope == ScopeSystem) — their
+// rows are keyed by database.SystemServerID and they apply install-wide,
+// independent of the currently selected server. Rendered above the per-box
+// gear list so toggling them isn't confused with the box selector.
+templ GearsPage(user *models.User, servers []models.BoxConfig, currentServerID string, systemGears []database.Gear, integrations []database.Gear, successMsg, errorMsg string) {
 	@layouts.Base("Gears", user, "/settings") {
 		<!-- Hidden container for page header content - will be moved to main header via JS -->
 		<div id="page-header-source" class="hidden">
@@ -65,6 +70,29 @@ templ GearsPage(user *models.User, servers []models.BoxConfig, currentServerID s
 				Gears are our terminology for plugins.  They allow you to enable and configure integrations with various data sources and services to extend the functionality of your Gearbox instance.  Click "Configure" on any enabled gear to customize its settings.
 			</p>
 
+			if len(systemGears) > 0 {
+				<div class="mb-6">
+					<div class="flex items-baseline justify-between mb-2">
+						<h3 class="text-base font-semibold text-gray-700 dark:text-gray-200">System</h3>
+						<span class="text-xs text-gray-500 dark:text-gray-400">Applies install-wide, not tied to a server</span>
+					</div>
+					<div id="system-gears-list" class="space-y-4">
+						for _, sg := range systemGears {
+							@gearCard(sg, sg.ServerID)
+						}
+					</div>
+				</div>
+				<div class="mb-2">
+					<h3 class="text-base font-semibold text-gray-700 dark:text-gray-200">
+						if currentServerID != "" && len(servers) > 0 {
+							{ serverNameByID(servers, currentServerID) }
+						} else {
+							Server gears
+						}
+					</h3>
+				</div>
+			}
+
 			<div id="gears-list" class="space-y-4">
 				for _, integration := range integrations {
 					@gearCard(integration, currentServerID)
@@ -88,7 +116,7 @@ templ GearsPage(user *models.User, servers []models.BoxConfig, currentServerID s
 }
 
 templ gearCard(integration database.Gear, serverID string) {
-	<div class="gear-card bg-white dark:bg-slate-800 rounded-lg shadow p-6 transition-transform duration-200 ease-out" data-gear-name={ integration.Name }>
+	<div class="gear-card bg-white dark:bg-slate-800 rounded-lg shadow p-6 transition-transform duration-200 ease-out" data-gear-name={ integration.Name } data-server-id={ serverID }>
 		<div class="flex items-center justify-between gap-4">
 			<div class="flex items-center space-x-4 min-w-0 flex-1">
 				<div
@@ -116,7 +144,7 @@ templ gearCard(integration database.Gear, serverID string) {
 				// Toggle switch - uses JavaScript for AJAX toggle
 				<button
 					type="button"
-					onclick={ templ.ComponentScript{Call: "togglePlugin('" + integration.Name + "', '" + integration.DisplayName + "', this)"} }
+					onclick={ templ.ComponentScript{Call: "toggleGear('" + integration.Name + "', '" + integration.DisplayName + "', this)"} }
 					class={ "gear-toggle relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2",
 						templ.KV("bg-blue-600", integration.Enabled),
 						templ.KV("bg-gray-200 dark:bg-gray-600", !integration.Enabled) }
@@ -150,6 +178,17 @@ func toggleTitle(enabled bool) string {
 	return "Click to enable"
 }
 
+// serverNameByID returns the display name for a given box ID, or the ID
+// itself if no match is found (defensive — should always match in practice).
+func serverNameByID(servers []models.BoxConfig, id string) string {
+	for _, s := range servers {
+		if s.ID == id {
+			return s.Name
+		}
+	}
+	return id
+}
+
 templ gearIcon(name string, enabled bool) {
 	switch name {
 		case database.GearLogs:
@@ -176,6 +215,10 @@ templ gearIcon(name string, enabled bool) {
 		case database.GearAlerts:
 			<svg class={ "w-6 h-6", templ.KV("text-blue-600 dark:text-blue-400", enabled), templ.KV("text-gray-400 dark:text-gray-500", !enabled) } fill="none" stroke="currentColor" viewBox="0 0 24 24">
 				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
+			</svg>
+		case database.GearHome:
+			<svg class={ "w-6 h-6", templ.KV("text-blue-600 dark:text-blue-400", enabled), templ.KV("text-gray-400 dark:text-gray-500", !enabled) } fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path>
 			</svg>
 		default:
 			<svg class={ "w-6 h-6", templ.KV("text-blue-600 dark:text-blue-400", enabled), templ.KV("text-gray-400 dark:text-gray-500", !enabled) } fill="none" stroke="currentColor" viewBox="0 0 24 24">

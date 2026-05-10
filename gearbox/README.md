@@ -29,6 +29,7 @@ A modern, self-contained monitoring dashboard for HAProxy reverse proxy servers.
 - 📊 **Real-time Performance Metrics** - Live HAProxy statistics, throughput, and connection monitoring
 - 🔍 **Configuration-Aware** - Understands custom haproxy-autoconfig labels and displays full backend configuration
 - 🎯 **Multi-Server Support** - Monitor multiple HAProxy instances from a single dashboard
+- 🏠 **Home Dashboard Gear** - Drag-and-drop start page with launcher tiles, live widgets (Sonarr / Radarr / Plex / UniFi / Pi-hole / qBittorrent / …), inline sparkline graphs, server-side reachability checks, and encrypted per-tile API keys. See [Home gear docs](docs/home-gear.md).
 - 📱 **Mobile-Responsive UI** - Modern, beautiful interface that works on desktop, tablet, and mobile
 - 🔐 **Secure Authentication** - Session-based authentication with encrypted cookies
 - 📈 **System Metrics** - CPU, memory, disk, and network usage from HAProxy servers
@@ -290,9 +291,10 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed architecture docum
 
 ## Documentation
 
-- [SETUP.md](docs/SETUP.md) - Detailed setup instructions
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md) - System architecture and design
-- [API.md](docs/API.md) - Internal API documentation (if applicable)
+- [docs/home-gear.md](docs/home-gear.md) - Home dashboard gear: widgets, sparklines, security model
+- [docs/development.md](docs/development.md) - Local development guide
+- [docs/local-development-csp.md](docs/local-development-csp.md) - CSP notes for local dev
+- [internal/gears/home/README.md](internal/gears/home/README.md) - Home gear: implementation reference (routes, schema, providers)
 
 ## Contributing
 

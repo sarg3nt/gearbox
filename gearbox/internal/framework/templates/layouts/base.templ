@@ -163,12 +163,63 @@ templ Base(title string, user *models.User, currentPath ...string) {
 				white-space: nowrap;
 			}
 			.sidebar-collapsed .sidebar-text {
-				/* When collapsed/collapsing: no delay, hide immediately */
-				transition: opacity 0.1s ease-in-out 0s;
+				/* When collapsed/collapsing: no delay, hide immediately.
+				   Also collapse layout width so the nav icon can center
+				   inside the 4rem rail — without `width: 0` the
+				   invisible label still occupies its intrinsic width and
+				   shoves the icon left. */
+				transition:
+					opacity 0.1s ease-in-out 0s,
+					width 0.2s ease-in-out 0s;
 				opacity: 0;
+				width: 0;
+				overflow: hidden;
+				display: inline-block; /* needed so width: 0 takes effect */
 			}
-			.sidebar-collapsed #toggle-container {
+
+			/* Collapsed nav links: center the icon. The default expanded
+			   layout uses `flex items-center space-x-3 px-4 border-l-4`
+			   which adds ~20px of left offset (border + padding) plus a
+			   space-x-3 gap before the text. When the sidebar shrinks
+			   to 4rem and the text width collapses to 0, those rules
+			   leave the icon stranded near the left edge / clipped on
+			   the right. Force-center, drop the side padding, and
+			   neutralize the space-x-3 margin (which Tailwind keeps
+			   applying to the SVG because the preceding `.hidden`
+			   drag-handle uses the class `.hidden` rather than the
+			   HTML `[hidden]` attribute that space-x-3 filters on). */
+			.sidebar-collapsed .nav-link,
+			.sidebar-initially-collapsed .nav-link {
 				justify-content: center;
+				padding-left: 0;
+				padding-right: 0;
+			}
+			.sidebar-collapsed .nav-link > * + *,
+			.sidebar-initially-collapsed .nav-link > * + * {
+				margin-left: 0;
+			}
+
+			/* Sidebar footer toggle-container (Edit Nav + Collapse buttons).
+			   - Expanded sidebar (16rem): two buttons sit side-by-side.
+			   - Collapsed sidebar (4rem): only ~32px of usable width per
+			     button, so they stack vertically. Animating
+			     grid-template-columns gets us a smooth interpolation
+			     between the two states without needing to touch
+			     flex-direction (which can't be animated). */
+			#toggle-container {
+				display: grid;
+				grid-template-columns: 1fr 1fr;
+				gap: 0.25rem;
+				align-items: center;
+				justify-items: center;
+				transition:
+					grid-template-columns 0.3s ease-in-out,
+					gap 0.3s ease-in-out;
+			}
+			.sidebar-collapsed #toggle-container,
+			.sidebar-initially-collapsed #toggle-container {
+				grid-template-columns: 1fr;
+				gap: 0.5rem;
 			}
 
 			/* Initial sidebar state from localStorage */
@@ -184,9 +235,8 @@ templ Base(title string, user *models.User, currentPath ...string) {
 			.sidebar-initially-collapsed .sidebar-text {
 				opacity: 0;
 			}
-			.sidebar-initially-collapsed #toggle-container {
-				justify-content: center;
-			}
+			/* (Toggle-container layout for the collapsed state is now
+			   handled by the grid rules above, alongside .sidebar-collapsed.) */
 
 			/* Main content transition */
 			.main-content {
@@ -1252,7 +1302,10 @@ templ Sidebar(user *models.User, currentPath string) {
 
 		<!-- Collapse/Expand and Edit toggle (no top border) -->
 		<div class="p-3">
-			<div id="toggle-container" class="flex justify-between items-center">
+			<!-- Footer controls: Edit Nav + Collapse Sidebar. Layout (row vs
+			     stacked column) is driven entirely by #toggle-container CSS
+			     up top — see comment near `.sidebar-collapsed`. -->
+			<div id="toggle-container">
 				<!-- Edit/Save button -->
 				<button id="sidebar-edit-btn" onclick="toggleSidebarEditMode()" class="p-1.5 hover:bg-gray-100 dark:hover:bg-slate-700 rounded transition-colors text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200" title="Edit Navigation">
 					<!-- Edit icon (default) -->
@@ -1473,6 +1526,15 @@ templ SidebarIconOSUpdates() {
 	</svg>
 }
 
+templ SidebarIconHome() {
+	<!-- Canonical Heroicons v1 "home" outline. The earlier path was a
+	     malformed variant whose right wall didn't reach the roof and
+	     drew a stray vertical stroke through the middle. -->
+	<svg class="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+		<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path>
+	</svg>
+}
+
 templ SidebarIconHAProxy() {
 	<svg class="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 		<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path>
@@ -1622,6 +1684,8 @@ func hasAnyEnabledIntegration(ctx context.Context) bool {
 // integrationPath returns the URL path for a given integration name.
 func integrationPath(name string) string {
 	switch name {
+	case "home":
+		return "/home"
 	case "haproxy":
 		return "/haproxy"
 	case "metrics":
@@ -1662,6 +1726,8 @@ func firstEnabledIntegrationPath(ctx context.Context) string {
 // Maps integration names to component View permissions.
 func canViewIntegration(ctx context.Context, integrationName string) bool {
 	switch integrationName {
+	case "home":
+		return true // Home is visible to all authenticated users when enabled.
 	case "metrics":
 		return auth.HasPermissionFromContext(ctx, models.ComponentMetrics, models.PermissionView)
 	case "logs":
@@ -1723,6 +1789,8 @@ templ OrderedIntegrationLinks(currentPath string) {
 // renderIntegrationLink renders a single integration link based on the integration name.
 templ renderIntegrationLink(name string, currentPath string) {
 	switch name {
+		case "home":
+			@SidebarLinkDraggable("/home", "Home", SidebarIconHome(), currentPath, "home")
 		case "haproxy":
 			@SidebarLinkDraggable("/haproxy", "HAProxy", SidebarIconHAProxy(), currentPath, "haproxy")
 		case "metrics":
