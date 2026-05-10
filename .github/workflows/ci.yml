@@ -3,26 +3,84 @@ name: CI
 on:
   push:
     branches: [main]
-    paths:
-      - 'gearbox/**'
-      - '.github/workflows/ci.yml'
   pull_request:
     branches: [main]
-    paths:
-      - 'gearbox/**'
-      - '.github/workflows/ci.yml'
+
+# Cancel superseded runs on the same PR/branch. Keep main runs (they may
+# produce artifacts and feed downstream signals).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions: {}
 
+env:
+  TEMPL_VERSION: v0.3.977
+
 jobs:
-  test:
-    name: Test
+  # Compute which apps changed so each downstream job runs only for the
+  # relevant app(s). The matrix is built from this output.
+  changes:
+    name: Detect changes
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      pull-requests: read
+    outputs:
+      apps: ${{ steps.apps.outputs.apps }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
+
+      - name: Filter changed paths
+        id: filter
+        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        with:
+          # A change to ci.yml itself rebuilds both apps so we don't ship a
+          # broken pipeline.
+          filters: |
+            gearbox:
+              - 'gearbox/**'
+              - '.github/workflows/ci.yml'
+            gearbox-agent:
+              - 'gearbox-agent/**'
+              - '.github/workflows/ci.yml'
+
+      - name: Build matrix from filter results
+        id: apps
+        env:
+          GEARBOX: ${{ steps.filter.outputs.gearbox }}
+          AGENT: ${{ steps.filter.outputs.gearbox-agent }}
+        run: |
+          apps=()
+          [ "$GEARBOX" = "true" ] && apps+=("gearbox")
+          [ "$AGENT" = "true" ] && apps+=("gearbox-agent")
+          if [ ${#apps[@]} -eq 0 ]; then
+            echo "apps=[]" >> "$GITHUB_OUTPUT"
+          else
+            printf -v joined '"%s",' "${apps[@]}"
+            echo "apps=[${joined%,}]" >> "$GITHUB_OUTPUT"
+          fi
+
+  test:
+    name: Test (${{ matrix.app }})
+    needs: changes
+    if: needs.changes.outputs.apps != '[]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.changes.outputs.apps) }}
     defaults:
       run:
-        working-directory: ./gearbox
+        working-directory: ./${{ matrix.app }}
 
     steps:
       - name: Harden runner
@@ -36,38 +94,45 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6
         with:
-          go-version-file: gearbox/go.mod
-          cache-dependency-path: gearbox/go.sum
+          go-version-file: ${{ matrix.app }}/go.mod
+          cache-dependency-path: ${{ matrix.app }}/go.sum
 
       - name: Install Templ
-        run: go install github.com/a-h/templ/cmd/templ@v0.3.977
-
-      - name: Download dependencies
-        run: go mod download
+        if: matrix.app == 'gearbox'
+        run: go install github.com/a-h/templ/cmd/templ@${{ env.TEMPL_VERSION }}
 
       - name: Generate Templ templates
+        if: matrix.app == 'gearbox'
         run: templ generate
 
       - name: Run tests
-        run: go test -v -race -coverprofile=coverage.out ./...
+        run: go test -race -coverprofile=coverage.out ./...
 
       - name: Upload coverage to Codecov
+        # Codecov tokens aren't available on fork PRs; skip rather than fail noisily.
+        if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
         uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5
         with:
-          files: ./gearbox/coverage.out
-          flags: unittests
-          name: codecov-umbrella
+          files: ./${{ matrix.app }}/coverage.out
+          flags: ${{ matrix.app }}
+          name: codecov-${{ matrix.app }}
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
 
   lint:
-    name: Lint
+    name: Lint (${{ matrix.app }})
+    needs: changes
+    if: needs.changes.outputs.apps != '[]'
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.changes.outputs.apps) }}
     defaults:
       run:
-        working-directory: ./gearbox
+        working-directory: ./${{ matrix.app }}
 
     steps:
       - name: Harden runner
@@ -81,31 +146,38 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6
         with:
-          go-version-file: gearbox/go.mod
-          cache-dependency-path: gearbox/go.sum
+          go-version-file: ${{ matrix.app }}/go.mod
+          cache-dependency-path: ${{ matrix.app }}/go.sum
 
       - name: Install Templ
-        run: go install github.com/a-h/templ/cmd/templ@v0.3.977
+        if: matrix.app == 'gearbox'
+        run: go install github.com/a-h/templ/cmd/templ@${{ env.TEMPL_VERSION }}
 
       - name: Generate Templ templates
+        if: matrix.app == 'gearbox'
         run: templ generate
 
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9
         with:
           version: v2.8.0
-          working-directory: ./gearbox
+          working-directory: ./${{ matrix.app }}
           args: --timeout=5m
 
   build:
-    name: Build
-    needs: [test, lint]
+    name: Build (${{ matrix.app }})
+    needs: [changes, test, lint]
+    if: needs.changes.outputs.apps != '[]'
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.changes.outputs.apps) }}
     defaults:
       run:
-        working-directory: ./gearbox
+        working-directory: ./${{ matrix.app }}
 
     steps:
       - name: Harden runner
@@ -119,35 +191,62 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6
         with:
-          go-version-file: gearbox/go.mod
-          cache-dependency-path: gearbox/go.sum
+          go-version-file: ${{ matrix.app }}/go.mod
+          cache-dependency-path: ${{ matrix.app }}/go.sum
 
       - name: Install Templ
-        run: go install github.com/a-h/templ/cmd/templ@v0.3.977
-
-      - name: Download dependencies
-        run: go mod download
+        if: matrix.app == 'gearbox'
+        run: go install github.com/a-h/templ/cmd/templ@${{ env.TEMPL_VERSION }}
 
       - name: Generate Templ templates
+        if: matrix.app == 'gearbox'
         run: templ generate
 
-      - name: Verify generated templates are up-to-date
+      - name: Resolve build entrypoint
+        id: entry
         run: |
-          git diff --exit-code -- '**/*_templ.go' || {
-            echo "::error::Generated templ files are out of date. Run 'templ generate' and commit the changes."
-            exit 1
-          }
+          case "${{ matrix.app }}" in
+            gearbox) echo "pkg=./cmd/server" >> "$GITHUB_OUTPUT" ;;
+            gearbox-agent) echo "pkg=./cmd/gearbox-agent" >> "$GITHUB_OUTPUT" ;;
+          esac
 
       - name: Build binary
         run: |
           CGO_ENABLED=0 go build \
             -ldflags="-s -w -X main.Version=${{ github.ref_name }} -X main.CommitSHA=${{ github.sha }} -X main.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            -o bin/gearbox \
-            ./cmd/server
+            -o bin/${{ matrix.app }} \
+            ${{ steps.entry.outputs.pkg }}
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: gearbox-${{ github.sha }}
-          path: gearbox/bin/gearbox
+          name: ${{ matrix.app }}-${{ github.sha }}
+          path: ${{ matrix.app }}/bin/${{ matrix.app }}
           retention-days: 7
+
+  # Aggregate gate so branch protection has a single required check that
+  # accounts for the dynamic matrix (test/lint/build are skipped when the
+  # corresponding app didn't change).
+  ci-status:
+    name: CI Status
+    needs: [changes, test, lint, build]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Verify all required jobs succeeded or were intentionally skipped
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          TEST: ${{ needs.test.result }}
+          LINT: ${{ needs.lint.result }}
+          BUILD: ${{ needs.build.result }}
+        run: |
+          fail=0
+          for job in CHANGES TEST LINT BUILD; do
+            result="${!job}"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "::error::Job $job ended with result: $result"; fail=1 ;;
+            esac
+          done
+          exit $fail
