@@ -522,6 +522,12 @@ func main() {
 		// (per-user → system → fallback). See feature/dashboard-gear F1.
 		r.Get("/", h.RootRedirect)
 
+		// First-run onboarding (issue #49). Admin-only. The /welcome page
+		// self-redirects to / once onboarding is complete (any box or
+		// system gear enabled), so it's safe to leave reachable.
+		r.Get("/welcome", h.WelcomePage)
+		r.Post("/onboarding", h.OnboardingPost)
+
 		// Settings routes
 		r.Route("/settings", func(r chi.Router) {
 			// Settings menu page (accessible by all authenticated users)

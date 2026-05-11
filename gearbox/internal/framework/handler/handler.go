@@ -186,6 +186,11 @@ func (h *Handler) getDefaultServerID() string {
 
 // InjectIntegrationStatus is middleware that adds integration status and user permissions to the request context.
 // This enables server-side conditional rendering of navigation items based on integration status and permissions.
+//
+// System-scoped gears (Home, etc. — keyed by database.SystemServerID) are
+// always loaded, even when no boxes are registered. Box-scoped gears load
+// from the default box if one exists; otherwise they're explicitly disabled
+// so the sidebar stays clean during first-run.
 func (h *Handler) InjectIntegrationStatus(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -196,69 +201,57 @@ func (h *Handler) InjectIntegrationStatus(next http.Handler) http.Handler {
 			ctx = auth.SetUserPermissions(ctx, perms)
 		}
 
-		boxID := h.getDefaultServerID()
-		if boxID != "" {
-			// Get integrations with their enabled status and sort order
+		status := make(map[string]bool)
+		orderedIntegrations := make([]auth.SidebarIntegration, 0)
+
+		// System gears go first so they render at the head of the nav.
+		systemGears, err := h.db.GetGears(database.SystemServerID)
+		if err != nil {
+			h.logger.Warn("failed to load system gears for sidebar", "error", err)
+		}
+		for _, sg := range systemGears {
+			status[sg.Name] = sg.Enabled
+			orderedIntegrations = append(orderedIntegrations, auth.SidebarIntegration{
+				Name:      sg.Name,
+				Enabled:   sg.Enabled,
+				SortOrder: sg.SortOrder,
+			})
+		}
+
+		if boxID := h.getDefaultServerID(); boxID != "" {
 			integrations, err := h.db.GetGears(boxID)
 			if err != nil {
-				h.logger.Error("failed to get integrations for sidebar", "error", err)
-				// Continue without status - sidebar will show all items (fail open)
+				// Fail-open: a partial gear list could collapse the sidebar
+				// to system-gears-only, hiding box features the user
+				// actually has. Leave the gear-status/order context unset
+				// so OrderedIntegrationLinks falls back to its default
+				// (full) rendering branch.
+				h.logger.Error("failed to get box integrations for sidebar", "error", err)
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
-
-			// Merge in system-wide (box-agnostic) gears so the sidebar can show them.
-			systemGears, err := h.db.GetGears(database.SystemServerID)
-			if err != nil {
-				h.logger.Warn("failed to load system gears for sidebar", "error", err)
-			}
-
-			// Build status map for backward compatibility
-			status := make(map[string]bool)
 			for _, i := range integrations {
 				status[i.Name] = i.Enabled
-			}
-			for _, i := range systemGears {
-				status[i.Name] = i.Enabled
-			}
-
-			// Build ordered list for sidebar (box gears first, then system gears
-			// at the head — Home should sit at the top of navigation when enabled).
-			orderedIntegrations := make([]auth.SidebarIntegration, 0, len(integrations)+len(systemGears))
-			for _, i := range systemGears {
 				orderedIntegrations = append(orderedIntegrations, auth.SidebarIntegration{
 					Name:      i.Name,
 					Enabled:   i.Enabled,
 					SortOrder: i.SortOrder,
 				})
 			}
-			for _, i := range integrations {
-				orderedIntegrations = append(orderedIntegrations, auth.SidebarIntegration{
-					Name:      i.Name,
-					Enabled:   i.Enabled,
-					SortOrder: i.SortOrder,
-				})
+		} else {
+			// No box configured — explicitly mark box-scoped gears off so
+			// the sidebar doesn't fall back to fail-open and clutter
+			// first-run with disabled items. System gears (Home) are
+			// already injected above and remain visible if enabled.
+			for _, n := range []string{"haproxy", "metrics", "logs", "services", "certificates", "traffic", "alerts", "os_updates"} {
+				if _, present := status[n]; !present {
+					status[n] = false
+				}
 			}
-
-			ctx = auth.SetGearStatus(ctx, status)
-			ctx = auth.SetIntegrationOrder(ctx, orderedIntegrations)
-			next.ServeHTTP(w, r.WithContext(ctx))
-			return
 		}
 
-		// No server configured - explicitly disable all gears in navigation
-		// This provides a clean initial setup experience without gear clutter
-		status := map[string]bool{
-			"metrics":      false,
-			"logs":         false,
-			"services":     false,
-			"certificates": false,
-			"traffic":      false,
-			"alerts":       false,
-			"os_updates":   false,
-		}
 		ctx = auth.SetGearStatus(ctx, status)
-		ctx = auth.SetIntegrationOrder(ctx, []auth.SidebarIntegration{})
+		ctx = auth.SetIntegrationOrder(ctx, orderedIntegrations)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

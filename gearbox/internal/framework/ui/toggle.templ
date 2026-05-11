@@ -1,16 +1,37 @@
 package ui
 
-// Toggle creates a switch/toggle input component
+// toggleValue defaults an empty value to "on" so the underlying checkbox
+// submits a non-empty form value when checked. This matches the HTML
+// default for a value-less checkbox and keeps `r.FormValue(name) == "on"`
+// callers working without forcing every site to pass an explicit value.
+func toggleValue(v string) string {
+	if v == "" {
+		return "on"
+	}
+	return v
+}
+
+// Toggle creates a switch/toggle input component.
+//
 // id: unique identifier for the input
 // name: form field name
+// value: form value submitted when checked. If empty, defaults to "on"
+//        (the HTML default for a checkbox without a value attribute). Pass
+//        a unique non-empty value when multiple toggles share a name
+//        (multi-select checkbox group).
 // checked: initial state
 // disabled: whether the toggle is disabled
-templ Toggle(id string, name string, checked bool, disabled bool) {
+//
+// This is the canonical toggle for the app. Always use it for boolean form
+// inputs in templates instead of a bare <input type="checkbox">. See
+// CLAUDE.md → UI Conventions → Toggle switches.
+templ Toggle(id string, name string, value string, checked bool, disabled bool) {
 	<label class={ "relative inline-flex items-center", templ.KV("cursor-pointer", !disabled), templ.KV("cursor-not-allowed opacity-50", disabled) }>
 		<input
 			type="checkbox"
 			id={ id }
 			name={ name }
+			value={ toggleValue(value) }
 			class="sr-only peer"
 			checked?={ checked }
 			disabled?={ disabled }
@@ -20,10 +41,10 @@ templ Toggle(id string, name string, checked bool, disabled bool) {
 }
 
 // ToggleWithLabel creates a toggle with an accompanying label
-templ ToggleWithLabel(id string, name string, label string, description string, checked bool, disabled bool) {
+templ ToggleWithLabel(id string, name string, value string, label string, description string, checked bool, disabled bool) {
 	<div class="flex items-start">
 		<div class="flex items-center h-5">
-			@Toggle(id, name, checked, disabled)
+			@Toggle(id, name, value, checked, disabled)
 		</div>
 		<div class="ml-3">
 			<label for={ id } class={ "text-sm font-medium text-gray-900 dark:text-gray-100", templ.KV("cursor-pointer", !disabled), templ.KV("cursor-not-allowed", disabled) }>

@@ -200,6 +200,28 @@ await showAlertDialog({
 
 Existing reference usages: [user-pages/admin-user-detail.js](static/js/user-pages/admin-user-detail.js), [user-pages/profile-management.js](static/js/user-pages/profile-management.js), [haproxy_config/editor.js](static/js/haproxy_config/editor.js).
 
+### Toggle switches — never use a bare `<input type="checkbox">` in templates
+
+For every boolean input in a `.templ` file — feature opt-ins, settings, "enable this gear", "show all", per-row enable/disable — use the shared slider component in [internal/framework/ui/toggle.templ](gearbox/internal/framework/ui/toggle.templ):
+
+```templ
+import "github.com/sarg3nt/gearbox/internal/framework/ui"
+
+// Single toggle (no inline label — pair with your own <label for=...>)
+@ui.Toggle("welcome-gear-home", "gears", "home", false, false)
+// args: id, name, value (submitted when checked), checked, disabled
+
+// Toggle + label + description, stacked horizontally
+@ui.ToggleWithLabel("notify-email", "notify_email", "1", "Email notifications", "Send a digest each morning", true, false)
+```
+
+**Rules of thumb:**
+
+- The underlying input is `sr-only` but real — it submits with the form and respects `checked` / `disabled`. No JS required for plain forms.
+- Pass `value` when multiple toggles share a `name` (e.g., a multi-select checkbox group posting as `name="gears"`). Leave empty when a single boolean field submits as the default `"on"`.
+- For AJAX toggles that POST on change (no enclosing form), the per-row `gear-toggle` `<button role="switch">` pattern in [gears.templ](gearbox/internal/framework/templates/pages/gears.templ) is the established alternative — but for **anything inside a `<form>`**, use `@ui.Toggle`.
+- Never inline `peer-checked:after:...` Tailwind salads in a new template — that's a sign you should be calling `@ui.Toggle`. Existing inline copies in `overview.templ` and `admin_user_permissions.templ` are tech debt; migrate them when you're already editing those files.
+
 ## Key Constraints
 
 ### NEVER
