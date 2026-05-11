@@ -384,11 +384,13 @@ func main() {
 	}
 
 	// Register plugin routes with the server
-	// Apply rate limiting and API key auth middleware
+	// Apply rate limiting and API key auth middleware (with per-IP auth-failure
+	// backoff layered on top — see 2026-05 audit P1-7).
 	rateLimiter := middleware.DefaultRateLimiter(logger)
+	authBackoff := middleware.DefaultBackoffTracker(logger)
 	pluginRouter := server.Router().Group(func(r chi.Router) {
 		r.Use(middleware.RateLimitMiddleware(rateLimiter))
-		r.Use(middleware.APIKeyAuth(server.APIKey(), logger))
+		r.Use(middleware.APIKeyAuth(server.APIKey(), logger, authBackoff))
 	})
 	gearManager.RegisterRoutes(pluginRouter)
 
