@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -11,6 +12,57 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/sarg3nt/gearbox-agent/internal/framework/events"
 )
+
+// canonicalOrigin parses an Origin-header value (or an entry from
+// AGENT_ALLOWED_ORIGINS) and returns a comparable canonical form:
+// "<scheme>://<lowercased-host>[:<port>]". Default ports (80 for http,
+// 443 for https) are stripped so the caller can write "https://example.com"
+// in the allowlist regardless of whether browsers send the explicit :443.
+// Returns false if the input doesn't parse as a scheme://host URL.
+//
+// Without this, the previous byte-equal comparison treated
+// "https://Example.Com" and "https://example.com" as different origins,
+// or "https://example.com:443" and "https://example.com" as different.
+// See 2026-05 security audit, P1-5.
+func canonicalOrigin(s string) (string, bool) {
+	u, err := url.Parse(strings.TrimSpace(s))
+	if err != nil || u == nil {
+		return "", false
+	}
+	scheme := strings.ToLower(u.Scheme)
+	if scheme == "" || u.Host == "" {
+		return "", false
+	}
+	host := strings.ToLower(u.Hostname())
+	port := u.Port()
+	// Strip default ports so the allowlist needn't second-guess what a
+	// browser will or won't send.
+	if (scheme == "https" && port == "443") || (scheme == "http" && port == "80") {
+		port = ""
+	}
+	if port == "" {
+		return scheme + "://" + host, true
+	}
+	return scheme + "://" + host + ":" + port, true
+}
+
+// canonicalHost normalizes an http.Request.Host value (host[:port] with no
+// scheme) for comparison against canonicalOrigin output. The scheme is
+// derived from r.TLS at the call site, since the Host header itself carries
+// no scheme. Same default-port stripping rules as canonicalOrigin.
+func canonicalHost(scheme, hostPort string) string {
+	scheme = strings.ToLower(scheme)
+	host := strings.ToLower(hostPort)
+	if i := strings.Index(host, ":"); i >= 0 {
+		port := host[i+1:]
+		host = host[:i]
+		if (scheme == "https" && port == "443") || (scheme == "http" && port == "80") {
+			return scheme + "://" + host
+		}
+		return scheme + "://" + host + ":" + port
+	}
+	return scheme + "://" + host
+}
 
 const (
 	// Time allowed to write a message to the peer.
@@ -26,45 +78,67 @@ const (
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	// SECURITY FIX: Validate WebSocket origin to prevent Cross-Site WebSocket Hijacking (CSWSH)
-	// Environment variable AGENT_ALLOWED_ORIGINS can specify allowed origins (comma-separated)
-	// If not set, defaults to same-origin only
-	CheckOrigin: func(r *http.Request) bool {
-		origin := r.Header.Get("Origin")
+	// Validate WebSocket origin to prevent Cross-Site WebSocket Hijacking.
+	// AGENT_ALLOWED_ORIGINS is a comma-separated list of allowed origins.
+	// If unset, the default is same-origin only.
+	//
+	// Origins and hosts are compared in canonical form (lowercased host,
+	// default ports stripped) so an allowlist entry of "https://example.com"
+	// matches an Origin header of "https://Example.Com:443". See P1-5 in
+	// the 2026-05 security audit.
+	CheckOrigin: checkOrigin,
+}
 
-		// If no Origin header, allow (same-origin requests from curl/Go clients)
-		if origin == "" {
-			return true
-		}
+// checkOrigin is the gorilla/websocket Upgrader.CheckOrigin function for the
+// agent. Factored out so it can be unit tested without standing up a real
+// WebSocket connection.
+func checkOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
 
-		// Check environment variable for allowed origins
-		allowedOriginsEnv := os.Getenv("AGENT_ALLOWED_ORIGINS")
-		if allowedOriginsEnv != "" {
-			allowedOrigins := strings.Split(allowedOriginsEnv, ",")
-			for _, allowed := range allowedOrigins {
-				allowed = strings.TrimSpace(allowed)
-				if allowed == "*" {
-					// Wildcard - allow all origins (not recommended for production)
-					return true
-				}
-				if origin == allowed {
-					return true
-				}
+	// No Origin header (curl, Go clients, etc.) — accept, since CSWSH only
+	// applies in a browser context where the header is mandatory.
+	if origin == "" {
+		return true
+	}
+
+	canonOrigin, ok := canonicalOrigin(origin)
+	if !ok {
+		return false
+	}
+
+	allowedOriginsEnv := os.Getenv("AGENT_ALLOWED_ORIGINS")
+	if allowedOriginsEnv != "" {
+		for _, allowed := range strings.Split(allowedOriginsEnv, ",") {
+			allowed = strings.TrimSpace(allowed)
+			if allowed == "" {
+				continue
 			}
-			// Origin not in allowed list
-			return false
+			if allowed == "*" {
+				// Wildcard — allow all origins (not recommended for production)
+				return true
+			}
+			if canon, ok := canonicalOrigin(allowed); ok && canon == canonOrigin {
+				return true
+			}
 		}
+		return false
+	}
 
-		// Default: same-origin only
-		// Compare origin with the request host
-		originHost := strings.TrimPrefix(origin, "https://")
-		originHost = strings.TrimPrefix(originHost, "http://")
-		originHost = strings.Split(originHost, "/")[0] // Remove path if present
-
-		requestHost := r.Host
-
-		return originHost == requestHost
-	},
+	// Default: same-origin only. Derive scheme from TLS state since the Host
+	// header carries none.
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	// Allow X-Forwarded-Proto when set by a trusted reverse proxy. We don't
+	// honor X-Forwarded-Host because the canonical-host comparison treats
+	// r.Host as authoritative for the agent's own listener.
+	if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+		if proto == "http" || proto == "https" {
+			scheme = proto
+		}
+	}
+	return canonOrigin == canonicalHost(scheme, r.Host)
 }
 
 // WSHandler handles WebSocket connections for real-time events.
