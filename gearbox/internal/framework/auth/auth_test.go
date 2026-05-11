@@ -177,6 +177,122 @@ func TestManager_GetUser_AbsoluteTimeout(t *testing.T) {
 	}
 }
 
+// Follow-up to P2-3 (PR #50 Copilot review): a legacy session that
+// pre-dates the sessionStartKey field must get anchored on the next
+// ExtendSession call, not slide forever via the loginTime fallback.
+func TestManager_ExtendSession_AnchorsLegacySession(t *testing.T) {
+	manager, db, cleanup := setupTestManager(t)
+	defer cleanup()
+	manager.timeout = 24 * time.Hour
+	manager.absoluteTimeout = 1 * time.Hour
+
+	passwordHash, err := HashPassword("correct_password")
+	if err != nil {
+		t.Fatalf("HashPassword: %v", err)
+	}
+	if _, _, err := db.EnsureAdminExists(passwordHash, false); err != nil {
+		t.Fatalf("EnsureAdminExists: %v", err)
+	}
+
+	// Log in to get a real cookie, then strip the sessionStartKey to
+	// simulate a legacy session.
+	loginReq := httptest.NewRequest("GET", "/login", nil)
+	loginResp := httptest.NewRecorder()
+	if _, err := manager.Login(loginResp, loginReq, "admin", "correct_password"); err != nil {
+		t.Fatalf("Login: %v", err)
+	}
+	cookie := loginResp.Result().Cookies()[0]
+
+	stripReq := httptest.NewRequest("GET", "/", nil)
+	stripReq.AddCookie(cookie)
+	sess, err := manager.sessionStore.Get(stripReq, sessionName)
+	if err != nil {
+		t.Fatalf("read session: %v", err)
+	}
+	delete(sess.Values, sessionStartKey)
+	stripResp := httptest.NewRecorder()
+	if err := sess.Save(stripReq, stripResp); err != nil {
+		t.Fatalf("save stripped session: %v", err)
+	}
+	legacyCookie := stripResp.Result().Cookies()[0]
+
+	// First ExtendSession on the legacy cookie must anchor sessionStartKey.
+	extendReq := httptest.NewRequest("POST", "/", nil)
+	extendReq.AddCookie(legacyCookie)
+	extendResp := httptest.NewRecorder()
+	if err := manager.ExtendSession(extendResp, extendReq); err != nil {
+		t.Fatalf("ExtendSession: %v", err)
+	}
+	anchoredCookie := extendResp.Result().Cookies()[0]
+
+	// Read back: sessionStartKey must now be present.
+	readReq := httptest.NewRequest("GET", "/", nil)
+	readReq.AddCookie(anchoredCookie)
+	anchored, err := manager.sessionStore.Get(readReq, sessionName)
+	if err != nil {
+		t.Fatalf("read anchored session: %v", err)
+	}
+	if _, ok := anchored.Values[sessionStartKey].(int64); !ok {
+		t.Errorf("sessionStartKey missing after ExtendSession; legacy session is unanchored")
+	}
+}
+
+// Follow-up to P2-3 (PR #50 Copilot review): the per-save cookie MaxAge
+// shrinks as the hard TTL approaches, so the browser drops the cookie
+// at the absolute boundary instead of after each save's sliding window.
+func TestManager_ExtendSession_CookieMaxAgeShrinks(t *testing.T) {
+	manager, db, cleanup := setupTestManager(t)
+	defer cleanup()
+	// Sliding window 1h, hard TTL 1h (degenerate but unambiguous: any
+	// remaining absolute < 1h must cap MaxAge below 1h).
+	manager.timeout = 1 * time.Hour
+	manager.absoluteTimeout = 1 * time.Hour
+
+	passwordHash, err := HashPassword("correct_password")
+	if err != nil {
+		t.Fatalf("HashPassword: %v", err)
+	}
+	if _, _, err := db.EnsureAdminExists(passwordHash, false); err != nil {
+		t.Fatalf("EnsureAdminExists: %v", err)
+	}
+
+	loginReq := httptest.NewRequest("GET", "/login", nil)
+	loginResp := httptest.NewRecorder()
+	if _, err := manager.Login(loginResp, loginReq, "admin", "correct_password"); err != nil {
+		t.Fatalf("Login: %v", err)
+	}
+	cookie := loginResp.Result().Cookies()[0]
+
+	// Rewind sessionStartKey to 30 minutes ago: 30m left on the hard TTL.
+	rewind := httptest.NewRequest("GET", "/", nil)
+	rewind.AddCookie(cookie)
+	sess, err := manager.sessionStore.Get(rewind, sessionName)
+	if err != nil {
+		t.Fatalf("read session: %v", err)
+	}
+	sess.Values[sessionStartKey] = time.Now().Add(-30 * time.Minute).Unix()
+	rewindResp := httptest.NewRecorder()
+	if err := sess.Save(rewind, rewindResp); err != nil {
+		t.Fatalf("save rewound session: %v", err)
+	}
+	midCookie := rewindResp.Result().Cookies()[0]
+
+	// ExtendSession should now emit a Set-Cookie with MaxAge ~30 minutes
+	// (the remaining absolute), NOT the 1h sliding window.
+	extendReq := httptest.NewRequest("POST", "/", nil)
+	extendReq.AddCookie(midCookie)
+	extendResp := httptest.NewRecorder()
+	if err := manager.ExtendSession(extendResp, extendReq); err != nil {
+		t.Fatalf("ExtendSession: %v", err)
+	}
+	out := extendResp.Result().Cookies()[0]
+
+	// MaxAge in seconds; allow a 10-second jitter for test execution time.
+	if out.MaxAge < 1700 || out.MaxAge > 1810 { // 28m20s..30m10s
+		t.Errorf("Set-Cookie MaxAge=%d, want ~1800 (= remaining absolute TTL); should not be 3600 (= sliding)", out.MaxAge)
+	}
+}
+
 func TestManager_SetSecure(t *testing.T) {
 	manager, _, cleanup := setupTestManager(t)
 	defer cleanup()

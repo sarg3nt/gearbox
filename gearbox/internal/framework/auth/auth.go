@@ -51,18 +51,15 @@ func NewManager(db *database.DB, sessionSecret string, timeout, absoluteTimeout 
 		return nil, fmt.Errorf("absoluteTimeout (%s) must be >= sliding timeout (%s)", absoluteTimeout, timeout)
 	}
 
-	// Create cookie store. Cookie MaxAge uses the absolute timeout (or the
-	// sliding timeout if no hard TTL is configured), so the browser drops
-	// the cookie no later than the server-side max — even if some other
-	// bug skipped server-side expiry.
-	cookieMaxAge := timeout
-	if absoluteTimeout > 0 {
-		cookieMaxAge = absoluteTimeout
-	}
+	// Create cookie store. The store-wide MaxAge is the sliding timeout —
+	// this is the value used at Login when the session is fresh and the
+	// hard TTL has its full window remaining. ExtendSession overrides
+	// MaxAge per-save to min(sliding, remaining-absolute) so the browser
+	// also drops the cookie at the hard TTL boundary as it approaches.
 	store := sessions.NewCookieStore([]byte(sessionSecret))
 	store.Options = &sessions.Options{
 		Path:     "/",
-		MaxAge:   int(cookieMaxAge.Seconds()),
+		MaxAge:   int(timeout.Seconds()),
 		HttpOnly: true,
 		Secure:   true, // Default to secure; SetSecure(false) only for non-TLS dev environments
 		SameSite: http.SameSiteStrictMode,
@@ -344,6 +341,27 @@ func (m *Manager) IsAuthenticated(r *http.Request) bool {
 }
 
 // ExtendSession refreshes the session login time to prevent timeout.
+//
+// Two extra behaviors on top of the simple "bump sessionLoginKey" path,
+// both addressing follow-up review on the 2026-05 audit P2-3 fix:
+//
+//  1. **Anchor legacy sessions.** If a session predates this commit it
+//     won't have sessionStartKey set. Without anchoring, GetUser's fallback
+//     would compare against the freshly-refreshed sessionLoginKey forever
+//     and the absolute hard TTL would never fire. We capture the CURRENT
+//     (pre-refresh) sessionLoginKey as the anchor, giving the legacy
+//     session one full absoluteTimeout window from now — then it
+//     re-authenticates like everyone else.
+//
+//  2. **Shrink the cookie MaxAge as the hard TTL approaches.** Every Save
+//     re-emits the Set-Cookie header. If we kept the store's default
+//     MaxAge, the browser would see "this cookie is good for sliding-
+//     timeout from right now" on every request, and the cookie would
+//     never reflect the server-side hard TTL. Per-save we set the cookie
+//     MaxAge to min(sliding-timeout, remaining-absolute-TTL) so the
+//     browser ALSO drops the cookie at the absolute boundary. The
+//     override goes on a copied Options struct so we don't mutate the
+//     shared store-wide options.
 func (m *Manager) ExtendSession(w http.ResponseWriter, r *http.Request) error {
 	session, err := m.sessionStore.Get(r, sessionName)
 	if err != nil {
@@ -356,7 +374,39 @@ func (m *Manager) ExtendSession(w http.ResponseWriter, r *http.Request) error {
 		return fmt.Errorf("not authenticated")
 	}
 
-	// Update login time to now
+	// (1) Anchor legacy sessions. Set sessionStartKey to the CURRENT
+	// sessionLoginKey before we overwrite it below. Idempotent for
+	// already-anchored sessions (we only set it when absent).
+	if _, anchored := session.Values[sessionStartKey].(int64); !anchored {
+		if loginTime, ok := session.Values[sessionLoginKey].(int64); ok {
+			session.Values[sessionStartKey] = loginTime
+		}
+	}
+
+	// (2) Override per-save MaxAge to track the hard TTL. Default is the
+	// sliding timeout; if we're inside the absolute TTL window, use
+	// whichever is smaller.
+	if m.absoluteTimeout > 0 {
+		if startUnix, ok := session.Values[sessionStartKey].(int64); ok {
+			remaining := time.Until(time.Unix(startUnix, 0).Add(m.absoluteTimeout))
+			if remaining <= 0 {
+				// Past the hard TTL — don't extend. Caller path will fail
+				// on the next GetUser and force re-auth.
+				return fmt.Errorf("session past absolute timeout")
+			}
+			maxAge := m.timeout
+			if remaining < maxAge {
+				maxAge = remaining
+			}
+			// Copy Options so we don't mutate the shared store struct
+			// (which is the cookie-default applied to every other session).
+			opts := *m.sessionStore.Options
+			opts.MaxAge = int(maxAge.Seconds())
+			session.Options = &opts
+		}
+	}
+
+	// Update login time to now (slides the idle window forward).
 	session.Values[sessionLoginKey] = time.Now().Unix()
 
 	return session.Save(r, w)
