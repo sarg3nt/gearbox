@@ -158,7 +158,7 @@ func (c *Fail2BanCollector) getJails() ([]string, error) {
 // getJailStats returns statistics for a specific jail.
 //
 // Defense-in-depth: the jail name is verified to match validJailName before
-// being passed to fail2ban-client, and "--" separates flags from the unit
+// being passed to fail2ban-client, and "--" separates flags from the jail
 // argument. Today jailName always comes from getJails() (which parses
 // fail2ban-client's own output), but a malformed jail configuration on the
 // host could otherwise produce a value that fail2ban-client itself would

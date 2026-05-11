@@ -19,8 +19,28 @@ import (
 // or newline. We keep the validator deliberately conservative: only
 // alphanumerics, a small punctuation set, and quoted keywords.
 //
+// `+` and `=` are included so nonce-... and sha256/sha384/sha512-...
+// expressions whose payload uses the standard base64 alphabet aren't
+// silently dropped. 2026-05 audit P1-4 follow-up (Copilot review on
+// PR #43).
+//
 // 2026-05 audit P1-4.
-var validCSPDirective = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9-]+(\s+[a-zA-Z0-9'_:/.\-*]+)+$`)
+var validCSPDirective = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9-]+(\s+[a-zA-Z0-9'_:/.\-*+=]+)+$`)
+
+// cspContainsForbidden returns true when s contains any byte that has no
+// business appearing in a CSP header value. A hand-curated whitespace
+// list misses codepoints like form-feed (\f) and the various unicode
+// space chars, so we reject ASCII control chars (< 0x20, 0x7F) and any
+// rune outside ASCII as a precaution against header smuggling via the
+// CSP env vars. 2026-05 audit P1-4 follow-up (Copilot review on PR #43).
+func cspContainsForbidden(s string) bool {
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f || r > 0x7e {
+			return true
+		}
+	}
+	return false
+}
 
 // sanitizeCSPExtraSource accepts a single entry from the
 // CSP_EXTRA_SOURCES comma-separated env var and returns the trimmed
@@ -33,7 +53,7 @@ func sanitizeCSPExtraSource(s string) (string, bool) {
 	if trimmed == "" {
 		return "", false
 	}
-	if strings.ContainsAny(trimmed, ";\r\n\t") {
+	if strings.ContainsAny(trimmed, ";") || cspContainsForbidden(trimmed) {
 		return "", false
 	}
 	if !validCSPDirective.MatchString(trimmed) {
@@ -52,7 +72,7 @@ func sanitizeCSPReportURI(s string) (string, bool) {
 	if trimmed == "" {
 		return "", false
 	}
-	if strings.ContainsAny(trimmed, " \t\r\n;") {
+	if strings.ContainsAny(trimmed, " ;") || cspContainsForbidden(trimmed) {
 		return "", false
 	}
 	u, err := url.Parse(trimmed)

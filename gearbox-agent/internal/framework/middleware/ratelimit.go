@@ -36,7 +36,18 @@ type RateLimiter struct {
 	logger      *slog.Logger
 	trustProxy  bool          // Whether to trust X-Forwarded-For headers
 	stopCleanup chan struct{} // Signal to stop cleanup goroutine
+
+	// capacityWarnInterval throttles the "map at capacity" warning so a
+	// distributed scanner can't turn the structured-log pipeline into a
+	// disk/ingest amplification vector. 2026-05 audit P1-6 follow-up
+	// (Copilot review on PR #42).
+	lastCapacityWarn time.Time
 }
+
+// capacityWarnInterval is the minimum time between "map at capacity"
+// warnings. One per minute is enough for ops visibility (the condition
+// is sticky once it starts) and slow enough to make log-DoS impractical.
+const capacityWarnInterval = time.Minute
 
 type clientBucket struct {
 	tokens     float64
@@ -90,11 +101,19 @@ func (rl *RateLimiter) Allow(ip string) bool {
 				// Still full after premature cleanup. Deny rather than
 				// allocate. The denied IP gets back in next time someone
 				// else's bucket goes stale.
-				if rl.logger != nil {
+				//
+				// Throttle the warn log: under a distributed scan this
+				// fires on every new IP, so unbounded logging would let
+				// the attacker drive disk/ingest cost (a secondary DoS).
+				// One warning per capacityWarnInterval is enough — the
+				// condition is sticky once it starts.
+				if rl.logger != nil && now.Sub(rl.lastCapacityWarn) >= capacityWarnInterval {
 					rl.logger.Warn("Rate limiter map at capacity; denying new client",
 						"ip", ip,
 						"map_size", len(rl.clients),
+						"throttled_until", now.Add(capacityWarnInterval).Format(time.RFC3339),
 					)
+					rl.lastCapacityWarn = now
 				}
 				return false
 			}

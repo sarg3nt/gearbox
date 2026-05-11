@@ -47,7 +47,24 @@ type failureRecord struct {
 //	window    = 5 minutes
 //	baseDelay = 10 seconds
 //	maxDelay  = 30 minutes
+//
+// Invalid inputs (non-positive durations or threshold) are clamped to
+// safe defaults rather than panicking — cleanupLoop's time.NewTicker
+// would otherwise panic on a zero/negative window. 2026-05 audit P1-7
+// follow-up (Copilot review on PR #42).
 func NewBackoffTracker(threshold int, window, baseDelay, maxDelay time.Duration, logger *slog.Logger) *BackoffTracker {
+	if threshold < 1 {
+		threshold = 1
+	}
+	if window <= 0 {
+		window = 5 * time.Minute
+	}
+	if baseDelay <= 0 {
+		baseDelay = 10 * time.Second
+	}
+	if maxDelay < baseDelay {
+		maxDelay = baseDelay
+	}
 	bt := &BackoffTracker{
 		failures:    make(map[string]*failureRecord),
 		threshold:   threshold,

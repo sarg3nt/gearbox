@@ -384,7 +384,15 @@ func (p *Parser) parseDependsOn(dependsOn any) []string {
 }
 
 // sanitizeName sanitizes a name for use in HAProxy backend names.
+//
+// The output is capped at maxSanitizedNameLen so that the default backend
+// name built by callers (`{app}_{service}_backend`, ~8 chars of fixed
+// suffix + 1 separator) reliably fits inside validBackendName's 63-char
+// cap. Without this, a very long app or service directory name would
+// build a default that fails the validator and silently drops the whole
+// backend. 2026-05 audit P0-1 follow-up (Copilot review on PR #39).
 func sanitizeName(name string) string {
+	const maxSanitizedNameLen = 25 // 25 + 1 + 25 + 1 + "backend" (7) = 59 ≤ 63
 	// Replace invalid characters with underscore
 	re := regexp.MustCompile(`[^a-zA-Z0-9_.-]`)
 	sanitized := re.ReplaceAllString(name, "_")
@@ -392,7 +400,14 @@ func sanitizeName(name string) string {
 	re = regexp.MustCompile(`_+`)
 	sanitized = re.ReplaceAllString(sanitized, "_")
 	// Remove leading/trailing underscores
-	return strings.Trim(sanitized, "_")
+	sanitized = strings.Trim(sanitized, "_")
+	if len(sanitized) > maxSanitizedNameLen {
+		sanitized = sanitized[:maxSanitizedNameLen]
+		// Trim a trailing separator that the truncation may have exposed
+		// (e.g. ".my-app." → ".my-app").
+		sanitized = strings.TrimRight(sanitized, "_.-")
+	}
+	return sanitized
 }
 
 // getOrDefault returns the value for a key or a default if not present.

@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -50,18 +51,24 @@ func canonicalOrigin(s string) (string, bool) {
 // scheme) for comparison against canonicalOrigin output. The scheme is
 // derived from r.TLS at the call site, since the Host header itself carries
 // no scheme. Same default-port stripping rules as canonicalOrigin.
+//
+// IPv6 hosts are bracketed in Host headers ("[::1]:8405") — net.SplitHostPort
+// strips the brackets correctly; a hand-rolled strings.Index(":") parser
+// would split on the first ':' inside the address and corrupt the comparison.
+// 2026-05 audit P1-5 follow-up (Copilot review on PR #42).
 func canonicalHost(scheme, hostPort string) string {
 	scheme = strings.ToLower(scheme)
-	host := strings.ToLower(hostPort)
-	if i := strings.Index(host, ":"); i >= 0 {
-		port := host[i+1:]
-		host = host[:i]
-		if (scheme == "https" && port == "443") || (scheme == "http" && port == "80") {
-			return scheme + "://" + host
-		}
-		return scheme + "://" + host + ":" + port
+	host, port, err := net.SplitHostPort(strings.ToLower(hostPort))
+	if err != nil {
+		// No port — the whole value is the host. Strip surrounding
+		// brackets in case it's a bare IPv6 literal.
+		host = strings.Trim(strings.ToLower(hostPort), "[]")
+		return scheme + "://" + host
 	}
-	return scheme + "://" + host
+	if (scheme == "https" && port == "443") || (scheme == "http" && port == "80") {
+		return scheme + "://" + host
+	}
+	return scheme + "://" + host + ":" + port
 }
 
 const (

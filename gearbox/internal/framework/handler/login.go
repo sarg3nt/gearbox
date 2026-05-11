@@ -34,7 +34,15 @@ func isSafeReturnURL(s string) bool {
 		return false
 	}
 	for i := 0; i < len(s); i++ {
-		if s[i] == '\\' {
+		c := s[i]
+		if c == '\\' {
+			return false
+		}
+		// Reject ASCII control characters (including \r, \n, \t, NUL,
+		// DEL). Paths containing these are not valid URLs and have been
+		// used in header-injection / open-redirect sneak paths. 2026-05
+		// audit P0-4 follow-up (Copilot review on PR #39).
+		if c < 0x20 || c == 0x7f {
 			return false
 		}
 	}
