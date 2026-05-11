@@ -221,17 +221,72 @@ func (c *UpdatesCollector) runPipxCommand(args ...string) ([]byte, error) {
 }
 
 // runPipxCommandWithOutput runs a pipx command and wraps failures with the
-// command's output, just like runCommandWithOutput does for regular commands.
+// command's output. Pipx's failure messages don't follow apt's "E:" convention,
+// so we use a pipx-tuned extractor that surfaces multiple trailing lines rather
+// than just the final "<long-path>/python -m pip install --upgrade pkg -q' failed"
+// summary line — that line on its own is missing the actual pip diagnostic.
+//
+// On failure the full output is also logged via slog at Warn level so operators
+// can dig into the agent log for full pip stdout/stderr; the returned error is
+// shorter and dashboard-friendly.
 func (c *UpdatesCollector) runPipxCommandWithOutput(args ...string) ([]byte, error) {
 	output, err := c.runPipxCommand(args...)
 	if err != nil {
-		errDetail := extractErrorLines(output)
+		slog.Warn("pipx command failed",
+			"args", args,
+			"err", err,
+			"output", strings.TrimSpace(string(output)),
+		)
+		errDetail := extractPipxErrorDetail(output)
 		if errDetail != "" {
 			return output, errors.New(errDetail)
 		}
 		return output, err
 	}
 	return output, nil
+}
+
+// extractPipxErrorDetail collects the most useful diagnostic lines from pipx
+// output for surfacing in a wrapped error. Unlike apt, pipx's failure summary
+// is typically the final line ("'<python> -m pip install --upgrade pkg -q' failed")
+// while the cause (network error, dependency conflict, missing module, etc.)
+// is on lines above it. We therefore return up to the last few non-empty lines
+// joined with "; ", capped at a reasonable display length.
+//
+// "Failed to" lines are still skipped — systemctl/systemd uses that prefix
+// internally and it tends to be noise for our callers.
+func extractPipxErrorDetail(output []byte) string {
+	if len(output) == 0 {
+		return ""
+	}
+
+	text := strings.TrimSpace(string(output))
+	if text == "" {
+		return ""
+	}
+
+	const maxLines = 5
+	const maxTotalLen = 500
+
+	rawLines := strings.Split(text, "\n")
+	var picked []string
+	for i := len(rawLines) - 1; i >= 0 && len(picked) < maxLines; i-- {
+		trimmed := strings.TrimSpace(rawLines[i])
+		if trimmed == "" || strings.HasPrefix(trimmed, "Failed to") {
+			continue
+		}
+		picked = append([]string{trimmed}, picked...)
+	}
+
+	if len(picked) == 0 {
+		return ""
+	}
+
+	joined := strings.Join(picked, "; ")
+	if len(joined) > maxTotalLen {
+		joined = joined[:maxTotalLen] + "..."
+	}
+	return joined
 }
 
 // CheckUpdates retrieves the current update status.
