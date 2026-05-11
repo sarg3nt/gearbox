@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -182,5 +183,57 @@ func TestDefaultRateLimiter(t *testing.T) {
 	}
 	if rl.burst != 100 {
 		t.Errorf("default burst = %d, want 100", rl.burst)
+	}
+}
+
+// 2026-05 audit P1-6: the per-IP map must not grow unbounded.
+func TestRateLimiter_BoundedMap(t *testing.T) {
+	rl := NewRateLimiter(50, 100, false, nil)
+	defer rl.Close()
+	// Shrink the cap to keep the test fast.
+	rl.maxClients = 100
+
+	// Fill the map with 100 distinct IPs. All should be allowed (each gets
+	// its own bucket with full burst).
+	for i := 0; i < 100; i++ {
+		ip := fmt.Sprintf("10.0.%d.%d", i/256, i%256)
+		if !rl.Allow(ip) {
+			t.Fatalf("Allow(%q) = false at i=%d; want true (map not yet at cap)", ip, i)
+		}
+	}
+	if len(rl.clients) != 100 {
+		t.Fatalf("map size = %d after filling; want 100", len(rl.clients))
+	}
+
+	// The 101st distinct IP must be denied because the map is at cap and
+	// no entries are stale (all just created).
+	overflow := "10.1.0.1"
+	if rl.Allow(overflow) {
+		t.Errorf("Allow(%q) = true past cap; want false (map full, no stale entries)", overflow)
+	}
+	if len(rl.clients) != 100 {
+		t.Errorf("map size = %d after overflow attempt; want 100 (no new entry)", len(rl.clients))
+	}
+}
+
+func TestRateLimiter_EvictsStaleWhenAtCap(t *testing.T) {
+	rl := NewRateLimiter(50, 100, false, nil)
+	defer rl.Close()
+	rl.maxClients = 10
+
+	// Fill with 10 IPs, but rewind their lastUpdate so they look stale.
+	for i := 0; i < 10; i++ {
+		ip := fmt.Sprintf("10.0.0.%d", i)
+		rl.Allow(ip)
+		rl.clients[ip].lastUpdate = time.Now().Add(-5 * time.Minute)
+	}
+	if len(rl.clients) != 10 {
+		t.Fatalf("map size = %d; want 10", len(rl.clients))
+	}
+
+	// A new IP should be admitted: the premature-cleanup path will evict
+	// the 10 stale entries before allocating.
+	if !rl.Allow("10.1.0.1") {
+		t.Errorf("Allow(10.1.0.1) = false; want true (cap reached but stale entries evictable)")
 	}
 }

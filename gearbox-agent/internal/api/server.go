@@ -77,6 +77,11 @@ func NewServer(cfg ServerConfig) *Server {
 	// Create rate limiter (50 req/sec with burst of 100)
 	rateLimiter := frameworkmiddleware.DefaultRateLimiter(cfg.Logger)
 
+	// Per-IP auth-failure backoff layered on top of rate limiting — defends
+	// against distributed API-key brute force where each IP individually
+	// stays below the 50 req/sec rate-limit threshold. See 2026-05 audit P1-7.
+	authBackoff := frameworkmiddleware.DefaultBackoffTracker(cfg.Logger)
+
 	// Health endpoint (no auth required, no rate limit)
 	r.Get("/health", handlers.Health)
 
@@ -111,7 +116,7 @@ func NewServer(cfg ServerConfig) *Server {
 	// Protected API routes (require API key auth)
 	r.Group(func(r chi.Router) {
 		r.Use(frameworkmiddleware.RateLimitMiddleware(rateLimiter))
-		r.Use(frameworkmiddleware.APIKeyAuth(cfg.APIKey, cfg.Logger))
+		r.Use(frameworkmiddleware.APIKeyAuth(cfg.APIKey, cfg.Logger, authBackoff))
 
 		// Core endpoints (not handled by plugins)
 		r.Get("/api/v1/metadata", handlers.Metadata)
