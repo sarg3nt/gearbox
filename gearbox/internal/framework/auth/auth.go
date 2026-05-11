@@ -28,6 +28,22 @@ const (
 	LockoutDuration    = 15 * time.Minute
 )
 
+// dummyPasswordHash is a bcrypt hash used to keep the Login() codepath
+// taking constant bcrypt time even when the user does not exist. Without
+// it, "user missing" returns in microseconds while "user exists + wrong
+// password" runs a ~100ms bcrypt compare — an obvious timing oracle for
+// account enumeration. Generated once at package init; the underlying
+// plaintext is never used. See 2026-05 audit P2-4 follow-up.
+var dummyPasswordHash string
+
+func init() {
+	h, err := HashPassword("timing-equivalence-dummy-not-a-real-password")
+	if err != nil {
+		panic(fmt.Sprintf("auth init: failed to generate dummy password hash: %v", err))
+	}
+	dummyPasswordHash = h
+}
+
 // Manager handles authentication and session management.
 type Manager struct {
 	db           *database.DB
@@ -87,14 +103,37 @@ func (m *Manager) Login(w http.ResponseWriter, r *http.Request, email, password 
 		return nil, fmt.Errorf("database error: %w", err)
 	}
 
+	// Run CheckPassword exactly once on every Login call regardless of
+	// user state. Without this, "user missing" and "account locked" return
+	// in microseconds while "exists + wrong password" runs a ~100ms bcrypt
+	// compare — a timing oracle that defeats the generic error message.
+	// See 2026-05 audit P2-4 follow-up.
+	passwordHash := dummyPasswordHash
+	if user != nil {
+		passwordHash = user.PasswordHash
+	}
+	passwordOK := CheckPassword(password, passwordHash)
+
 	if user == nil {
 		// Don't reveal that the user doesn't exist
 		return nil, fmt.Errorf("invalid credentials")
 	}
 
-	// Check if account is locked
+	// Check if account is locked. Return the SAME generic error as the
+	// "user not found" and "wrong password" paths so an attacker can't
+	// distinguish "this email is locked" (which implies it exists) from
+	// "this email doesn't exist" via the error message. The lockout itself
+	// is still enforced — the attacker just doesn't learn it from the
+	// response. See 2026-05 audit P2-4.
 	if user.IsLocked() {
-		return nil, fmt.Errorf("account is temporarily locked due to too many failed attempts")
+		// Record the attempt (counts against the window) so an attacker
+		// can't bypass the rate limit by repeatedly probing a locked
+		// account with no cost.
+		if err := m.db.RecordLoginAttempt(user.ID, false); err != nil {
+			m.logger.Error("failed to record locked-attempt", "error", err, "user_id", user.ID)
+		}
+		m.logAudit(r, &user.ID, models.AuditActionLoginFailed, "")
+		return nil, fmt.Errorf("invalid credentials")
 	}
 
 	// Check if account is active
@@ -105,8 +144,8 @@ func (m *Manager) Login(w http.ResponseWriter, r *http.Request, email, password 
 		return nil, fmt.Errorf("account is disabled")
 	}
 
-	// Validate password
-	if !CheckPassword(password, user.PasswordHash) {
+	// Validate password (result computed above for constant-time path)
+	if !passwordOK {
 		// Record failed attempt
 		if err := m.db.RecordLoginAttempt(user.ID, false); err != nil {
 			m.logger.Error("failed to record login attempt", "error", err, "user_id", user.ID)
