@@ -19,6 +19,20 @@ var ErrServiceNotInstalled = errors.New("service not installed")
 // Pre-compiled regex for fail2ban log parsing.
 var banRegex = regexp.MustCompile(`(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*\[(\w+)\] (Ban|Unban) (\S+)`)
 
+// validJailName matches a fail2ban jail name that is safe to pass to
+// fail2ban-client. The first character MUST be alphanumeric so a value
+// like "--help" or "-h" cannot be interpreted as a fail2ban-client flag
+// (discrete-arg exec prevents shell injection but not flag injection).
+// Subsequent characters allow alphanumerics, underscore, and hyphen.
+//
+// Jail names today flow from the agent's own `fail2ban-client status`
+// parse (not from HTTP input), so this is defense-in-depth — if a future
+// code path ever accepts a jail name from API input, or if a malicious
+// fail2ban config produces a weird jail name, this guard prevents the
+// value from being interpreted as a fail2ban-client flag. See 2026-05
+// audit P1-3.
+var validJailName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
+
 // Fail2BanStats represents overall fail2ban statistics.
 type Fail2BanStats struct {
 	Available   bool          `json:"available"`   // Whether fail2ban is installed
@@ -142,10 +156,21 @@ func (c *Fail2BanCollector) getJails() ([]string, error) {
 }
 
 // getJailStats returns statistics for a specific jail.
+//
+// Defense-in-depth: the jail name is verified to match validJailName before
+// being passed to fail2ban-client, and "--" separates flags from the unit
+// argument. Today jailName always comes from getJails() (which parses
+// fail2ban-client's own output), but a malformed jail configuration on the
+// host could otherwise produce a value that fail2ban-client itself would
+// interpret as a flag. See 2026-05 audit P1-3.
 func (c *Fail2BanCollector) getJailStats(jailName string, includeIPs bool) (JailStats, error) {
 	stats := JailStats{Name: jailName}
 
-	cmd := exec.Command("fail2ban-client", "status", jailName)
+	if !validJailName.MatchString(jailName) {
+		return stats, fmt.Errorf("invalid jail name: %q", jailName)
+	}
+
+	cmd := exec.Command("fail2ban-client", "status", "--", jailName)
 	output, err := cmd.Output()
 	if err != nil {
 		return stats, err

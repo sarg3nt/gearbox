@@ -231,9 +231,13 @@ func formatDuration(d time.Duration) string {
 
 // ControlService starts, stops, or restarts a systemd service.
 // Returns the command output and any error.
+//
+// The "--" separator before the unit name prevents an attacker-chosen unit
+// name (e.g. "--all" or "-h") from being interpreted as a systemctl flag.
+// This is defense-in-depth on top of validUnitName regex validation at the
+// HTTP boundary (plugin.go). See 2026-05 audit P1-1.
 func (c *Collector) ControlService(service, action string) (string, error) {
-	// Use systemctl to control the service
-	cmd := exec.Command("systemctl", action, service)
+	cmd := exec.Command("systemctl", action, "--", service)
 	output, err := cmd.CombinedOutput()
 	return strings.TrimSpace(string(output)), err
 }
