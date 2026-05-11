@@ -10,6 +10,37 @@ import (
 	"github.com/sarg3nt/gearbox/internal/framework/templates/pages"
 )
 
+// isSafeReturnURL reports whether a `?return=` (or `?next=`) query value is
+// safe to redirect the browser to after login/logout. Only same-origin
+// relative paths are allowed — anything that could escape to an external host
+// is rejected so the login page can't be used as a phishing redirector.
+//
+// The accepted shape is exactly: starts with `/`, does NOT start with `//`
+// (protocol-relative), does NOT start with `/\` (some browsers normalize this
+// to `//` and follow it as protocol-relative), and does not contain a
+// scheme-like prefix elsewhere. Backslashes anywhere in the value are
+// rejected because some browsers normalize them to forward slashes during
+// URL parsing, opening sneak paths like `/\/evil.example.com`.
+//
+// 2026-05 audit P0-4.
+func isSafeReturnURL(s string) bool {
+	if s == "" {
+		return false
+	}
+	if len(s) < 1 || s[0] != '/' {
+		return false
+	}
+	if len(s) >= 2 && (s[1] == '/' || s[1] == '\\') {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' {
+			return false
+		}
+	}
+	return true
+}
+
 // resolvePostLoginPath returns the path the user should land on after login
 // or after visiting "/" without a destination. Cascade:
 //
@@ -124,9 +155,13 @@ func (h *Handler) LoginPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Redirect to return URL if provided, otherwise honor the per-user
-	// default-landing-path with system fallback.
+	// default-landing-path with system fallback. The return URL must be a
+	// same-origin relative path — anything else (an absolute URL, a
+	// protocol-relative URL, a `javascript:` URI) is rejected to prevent
+	// the login page from being used as a phishing redirector
+	// (2026-05 audit P0-4).
 	redirectTarget := h.resolvePostLoginPath(user.ID)
-	if returnURL != "" && returnURL != "/login" && returnURL != "/logout" {
+	if isSafeReturnURL(returnURL) && returnURL != "/login" && returnURL != "/logout" {
 		redirectTarget = returnURL
 	}
 	http.Redirect(w, r, redirectTarget, http.StatusSeeOther)
@@ -178,9 +213,12 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Build redirect URL with logout message
+	// Build redirect URL with logout message. The return URL must pass the
+	// same safety check as the post-login redirect (2026-05 audit P0-4) so
+	// the logout page can't be used to inject an attacker-controlled
+	// `?return=...` into the login page's URL.
 	redirectURL := "/login?message=" + url.QueryEscape("You have been logged out.")
-	if returnURL != "" && returnURL != "/" && returnURL != "/login" && returnURL != "/logout" {
+	if isSafeReturnURL(returnURL) && returnURL != "/" && returnURL != "/login" && returnURL != "/logout" {
 		redirectURL += "&return=" + url.QueryEscape(returnURL)
 	}
 

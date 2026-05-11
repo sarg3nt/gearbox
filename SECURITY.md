@@ -147,7 +147,7 @@ Gearbox includes the following security features:
 
 ### Authentication & Authorization
 
-- **Bcrypt Password Hashing**: Industry-standard password hashing (cost 10)
+- **Bcrypt Password Hashing**: Industry-standard password hashing (cost 12; OWASP 2026 baseline)
 - **Session Management**: Secure, HTTP-only session cookies
 - **Password Requirements**: Minimum 50 bits entropy, blocks common passwords
 - **Multi-factor Support**: WebAuthn/Passkey support for strong authentication
@@ -171,7 +171,13 @@ Gearbox includes the following security features:
 ### Data Protection
 
 - **Secret Redaction**: Automatic redaction in debug logs
-- **Credential Encryption**: API keys encrypted at rest (AES-256-GCM)
+- **Filesystem-Protected Secrets**: API keys, webhook secrets, and admin
+  credentials are stored as files owned by the agent user with mode `0600`
+  (owner read/write only). Encryption-at-rest is **not** currently
+  implemented; if the filesystem is compromised by an attacker with the
+  agent's UID or root, secrets are exposed. Deployments that need
+  encryption-at-rest should run the agent on a filesystem with FDE
+  (LUKS, FileVault, etc.) or use an external KMS-backed secret store.
 - **Secure Password Storage**: Admin credentials written to file with 0600 permissions
 - **Session Secrets**: 256-bit minimum session secret requirement
 
@@ -195,9 +201,10 @@ Subscribe to the repository to receive notifications of security updates.
 
 ## Security Audit History
 
-| Date       | Auditor        | Scope          | Findings | Status    |
-|------------|----------------|----------------|----------|-----------|
-| 2026-01-31 | Internal Scan  | Full codebase  | 10 total | ✅ Resolved |
+| Date       | Auditor               | Scope                                       | Findings                        | Status         |
+|------------|-----------------------|---------------------------------------------|---------------------------------|----------------|
+| 2026-01-31 | Internal Scan         | Full codebase                               | 10 total                        | ✅ Resolved     |
+| 2026-05-10 | Internal Deep Audit   | Auth, agent API, HAProxy pipeline, SQL/XSS, agent subprocess | 4 P0, 8 P1, 10 P2, 8 P3 | 🔄 In progress |
 
 ## Contact
 
