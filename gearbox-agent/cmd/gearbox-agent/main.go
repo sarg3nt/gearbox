@@ -312,12 +312,13 @@ func main() {
 
 	// Create and start API server
 	serverCfg := api.ServerConfig{
-		ListenAddr: cfg.ListenAddr,
-		APIKey:     apiKey,
-		CertFile:   tlsCfg.CertPath,
-		KeyFile:    tlsCfg.KeyPath,
-		Version:    Version,
-		Logger:     logger,
+		ListenAddr:     cfg.ListenAddr,
+		APIKey:         apiKey,
+		CertFile:       tlsCfg.CertPath,
+		KeyFile:        tlsCfg.KeyPath,
+		Version:        Version,
+		Logger:         logger,
+		SwaggerEnabled: cfg.SwaggerEnabled, // P3-2: off by default; opt in via GEARBOX_AGENT_SWAGGER_ENABLED=true
 	}
 	// Only set MetadataProvider if sync service is configured
 	// (Go interfaces holding nil pointers are not themselves nil)

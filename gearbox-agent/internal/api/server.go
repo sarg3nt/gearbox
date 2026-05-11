@@ -45,6 +45,13 @@ type ServerConfig struct {
 	WebhookURL     string
 	SyncTrigger    SyncTrigger
 
+	// SwaggerEnabled controls whether the Swagger UI / OpenAPI spec are
+	// served at /swagger and /swagger/*. Useful in development; in
+	// production it lets unauthenticated callers enumerate the agent's
+	// endpoints + schemas. Default false (off in production). See
+	// 2026-05 security audit P3-2.
+	SwaggerEnabled bool
+
 	// WebSocket settings (optional)
 	EventBus *events.Bus
 
@@ -85,9 +92,16 @@ func NewServer(cfg ServerConfig) *Server {
 	// Health endpoint (no auth required, no rate limit)
 	r.Get("/health", handlers.Health)
 
-	// Swagger UI (no auth required)
-	r.Get("/swagger", httpSwagger.Handler(httpSwagger.URL("/swagger/doc.json")))
-	r.Get("/swagger/*", httpSwagger.Handler(httpSwagger.URL("/swagger/doc.json")))
+	// Swagger UI (no auth required) — only served when explicitly enabled.
+	// In production, leaving this on lets unauthenticated callers enumerate
+	// every endpoint + schema, which is a fingerprinting aid for attackers
+	// (2026-05 security audit P3-2). Set HAPROXY_AGENT_SWAGGER_ENABLED=true
+	// at deploy time when debugging an API contract; default off.
+	if cfg.SwaggerEnabled {
+		r.Get("/swagger", httpSwagger.Handler(httpSwagger.URL("/swagger/doc.json")))
+		r.Get("/swagger/*", httpSwagger.Handler(httpSwagger.URL("/swagger/doc.json")))
+		cfg.Logger.Warn("Swagger UI enabled at /swagger; unauth-readable. Disable for production deploys.")
+	}
 
 	// Webhook endpoint (uses GitHub signature verification, not API key)
 	var webhookHandler *WebhookHandler

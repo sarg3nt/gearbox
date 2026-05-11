@@ -60,6 +60,12 @@ type Config struct {
 
 	// Certificate renewal detection
 	CertbotTimer string // Custom certbot timer name (default: auto-detect)
+
+	// SwaggerEnabled, when true, serves the Swagger UI + OpenAPI spec at
+	// /swagger and /swagger/*. Off by default to avoid exposing the agent's
+	// endpoint + schema list to unauthenticated callers in production. See
+	// 2026-05 security audit P3-2.
+	SwaggerEnabled bool
 }
 
 // DefaultConfig returns the default configuration.
@@ -151,6 +157,9 @@ func Load() (*Config, error) {
 
 	// Certificate renewal detection (optional override)
 	cfg.CertbotTimer = os.Getenv("HAPROXY_CERTBOT_TIMER")
+
+	// Swagger UI off by default; opt in for dev / API debugging.
+	cfg.SwaggerEnabled = os.Getenv("HAPROXY_AGENT_SWAGGER_ENABLED") == "true"
 
 	return cfg, nil
 }

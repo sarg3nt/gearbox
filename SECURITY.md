@@ -19,10 +19,9 @@ Please do not report security vulnerabilities through public GitHub issues, disc
 
 ### 2. Report Privately
 
-Please report security vulnerabilities via one of these methods:
-
-- **GitHub Security Advisories** (Preferred): Use the "Security" tab and click "Report a vulnerability"
-- **Email**: Send details to security@example.com (replace with actual email)
+Please report security vulnerabilities via GitHub Security Advisories: use the
+"Security" tab and click "Report a vulnerability". This keeps the report
+private to the maintainer until a fix is ready to ship.
 
 ### 3. Include the Following Information
 
@@ -208,10 +207,12 @@ Subscribe to the repository to receive notifications of security updates.
 
 ## Contact
 
-For security-related questions or concerns, please contact:
+For security-related questions or concerns, please use GitHub Security
+Advisories on this repository — click the "Security" tab, then "Report a
+vulnerability". Reports stay private to the maintainer until a fix lands.
 
-- **Security Team**: security@example.com (replace with actual email)
-- **GitHub Security**: Use the "Security" tab to report vulnerabilities
+For non-vulnerability security questions (e.g. deployment hardening
+guidance), open a regular GitHub Discussion or issue.
 
 ## License
 
