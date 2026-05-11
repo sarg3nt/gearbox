@@ -480,3 +480,49 @@ func TestAptSnapshot_Fields(t *testing.T) {
 		t.Error("CreatedAt mismatch")
 	}
 }
+
+// TestApplyHeldMarks verifies that the held-marker correctly flips IsHeld on
+// packages whose names appear in the held list, leaves others alone, and is a
+// no-op when there are no held packages or no packages.
+func TestApplyHeldMarks(t *testing.T) {
+	t.Run("marks held packages and leaves others alone", func(t *testing.T) {
+		pkgs := []Package{
+			{Name: "openssl"},
+			{Name: "linux-image-generic"},
+			{Name: "nginx"},
+		}
+		applyHeldMarks(pkgs, []string{"openssl", "nginx"})
+
+		if !pkgs[0].IsHeld {
+			t.Errorf("openssl should be held")
+		}
+		if pkgs[1].IsHeld {
+			t.Errorf("linux-image-generic should not be held")
+		}
+		if !pkgs[2].IsHeld {
+			t.Errorf("nginx should be held")
+		}
+	})
+
+	t.Run("empty held list is a no-op", func(t *testing.T) {
+		pkgs := []Package{{Name: "openssl"}}
+		applyHeldMarks(pkgs, nil)
+		if pkgs[0].IsHeld {
+			t.Errorf("no packages should be marked when held list is empty")
+		}
+	})
+
+	t.Run("empty packages list is safe", func(t *testing.T) {
+		// Must not panic.
+		applyHeldMarks(nil, []string{"openssl"})
+		applyHeldMarks([]Package{}, []string{"openssl"})
+	})
+
+	t.Run("held name with no matching package is ignored", func(t *testing.T) {
+		pkgs := []Package{{Name: "nginx"}}
+		applyHeldMarks(pkgs, []string{"ghost-package", "nginx"})
+		if !pkgs[0].IsHeld {
+			t.Errorf("nginx should be held")
+		}
+	})
+}

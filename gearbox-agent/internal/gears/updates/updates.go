@@ -38,7 +38,8 @@ type Package struct {
 	AvailableVersion string `json:"available_version"`
 	Architecture     string `json:"architecture"`
 	IsSecurityUpdate bool   `json:"is_security_update"`
-	Priority         string `json:"priority"` // low, medium, high, critical
+	IsHeld           bool   `json:"is_held,omitempty"` // Package is held (pinned via apt-mark/dpkg) — apt will not upgrade it even though a newer version is available
+	Priority         string `json:"priority"`          // low, medium, high, critical
 	Repository       string `json:"repository"`
 	Size             int64  `json:"size_bytes"`    // Download size in bytes
 	ChangelogURL     string `json:"changelog_url"` // URL to package changelog (Launchpad)

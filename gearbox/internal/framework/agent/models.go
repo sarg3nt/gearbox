@@ -666,6 +666,7 @@ type Package struct {
 	AvailableVersion string `json:"available_version"`
 	Architecture     string `json:"architecture"`
 	IsSecurityUpdate bool   `json:"is_security_update"`
+	IsHeld           bool   `json:"is_held,omitempty"` // Held packages (apt-mark/dpkg pinned) won't be upgraded even when a newer version is available.
 	Priority         string `json:"priority"`
 	Repository       string `json:"repository"`
 	Size             int64  `json:"size_bytes"`

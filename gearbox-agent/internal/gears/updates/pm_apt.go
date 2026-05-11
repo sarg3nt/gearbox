@@ -85,7 +85,45 @@ func (a *aptPackageManager) ListUpgradable() ([]Package, error) {
 	}
 	packages := a.parseAptListOutput(string(output))
 	a.fetchPackageSizes(packages)
+	a.markHeldPackages(packages)
 	return packages, nil
+}
+
+// markHeldPackages sets pkg.IsHeld=true for any package whose name appears in
+// `apt-mark showhold`. Held packages can still show up in `apt list --upgradable`
+// when a newer version exists in the repos; apt simply refuses to upgrade them.
+// Marking them lets the dashboard render a "held" badge and route the row to a
+// separate "Held" view instead of the active updates list.
+//
+// Errors from apt-mark are non-fatal: we just leave IsHeld=false rather than
+// failing the whole upgradable listing, since the held lookup is purely an
+// enrichment step.
+func (a *aptPackageManager) markHeldPackages(packages []Package) {
+	if len(packages) == 0 {
+		return
+	}
+	held, err := a.ListHeldPackages()
+	if err != nil {
+		return
+	}
+	applyHeldMarks(packages, held)
+}
+
+// applyHeldMarks is the pure-logic core of markHeldPackages, broken out so it
+// can be unit-tested without execing apt-mark.
+func applyHeldMarks(packages []Package, held []string) {
+	if len(held) == 0 {
+		return
+	}
+	heldSet := make(map[string]struct{}, len(held))
+	for _, name := range held {
+		heldSet[name] = struct{}{}
+	}
+	for i := range packages {
+		if _, ok := heldSet[packages[i].Name]; ok {
+			packages[i].IsHeld = true
+		}
+	}
 }
 
 func (a *aptPackageManager) TriggerUpdateCheck() error {

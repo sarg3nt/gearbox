@@ -2055,6 +2055,9 @@ let allPackagesLoaded = false;
 
 // Normalize upgradable Package objects (from /api/os-updates/packages) to the
 // shape expected by the grid (which was designed around InstalledPackage).
+// is_held flows from the agent; held packages can still appear in
+// `apt list --upgradable` when a newer version exists but apt-mark/dpkg has
+// pinned them. The UI surfaces them via a "held" badge and a dedicated tab.
 function normalizeUpgradablePackages(packages) {
 	return packages.map(p => ({
 		name: p.name,
@@ -2064,7 +2067,7 @@ function normalizeUpgradablePackages(packages) {
 		description: '',
 		update_available: true,
 		is_security_update: p.is_security_update || false,
-		is_held: false,
+		is_held: p.is_held || false,
 		package_url: p.package_url || '',
 	}));
 }
@@ -2214,13 +2217,21 @@ function initInstalledPackagesGrid(el, packages, canAction) {
 			title: '',
 			field: 'name',
 			headerSort: false,
-			width: 220,
+			width: 260,
 			hozAlign: 'right',
 			formatter: function(cell) {
 				const row = cell.getRow().getData();
-				const holdBtn = row.is_held
-					? '<button class="pkg-unhold-btn px-2.5 py-1 text-xs bg-yellow-100 dark:bg-yellow-900/30 hover:bg-yellow-200 dark:hover:bg-yellow-900/50 text-yellow-700 dark:text-yellow-400 rounded transition-colors mr-1">Unhold</button>'
-					: '';
+				// Show Unhold for held packages, Hold for any upgradable-but-not-held
+				// row. The action mirrors the existing Unhold pattern and posts to
+				// the matching /api/os-updates/packages/hold endpoint.
+				let holdBtn;
+				if (row.is_held) {
+					holdBtn = '<button class="pkg-unhold-btn px-2.5 py-1 text-xs bg-yellow-100 dark:bg-yellow-900/30 hover:bg-yellow-200 dark:hover:bg-yellow-900/50 text-yellow-700 dark:text-yellow-400 rounded transition-colors mr-1">Unhold</button>';
+				} else if (row.update_available) {
+					holdBtn = '<button class="pkg-hold-btn px-2.5 py-1 text-xs bg-yellow-50 dark:bg-yellow-900/20 hover:bg-yellow-100 dark:hover:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400 rounded transition-colors mr-1">Hold</button>';
+				} else {
+					holdBtn = '';
+				}
 				return holdBtn + '<button class="pkg-remove-btn px-2.5 py-1 text-xs bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 rounded transition-colors">Remove</button>';
 			},
 			cellClick: function(e, cell) {
@@ -2229,6 +2240,8 @@ function initInstalledPackagesGrid(el, packages, canAction) {
 					removeInstalledPackageTabulator(cell, name);
 				} else if (e.target.classList.contains('pkg-unhold-btn')) {
 					unholdPackage(name, cell);
+				} else if (e.target.classList.contains('pkg-hold-btn')) {
+					holdPackage(name, cell);
 				}
 			}
 		});
@@ -2271,14 +2284,23 @@ function _applyPkgViewFilter(value, allData) {
 	if (!installedPkgTable) return;
 
 	if (value === 'updates') {
-		installedPkgTable.setFilter('update_available', '=', true);
+		// Active updates: upgradable AND not held. "Hold" is an explicit operator
+		// opt-out from upgrade, so held rows do not belong in the updates view.
+		installedPkgTable.setFilter([
+			{ field: 'update_available', type: '=', value: true },
+			{ field: 'is_held', type: '=', value: false },
+		]);
+	} else if (value === 'held') {
+		installedPkgTable.setFilter('is_held', '=', true);
 	} else {
 		installedPkgTable.clearFilter();
 	}
 
-	// Count packages with updates
-	const updateCount = allData.filter(p => p.update_available).length;
-	const securityCount = allData.filter(p => p.is_security_update).length;
+	// Count packages excluding held ones — held packages are intentionally
+	// excluded from the upgrade plan, so "Update All (N)" should reflect only
+	// what would actually be upgraded.
+	const updateCount = allData.filter(p => p.update_available && !p.is_held).length;
+	const securityCount = allData.filter(p => p.is_security_update && !p.is_held).length;
 
 	// Show/hide Update All button
 	const updateAllBtn = document.getElementById('pkg-update-all-btn');
@@ -2362,6 +2384,44 @@ function removeInstalledPackageTabulator(cell, name) {
 
 // ── Package Hold / Unhold ─────────────────────────────────────────────────────
 
+async function holdPackage(name, cell) {
+	showConfirmModal({
+		title: 'Hold Package',
+		message: 'Hold ' + name + '? This prevents apt from upgrading it until the hold is removed.',
+		type: 'warning',
+		confirmText: 'Hold',
+		onConfirm: async () => {
+			try {
+				const resp = await fetch('/api/os-updates/packages/hold?server=' + currentServerID, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ name: name })
+				});
+				if (!resp.ok) {
+					const errMsg = await extractErrorMessage(resp);
+					throw new Error(errMsg);
+				}
+				showToast(name + ' is now held', 'success');
+				// Flip is_held in place so the row re-renders into the held filter.
+				if (cell) {
+					const row = cell.getRow();
+					const data = row.getData();
+					data.is_held = true;
+					row.update(data);
+					// Re-apply the active filter so the row moves between tabs
+					// without requiring a manual switch.
+					const filterSelect = document.getElementById('pkg-view-filter');
+					if (filterSelect) {
+						_applyPkgViewFilter(filterSelect.value, installedPkgTable.getData());
+					}
+				}
+			} catch (err) {
+				showToast('Failed to hold package: ' + err.message, 'error');
+			}
+		}
+	});
+}
+
 async function unholdPackage(name, cell) {
 	showConfirmModal({
 		title: 'Remove Hold',
@@ -2380,12 +2440,17 @@ async function unholdPackage(name, cell) {
 					throw new Error(errMsg);
 				}
 				showToast(name + ' hold removed', 'success');
-				// Update the row data in-place
+				// Update the row data in-place and reapply the active filter so
+				// the row moves out of the "Held" tab when viewing it.
 				if (cell) {
 					const row = cell.getRow();
 					const data = row.getData();
 					data.is_held = false;
 					row.update(data);
+					const filterSelect = document.getElementById('pkg-view-filter');
+					if (filterSelect) {
+						_applyPkgViewFilter(filterSelect.value, installedPkgTable.getData());
+					}
 				}
 			} catch (err) {
 				showToast('Failed to remove hold: ' + err.message, 'error');
