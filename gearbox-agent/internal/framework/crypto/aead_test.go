@@ -246,7 +246,7 @@ func TestLoadOrCreateSecret_AutoMigratesPlaintext(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "secret")
 
 	// Write a valid plaintext secret.
-	plainSecret := "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+	plainSecret := "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789" //gitleaks:allow — deterministic test fixture
 	if err := os.WriteFile(path, []byte(plainSecret), 0600); err != nil {
 		t.Fatalf("write plaintext: %v", err)
 	}
@@ -352,7 +352,7 @@ func TestReadSecret_Missing(t *testing.T) {
 func TestWriteAPIKey_EncryptsWhenKeySet(t *testing.T) {
 	withProvider(t, &staticKeyProvider{key: validTestKey()})
 	path := filepath.Join(t.TempDir(), "api-key")
-	apiKey := "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+	apiKey := "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890" //gitleaks:allow — deterministic test fixture
 
 	if err := WriteAPIKey(path, apiKey); err != nil {
 		t.Fatalf("WriteAPIKey error: %v", err)
@@ -375,7 +375,7 @@ func TestWriteAPIKey_EncryptsWhenKeySet(t *testing.T) {
 func TestWriteAPIKey_PlaintextWhenNoKey(t *testing.T) {
 	withProvider(t, &staticKeyProvider{key: nil})
 	path := filepath.Join(t.TempDir(), "api-key")
-	apiKey := "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+	apiKey := "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890" //gitleaks:allow — deterministic test fixture
 
 	if err := WriteAPIKey(path, apiKey); err != nil {
 		t.Fatalf("WriteAPIKey error: %v", err)
