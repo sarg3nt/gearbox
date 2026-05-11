@@ -92,6 +92,16 @@ func main() {
 		Level: logLevel,
 	}))
 
+	// Warn once at startup if secret-file encryption is not configured.
+	if ok, err := crypto.EncryptionConfigured(); err != nil {
+		fmt.Fprintf(os.Stderr, "Encryption key configuration error: %v\n", err)
+		os.Exit(1)
+	} else if !ok {
+		logger.Warn("Secret files are stored in plaintext. " +
+			"Set GEARBOX_AGENT_ENCRYPTION_KEY (64 hex chars, see 'openssl rand -hex 32') " +
+			"to enable AES-256-GCM encryption-at-rest.")
+	}
+
 	// Handle API key commands
 	if *showAPIKey {
 		key, err := crypto.ReadAPIKey(cfg.APIKeyPath)
@@ -109,7 +119,7 @@ func main() {
 			logger.Error("Failed to generate API key", "error", err)
 			os.Exit(1)
 		}
-		if err := os.WriteFile(cfg.APIKeyPath, []byte(key), crypto.APIKeyFilePerms); err != nil {
+		if err := crypto.WriteAPIKey(cfg.APIKeyPath, key); err != nil {
 			logger.Error("Failed to write API key", "error", err)
 			os.Exit(1)
 		}
