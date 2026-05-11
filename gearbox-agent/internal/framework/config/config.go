@@ -159,7 +159,7 @@ func Load() (*Config, error) {
 	cfg.CertbotTimer = os.Getenv("HAPROXY_CERTBOT_TIMER")
 
 	// Swagger UI off by default; opt in for dev / API debugging.
-	cfg.SwaggerEnabled = os.Getenv("GEARBOX_AGENT_SWAGGER_ENABLED") == "true"
+	cfg.SwaggerEnabled = os.Getenv("HAPROXY_AGENT_SWAGGER_ENABLED") == "true"
 
 	return cfg, nil
 }

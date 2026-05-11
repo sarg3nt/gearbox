@@ -95,8 +95,8 @@ func NewServer(cfg ServerConfig) *Server {
 	// Swagger UI (no auth required) — only served when explicitly enabled.
 	// In production, leaving this on lets unauthenticated callers enumerate
 	// every endpoint + schema, which is a fingerprinting aid for attackers
-	// (2026-05 security audit P3-2). Set SWAGGER_ENABLED=true at deploy
-	// time when debugging an API contract; default off.
+	// (2026-05 security audit P3-2). Set HAPROXY_AGENT_SWAGGER_ENABLED=true
+	// at deploy time when debugging an API contract; default off.
 	if cfg.SwaggerEnabled {
 		r.Get("/swagger", httpSwagger.Handler(httpSwagger.URL("/swagger/doc.json")))
 		r.Get("/swagger/*", httpSwagger.Handler(httpSwagger.URL("/swagger/doc.json")))
