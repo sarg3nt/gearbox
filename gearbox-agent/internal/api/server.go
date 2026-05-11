@@ -5,6 +5,7 @@ package api
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -69,7 +70,7 @@ type ServerConfig struct {
 // NewServer creates a new API server.
 func NewServer(cfg ServerConfig) *Server {
 	// Create handlers
-	handlers := NewHandlers(cfg.MetadataProvider, cfg.Version)
+	handlers := NewHandlers(cfg.MetadataProvider)
 
 	// Create chi router
 	r := chi.NewRouter()
@@ -157,6 +158,16 @@ func NewServer(cfg ServerConfig) *Server {
 			ReadTimeout:  15 * time.Second,
 			WriteTimeout: 15 * time.Second,
 			IdleTimeout:  60 * time.Second,
+			// Explicit TLS 1.3 floor. Go's default minimum is TLS 1.2 (still
+			// negotiable by misconfigured or older clients); both ends of the
+			// agent <-> dashboard channel are controlled by us, so we have
+			// no reason to leave TLS 1.2 reachable. Pinning to 1.3 shrinks
+			// the negotiation attack surface (no downgrade, fewer cipher
+			// suites, AEAD-only, forward secrecy guaranteed). See 2026-05
+			// security audit P2-7.
+			TLSConfig: &tls.Config{
+				MinVersion: tls.VersionTLS13,
+			},
 		},
 		router:   r,
 		logger:   cfg.Logger,
