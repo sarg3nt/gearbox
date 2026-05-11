@@ -2,6 +2,7 @@ package auth
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
 	"log/slog"
@@ -278,7 +279,13 @@ func (m *Manager) ValidateCSRFToken(r *http.Request) error {
 		return fmt.Errorf("no CSRF token in request")
 	}
 
-	if requestToken != sessionToken {
+	// Constant-time compare so that a network observer can't recover the
+	// session-bound CSRF token byte by byte from response-timing variance.
+	// The values are both 256-bit randoms generated via crypto/rand, so the
+	// practical risk on a non-pathological network was always low — but
+	// every other secret comparison in this codebase uses subtle, and CSRF
+	// should match (2026-05 audit P2-1).
+	if subtle.ConstantTimeCompare([]byte(requestToken), []byte(sessionToken)) != 1 {
 		return fmt.Errorf("CSRF token mismatch")
 	}
 
