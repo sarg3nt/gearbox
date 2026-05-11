@@ -4,11 +4,11 @@ import (
 	"fmt"
 )
 
-// LogSourceSetting represents an enabled log source for a HAProxy server.
+// LogSourceSetting represents an enabled log source for a monitored box.
 type LogSourceSetting struct {
-	ID         int64
-	HAProxyID  int64  // FK to haproxy_servers.id
-	LogName    string // e.g., "haproxy", "system", "fail2ban"
+	ID          int64
+	HAProxyID   int64  // FK to boxes.id (field name retained for legacy callers)
+	LogName     string // e.g., "haproxy", "system", "fail2ban"
 	DisplayName string // User-friendly display name
 }
 
@@ -19,9 +19,9 @@ func (d *DB) GetEnabledLogSources(haproxyID int64) ([]LogSourceSetting, error) {
 	defer d.mu.RUnlock()
 
 	query := `
-		SELECT id, haproxy_server_id, log_name, display_name
+		SELECT id, box_id, log_name, display_name
 		FROM log_source_settings
-		WHERE haproxy_server_id = ?
+		WHERE box_id = ?
 		ORDER BY display_name ASC
 	`
 
@@ -49,13 +49,12 @@ func (d *DB) GetEnabledLogSourcesByServerID(serverID string) ([]LogSourceSetting
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	// INNER JOIN ensures only servers with HAProxy entries return log sources.
-	// Servers without HAProxy configuration will naturally get zero rows.
+	// INNER JOIN to boxes ensures the box exists; zero rows if it doesn't or has no log sources.
 	query := `
-		SELECT ls.id, ls.haproxy_server_id, ls.log_name, ls.display_name
+		SELECT ls.id, ls.box_id, ls.log_name, ls.display_name
 		FROM log_source_settings ls
-		JOIN haproxy_servers hs ON ls.haproxy_server_id = hs.id
-		WHERE hs.server_id = ?
+		JOIN boxes b ON ls.box_id = b.id
+		WHERE b.box_id = ?
 		ORDER BY ls.display_name ASC
 	`
 
@@ -85,7 +84,7 @@ func (d *DB) HasLogSourceSettings(haproxyID int64) (bool, error) {
 
 	var count int
 	err := d.db.QueryRow(
-		"SELECT COUNT(*) FROM log_source_settings WHERE haproxy_server_id = ?",
+		"SELECT COUNT(*) FROM log_source_settings WHERE box_id = ?",
 		haproxyID,
 	).Scan(&count)
 	if err != nil {
@@ -100,9 +99,9 @@ func (d *DB) SetEnabledLogSourcesByServerID(serverID string, sources []LogSource
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	// First, get the haproxy_server.id for this server_id
+	// First, look up the boxes.id row for this box_id string.
 	var haproxyID int64
-	err := d.db.QueryRow("SELECT id FROM haproxy_servers WHERE server_id = ?", serverID).Scan(&haproxyID)
+	err := d.db.QueryRow("SELECT id FROM boxes WHERE box_id = ?", serverID).Scan(&haproxyID)
 	if err != nil {
 		return fmt.Errorf("failed to find server with ID %s: %w", serverID, err)
 	}
@@ -114,14 +113,14 @@ func (d *DB) SetEnabledLogSourcesByServerID(serverID string, sources []LogSource
 	defer func() { _ = tx.Rollback() }()
 
 	// Delete existing settings
-	if _, err := tx.Exec("DELETE FROM log_source_settings WHERE haproxy_server_id = ?", haproxyID); err != nil {
+	if _, err := tx.Exec("DELETE FROM log_source_settings WHERE box_id = ?", haproxyID); err != nil {
 		return fmt.Errorf("failed to delete existing settings: %w", err)
 	}
 
 	// Insert new settings
 	if len(sources) > 0 {
 		stmt, err := tx.Prepare(`
-			INSERT INTO log_source_settings (haproxy_server_id, log_name, display_name)
+			INSERT INTO log_source_settings (box_id, log_name, display_name)
 			VALUES (?, ?, ?)
 		`)
 		if err != nil {
@@ -158,14 +157,14 @@ func (d *DB) SetEnabledLogSources(haproxyID int64, sources []LogSourceSetting) e
 	defer func() { _ = tx.Rollback() }()
 
 	// Delete existing settings
-	if _, err := tx.Exec("DELETE FROM log_source_settings WHERE haproxy_server_id = ?", haproxyID); err != nil {
+	if _, err := tx.Exec("DELETE FROM log_source_settings WHERE box_id = ?", haproxyID); err != nil {
 		return fmt.Errorf("failed to delete existing settings: %w", err)
 	}
 
 	// Insert new settings
 	if len(sources) > 0 {
 		stmt, err := tx.Prepare(`
-			INSERT INTO log_source_settings (haproxy_server_id, log_name, display_name)
+			INSERT INTO log_source_settings (box_id, log_name, display_name)
 			VALUES (?, ?, ?)
 		`)
 		if err != nil {
@@ -189,7 +188,7 @@ func (d *DB) AddLogSource(haproxyID int64, logName, displayName string) error {
 	defer d.mu.Unlock()
 
 	_, err := d.db.Exec(`
-		INSERT OR IGNORE INTO log_source_settings (haproxy_server_id, log_name, display_name)
+		INSERT OR IGNORE INTO log_source_settings (box_id, log_name, display_name)
 		VALUES (?, ?, ?)
 	`, haproxyID, logName, displayName)
 	if err != nil {
@@ -206,7 +205,7 @@ func (d *DB) RemoveLogSource(haproxyID int64, logName string) error {
 
 	_, err := d.db.Exec(`
 		DELETE FROM log_source_settings
-		WHERE haproxy_server_id = ? AND log_name = ?
+		WHERE box_id = ? AND log_name = ?
 	`, haproxyID, logName)
 	if err != nil {
 		return fmt.Errorf("failed to remove log source: %w", err)
