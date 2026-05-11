@@ -73,9 +73,21 @@ func (m *Manager) Login(w http.ResponseWriter, r *http.Request, email, password 
 		return nil, fmt.Errorf("invalid credentials")
 	}
 
-	// Check if account is locked
+	// Check if account is locked. Return the SAME generic error as the
+	// "user not found" and "wrong password" paths so an attacker can't
+	// distinguish "this email is locked" (which implies it exists) from
+	// "this email doesn't exist" via the error message. The lockout itself
+	// is still enforced — the attacker just doesn't learn it from the
+	// response. See 2026-05 audit P2-4.
 	if user.IsLocked() {
-		return nil, fmt.Errorf("account is temporarily locked due to too many failed attempts")
+		// Record the attempt (counts against the window) so an attacker
+		// can't bypass the rate limit by repeatedly probing a locked
+		// account with no cost.
+		if err := m.db.RecordLoginAttempt(user.ID, false); err != nil {
+			m.logger.Error("failed to record locked-attempt", "error", err, "user_id", user.ID)
+		}
+		m.logAudit(r, &user.ID, models.AuditActionLoginFailed, "")
+		return nil, fmt.Errorf("invalid credentials")
 	}
 
 	// Check if account is active

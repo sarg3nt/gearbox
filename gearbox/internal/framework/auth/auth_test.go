@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -264,5 +265,141 @@ func TestGenerateToken(t *testing.T) {
 	// Verify token is base64 encoded (should not contain invalid characters)
 	if len(token1) < 40 {
 		t.Errorf("Token seems too short: %d characters", len(token1))
+	}
+}
+
+// 2026-05 audit P2-4: failed-attempt count resets when the previous
+// failure was outside the sliding window.
+func TestRecordLoginAttempt_WindowReset(t *testing.T) {
+	manager, db, cleanup := setupTestManager(t)
+	defer cleanup()
+	_ = manager // we only need the DB; manager.db is the same instance
+
+	passwordHash, err := HashPassword("correct_password")
+	if err != nil {
+		t.Fatalf("HashPassword: %v", err)
+	}
+	if _, _, err := db.EnsureAdminExists(passwordHash, false); err != nil {
+		t.Fatalf("EnsureAdminExists: %v", err)
+	}
+	user, err := db.GetUserByEmail("admin")
+	if err != nil || user == nil {
+		t.Fatalf("GetUserByEmail: %v", err)
+	}
+
+	// 2 fresh failures: count = 2, no cooldown yet.
+	for i := 0; i < 2; i++ {
+		if err := db.RecordLoginAttempt(user.ID, false); err != nil {
+			t.Fatalf("RecordLoginAttempt[%d]: %v", i, err)
+		}
+	}
+	u, _ := db.GetUserByID(user.ID)
+	if u.FailedLoginAttempts != 2 {
+		t.Errorf("after 2 failures: FailedLoginAttempts = %d, want 2", u.FailedLoginAttempts)
+	}
+	if u.IsLocked() {
+		t.Errorf("after 2 failures: IsLocked = true; want false (below threshold)")
+	}
+
+	// Rewind last_failed_attempt to >5min ago via direct DB update — the
+	// next failure should reset count to 1, not increment to 3.
+	if _, err := db.GetDB().Exec(
+		`UPDATE users SET last_failed_attempt = datetime('now', '-10 minutes') WHERE id = ?`, user.ID,
+	); err != nil {
+		t.Fatalf("rewind last_failed_attempt: %v", err)
+	}
+
+	if err := db.RecordLoginAttempt(user.ID, false); err != nil {
+		t.Fatalf("RecordLoginAttempt after rewind: %v", err)
+	}
+	u, _ = db.GetUserByID(user.ID)
+	if u.FailedLoginAttempts != 1 {
+		t.Errorf("after window-reset: FailedLoginAttempts = %d, want 1 (count restarted)", u.FailedLoginAttempts)
+	}
+}
+
+// Cooldown tiers: count=3 → 1m cooldown, count=4 → 5m, count=5+ → 15m.
+func TestRecordLoginAttempt_TieredCooldown(t *testing.T) {
+	manager, db, cleanup := setupTestManager(t)
+	defer cleanup()
+	_ = manager
+
+	passwordHash, _ := HashPassword("correct_password")
+	if _, _, err := db.EnsureAdminExists(passwordHash, false); err != nil {
+		t.Fatalf("EnsureAdminExists: %v", err)
+	}
+	user, _ := db.GetUserByEmail("admin")
+
+	// 2 failures: still no cooldown.
+	for i := 0; i < 2; i++ {
+		_ = db.RecordLoginAttempt(user.ID, false)
+	}
+	u, _ := db.GetUserByID(user.ID)
+	if u.LockedUntil != nil {
+		t.Errorf("after 2 failures: LockedUntil set; want nil")
+	}
+
+	// 3rd: ~1 minute cooldown.
+	_ = db.RecordLoginAttempt(user.ID, false)
+	u, _ = db.GetUserByID(user.ID)
+	if u.LockedUntil == nil {
+		t.Fatalf("after 3 failures: LockedUntil nil; want ~1min")
+	}
+	if d := time.Until(*u.LockedUntil); d < 50*time.Second || d > 70*time.Second {
+		t.Errorf("after 3 failures: LockedUntil in %v, want ~60s", d)
+	}
+
+	// 4th: ~5 minute cooldown.
+	_ = db.RecordLoginAttempt(user.ID, false)
+	u, _ = db.GetUserByID(user.ID)
+	if d := time.Until(*u.LockedUntil); d < 4*time.Minute+50*time.Second || d > 5*time.Minute+10*time.Second {
+		t.Errorf("after 4 failures: LockedUntil in %v, want ~5min", d)
+	}
+
+	// 5th: hard 15-minute lockout (existing behavior).
+	_ = db.RecordLoginAttempt(user.ID, false)
+	u, _ = db.GetUserByID(user.ID)
+	if d := time.Until(*u.LockedUntil); d < 14*time.Minute+50*time.Second || d > 15*time.Minute+10*time.Second {
+		t.Errorf("after 5 failures: LockedUntil in %v, want ~15min", d)
+	}
+}
+
+// The Login() flow returns the SAME generic error for a locked account as
+// for a wrong-password or missing-user — preventing email enumeration via
+// error-message variance.
+func TestManager_Login_LockedAccountReturnsGenericError(t *testing.T) {
+	manager, db, cleanup := setupTestManager(t)
+	defer cleanup()
+
+	passwordHash, _ := HashPassword("correct_password")
+	if _, _, err := db.EnsureAdminExists(passwordHash, false); err != nil {
+		t.Fatalf("EnsureAdminExists: %v", err)
+	}
+	user, _ := db.GetUserByEmail("admin")
+
+	// Lock the account by hitting the cooldown threshold.
+	for i := 0; i < 5; i++ {
+		_ = db.RecordLoginAttempt(user.ID, false)
+	}
+	u, _ := db.GetUserByID(user.ID)
+	if !u.IsLocked() {
+		t.Fatalf("expected account to be locked after 5 failures")
+	}
+
+	// Now try to log in — even with the CORRECT password, we should get
+	// the generic "invalid credentials" error, not "account locked".
+	req := httptest.NewRequest("GET", "/login", nil)
+	w := httptest.NewRecorder()
+	_, err := manager.Login(w, req, "admin", "correct_password")
+	if err == nil {
+		t.Fatal("expected error for locked account; got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid credentials") {
+		t.Errorf("locked-account error = %q, want to contain 'invalid credentials' (generic). "+
+			"Leaking lockout state lets attackers enumerate valid emails.", err.Error())
+	}
+	if strings.Contains(strings.ToLower(err.Error()), "lock") {
+		t.Errorf("locked-account error mentions 'lock': %q. This is an enumeration aid; "+
+			"must be the same generic error as wrong-password.", err.Error())
 	}
 }

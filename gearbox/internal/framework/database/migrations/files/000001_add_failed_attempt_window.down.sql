@@ -1,0 +1,7 @@
+-- SQLite < 3.35 cannot DROP COLUMN. The newer in-place DROP support is
+-- available, but we'd need to verify the runtime version. For a roll-back
+-- the column can be left in place — it's only populated by
+-- RecordLoginAttempt and is harmless if unused.
+--
+-- If a full drop is required, recreate the table via the standard SQLite
+-- recipe (CREATE new, copy, drop, rename) manually.
