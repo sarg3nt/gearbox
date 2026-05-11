@@ -2,9 +2,71 @@ package middleware
 
 import (
 	"net/http"
+	"net/url"
 	"os"
+	"regexp"
 	"strings"
 )
+
+// validCSPDirective matches a single CSP directive line in the shape the
+// directives slice expects: a directive name followed by one or more source
+// expressions, with no semicolons (which would close the directive and let
+// the env-var splice arbitrary new directives into the CSP header).
+//
+// CSP directive names are letters, digits, and hyphens. Source expressions
+// can be 'self' / 'none' / 'unsafe-inline' / nonce-... / sha256-... / scheme
+// URLs / wildcards / data: / blob: — i.e. printable ASCII without ; or ,
+// or newline. We keep the validator deliberately conservative: only
+// alphanumerics, a small punctuation set, and quoted keywords.
+//
+// 2026-05 audit P1-4.
+var validCSPDirective = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9-]+(\s+[a-zA-Z0-9'_:/.\-*]+)+$`)
+
+// sanitizeCSPExtraSource accepts a single entry from the
+// CSP_EXTRA_SOURCES comma-separated env var and returns the trimmed
+// value plus an OK flag. Rejects values containing characters that
+// would let an attacker close the current directive and inject a new
+// one (`;`), inject CRLF into the header (`\r`, `\n`), or that don't
+// look like a valid `directive source [source...]` line.
+func sanitizeCSPExtraSource(s string) (string, bool) {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return "", false
+	}
+	if strings.ContainsAny(trimmed, ";\r\n\t") {
+		return "", false
+	}
+	if !validCSPDirective.MatchString(trimmed) {
+		return "", false
+	}
+	return trimmed, true
+}
+
+// sanitizeCSPReportURI validates the CSP_REPORT_URI env var. Accepts an
+// http(s):// URL; rejects relative paths (would silently fall through to
+// the dashboard's own origin), schemed URIs other than http(s) (no
+// `javascript:` or `data:`), and anything with embedded whitespace or
+// newlines (CRLF injection into the response header).
+func sanitizeCSPReportURI(s string) (string, bool) {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return "", false
+	}
+	if strings.ContainsAny(trimmed, " \t\r\n;") {
+		return "", false
+	}
+	u, err := url.Parse(trimmed)
+	if err != nil || u == nil {
+		return "", false
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", false
+	}
+	if u.Host == "" {
+		return "", false
+	}
+	return trimmed, true
+}
 
 // SecurityHeaders adds security-related HTTP headers to responses.
 // Implements defense-in-depth security controls including:
@@ -84,22 +146,25 @@ func buildCSP() string {
 		}
 	}
 
-	// Add extra sources from environment variable if configured
+	// Add extra sources from environment variable if configured.
+	// Each comma-separated entry is required to be a well-formed CSP
+	// directive line; entries that look like injection attempts (embedded
+	// `;`, CRLF, etc.) are silently dropped so a compromised deployment
+	// env can't neutralize the CSP. See 2026-05 security audit P1-4.
 	extraSources := os.Getenv("CSP_EXTRA_SOURCES")
 	if extraSources != "" {
-		sources := strings.Split(extraSources, ",")
-		for _, source := range sources {
-			source = strings.TrimSpace(source)
-			if source != "" {
-				directives = append(directives, source)
+		for _, source := range strings.Split(extraSources, ",") {
+			if clean, ok := sanitizeCSPExtraSource(source); ok {
+				directives = append(directives, clean)
 			}
 		}
 	}
 
-	// Add report-uri if configured
-	reportURI := os.Getenv("CSP_REPORT_URI")
-	if reportURI != "" {
-		directives = append(directives, "report-uri "+reportURI)
+	// Add report-uri if configured. The URI is required to be an absolute
+	// http(s) URL; anything else (including relative paths, `javascript:`,
+	// or values with embedded whitespace) is dropped.
+	if uri, ok := sanitizeCSPReportURI(os.Getenv("CSP_REPORT_URI")); ok {
+		directives = append(directives, "report-uri "+uri)
 	}
 
 	return strings.Join(directives, "; ")
