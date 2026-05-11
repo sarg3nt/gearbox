@@ -23,6 +23,22 @@ const (
 	LockoutDuration    = 15 * time.Minute
 )
 
+// dummyPasswordHash is a bcrypt hash used to keep the Login() codepath
+// taking constant bcrypt time even when the user does not exist. Without
+// it, "user missing" returns in microseconds while "user exists + wrong
+// password" runs a ~100ms bcrypt compare — an obvious timing oracle for
+// account enumeration. Generated once at package init; the underlying
+// plaintext is never used. See 2026-05 audit P2-4 follow-up.
+var dummyPasswordHash string
+
+func init() {
+	h, err := HashPassword("timing-equivalence-dummy-not-a-real-password")
+	if err != nil {
+		panic(fmt.Sprintf("auth init: failed to generate dummy password hash: %v", err))
+	}
+	dummyPasswordHash = h
+}
+
 // Manager handles authentication and session management.
 type Manager struct {
 	db           *database.DB
@@ -68,6 +84,17 @@ func (m *Manager) Login(w http.ResponseWriter, r *http.Request, email, password 
 		return nil, fmt.Errorf("database error: %w", err)
 	}
 
+	// Run CheckPassword exactly once on every Login call regardless of
+	// user state. Without this, "user missing" and "account locked" return
+	// in microseconds while "exists + wrong password" runs a ~100ms bcrypt
+	// compare — a timing oracle that defeats the generic error message.
+	// See 2026-05 audit P2-4 follow-up.
+	passwordHash := dummyPasswordHash
+	if user != nil {
+		passwordHash = user.PasswordHash
+	}
+	passwordOK := CheckPassword(password, passwordHash)
+
 	if user == nil {
 		// Don't reveal that the user doesn't exist
 		return nil, fmt.Errorf("invalid credentials")
@@ -98,8 +125,8 @@ func (m *Manager) Login(w http.ResponseWriter, r *http.Request, email, password 
 		return nil, fmt.Errorf("account is disabled")
 	}
 
-	// Validate password
-	if !CheckPassword(password, user.PasswordHash) {
+	// Validate password (result computed above for constant-time path)
+	if !passwordOK {
 		// Record failed attempt
 		if err := m.db.RecordLoginAttempt(user.ID, false); err != nil {
 			m.logger.Error("failed to record login attempt", "error", err, "user_id", user.ID)

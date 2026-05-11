@@ -1,7 +1,13 @@
--- SQLite < 3.35 cannot DROP COLUMN. The newer in-place DROP support is
--- available, but we'd need to verify the runtime version. For a roll-back
--- the column can be left in place — it's only populated by
--- RecordLoginAttempt and is harmless if unused.
+-- INTENTIONAL FAILURE: this migration has no safe automatic rollback.
 --
--- If a full drop is required, recreate the table via the standard SQLite
--- recipe (CREATE new, copy, drop, rename) manually.
+-- SQLite < 3.35 cannot DROP COLUMN at all. Newer SQLite versions can, but
+-- we don't gate on runtime version, and the standard fallback (rebuild
+-- the table) is risky for the users table mid-deploy. Letting this run
+-- as a no-op would decrement the golang-migrate schema version while
+-- last_failed_attempt remained — a confusing/unsafe rollback state that
+-- silently desyncs application code from the database.
+--
+-- If you genuinely need to roll this back, drop the column manually using
+-- the table-rebuild recipe (CREATE new, copy, drop, rename) and then
+-- update the schema_migrations table by hand.
+INSERT INTO _down_migration_000001_not_supported_run_manually VALUES (1);

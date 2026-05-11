@@ -519,13 +519,18 @@ func (d *DB) RecordLoginAttempt(userID string, success bool) error {
 
 	// Failed attempt — sliding-window increment.
 	// Read current state under the same mutex so we can decide whether to
-	// reset or increment.
+	// reset or increment. Also read locked_until so we don't clear a
+	// still-active lockout when the sliding window resets the count
+	// (the 15-min hard lock outlives the 5-min failure window, so an
+	// attacker could otherwise "wait out" the window mid-lockout and
+	// have the next failure reset locked_until to NULL).
 	var prevAttempts int
 	var prevLastFailed *time.Time
+	var prevLockedUntil *time.Time
 	err := d.db.QueryRow(
-		`SELECT failed_login_attempts, last_failed_attempt FROM users WHERE id = ?`,
+		`SELECT failed_login_attempts, last_failed_attempt, locked_until FROM users WHERE id = ?`,
 		userID,
-	).Scan(&prevAttempts, &prevLastFailed)
+	).Scan(&prevAttempts, &prevLastFailed, &prevLockedUntil)
 	if err != nil {
 		return fmt.Errorf("read attempt state: %w", err)
 	}
@@ -551,6 +556,15 @@ func (d *DB) RecordLoginAttempt(userID string, success bool) error {
 	case newCount == 3:
 		t := now.Add(1 * time.Minute)
 		lockedUntil = &t
+	}
+
+	// Preserve a still-active lockout — never shorten or clear it via a
+	// late, lower-tier failure. We keep whichever of (existing, newly
+	// computed) is later.
+	if prevLockedUntil != nil && prevLockedUntil.After(now) {
+		if lockedUntil == nil || prevLockedUntil.After(*lockedUntil) {
+			lockedUntil = prevLockedUntil
+		}
 	}
 
 	_, err = d.db.Exec(`
