@@ -17,9 +17,14 @@ var magic = [4]byte{'G', 'B', 'E', '1'}
 
 // ErrKeyRequired is returned when an encrypted file is found but no encryption key
 // has been configured. Key loss means rotation — there is no recovery path.
+//
+// Recovery: set GEARBOX_AGENT_ENCRYPTION_KEY to the correct value to decrypt;
+// or delete the file and re-generate (--rotate-api-key for the API key,
+// --generate-webhook-secret for the webhook secret — note the latter does
+// NOT overwrite an existing file, so you must rm it first).
 var ErrKeyRequired = errors.New(
 	"secret file is encrypted (GBE1) but GEARBOX_AGENT_ENCRYPTION_KEY is not set; " +
-		"set the key to decrypt, or rotate the secret (--rotate-api-key / --generate-webhook-secret)",
+		"set the key to decrypt, or delete the file and re-generate the secret",
 )
 
 // KeyProvider supplies the 32-byte AES-256 key used to protect on-disk secrets.
@@ -33,7 +38,8 @@ type KeyProvider interface {
 }
 
 // EnvKeyProvider reads the encryption key from an environment variable.
-// The variable must contain exactly 64 lowercase hex characters (32 bytes / 256 bits).
+// The variable must contain exactly 64 hex characters (32 bytes / 256 bits);
+// both upper- and lower-case hex are accepted.
 // Generate a suitable value with: openssl rand -hex 32
 type EnvKeyProvider struct {
 	EnvVar string // environment variable name; default "GEARBOX_AGENT_ENCRYPTION_KEY"

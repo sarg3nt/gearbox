@@ -92,14 +92,12 @@ func main() {
 		Level: logLevel,
 	}))
 
-	// Warn once at startup if secret-file encryption is not configured.
-	if ok, err := crypto.EncryptionConfigured(); err != nil {
+	// Hard-fail early if GEARBOX_AGENT_ENCRYPTION_KEY is set but malformed,
+	// regardless of which subcommand we're about to run — one-shot CLI
+	// commands like --show-api-key need a usable key too.
+	if _, err := crypto.EncryptionConfigured(); err != nil {
 		fmt.Fprintf(os.Stderr, "Encryption key configuration error: %v\n", err)
 		os.Exit(1)
-	} else if !ok {
-		logger.Warn("Secret files are stored in plaintext. " +
-			"Set GEARBOX_AGENT_ENCRYPTION_KEY (64 hex chars, see 'openssl rand -hex 32') " +
-			"to enable AES-256-GCM encryption-at-rest.")
 	}
 
 	// Handle API key commands
@@ -178,6 +176,15 @@ func main() {
 		"commit", CommitSHA,
 		"built", BuildDate,
 	)
+
+	// Warn once at startup if secret-file encryption is not configured.
+	// Placed after one-shot flag handlers so it doesn't pollute their
+	// stdout output (e.g. --show-api-key piped to a clipboard tool).
+	if ok, _ := crypto.EncryptionConfigured(); !ok {
+		logger.Warn("Secret files are stored in plaintext. " +
+			"Set GEARBOX_AGENT_ENCRYPTION_KEY (64 hex chars, see 'openssl rand -hex 32') " +
+			"to enable AES-256-GCM encryption-at-rest.")
+	}
 
 	// Load or create API key
 	apiKey, isNewKey, err := crypto.LoadOrCreateAPIKey(cfg.APIKeyPath)
