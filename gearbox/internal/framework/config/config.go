@@ -32,6 +32,7 @@ var secretEnvVars = map[string]bool{
 func Load() (*models.AppConfig, error) {
 	cfg := &models.AppConfig{
 		SessionTimeoutMinutes:   60,
+		SessionAbsoluteHours:    24, // hard TTL; 0 disables (see 2026-05 audit P2-3)
 		DashboardRefreshSeconds: 30,
 		ConfigRefreshSeconds:    60,
 		HTTPPort:                "3000",
@@ -92,6 +93,17 @@ func Load() (*models.AppConfig, error) {
 			return nil, fmt.Errorf("invalid SESSION_TIMEOUT_MINUTES: %w", err)
 		}
 		cfg.SessionTimeoutMinutes = timeout
+	}
+
+	if val := os.Getenv("SESSION_ABSOLUTE_HOURS"); val != "" {
+		hours, err := strconv.Atoi(val)
+		if err != nil {
+			return nil, fmt.Errorf("invalid SESSION_ABSOLUTE_HOURS: %w", err)
+		}
+		if hours < 0 {
+			return nil, fmt.Errorf("SESSION_ABSOLUTE_HOURS must be >= 0 (0 disables the hard TTL)")
+		}
+		cfg.SessionAbsoluteHours = hours
 	}
 
 	if val := os.Getenv("DASHBOARD_REFRESH_SECONDS"); val != "" {

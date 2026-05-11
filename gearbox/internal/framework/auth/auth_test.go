@@ -29,7 +29,10 @@ func setupTestManager(t *testing.T) (*Manager, *database.DB, func()) {
 	}
 
 	sessionSecret := "this_is_a_very_long_session_secret_key_for_testing_purposes"
-	manager, err := NewManager(db, sessionSecret, 24*time.Hour, logger)
+	// Tests use a sliding timeout of 24h and disable the absolute hard TTL
+	// (0). Individual tests that exercise the hard TTL construct their own
+	// Manager directly.
+	manager, err := NewManager(db, sessionSecret, 24*time.Hour, 0, logger)
 	if err != nil {
 		db.Close()
 		os.Remove(tmpFile.Name())
@@ -61,28 +64,45 @@ func TestNewManager(t *testing.T) {
 	defer db.Close()
 
 	tests := []struct {
-		name          string
-		sessionSecret string
-		timeout       time.Duration
-		wantErr       bool
+		name            string
+		sessionSecret   string
+		timeout         time.Duration
+		absoluteTimeout time.Duration
+		wantErr         bool
 	}{
 		{
-			name:          "valid config",
-			sessionSecret: "this_is_a_very_long_session_secret_key_for_testing_purposes",
-			timeout:       24 * time.Hour,
-			wantErr:       false,
+			name:            "valid config, no hard TTL",
+			sessionSecret:   "this_is_a_very_long_session_secret_key_for_testing_purposes",
+			timeout:         24 * time.Hour,
+			absoluteTimeout: 0,
+			wantErr:         false,
 		},
 		{
-			name:          "short session secret",
-			sessionSecret: "short",
-			timeout:       24 * time.Hour,
-			wantErr:       true,
+			name:            "valid config with hard TTL",
+			sessionSecret:   "this_is_a_very_long_session_secret_key_for_testing_purposes",
+			timeout:         1 * time.Hour,
+			absoluteTimeout: 24 * time.Hour,
+			wantErr:         false,
+		},
+		{
+			name:            "short session secret",
+			sessionSecret:   "short",
+			timeout:         24 * time.Hour,
+			absoluteTimeout: 0,
+			wantErr:         true,
+		},
+		{
+			name:            "absolute smaller than sliding rejected",
+			sessionSecret:   "this_is_a_very_long_session_secret_key_for_testing_purposes",
+			timeout:         24 * time.Hour,
+			absoluteTimeout: 1 * time.Hour,
+			wantErr:         true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			manager, err := NewManager(db, tt.sessionSecret, tt.timeout, logger)
+			manager, err := NewManager(db, tt.sessionSecret, tt.timeout, tt.absoluteTimeout, logger)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("NewManager() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -91,6 +111,69 @@ func TestNewManager(t *testing.T) {
 				t.Error("NewManager() returned nil manager without error")
 			}
 		})
+	}
+}
+
+// 2026-05 audit P2-3: a session that's been kept warm by activity must
+// still be expired once its absolute lifetime passes. This test mirrors
+// the existing TestManager_Login_Success pattern, then rewinds the
+// session-start timestamp in the cookie store and verifies that GetUser
+// rejects the request despite the sliding-window timestamp being fresh.
+func TestManager_GetUser_AbsoluteTimeout(t *testing.T) {
+	manager, db, cleanup := setupTestManager(t)
+	defer cleanup()
+	// Override timeouts after construction: a generous 24h sliding window
+	// but a 1-minute hard TTL. The sliding window never trips here, so a
+	// failure must be the hard TTL doing its job.
+	manager.timeout = 24 * time.Hour
+	manager.absoluteTimeout = 1 * time.Minute
+
+	passwordHash, err := HashPassword("correct_password")
+	if err != nil {
+		t.Fatalf("Failed to hash password: %v", err)
+	}
+	if _, _, err := db.EnsureAdminExists(passwordHash, false); err != nil {
+		t.Fatalf("Failed to create admin: %v", err)
+	}
+
+	// Log in and capture the session cookie.
+	loginReq := httptest.NewRequest("GET", "/login", nil)
+	loginResp := httptest.NewRecorder()
+	if _, err := manager.Login(loginResp, loginReq, "admin", "correct_password"); err != nil {
+		t.Fatalf("Login failed: %v", err)
+	}
+	if len(loginResp.Result().Cookies()) == 0 {
+		t.Fatal("Login produced no cookie")
+	}
+	cookie := loginResp.Result().Cookies()[0]
+
+	// Sanity: GetUser succeeds right after login.
+	check := httptest.NewRequest("GET", "/", nil)
+	check.AddCookie(cookie)
+	if _, err := manager.GetUser(check); err != nil {
+		t.Fatalf("GetUser right after login failed: %v", err)
+	}
+
+	// Rewind sessionStartKey to 2 minutes ago (past the 1-minute hard TTL)
+	// while keeping the sliding-window timestamp fresh.
+	rewind := httptest.NewRequest("GET", "/", nil)
+	rewind.AddCookie(cookie)
+	sess, err := manager.sessionStore.Get(rewind, sessionName)
+	if err != nil {
+		t.Fatalf("could not read session: %v", err)
+	}
+	sess.Values[sessionStartKey] = time.Now().Add(-2 * time.Minute).Unix()
+	sess.Values[sessionLoginKey] = time.Now().Unix()
+	rewindResp := httptest.NewRecorder()
+	if err := sess.Save(rewind, rewindResp); err != nil {
+		t.Fatalf("could not save rewound session: %v", err)
+	}
+	expired := rewindResp.Result().Cookies()[0]
+
+	expiredReq := httptest.NewRequest("GET", "/", nil)
+	expiredReq.AddCookie(expired)
+	if _, err := manager.GetUser(expiredReq); err == nil {
+		t.Errorf("GetUser returned no error past the absolute hard TTL; want an error")
 	}
 }
 
