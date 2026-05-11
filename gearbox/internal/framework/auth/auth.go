@@ -2,6 +2,7 @@ package auth
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
 	"log/slog"
@@ -18,6 +19,10 @@ const (
 	sessionUserIDKey   = "user_id"
 	sessionTokenKey    = "session_token" // OWASP 2026: Server-side session validation
 	sessionLoginKey    = "login_time"
+	// sessionStartKey is the absolute session start timestamp. Set ONCE at
+	// login and never touched by ExtendSession, so a heavily-used session
+	// can still hit the hard TTL. See 2026-05 audit P2-3.
+	sessionStartKey    = "session_start"
 	csrfTokenKey       = "csrf_token"
 	MaxFailedAttempts  = 5
 	LockoutDuration    = 15 * time.Minute
@@ -27,17 +32,30 @@ const (
 type Manager struct {
 	db           *database.DB
 	sessionStore *sessions.CookieStore
-	timeout      time.Duration
-	logger       *slog.Logger
+	timeout      time.Duration // sliding idle timeout (extended on activity)
+	// absoluteTimeout is the hard upper bound on a session's lifetime,
+	// measured from the original login (not extended on activity). A zero
+	// value disables the hard TTL — only the sliding window applies. See
+	// 2026-05 audit P2-3.
+	absoluteTimeout time.Duration
+	logger          *slog.Logger
 }
 
 // NewManager creates a new authentication manager.
-func NewManager(db *database.DB, sessionSecret string, timeout time.Duration, logger *slog.Logger) (*Manager, error) {
+// absoluteTimeout=0 disables the hard TTL.
+func NewManager(db *database.DB, sessionSecret string, timeout, absoluteTimeout time.Duration, logger *slog.Logger) (*Manager, error) {
 	if len(sessionSecret) < 32 {
 		return nil, fmt.Errorf("session secret must be at least 32 characters")
 	}
+	if absoluteTimeout > 0 && absoluteTimeout < timeout {
+		return nil, fmt.Errorf("absoluteTimeout (%s) must be >= sliding timeout (%s)", absoluteTimeout, timeout)
+	}
 
-	// Create cookie store
+	// Create cookie store. The store-wide MaxAge is the sliding timeout —
+	// this is the value used at Login when the session is fresh and the
+	// hard TTL has its full window remaining. ExtendSession overrides
+	// MaxAge per-save to min(sliding, remaining-absolute) so the browser
+	// also drops the cookie at the hard TTL boundary as it approaches.
 	store := sessions.NewCookieStore([]byte(sessionSecret))
 	store.Options = &sessions.Options{
 		Path:     "/",
@@ -48,10 +66,11 @@ func NewManager(db *database.DB, sessionSecret string, timeout time.Duration, lo
 	}
 
 	return &Manager{
-		db:           db,
-		sessionStore: store,
-		timeout:      timeout,
-		logger:       logger,
+		db:              db,
+		sessionStore:    store,
+		timeout:         timeout,
+		absoluteTimeout: absoluteTimeout,
+		logger:          logger,
 	}, nil
 }
 
@@ -131,10 +150,16 @@ func (m *Manager) Login(w http.ResponseWriter, r *http.Request, email, password 
 		return nil, fmt.Errorf("failed to generate CSRF token: %w", err)
 	}
 
-	// Store user ID and session token in cookie
+	// Store user ID and session token in cookie. sessionLoginKey is the
+	// sliding-window timestamp that ExtendSession refreshes on each
+	// request; sessionStartKey is the absolute-start timestamp that is
+	// NEVER refreshed, so a long-active session still hits the hard TTL
+	// (2026-05 audit P2-3).
+	now := time.Now().Unix()
 	session.Values[sessionUserIDKey] = user.ID
 	session.Values[sessionTokenKey] = sessionToken // CRITICAL: Validated on every request
-	session.Values[sessionLoginKey] = time.Now().Unix()
+	session.Values[sessionLoginKey] = now
+	session.Values[sessionStartKey] = now
 	session.Values[csrfTokenKey] = csrfToken
 
 	// Save session
@@ -200,15 +225,33 @@ func (m *Manager) GetUser(r *http.Request) (*models.User, error) {
 		return nil, fmt.Errorf("invalid session: missing token")
 	}
 
-	// Check if session has expired (time-based)
+	// Check sliding idle timeout: time since the most recent extend or login.
 	loginTime, ok := session.Values[sessionLoginKey].(int64)
 	if !ok {
 		return nil, fmt.Errorf("invalid session")
 	}
-
 	if time.Since(time.Unix(loginTime, 0)) > m.timeout {
-		m.logger.Debug("session expired", "user_id", userID)
+		m.logger.Debug("session expired (idle timeout)", "user_id", userID)
 		return nil, fmt.Errorf("session expired")
+	}
+
+	// Check absolute hard TTL: time since the original login. Independent of
+	// activity, so a heavily-used session still has to re-auth once it hits
+	// this cap. Zero disables this check (legacy sliding-only behavior).
+	// See 2026-05 audit P2-3.
+	if m.absoluteTimeout > 0 {
+		startUnix, ok := session.Values[sessionStartKey].(int64)
+		if !ok {
+			// Older sessions written before this field existed don't have
+			// sessionStartKey. Treat them as if they just started — they'll
+			// hit the hard TTL one window later than fresh sessions, but
+			// the alternative is logging existing users out at deploy time.
+			startUnix = loginTime
+		}
+		if time.Since(time.Unix(startUnix, 0)) > m.absoluteTimeout {
+			m.logger.Debug("session expired (absolute timeout)", "user_id", userID)
+			return nil, fmt.Errorf("session expired")
+		}
 	}
 
 	// Get user from database
@@ -278,7 +321,13 @@ func (m *Manager) ValidateCSRFToken(r *http.Request) error {
 		return fmt.Errorf("no CSRF token in request")
 	}
 
-	if requestToken != sessionToken {
+	// Constant-time compare so that a network observer can't recover the
+	// session-bound CSRF token byte by byte from response-timing variance.
+	// The values are both 256-bit randoms generated via crypto/rand, so the
+	// practical risk on a non-pathological network was always low — but
+	// every other secret comparison in this codebase uses subtle, and CSRF
+	// should match (2026-05 audit P2-1).
+	if subtle.ConstantTimeCompare([]byte(requestToken), []byte(sessionToken)) != 1 {
 		return fmt.Errorf("CSRF token mismatch")
 	}
 
@@ -292,6 +341,27 @@ func (m *Manager) IsAuthenticated(r *http.Request) bool {
 }
 
 // ExtendSession refreshes the session login time to prevent timeout.
+//
+// Two extra behaviors on top of the simple "bump sessionLoginKey" path,
+// both addressing follow-up review on the 2026-05 audit P2-3 fix:
+//
+//  1. **Anchor legacy sessions.** If a session predates this commit it
+//     won't have sessionStartKey set. Without anchoring, GetUser's fallback
+//     would compare against the freshly-refreshed sessionLoginKey forever
+//     and the absolute hard TTL would never fire. We capture the CURRENT
+//     (pre-refresh) sessionLoginKey as the anchor, giving the legacy
+//     session one full absoluteTimeout window from now — then it
+//     re-authenticates like everyone else.
+//
+//  2. **Shrink the cookie MaxAge as the hard TTL approaches.** Every Save
+//     re-emits the Set-Cookie header. If we kept the store's default
+//     MaxAge, the browser would see "this cookie is good for sliding-
+//     timeout from right now" on every request, and the cookie would
+//     never reflect the server-side hard TTL. Per-save we set the cookie
+//     MaxAge to min(sliding-timeout, remaining-absolute-TTL) so the
+//     browser ALSO drops the cookie at the absolute boundary. The
+//     override goes on a copied Options struct so we don't mutate the
+//     shared store-wide options.
 func (m *Manager) ExtendSession(w http.ResponseWriter, r *http.Request) error {
 	session, err := m.sessionStore.Get(r, sessionName)
 	if err != nil {
@@ -304,7 +374,39 @@ func (m *Manager) ExtendSession(w http.ResponseWriter, r *http.Request) error {
 		return fmt.Errorf("not authenticated")
 	}
 
-	// Update login time to now
+	// (1) Anchor legacy sessions. Set sessionStartKey to the CURRENT
+	// sessionLoginKey before we overwrite it below. Idempotent for
+	// already-anchored sessions (we only set it when absent).
+	if _, anchored := session.Values[sessionStartKey].(int64); !anchored {
+		if loginTime, ok := session.Values[sessionLoginKey].(int64); ok {
+			session.Values[sessionStartKey] = loginTime
+		}
+	}
+
+	// (2) Override per-save MaxAge to track the hard TTL. Default is the
+	// sliding timeout; if we're inside the absolute TTL window, use
+	// whichever is smaller.
+	if m.absoluteTimeout > 0 {
+		if startUnix, ok := session.Values[sessionStartKey].(int64); ok {
+			remaining := time.Until(time.Unix(startUnix, 0).Add(m.absoluteTimeout))
+			if remaining <= 0 {
+				// Past the hard TTL — don't extend. Caller path will fail
+				// on the next GetUser and force re-auth.
+				return fmt.Errorf("session past absolute timeout")
+			}
+			maxAge := m.timeout
+			if remaining < maxAge {
+				maxAge = remaining
+			}
+			// Copy Options so we don't mutate the shared store struct
+			// (which is the cookie-default applied to every other session).
+			opts := *m.sessionStore.Options
+			opts.MaxAge = int(maxAge.Seconds())
+			session.Options = &opts
+		}
+	}
+
+	// Update login time to now (slides the idle window forward).
 	session.Values[sessionLoginKey] = time.Now().Unix()
 
 	return session.Save(r, w)
@@ -561,10 +663,16 @@ func (m *Manager) CreateSessionForUser(w http.ResponseWriter, r *http.Request, u
 		return fmt.Errorf("failed to generate CSRF token: %w", err)
 	}
 
-	// Store user ID and session token in cookie
+	// Store user ID and session token in cookie. sessionLoginKey is the
+	// sliding-window timestamp that ExtendSession refreshes on each
+	// request; sessionStartKey is the absolute-start timestamp that is
+	// NEVER refreshed, so a long-active session still hits the hard TTL
+	// (2026-05 audit P2-3).
+	now := time.Now().Unix()
 	session.Values[sessionUserIDKey] = user.ID
 	session.Values[sessionTokenKey] = sessionToken // CRITICAL: Validated on every request
-	session.Values[sessionLoginKey] = time.Now().Unix()
+	session.Values[sessionLoginKey] = now
+	session.Values[sessionStartKey] = now
 	session.Values[csrfTokenKey] = csrfToken
 
 	// Save session

@@ -150,15 +150,21 @@ func main() {
 		}
 	}
 
-	// Calculate session timeout
+	// Calculate session timeouts. The sliding window is refreshed on every
+	// request; the absolute window is set ONCE at login and forces re-auth
+	// once exceeded. See 2026-05 audit P2-3.
 	sessionTimeout := time.Duration(cfg.SessionTimeoutMinutes) * time.Minute
+	absoluteSessionTimeout := time.Duration(cfg.SessionAbsoluteHours) * time.Hour
 
 	// Initialize authentication manager with database
-	authManager, err := auth.NewManager(db, cfg.SessionSecret, sessionTimeout, logger)
+	authManager, err := auth.NewManager(db, cfg.SessionSecret, sessionTimeout, absoluteSessionTimeout, logger)
 	if err != nil {
 		log.Fatalf("Failed to create authentication manager: %v", err)
 	}
-	logger.Info("authentication manager initialized")
+	logger.Info("authentication manager initialized",
+		"sliding_timeout", sessionTimeout,
+		"absolute_timeout", absoluteSessionTimeout,
+	)
 
 	// Secure cookies are enabled by default; disable only when TLS is not configured
 	if cfg.TLSCertPath == "" || cfg.TLSKeyPath == "" {
