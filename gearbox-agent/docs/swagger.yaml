@@ -1,133 +1,13 @@
 basePath: /
 definitions:
-  api.GitHubPushPayload:
-    properties:
-      head_commit:
-        properties:
-          id:
-            type: string
-          message:
-            type: string
-        type: object
-      pusher:
-        properties:
-          name:
-            type: string
-        type: object
-      ref:
-        type: string
-      repository:
-        properties:
-          full_name:
-            type: string
-        type: object
-    type: object
-  api.HealthResponse:
-    properties:
-      status:
-        example: ok
-        type: string
-      timestamp:
-        example: "2024-01-17T10:30:00Z"
-        type: string
-      uptime:
-        example: 2h30m15s
-        type: string
-      version:
-        example: 1.0.0
-        type: string
-    type: object
-  api.MetadataResponse:
-    properties:
-      last_error:
-        type: string
-      last_sync_time:
-        type: string
-      metadata:
-        $ref: '#/definitions/haproxy.Metadata'
-    type: object
-  api.SyncStatusResponse:
-    properties:
-      backend_count:
-        type: integer
-      last_error:
-        type: string
-      last_sync_time:
-        type: string
-    type: object
-  api.WSInfoResponse:
-    properties:
-      enabled:
-        example: true
-        type: boolean
-      endpoint:
-        example: /api/v1/events
-        type: string
-      event_types:
-        example:
-        - sync.started
-        - sync.completed
-        - sync.failed
-        - config.changed
-        - webhook.received
-        items:
-          type: string
-        type: array
-      subscribers:
-        example: 2
-        type: integer
-    type: object
-  api.WSTokenResponse:
-    properties:
-      expires_in:
-        description: Seconds until expiry
-        example: 60
-        type: integer
-      token:
-        example: a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456
-        type: string
-    type: object
-  api.WebhookErrorResponse:
-    properties:
-      error:
-        example: invalid_signature
-        type: string
-      message:
-        example: Signature verification failed
-        type: string
-      status:
-        example: error
-        type: string
-    type: object
-  api.WebhookInfoResponse:
-    properties:
-      enabled:
-        example: true
-        type: boolean
-      message:
-        example: Configure this URL in GitHub repository settings
-        type: string
-      webhook_url:
-        example: https://proxy.example.com:8405/api/v1/webhook/github
-        type: string
-    type: object
-  api.WebhookSuccessResponse:
-    properties:
-      message:
-        example: Sync triggered
-        type: string
-      status:
-        example: accepted
-        type: string
-    type: object
-  haproxy.ACLMetadata:
+  github_com_sarg3nt_gearbox-agent_internal_framework_services_haproxy.ACLMetadata:
     properties:
       type:
         type: string
       value:
         type: string
     type: object
-  haproxy.ActiveSession:
+  github_com_sarg3nt_gearbox-agent_internal_framework_services_haproxy.ActiveSession:
     properties:
       age_seconds:
         description: How long the session has been active
@@ -155,17 +35,17 @@ definitions:
       source_port:
         type: integer
     type: object
-  haproxy.BackendMetadata:
+  github_com_sarg3nt_gearbox-agent_internal_framework_services_haproxy.BackendMetadata:
     properties:
       acls:
         items:
-          $ref: '#/definitions/haproxy.ACLMetadata'
+          $ref: '#/definitions/github_com_sarg3nt_gearbox-agent_internal_framework_services_haproxy.ACLMetadata'
         type: array
       app_name:
         type: string
       containers:
         items:
-          $ref: '#/definitions/haproxy.ContainerMetadata'
+          $ref: '#/definitions/github_com_sarg3nt_gearbox-agent_internal_framework_services_haproxy.ContainerMetadata'
         type: array
       frontend:
         type: string
@@ -186,7 +66,7 @@ definitions:
       ssl_verify:
         type: string
     type: object
-  haproxy.ConnectionFlow:
+  github_com_sarg3nt_gearbox-agent_internal_framework_services_haproxy.ConnectionFlow:
     properties:
       active_connections:
         type: integer
@@ -201,7 +81,7 @@ definitions:
       total_requests:
         type: integer
     type: object
-  haproxy.ContainerMetadata:
+  github_com_sarg3nt_gearbox-agent_internal_framework_services_haproxy.ContainerMetadata:
     properties:
       depends_on:
         items:
@@ -214,7 +94,7 @@ definitions:
       network_mode:
         type: string
     type: object
-  haproxy.FrontendMetadata:
+  github_com_sarg3nt_gearbox-agent_internal_framework_services_haproxy.FrontendMetadata:
     properties:
       backends:
         items:
@@ -223,22 +103,133 @@ definitions:
       name:
         type: string
     type: object
-  haproxy.Metadata:
+  github_com_sarg3nt_gearbox-agent_internal_framework_services_haproxy.Metadata:
     properties:
       backends:
         items:
-          $ref: '#/definitions/haproxy.BackendMetadata'
+          $ref: '#/definitions/github_com_sarg3nt_gearbox-agent_internal_framework_services_haproxy.BackendMetadata'
         type: array
       frontends:
         items:
-          $ref: '#/definitions/haproxy.FrontendMetadata'
+          $ref: '#/definitions/github_com_sarg3nt_gearbox-agent_internal_framework_services_haproxy.FrontendMetadata'
         type: array
       generated_at:
         type: string
       version:
         type: string
     type: object
-  traffic.BackendTrafficData:
+  internal_api.GitHubPushPayload:
+    properties:
+      head_commit:
+        properties:
+          id:
+            type: string
+          message:
+            type: string
+        type: object
+      pusher:
+        properties:
+          name:
+            type: string
+        type: object
+      ref:
+        type: string
+      repository:
+        properties:
+          full_name:
+            type: string
+        type: object
+    type: object
+  internal_api.HealthResponse:
+    properties:
+      status:
+        example: ok
+        type: string
+    type: object
+  internal_api.MetadataResponse:
+    properties:
+      last_error:
+        type: string
+      last_sync_time:
+        type: string
+      metadata:
+        $ref: '#/definitions/github_com_sarg3nt_gearbox-agent_internal_framework_services_haproxy.Metadata'
+    type: object
+  internal_api.SyncStatusResponse:
+    properties:
+      backend_count:
+        type: integer
+      last_error:
+        type: string
+      last_sync_time:
+        type: string
+    type: object
+  internal_api.WSInfoResponse:
+    properties:
+      enabled:
+        example: true
+        type: boolean
+      endpoint:
+        example: /api/v1/events
+        type: string
+      event_types:
+        example:
+        - sync.started
+        - sync.completed
+        - sync.failed
+        - config.changed
+        - webhook.received
+        items:
+          type: string
+        type: array
+      subscribers:
+        example: 2
+        type: integer
+    type: object
+  internal_api.WSTokenResponse:
+    properties:
+      expires_in:
+        description: Seconds until expiry
+        example: 60
+        type: integer
+      token:
+        example: a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456
+        type: string
+    type: object
+  internal_api.WebhookErrorResponse:
+    properties:
+      error:
+        example: invalid_signature
+        type: string
+      message:
+        example: Signature verification failed
+        type: string
+      status:
+        example: error
+        type: string
+    type: object
+  internal_api.WebhookInfoResponse:
+    properties:
+      enabled:
+        example: true
+        type: boolean
+      message:
+        example: Configure this URL in GitHub repository settings
+        type: string
+      webhook_url:
+        example: https://proxy.example.com:8405/api/v1/webhook/github
+        type: string
+    type: object
+  internal_api.WebhookSuccessResponse:
+    properties:
+      message:
+        example: Sync triggered
+        type: string
+      status:
+        example: accepted
+        type: string
+    type: object
+  internal_gears_traffic.BackendTrafficData:
     properties:
       avg_response_time:
         type: integer
@@ -263,42 +254,42 @@ definitions:
       unique_ips:
         type: integer
     type: object
-  traffic.TrafficResponse:
+  internal_gears_traffic.TrafficResponse:
     properties:
       active_sessions:
         items:
-          $ref: '#/definitions/haproxy.ActiveSession'
+          $ref: '#/definitions/github_com_sarg3nt_gearbox-agent_internal_framework_services_haproxy.ActiveSession'
         type: array
       backend_traffic:
         items:
-          $ref: '#/definitions/traffic.BackendTrafficData'
+          $ref: '#/definitions/internal_gears_traffic.BackendTrafficData'
         type: array
       collected_at:
         type: string
       connection_flows:
         items:
-          $ref: '#/definitions/haproxy.ConnectionFlow'
+          $ref: '#/definitions/github_com_sarg3nt_gearbox-agent_internal_framework_services_haproxy.ConnectionFlow'
         type: array
       sources:
         items:
-          $ref: '#/definitions/traffic.TrafficSourceData'
+          $ref: '#/definitions/internal_gears_traffic.TrafficSourceData'
         type: array
       top_by_bytes:
         items:
-          $ref: '#/definitions/traffic.TrafficSourceData'
+          $ref: '#/definitions/internal_gears_traffic.TrafficSourceData'
         type: array
       top_by_connections:
         items:
-          $ref: '#/definitions/traffic.TrafficSourceData'
+          $ref: '#/definitions/internal_gears_traffic.TrafficSourceData'
         type: array
       top_by_requests:
         items:
-          $ref: '#/definitions/traffic.TrafficSourceData'
+          $ref: '#/definitions/internal_gears_traffic.TrafficSourceData'
         type: array
       total_sources:
         type: integer
     type: object
-  traffic.TrafficSourceData:
+  internal_gears_traffic.TrafficSourceData:
     properties:
       backend:
         type: string
@@ -323,7 +314,7 @@ definitions:
         description: Sessions per period
         type: integer
     type: object
-  traffic.TrafficSummary:
+  internal_gears_traffic.TrafficSummary:
     properties:
       avg_response_time:
         type: integer
@@ -400,7 +391,7 @@ paths:
         "200":
           description: WebSocket endpoint info
           schema:
-            $ref: '#/definitions/api.WSInfoResponse'
+            $ref: '#/definitions/internal_api.WSInfoResponse'
         "401":
           description: Unauthorized
           schema:
@@ -421,7 +412,7 @@ paths:
         "200":
           description: WebSocket token
           schema:
-            $ref: '#/definitions/api.WSTokenResponse'
+            $ref: '#/definitions/internal_api.WSTokenResponse'
         "401":
           description: Unauthorized
           schema:
@@ -449,7 +440,7 @@ paths:
         "200":
           description: HAProxy metadata
           schema:
-            $ref: '#/definitions/api.MetadataResponse'
+            $ref: '#/definitions/internal_api.MetadataResponse'
         "401":
           description: Unauthorized
           schema:
@@ -473,7 +464,7 @@ paths:
         "200":
           description: Sync status
           schema:
-            $ref: '#/definitions/api.SyncStatusResponse'
+            $ref: '#/definitions/internal_api.SyncStatusResponse'
         "401":
           description: Unauthorized
           schema:
@@ -513,7 +504,7 @@ paths:
         "200":
           description: Traffic analysis data
           schema:
-            $ref: '#/definitions/traffic.TrafficResponse'
+            $ref: '#/definitions/internal_gears_traffic.TrafficResponse'
         "401":
           description: Unauthorized
           schema:
@@ -540,7 +531,7 @@ paths:
         "200":
           description: Traffic summary
           schema:
-            $ref: '#/definitions/traffic.TrafficSummary'
+            $ref: '#/definitions/internal_gears_traffic.TrafficSummary'
         "401":
           description: Unauthorized
           schema:
@@ -576,22 +567,22 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/api.GitHubPushPayload'
+          $ref: '#/definitions/internal_api.GitHubPushPayload'
       produces:
       - application/json
       responses:
         "200":
           description: Webhook processed successfully
           schema:
-            $ref: '#/definitions/api.WebhookSuccessResponse'
+            $ref: '#/definitions/internal_api.WebhookSuccessResponse'
         "400":
           description: Bad request
           schema:
-            $ref: '#/definitions/api.WebhookErrorResponse'
+            $ref: '#/definitions/internal_api.WebhookErrorResponse'
         "401":
           description: Invalid or missing signature
           schema:
-            $ref: '#/definitions/api.WebhookErrorResponse'
+            $ref: '#/definitions/internal_api.WebhookErrorResponse'
       summary: GitHub webhook
       tags:
       - Webhook
@@ -605,7 +596,7 @@ paths:
         "200":
           description: Webhook configuration info
           schema:
-            $ref: '#/definitions/api.WebhookInfoResponse'
+            $ref: '#/definitions/internal_api.WebhookInfoResponse'
         "401":
           description: Unauthorized
           schema:
@@ -618,14 +609,15 @@ paths:
   /health:
     get:
       description: Returns the health status of the gearbox-agent service. No authentication
-        required.
+        required. Only "status" is exposed; version and uptime are intentionally omitted
+        from this unauthenticated endpoint to avoid fingerprinting by remote scanners.
       produces:
       - application/json
       responses:
         "200":
           description: Service is healthy
           schema:
-            $ref: '#/definitions/api.HealthResponse'
+            $ref: '#/definitions/internal_api.HealthResponse'
       summary: Health check
       tags:
       - Health

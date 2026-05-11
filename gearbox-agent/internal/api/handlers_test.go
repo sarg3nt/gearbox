@@ -23,7 +23,7 @@ func (stubMetadataProvider) GetMetadata() *haproxy.Metadata  { return nil }
 // version or uptime. A remote scanner probing for known-vulnerable agent
 // versions should get "ok" and nothing else.
 func TestHealth_NoVersionLeak(t *testing.T) {
-	h := NewHandlers(stubMetadataProvider{}, "1.2.3-leakytest")
+	h := NewHandlers(stubMetadataProvider{})
 
 	req := httptest.NewRequest("GET", "/health", nil)
 	rr := httptest.NewRecorder()

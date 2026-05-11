@@ -74,7 +74,7 @@ const docTemplate = `{
                     "200": {
                         "description": "WebSocket endpoint info",
                         "schema": {
-                            "$ref": "#/definitions/api.WSInfoResponse"
+                            "$ref": "#/definitions/internal_api.WSInfoResponse"
                         }
                     },
                     "401": {
@@ -105,7 +105,7 @@ const docTemplate = `{
                     "200": {
                         "description": "WebSocket token",
                         "schema": {
-                            "$ref": "#/definitions/api.WSTokenResponse"
+                            "$ref": "#/definitions/internal_api.WSTokenResponse"
                         }
                     },
                     "401": {
@@ -148,7 +148,7 @@ const docTemplate = `{
                     "200": {
                         "description": "HAProxy metadata",
                         "schema": {
-                            "$ref": "#/definitions/api.MetadataResponse"
+                            "$ref": "#/definitions/internal_api.MetadataResponse"
                         }
                     },
                     "401": {
@@ -185,7 +185,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Sync status",
                         "schema": {
-                            "$ref": "#/definitions/api.SyncStatusResponse"
+                            "$ref": "#/definitions/internal_api.SyncStatusResponse"
                         }
                     },
                     "401": {
@@ -245,7 +245,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Traffic analysis data",
                         "schema": {
-                            "$ref": "#/definitions/traffic.TrafficResponse"
+                            "$ref": "#/definitions/internal_gears_traffic.TrafficResponse"
                         }
                     },
                     "401": {
@@ -288,7 +288,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Traffic summary",
                         "schema": {
-                            "$ref": "#/definitions/traffic.TrafficSummary"
+                            "$ref": "#/definitions/internal_gears_traffic.TrafficSummary"
                         }
                     },
                     "401": {
@@ -340,7 +340,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/api.GitHubPushPayload"
+                            "$ref": "#/definitions/internal_api.GitHubPushPayload"
                         }
                     }
                 ],
@@ -348,19 +348,19 @@ const docTemplate = `{
                     "200": {
                         "description": "Webhook processed successfully",
                         "schema": {
-                            "$ref": "#/definitions/api.WebhookSuccessResponse"
+                            "$ref": "#/definitions/internal_api.WebhookSuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Bad request",
                         "schema": {
-                            "$ref": "#/definitions/api.WebhookErrorResponse"
+                            "$ref": "#/definitions/internal_api.WebhookErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Invalid or missing signature",
                         "schema": {
-                            "$ref": "#/definitions/api.WebhookErrorResponse"
+                            "$ref": "#/definitions/internal_api.WebhookErrorResponse"
                         }
                     }
                 }
@@ -385,7 +385,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Webhook configuration info",
                         "schema": {
-                            "$ref": "#/definitions/api.WebhookInfoResponse"
+                            "$ref": "#/definitions/internal_api.WebhookInfoResponse"
                         }
                     },
                     "401": {
@@ -399,7 +399,7 @@ const docTemplate = `{
         },
         "/health": {
             "get": {
-                "description": "Returns the health status of the gearbox-agent service. No authentication required.",
+                "description": "Returns the health status of the gearbox-agent service. No authentication required. Only \"status\" is exposed; version and uptime are intentionally omitted from this unauthenticated endpoint to avoid fingerprinting by remote scanners.",
                 "produces": [
                     "application/json"
                 ],
@@ -411,7 +411,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Service is healthy",
                         "schema": {
-                            "$ref": "#/definitions/api.HealthResponse"
+                            "$ref": "#/definitions/internal_api.HealthResponse"
                         }
                     }
                 }
@@ -419,182 +419,7 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "api.GitHubPushPayload": {
-            "type": "object",
-            "properties": {
-                "head_commit": {
-                    "type": "object",
-                    "properties": {
-                        "id": {
-                            "type": "string"
-                        },
-                        "message": {
-                            "type": "string"
-                        }
-                    }
-                },
-                "pusher": {
-                    "type": "object",
-                    "properties": {
-                        "name": {
-                            "type": "string"
-                        }
-                    }
-                },
-                "ref": {
-                    "type": "string"
-                },
-                "repository": {
-                    "type": "object",
-                    "properties": {
-                        "full_name": {
-                            "type": "string"
-                        }
-                    }
-                }
-            }
-        },
-        "api.HealthResponse": {
-            "type": "object",
-            "properties": {
-                "status": {
-                    "type": "string",
-                    "example": "ok"
-                },
-                "timestamp": {
-                    "type": "string",
-                    "example": "2024-01-17T10:30:00Z"
-                },
-                "uptime": {
-                    "type": "string",
-                    "example": "2h30m15s"
-                },
-                "version": {
-                    "type": "string",
-                    "example": "1.0.0"
-                }
-            }
-        },
-        "api.MetadataResponse": {
-            "type": "object",
-            "properties": {
-                "last_error": {
-                    "type": "string"
-                },
-                "last_sync_time": {
-                    "type": "string"
-                },
-                "metadata": {
-                    "$ref": "#/definitions/haproxy.Metadata"
-                }
-            }
-        },
-        "api.SyncStatusResponse": {
-            "type": "object",
-            "properties": {
-                "backend_count": {
-                    "type": "integer"
-                },
-                "last_error": {
-                    "type": "string"
-                },
-                "last_sync_time": {
-                    "type": "string"
-                }
-            }
-        },
-        "api.WSInfoResponse": {
-            "type": "object",
-            "properties": {
-                "enabled": {
-                    "type": "boolean",
-                    "example": true
-                },
-                "endpoint": {
-                    "type": "string",
-                    "example": "/api/v1/events"
-                },
-                "event_types": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "sync.started",
-                        "sync.completed",
-                        "sync.failed",
-                        "config.changed",
-                        "webhook.received"
-                    ]
-                },
-                "subscribers": {
-                    "type": "integer",
-                    "example": 2
-                }
-            }
-        },
-        "api.WSTokenResponse": {
-            "type": "object",
-            "properties": {
-                "expires_in": {
-                    "description": "Seconds until expiry",
-                    "type": "integer",
-                    "example": 60
-                },
-                "token": {
-                    "type": "string",
-                    "example": "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456"
-                }
-            }
-        },
-        "api.WebhookErrorResponse": {
-            "type": "object",
-            "properties": {
-                "error": {
-                    "type": "string",
-                    "example": "invalid_signature"
-                },
-                "message": {
-                    "type": "string",
-                    "example": "Signature verification failed"
-                },
-                "status": {
-                    "type": "string",
-                    "example": "error"
-                }
-            }
-        },
-        "api.WebhookInfoResponse": {
-            "type": "object",
-            "properties": {
-                "enabled": {
-                    "type": "boolean",
-                    "example": true
-                },
-                "message": {
-                    "type": "string",
-                    "example": "Configure this URL in GitHub repository settings"
-                },
-                "webhook_url": {
-                    "type": "string",
-                    "example": "https://proxy.example.com:8405/api/v1/webhook/github"
-                }
-            }
-        },
-        "api.WebhookSuccessResponse": {
-            "type": "object",
-            "properties": {
-                "message": {
-                    "type": "string",
-                    "example": "Sync triggered"
-                },
-                "status": {
-                    "type": "string",
-                    "example": "accepted"
-                }
-            }
-        },
-        "haproxy.ACLMetadata": {
+        "github_com_sarg3nt_gearbox-agent_internal_framework_services_haproxy.ACLMetadata": {
             "type": "object",
             "properties": {
                 "type": {
@@ -605,7 +430,7 @@ const docTemplate = `{
                 }
             }
         },
-        "haproxy.ActiveSession": {
+        "github_com_sarg3nt_gearbox-agent_internal_framework_services_haproxy.ActiveSession": {
             "type": "object",
             "properties": {
                 "age_seconds": {
@@ -646,13 +471,13 @@ const docTemplate = `{
                 }
             }
         },
-        "haproxy.BackendMetadata": {
+        "github_com_sarg3nt_gearbox-agent_internal_framework_services_haproxy.BackendMetadata": {
             "type": "object",
             "properties": {
                 "acls": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/haproxy.ACLMetadata"
+                        "$ref": "#/definitions/github_com_sarg3nt_gearbox-agent_internal_framework_services_haproxy.ACLMetadata"
                     }
                 },
                 "app_name": {
@@ -661,7 +486,7 @@ const docTemplate = `{
                 "containers": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/haproxy.ContainerMetadata"
+                        "$ref": "#/definitions/github_com_sarg3nt_gearbox-agent_internal_framework_services_haproxy.ContainerMetadata"
                     }
                 },
                 "frontend": {
@@ -693,7 +518,7 @@ const docTemplate = `{
                 }
             }
         },
-        "haproxy.ConnectionFlow": {
+        "github_com_sarg3nt_gearbox-agent_internal_framework_services_haproxy.ConnectionFlow": {
             "type": "object",
             "properties": {
                 "active_connections": {
@@ -716,7 +541,7 @@ const docTemplate = `{
                 }
             }
         },
-        "haproxy.ContainerMetadata": {
+        "github_com_sarg3nt_gearbox-agent_internal_framework_services_haproxy.ContainerMetadata": {
             "type": "object",
             "properties": {
                 "depends_on": {
@@ -736,7 +561,7 @@ const docTemplate = `{
                 }
             }
         },
-        "haproxy.FrontendMetadata": {
+        "github_com_sarg3nt_gearbox-agent_internal_framework_services_haproxy.FrontendMetadata": {
             "type": "object",
             "properties": {
                 "backends": {
@@ -750,19 +575,19 @@ const docTemplate = `{
                 }
             }
         },
-        "haproxy.Metadata": {
+        "github_com_sarg3nt_gearbox-agent_internal_framework_services_haproxy.Metadata": {
             "type": "object",
             "properties": {
                 "backends": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/haproxy.BackendMetadata"
+                        "$ref": "#/definitions/github_com_sarg3nt_gearbox-agent_internal_framework_services_haproxy.BackendMetadata"
                     }
                 },
                 "frontends": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/haproxy.FrontendMetadata"
+                        "$ref": "#/definitions/github_com_sarg3nt_gearbox-agent_internal_framework_services_haproxy.FrontendMetadata"
                     }
                 },
                 "generated_at": {
@@ -773,7 +598,170 @@ const docTemplate = `{
                 }
             }
         },
-        "traffic.BackendTrafficData": {
+        "internal_api.GitHubPushPayload": {
+            "type": "object",
+            "properties": {
+                "head_commit": {
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "string"
+                        },
+                        "message": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "pusher": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "ref": {
+                    "type": "string"
+                },
+                "repository": {
+                    "type": "object",
+                    "properties": {
+                        "full_name": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "internal_api.HealthResponse": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "example": "ok"
+                }
+            }
+        },
+        "internal_api.MetadataResponse": {
+            "type": "object",
+            "properties": {
+                "last_error": {
+                    "type": "string"
+                },
+                "last_sync_time": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/github_com_sarg3nt_gearbox-agent_internal_framework_services_haproxy.Metadata"
+                }
+            }
+        },
+        "internal_api.SyncStatusResponse": {
+            "type": "object",
+            "properties": {
+                "backend_count": {
+                    "type": "integer"
+                },
+                "last_error": {
+                    "type": "string"
+                },
+                "last_sync_time": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.WSInfoResponse": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "endpoint": {
+                    "type": "string",
+                    "example": "/api/v1/events"
+                },
+                "event_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "sync.started",
+                        "sync.completed",
+                        "sync.failed",
+                        "config.changed",
+                        "webhook.received"
+                    ]
+                },
+                "subscribers": {
+                    "type": "integer",
+                    "example": 2
+                }
+            }
+        },
+        "internal_api.WSTokenResponse": {
+            "type": "object",
+            "properties": {
+                "expires_in": {
+                    "description": "Seconds until expiry",
+                    "type": "integer",
+                    "example": 60
+                },
+                "token": {
+                    "type": "string",
+                    "example": "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456"
+                }
+            }
+        },
+        "internal_api.WebhookErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string",
+                    "example": "invalid_signature"
+                },
+                "message": {
+                    "type": "string",
+                    "example": "Signature verification failed"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "error"
+                }
+            }
+        },
+        "internal_api.WebhookInfoResponse": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "message": {
+                    "type": "string",
+                    "example": "Configure this URL in GitHub repository settings"
+                },
+                "webhook_url": {
+                    "type": "string",
+                    "example": "https://proxy.example.com:8405/api/v1/webhook/github"
+                }
+            }
+        },
+        "internal_api.WebhookSuccessResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "example": "Sync triggered"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "accepted"
+                }
+            }
+        },
+        "internal_gears_traffic.BackendTrafficData": {
             "type": "object",
             "properties": {
                 "avg_response_time": {
@@ -811,19 +799,19 @@ const docTemplate = `{
                 }
             }
         },
-        "traffic.TrafficResponse": {
+        "internal_gears_traffic.TrafficResponse": {
             "type": "object",
             "properties": {
                 "active_sessions": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/haproxy.ActiveSession"
+                        "$ref": "#/definitions/github_com_sarg3nt_gearbox-agent_internal_framework_services_haproxy.ActiveSession"
                     }
                 },
                 "backend_traffic": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/traffic.BackendTrafficData"
+                        "$ref": "#/definitions/internal_gears_traffic.BackendTrafficData"
                     }
                 },
                 "collected_at": {
@@ -832,31 +820,31 @@ const docTemplate = `{
                 "connection_flows": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/haproxy.ConnectionFlow"
+                        "$ref": "#/definitions/github_com_sarg3nt_gearbox-agent_internal_framework_services_haproxy.ConnectionFlow"
                     }
                 },
                 "sources": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/traffic.TrafficSourceData"
+                        "$ref": "#/definitions/internal_gears_traffic.TrafficSourceData"
                     }
                 },
                 "top_by_bytes": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/traffic.TrafficSourceData"
+                        "$ref": "#/definitions/internal_gears_traffic.TrafficSourceData"
                     }
                 },
                 "top_by_connections": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/traffic.TrafficSourceData"
+                        "$ref": "#/definitions/internal_gears_traffic.TrafficSourceData"
                     }
                 },
                 "top_by_requests": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/traffic.TrafficSourceData"
+                        "$ref": "#/definitions/internal_gears_traffic.TrafficSourceData"
                     }
                 },
                 "total_sources": {
@@ -864,7 +852,7 @@ const docTemplate = `{
                 }
             }
         },
-        "traffic.TrafficSourceData": {
+        "internal_gears_traffic.TrafficSourceData": {
             "type": "object",
             "properties": {
                 "backend": {
@@ -901,7 +889,7 @@ const docTemplate = `{
                 }
             }
         },
-        "traffic.TrafficSummary": {
+        "internal_gears_traffic.TrafficSummary": {
             "type": "object",
             "properties": {
                 "avg_response_time": {

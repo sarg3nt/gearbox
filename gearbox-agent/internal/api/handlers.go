@@ -18,26 +18,22 @@ type MetadataProvider interface {
 // Handlers holds HTTP handlers and their dependencies.
 type Handlers struct {
 	metadataProvider MetadataProvider
-	version          string
-	startTime        time.Time
 }
 
 // NewHandlers creates a new Handlers instance.
-func NewHandlers(metadataProvider MetadataProvider, version string) *Handlers {
+func NewHandlers(metadataProvider MetadataProvider) *Handlers {
 	return &Handlers{
 		metadataProvider: metadataProvider,
-		version:          version,
-		startTime:        time.Now(),
 	}
 }
 
 // HealthResponse represents the health check response.
 //
 // Only "status" is returned on the unauthenticated /health endpoint to avoid
-// leaking version / uptime to scanners (a remote attacker probing for
-// known-vulnerable agent versions). The authenticated /api/v1/metadata
-// endpoint exposes version/uptime to legitimate dashboards. See 2026-05
-// security audit P2-5.
+// leaking version / uptime to remote scanners probing for known-vulnerable
+// agent versions. Version and build info are still available on the build
+// itself (--version) and through service logs, but are not exposed over the
+// network on unauthenticated endpoints. See 2026-05 security audit P2-5.
 type HealthResponse struct {
 	Status string `json:"status" example:"ok"`
 }
@@ -45,7 +41,7 @@ type HealthResponse struct {
 // Health handles GET /health (no auth required).
 //
 //	@Summary		Health check
-//	@Description	Returns the health status of the gearbox-agent service. No authentication required. Only "status" is exposed; version and uptime are intentionally omitted to avoid fingerprinting.
+//	@Description	Returns the health status of the gearbox-agent service. No authentication required. Only "status" is exposed; version and uptime are intentionally omitted from this unauthenticated endpoint to avoid fingerprinting by remote scanners.
 //	@Tags			Health
 //	@Produce		json
 //	@Success		200	{object}	HealthResponse	"Service is healthy"
