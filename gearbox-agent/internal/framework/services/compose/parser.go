@@ -43,6 +43,18 @@ var (
 	// newline / directive injection from a Docker Compose label into the
 	// generated haproxy.cfg (see 2026-05 security audit, P0-1).
 	validBackendName = regexp.MustCompile(`^[a-zA-Z0-9_][a-zA-Z0-9_.\-]{0,62}$`)
+	// validACLPath matches a URL path component for an HAProxy path-based
+	// ACL: leading `/`, then a safe URL-path character set. Used for the
+	// `haproxy.acl.path` label, which is currently parsed into BackendConfig
+	// but not yet wired into the generator. Validating now closes the
+	// latent injection class — if a future PR wires this into a generated
+	// `acl req_path path_beg %s` directive, no flag/newline can slip
+	// through. See 2026-05 security audit, P2-10.
+	validACLPath = regexp.MustCompile(`^/[a-zA-Z0-9/_.\-~%]*$`)
+	// validACLHeader matches an HTTP header name (RFC 7230 token chars).
+	// Same forward-looking rationale as validACLPath: parsed but not yet
+	// generated, validated now.
+	validACLHeader = regexp.MustCompile(`^[a-zA-Z0-9!#$%&'*+\-.^_` + "`" + `|~]+$`)
 )
 
 // validateACLIPList validates a comma-separated list of IPs/CIDRs against
@@ -312,6 +324,31 @@ func (p *Parser) extractBackendConfig(labels map[string]string, appName, service
 		return nil
 	}
 
+	// 2026-05 audit P2-10: haproxy.acl.path and haproxy.acl.header are
+	// documented labels (see ubuntu-ha-proxy-install/docs/) that gearbox-
+	// agent parses today but does NOT yet emit into the generated config.
+	// Validate them here so the latent injection class is closed BEFORE
+	// any future PR wires them into a directive like
+	// `acl req_path path_beg <path>` or `acl req_hdr_cnt(<header>) gt 0`.
+	// Empty is accepted (the common case); non-empty must match the
+	// allow-list pattern, otherwise the backend is rejected.
+	aclPath := labels[LabelPrefix+"acl.path"]
+	if aclPath != "" && !validACLPath.MatchString(aclPath) {
+		p.logger.Warn("Invalid haproxy.acl.path value; rejecting backend",
+			"app", appName,
+			"service", serviceName,
+		)
+		return nil
+	}
+	aclHeader := labels[LabelPrefix+"acl.header"]
+	if aclHeader != "" && !validACLHeader.MatchString(aclHeader) {
+		p.logger.Warn("Invalid haproxy.acl.header value; rejecting backend",
+			"app", appName,
+			"service", serviceName,
+		)
+		return nil
+	}
+
 	// Get and validate configurable values with safe defaults
 	mode := getValidatedOrDefault(labels, LabelPrefix+"backend.mode", "http", validMode)
 	balance := getValidatedOrDefault(labels, LabelPrefix+"backend.balance", "roundrobin", validBalance)
@@ -334,8 +371,8 @@ func (p *Parser) extractBackendConfig(labels map[string]string, appName, service
 		CheckFall:        checkFall,
 		CheckRise:        checkRise,
 		SSLRedirect:      labels[LabelPrefix+"ssl.redirect"] != "false",
-		ACLPath:          labels[LabelPrefix+"acl.path"],
-		ACLHeader:        labels[LabelPrefix+"acl.header"],
+		ACLPath:          aclPath,
+		ACLHeader:        aclHeader,
 		Public:           labels[LabelPrefix+"public"] == "true",
 		RateLimit:        rateLimit,
 		ACLIP:            aclIP,

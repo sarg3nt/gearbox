@@ -757,3 +757,104 @@ func TestParseFile_InjectionViaACLIP(t *testing.T) {
 		t.Errorf("ParseFile() returned %d backend(s) for an injection payload; want 0 (rejected)", len(backends))
 	}
 }
+
+// 2026-05 audit P2-10: haproxy.acl.path and haproxy.acl.header are
+// validated at parse time even though no current generator emits them.
+// Closes the latent injection class before a future PR wires them in.
+func TestValidACLPath(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{"empty", "", true}, // empty handled by call-site short-circuit
+		{"root", "/", true},
+		{"single-segment", "/api", true},
+		{"multi-segment", "/api/v1/users", true},
+		{"trailing-slash", "/api/", true},
+		{"with-dash-underscore", "/api/_v2-beta", true},
+		{"url-encoded-allowed", "/api/%20space", true},
+
+		{"no-leading-slash", "api", false},
+		{"newline-injection", "/api\n  http-request deny", false},
+		{"semicolon", "/api; default-src *", false},
+		{"space", "/api /v1", false},
+		{"backslash", "/api\\v1", false},
+		{"query-string", "/api?x=1", false},
+		{"fragment", "/api#section", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.input == "" {
+				return // call-site skips validation for empty
+			}
+			if got := validACLPath.MatchString(tt.input); got != tt.want {
+				t.Errorf("validACLPath.MatchString(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidACLHeader(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{"simple", "X-Custom-Header", true},
+		{"all-lower", "authorization", true},
+		{"underscore", "X_Custom", true},
+		{"dot-allowed-by-rfc", "X.Forwarded.For", true},
+
+		{"empty", "", false},
+		{"space", "X Custom", false},
+		{"newline-injection", "X-Custom\nhttp-request deny", false},
+		{"semicolon", "X-Custom;evil", false},
+		{"colon", "X-Custom:value", false},
+		{"slash", "X-Custom/extra", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := validACLHeader.MatchString(tt.input); got != tt.want {
+				t.Errorf("validACLHeader.MatchString(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseFile_InjectionViaACLPath(t *testing.T) {
+	// 2026-05 audit P2-10: even though the generator doesn't emit
+	// haproxy.acl.path today, a malicious value must not be stored on
+	// BackendConfig — otherwise a future generator wire-up would re-open
+	// the P0-1/P0-2 class of injection.
+	tmpDir := t.TempDir()
+	appDir := filepath.Join(tmpDir, "aclpath")
+	if err := os.MkdirAll(appDir, 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	composeContent := "services:\n" +
+		"  web:\n" +
+		"    image: nginx\n" +
+		"    labels:\n" +
+		"      haproxy.enable: \"true\"\n" +
+		"      haproxy.hostname: \"evil.example.com\"\n" +
+		"      haproxy.backend.server: \"10.0.0.1:80\"\n" +
+		"      haproxy.acl.path: |\n" +
+		"        /api\n" +
+		"          http-request deny\n"
+
+	composePath := filepath.Join(appDir, "docker-compose.yml")
+	if err := os.WriteFile(composePath, []byte(composeContent), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	parser := NewParser(tmpDir, testLogger())
+	backends, err := parser.ParseFile(composePath)
+	if err != nil {
+		t.Fatalf("ParseFile: %v", err)
+	}
+	if len(backends) != 0 {
+		t.Errorf("ParseFile returned %d backend(s); want 0 (rejected on aclpath injection)", len(backends))
+	}
+}
