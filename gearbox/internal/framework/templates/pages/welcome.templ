@@ -1,0 +1,138 @@
+package pages
+
+import (
+	"github.com/sarg3nt/gearbox/internal/framework/database"
+	"github.com/sarg3nt/gearbox/internal/framework/middleware"
+	"github.com/sarg3nt/gearbox/internal/framework/models"
+)
+
+// WelcomePage is the first-run landing screen shown to an admin when nothing
+// has been configured yet — no boxes enabled and no system-scoped gears
+// enabled. It nudges toward adding a box (the primary action) but also lets
+// the admin opt into box-agnostic system tools (Home) without registering
+// a box. Issue #49.
+//
+// The page disappears the moment the admin makes any choice — RootRedirect's
+// fallback chain stops routing here once a box or system gear is enabled.
+templ WelcomePage(user *models.User, systemGears []database.Gear, csrfToken string, errorMessage string) {
+	<!DOCTYPE html>
+	<html lang="en" class="h-full">
+	<head>
+		<meta charset="UTF-8"/>
+		<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+		<title>Welcome - Gearbox</title>
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
+		if middleware.UseLocalAssets(ctx) {
+			<script src="/static/js/vendor/tailwind.js"></script>
+		} else {
+			<script src="https://cdn.tailwindcss.com"></script>
+		}
+		<script>
+			tailwind.config = { darkMode: 'class' }
+			function getThemePreference() {
+				const stored = localStorage.getItem('theme');
+				if (stored) return stored;
+				return 'system';
+			}
+			function getEffectiveTheme() {
+				const pref = getThemePreference();
+				if (pref === 'system') {
+					return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+				}
+				return pref;
+			}
+			if (getEffectiveTheme() === 'dark') {
+				document.documentElement.classList.add('dark');
+			}
+		</script>
+	</head>
+	<body class="h-full bg-gray-100 dark:bg-slate-900">
+		<div class="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+			<div class="max-w-2xl w-full">
+				<div class="text-center mb-8">
+					<div class="flex justify-center mb-4">
+						<img src="/favicon.svg" alt="Gearbox Logo" class="w-16 h-16"/>
+					</div>
+					<h1 class="text-3xl font-bold text-gray-900 dark:text-white">Welcome to Gearbox</h1>
+					<p class="mt-2 text-sm text-gray-600 dark:text-gray-400">Let's get you set up.</p>
+				</div>
+				<div class="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-8">
+					if errorMessage != "" {
+						<div class="mb-6 rounded-md bg-red-50 dark:bg-red-900/30 p-4 border border-red-200 dark:border-red-800">
+							<p class="text-sm text-red-800 dark:text-red-200">{ errorMessage }</p>
+						</div>
+					}
+					<form method="POST" action="/onboarding">
+						<input type="hidden" name="csrf_token" value={ csrfToken }/>
+
+						<div class="text-center">
+							<h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-2">Add your first box</h2>
+							<p class="text-sm text-gray-600 dark:text-gray-400 mb-6">
+								A box is a server, workstation, or appliance running gearbox-agent.
+								Add one to monitor services, traffic, certificates, and more.
+							</p>
+							<button
+								type="submit"
+								name="action"
+								value="add-box"
+								class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+							>
+								<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+								</svg>
+								Add a Box
+							</button>
+						</div>
+
+						if len(systemGears) > 0 {
+							<div class="flex items-center my-8">
+								<div class="flex-grow border-t border-gray-200 dark:border-gray-700"></div>
+								<span class="flex-shrink mx-4 text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400">or</span>
+								<div class="flex-grow border-t border-gray-200 dark:border-gray-700"></div>
+							</div>
+
+							<div>
+								<h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-1">System tools</h3>
+								<p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+									These work without registering a box. Enable any you'd like to use.
+								</p>
+
+								<div class="space-y-3">
+									for _, g := range systemGears {
+										<label class="flex items-start p-4 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-slate-700/50 cursor-pointer">
+											<input
+												type="checkbox"
+												name="gears"
+												value={ g.Name }
+												class="mt-1 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 dark:border-gray-600 dark:bg-slate-700"
+											/>
+											<span class="ml-3">
+												<span class="block text-sm font-medium text-gray-900 dark:text-white">{ g.DisplayName }</span>
+												<span class="block text-sm text-gray-500 dark:text-gray-400">{ g.Description }</span>
+											</span>
+										</label>
+									}
+								</div>
+
+								<div class="mt-6 text-center">
+									<button
+										type="submit"
+										name="action"
+										value="skip"
+										class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-slate-700 hover:bg-gray-50 dark:hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+									>
+										Save &amp; continue without a box
+									</button>
+								</div>
+							</div>
+						}
+					</form>
+				</div>
+				<p class="mt-6 text-center text-xs text-gray-500 dark:text-gray-400">
+					You can add boxes and toggle system tools at any time from Settings.
+				</p>
+			</div>
+		</div>
+	</body>
+	</html>
+}

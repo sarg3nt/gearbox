@@ -6,7 +6,6 @@ import (
 	"net/url"
 
 	"github.com/sarg3nt/gearbox/internal/framework/database"
-	"github.com/sarg3nt/gearbox/internal/framework/models"
 	"github.com/sarg3nt/gearbox/internal/framework/templates/pages"
 )
 
@@ -150,17 +149,9 @@ func (h *Handler) LoginPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If admin user and no HAProxy servers configured, redirect to server setup
-	if user.Role == models.RoleAdmin {
-		count, err := h.db.CountEnabledBoxes()
-		if err != nil {
-			h.logger.Error("Failed to count HAProxy servers", "error", err)
-		} else if count == 0 {
-			h.logger.Info("admin user logged in but no HAProxy servers configured, redirecting to setup", "email", email)
-			http.Redirect(w, r, "/settings/boxes/new", http.StatusSeeOther)
-			return
-		}
-	}
+	// First-run onboarding is no longer forced at login time. If nothing is
+	// configured, the user's resolved landing path will be "/", which
+	// RootRedirect routes to /welcome. Issue #49.
 
 	// Redirect to return URL if provided, otherwise honor the per-user
 	// default-landing-path with system fallback. The return URL must be a
@@ -176,9 +167,12 @@ func (h *Handler) LoginPost(w http.ResponseWriter, r *http.Request) {
 }
 
 // RootRedirect handles GET /. Redirects authenticated users to their
-// default-landing-path (per-user → system → fallback). The chosen fallback
-// when nothing is configured is /haproxy when at least one box is configured,
-// otherwise /settings/boxes/new for a clean first-run experience.
+// default-landing-path (per-user → system → fallback). When nothing is
+// configured the fallback chain is:
+//
+//  1. Any box enabled            → /haproxy
+//  2. Any system gear enabled    → /home (today the only system gear)
+//  3. Otherwise                  → /welcome (first-run onboarding, issue #49)
 func (h *Handler) RootRedirect(w http.ResponseWriter, r *http.Request) {
 	userID := ""
 	if u, err := h.authManager.GetUser(r); err == nil && u != nil {
@@ -191,12 +185,15 @@ func (h *Handler) RootRedirect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fallback: send to haproxy if any box is configured, else to box setup.
 	if count, err := h.db.CountEnabledBoxes(); err == nil && count > 0 {
 		http.Redirect(w, r, "/haproxy", http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/settings/boxes/new", http.StatusSeeOther)
+	if homeGear, err := h.db.GetGear(database.SystemServerID, database.GearHome); err == nil && homeGear != nil && homeGear.Enabled {
+		http.Redirect(w, r, "/home", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/welcome", http.StatusSeeOther)
 }
 
 // Logout handles user logout.
