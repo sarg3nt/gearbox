@@ -1,10 +1,24 @@
 package ui
 
+// toggleValue defaults an empty value to "on" so the underlying checkbox
+// submits a non-empty form value when checked. This matches the HTML
+// default for a value-less checkbox and keeps `r.FormValue(name) == "on"`
+// callers working without forcing every site to pass an explicit value.
+func toggleValue(v string) string {
+	if v == "" {
+		return "on"
+	}
+	return v
+}
+
 // Toggle creates a switch/toggle input component.
 //
 // id: unique identifier for the input
 // name: form field name
-// value: form value submitted when checked (empty string → defaults to "on")
+// value: form value submitted when checked. If empty, defaults to "on"
+//        (the HTML default for a checkbox without a value attribute). Pass
+//        a unique non-empty value when multiple toggles share a name
+//        (multi-select checkbox group).
 // checked: initial state
 // disabled: whether the toggle is disabled
 //
@@ -17,7 +31,7 @@ templ Toggle(id string, name string, value string, checked bool, disabled bool) 
 			type="checkbox"
 			id={ id }
 			name={ name }
-			value={ value }
+			value={ toggleValue(value) }
 			class="sr-only peer"
 			checked?={ checked }
 			disabled?={ disabled }

@@ -221,16 +221,22 @@ func (h *Handler) InjectIntegrationStatus(next http.Handler) http.Handler {
 		if boxID := h.getDefaultServerID(); boxID != "" {
 			integrations, err := h.db.GetGears(boxID)
 			if err != nil {
-				h.logger.Error("failed to get integrations for sidebar", "error", err)
-			} else {
-				for _, i := range integrations {
-					status[i.Name] = i.Enabled
-					orderedIntegrations = append(orderedIntegrations, auth.SidebarIntegration{
-						Name:      i.Name,
-						Enabled:   i.Enabled,
-						SortOrder: i.SortOrder,
-					})
-				}
+				// Fail-open: a partial gear list could collapse the sidebar
+				// to system-gears-only, hiding box features the user
+				// actually has. Leave the gear-status/order context unset
+				// so OrderedIntegrationLinks falls back to its default
+				// (full) rendering branch.
+				h.logger.Error("failed to get box integrations for sidebar", "error", err)
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
+			}
+			for _, i := range integrations {
+				status[i.Name] = i.Enabled
+				orderedIntegrations = append(orderedIntegrations, auth.SidebarIntegration{
+					Name:      i.Name,
+					Enabled:   i.Enabled,
+					SortOrder: i.SortOrder,
+				})
 			}
 		} else {
 			// No box configured — explicitly mark box-scoped gears off so
