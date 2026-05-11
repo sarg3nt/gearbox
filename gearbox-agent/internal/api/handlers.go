@@ -32,28 +32,26 @@ func NewHandlers(metadataProvider MetadataProvider, version string) *Handlers {
 }
 
 // HealthResponse represents the health check response.
+//
+// Only "status" is returned on the unauthenticated /health endpoint to avoid
+// leaking version / uptime to scanners (a remote attacker probing for
+// known-vulnerable agent versions). The authenticated /api/v1/metadata
+// endpoint exposes version/uptime to legitimate dashboards. See 2026-05
+// security audit P2-5.
 type HealthResponse struct {
-	Status    string    `json:"status" example:"ok"`
-	Version   string    `json:"version" example:"1.0.0"`
-	Uptime    string    `json:"uptime" example:"2h30m15s"`
-	Timestamp time.Time `json:"timestamp" example:"2024-01-17T10:30:00Z"`
+	Status string `json:"status" example:"ok"`
 }
 
 // Health handles GET /health (no auth required).
 //
 //	@Summary		Health check
-//	@Description	Returns the health status of the gearbox-agent service. No authentication required.
+//	@Description	Returns the health status of the gearbox-agent service. No authentication required. Only "status" is exposed; version and uptime are intentionally omitted to avoid fingerprinting.
 //	@Tags			Health
 //	@Produce		json
 //	@Success		200	{object}	HealthResponse	"Service is healthy"
 //	@Router			/health [get]
 func (h *Handlers) Health(w http.ResponseWriter, r *http.Request) {
-	resp := HealthResponse{
-		Status:    "ok",
-		Version:   h.version,
-		Uptime:    time.Since(h.startTime).Round(time.Second).String(),
-		Timestamp: time.Now(),
-	}
+	resp := HealthResponse{Status: "ok"}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
