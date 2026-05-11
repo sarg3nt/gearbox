@@ -31,6 +31,20 @@ func SecurityHeaders(next http.Handler) http.Handler {
 		// Control how much referrer information is sent
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 
+		// Strict-Transport-Security
+		// Force HTTPS for a year, including subdomains, and signal eligibility
+		// for the HSTS preload list. The header is only honored over HTTPS,
+		// so emitting it unconditionally is safe — a plain-HTTP response on
+		// :3000 in dev is ignored by the browser. Required for an HTTPS-only
+		// deployment; harmless on the rare plain-HTTP request. 2026-05 audit P2-6.
+		w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
+
+		// Permissions-Policy
+		// Disable browser features the dashboard never uses. Prevents a
+		// future XSS or compromised iframe-embedded asset from quietly
+		// accessing camera/mic/geolocation/etc. 2026-05 audit P2-6.
+		w.Header().Set("Permissions-Policy", "geolocation=(), microphone=(), camera=(), usb=(), payment=(), interest-cohort=(), browsing-topics=()")
+
 		// X-XSS-Protection (legacy, but still useful for older browsers)
 		// Modern browsers rely on CSP instead
 		w.Header().Set("X-XSS-Protection", "1; mode=block")
