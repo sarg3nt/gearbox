@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -345,5 +346,50 @@ func TestCollectServiceStatuses(t *testing.T) {
 	// Non-existent service should be inactive or unknown
 	if status.Active {
 		t.Errorf("expected non-existent service to be inactive")
+	}
+}
+
+// 2026-05 audit P1-1: service names that could be interpreted as systemctl
+// flags must be rejected before they reach exec.Command. The HTTP handler
+// in plugin.go matches against validUnitName, and ControlService also passes
+// "--" before the unit name as defense-in-depth — but the regex is the
+// primary gate.
+func TestValidUnitName(t *testing.T) {
+	tests := []struct {
+		name string
+		want bool
+	}{
+		// Real-world systemd unit names that must continue to work.
+		{"sshd.service", true},
+		{"haproxy", true},
+		{"docker.socket", true},
+		{"getty@tty1.service", true},
+		{"systemd-journald.service", true},
+		{"my_service", true},
+		{"a", true},
+
+		// Attacker-controlled values that must be rejected. The most
+		// important class: names whose first character is "-" so that
+		// exec.Command("systemctl", action, name) would treat the name
+		// as a flag.
+		{"", false},
+		{"--all", false},
+		{"-h", false},
+		{"--no-block", false},
+		{"--help", false},
+		{".leading-dot", false},
+		{"@leading-at", false},
+		{"name with space", false},
+		{"name\nwith-newline", false},
+		{"name;rm -rf /", false},
+		{"name$(whoami)", false},
+		{strings.Repeat("a", 257), false}, // length cap (256 chars allowed)
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := validUnitName.MatchString(tt.name); got != tt.want {
+				t.Errorf("validUnitName.MatchString(%q) = %v, want %v", tt.name, got, tt.want)
+			}
+		})
 	}
 }

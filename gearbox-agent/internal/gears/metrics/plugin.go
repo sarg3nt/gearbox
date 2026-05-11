@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -12,6 +13,14 @@ import (
 	"github.com/sarg3nt/gearbox-agent/internal/framework/events"
 	"github.com/sarg3nt/gearbox-agent/internal/framework/gear"
 )
+
+// validUnitName matches a systemd unit name that is safe to pass to systemctl
+// without risk of flag injection. Must start with an alphanumeric so a value
+// like "--all" or "-h" can't be interpreted as a systemctl flag; subsequent
+// characters match the systemd unit charset (alphanumerics plus `.`, `-`,
+// `_`, `@`). Length capped at 256 to match the prior length check.
+// See 2026-05 security audit, P1-1.
+var validUnitName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._@-]{0,255}$`)
 
 func init() {
 	gear.Register(&Gear{})
@@ -267,17 +276,16 @@ func (p *Gear) handleServiceControl(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate service name (basic sanity check - prevent command injection)
-	if req.Service == "" || len(req.Service) > 256 {
+	// Validate service name. The first character MUST be alphanumeric so a
+	// crafted name like "--all" or "--no-block" cannot be passed to systemctl
+	// as a flag (discrete-arg exec prevents shell injection but not flag
+	// injection). Subsequent characters allow the usual systemd unit charset
+	// (alphanumeric plus . - _ @). collector.ControlService also passes "--"
+	// to systemctl before the unit name as defense-in-depth.
+	// See 2026-05 security audit, P1-1.
+	if !validUnitName.MatchString(req.Service) {
 		http.Error(w, "Invalid service name", http.StatusBadRequest)
 		return
-	}
-	// Only allow alphanumeric, dash, underscore, at-sign, and dot in service names
-	for _, c := range req.Service {
-		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '@' || c == '.') {
-			http.Error(w, "Invalid character in service name", http.StatusBadRequest)
-			return
-		}
 	}
 
 	// Execute systemctl command
