@@ -522,6 +522,12 @@ func main() {
 		// (per-user → system → fallback). See feature/dashboard-gear F1.
 		r.Get("/", h.RootRedirect)
 
+		// Passkey registration (authenticated). Mounted at the same /api/passkey
+		// prefix as the public login routes above for URL symmetry; auth is
+		// supplied by this protected group's middleware, not the path.
+		r.Get("/api/passkey/register/begin", h.PasskeyRegisterBegin)
+		r.Post("/api/passkey/register/finish", h.PasskeyRegisterFinish)
+
 		// Settings routes
 		r.Route("/settings", func(r chi.Router) {
 			// Settings menu page (accessible by all authenticated users)
@@ -537,9 +543,7 @@ func main() {
 			r.Get("/change-password", h.ChangePasswordPage)
 			r.Post("/change-password", h.ChangePasswordPost)
 
-			// Passkey management
-			r.Get("/api/passkey/register/begin", h.PasskeyRegisterBegin)
-			r.Post("/api/passkey/register/finish", h.PasskeyRegisterFinish)
+			// Passkey deletion (still under /settings as a profile sub-action)
 			r.Post("/profile/passkey/delete", h.PasskeyDelete)
 
 			// User management routes (require admin or approve_users permission)
