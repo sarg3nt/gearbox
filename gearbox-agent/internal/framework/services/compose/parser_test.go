@@ -628,4 +628,132 @@ func TestValidationPatterns(t *testing.T) {
 	if validBalance.MatchString("invalid") {
 		t.Error("validBalance should not match invalid")
 	}
+
+	// Test validBackendName (2026-05 audit P0-1).
+	validBackendNames := []string{
+		"myapp_backend", "web-app", "a", "backend.1", "x9-y8.z7",
+	}
+	invalidBackendNames := []string{
+		"",
+		"-leading-hyphen",
+		".leading-dot",
+		"name with space",
+		"name\nwith-newline",
+		"name\twith-tab",
+		"name;with-semicolon",
+		"backend\n  lua-load /tmp/x.lua", // The actual P0-1 exploit payload
+	}
+	for _, n := range validBackendNames {
+		if !validBackendName.MatchString(n) {
+			t.Errorf("validBackendName should match %q", n)
+		}
+	}
+	for _, n := range invalidBackendNames {
+		if validBackendName.MatchString(n) {
+			t.Errorf("validBackendName should NOT match %q (would allow HAProxy directive injection)", n)
+		}
+	}
+}
+
+func TestValidateACLIPList(t *testing.T) {
+	// 2026-05 audit P0-2: haproxy.acl.ip must reject anything that isn't a
+	// strict comma-separated IP/CIDR list, to prevent injection of additional
+	// HAProxy directives into the generated config.
+	tests := []struct {
+		name  string
+		input string
+		ok    bool
+	}{
+		{"empty", "", true},
+		{"single-ip", "10.0.0.1", true},
+		{"single-cidr", "10.0.0.0/8", true},
+		{"mixed-list", "10.0.0.0/8, 192.168.1.0/24, 172.16.0.5", true},
+		{"newline-injection", "10.0.0.0/8\n  acl admin src 0.0.0.0/0", false}, // The actual P0-2 exploit
+		{"haproxy-keyword", "10.0.0.0/8, acl_open 0.0.0.0/0", false},
+		{"garbage", "not-an-ip", false},
+		{"out-of-range-octet", "999.999.999.999", false},
+		{"semicolon", "10.0.0.0/8; foo", false},
+		{"tab-injection", "10.0.0.0/8\t10.1.0.0/16", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, ok := validateACLIPList(tt.input)
+			if ok != tt.ok {
+				t.Errorf("validateACLIPList(%q) ok=%v, want %v", tt.input, ok, tt.ok)
+			}
+		})
+	}
+}
+
+func TestParseFile_InjectionViaBackendName(t *testing.T) {
+	// 2026-05 audit P0-1: a malicious haproxy.backend.name with embedded
+	// newlines must be rejected at parse time so it never reaches the
+	// generator's fmt.Sprintf("backend %s", …) call.
+	tmpDir := t.TempDir()
+	appDir := filepath.Join(tmpDir, "evil")
+	if err := os.MkdirAll(appDir, 0755); err != nil {
+		t.Fatalf("Failed to create app dir: %v", err)
+	}
+
+	// Note: YAML's literal-block style "|" preserves newlines, which is the
+	// exact shape of the exploit payload as it would appear in a docker-
+	// compose.yml authored by an attacker with push access to the repo.
+	composeContent := "services:\n" +
+		"  web:\n" +
+		"    image: nginx\n" +
+		"    labels:\n" +
+		"      haproxy.enable: \"true\"\n" +
+		"      haproxy.hostname: \"evil.example.com\"\n" +
+		"      haproxy.backend.server: \"10.0.0.1:80\"\n" +
+		"      haproxy.backend.name: |\n" +
+		"        myapp\n" +
+		"          lua-load /tmp/evil.lua\n"
+
+	composePath := filepath.Join(appDir, "docker-compose.yml")
+	if err := os.WriteFile(composePath, []byte(composeContent), 0644); err != nil {
+		t.Fatalf("Failed to write compose file: %v", err)
+	}
+
+	parser := NewParser(tmpDir, testLogger())
+	backends, err := parser.ParseFile(composePath)
+	if err != nil {
+		t.Fatalf("ParseFile() error = %v", err)
+	}
+	if len(backends) != 0 {
+		t.Errorf("ParseFile() returned %d backend(s) for an injection payload; want 0 (rejected)", len(backends))
+	}
+}
+
+func TestParseFile_InjectionViaACLIP(t *testing.T) {
+	// 2026-05 audit P0-2.
+	tmpDir := t.TempDir()
+	appDir := filepath.Join(tmpDir, "aclip")
+	if err := os.MkdirAll(appDir, 0755); err != nil {
+		t.Fatalf("Failed to create app dir: %v", err)
+	}
+
+	composeContent := "services:\n" +
+		"  web:\n" +
+		"    image: nginx\n" +
+		"    labels:\n" +
+		"      haproxy.enable: \"true\"\n" +
+		"      haproxy.hostname: \"evil.example.com\"\n" +
+		"      haproxy.backend.server: \"10.0.0.1:80\"\n" +
+		"      haproxy.acl.ip: |\n" +
+		"        10.0.0.0/8\n" +
+		"          acl admin src 0.0.0.0/0\n"
+
+	composePath := filepath.Join(appDir, "docker-compose.yml")
+	if err := os.WriteFile(composePath, []byte(composeContent), 0644); err != nil {
+		t.Fatalf("Failed to write compose file: %v", err)
+	}
+
+	parser := NewParser(tmpDir, testLogger())
+	backends, err := parser.ParseFile(composePath)
+	if err != nil {
+		t.Fatalf("ParseFile() error = %v", err)
+	}
+	if len(backends) != 0 {
+		t.Errorf("ParseFile() returned %d backend(s) for an injection payload; want 0 (rejected)", len(backends))
+	}
 }

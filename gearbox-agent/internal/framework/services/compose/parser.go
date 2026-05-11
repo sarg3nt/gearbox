@@ -4,6 +4,7 @@ package compose
 import (
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -37,7 +38,44 @@ var (
 	validBalance = regexp.MustCompile(`^(roundrobin|leastconn|source|uri|hdr|first|random)$`)
 	// validSSLVerify matches valid SSL verify options.
 	validSSLVerify = regexp.MustCompile(`^(none|required)$`)
+	// validBackendName matches HAProxy backend names. HAProxy itself accepts a
+	// broader character set, but we restrict to DNS-label-style to prevent
+	// newline / directive injection from a Docker Compose label into the
+	// generated haproxy.cfg (see 2026-05 security audit, P0-1).
+	validBackendName = regexp.MustCompile(`^[a-zA-Z0-9_][a-zA-Z0-9_.\-]{0,62}$`)
 )
+
+// validateACLIPList validates a comma-separated list of IPs/CIDRs against
+// net.ParseCIDR / net.ParseIP. Returns the original string if all entries parse,
+// or an empty string + false on the first invalid entry. Prevents newline or
+// HAProxy directive injection via the haproxy.acl.ip label (2026-05 audit P0-2).
+//
+// The user-supplied form for this label is a comma-separated mix of single IPs
+// (10.0.0.1) and CIDRs (10.0.0.0/24). Anything that doesn't parse as one of
+// those is rejected — including embedded newlines, whitespace beyond simple
+// trimming, or HAProxy keywords.
+func validateACLIPList(raw string) (string, bool) {
+	if raw == "" {
+		return "", true
+	}
+	for _, part := range strings.Split(raw, ",") {
+		entry := strings.TrimSpace(part)
+		if entry == "" {
+			continue
+		}
+		if strings.ContainsAny(entry, " \t\n\r") {
+			return "", false
+		}
+		if _, _, err := net.ParseCIDR(entry); err == nil {
+			continue
+		}
+		if ip := net.ParseIP(entry); ip != nil {
+			continue
+		}
+		return "", false
+	}
+	return raw, true
+}
 
 // Parser parses Docker Compose files for HAProxy backend configuration.
 type Parser struct {
@@ -246,6 +284,34 @@ func (p *Parser) extractBackendConfig(labels map[string]string, appName, service
 		backendName = fmt.Sprintf("%s_%s_backend", sanitizeName(appName), sanitizeName(serviceName))
 	}
 
+	// Reject any user-supplied backend name that would let an attacker inject
+	// HAProxy directives (newlines, spaces, etc.) into the generated config.
+	// The default form built from sanitizeName always passes this regex; the
+	// check exists to gate values that come from the haproxy.backend.name
+	// label. See 2026-05 security audit, P0-1.
+	if !validBackendName.MatchString(backendName) {
+		p.logger.Warn("Invalid backend name; rejecting backend",
+			"app", appName,
+			"service", serviceName,
+			"backend_name", backendName,
+		)
+		return nil
+	}
+
+	// haproxy.acl.ip flows into the `acl ip_allowed_* src <list>` directive in
+	// the generated config. An unvalidated value can inject additional ACL
+	// rules via embedded newlines (2026-05 audit P0-2). Validate every comma-
+	// separated entry as an IP or CIDR before accepting; reject the whole
+	// backend on a malformed entry rather than silently dropping the ACL.
+	aclIP, aclIPOK := validateACLIPList(labels[LabelPrefix+"acl.ip"])
+	if !aclIPOK {
+		p.logger.Warn("Invalid haproxy.acl.ip value; rejecting backend",
+			"app", appName,
+			"service", serviceName,
+		)
+		return nil
+	}
+
 	// Get and validate configurable values with safe defaults
 	mode := getValidatedOrDefault(labels, LabelPrefix+"backend.mode", "http", validMode)
 	balance := getValidatedOrDefault(labels, LabelPrefix+"backend.balance", "roundrobin", validBalance)
@@ -272,7 +338,7 @@ func (p *Parser) extractBackendConfig(labels map[string]string, appName, service
 		ACLHeader:        labels[LabelPrefix+"acl.header"],
 		Public:           labels[LabelPrefix+"public"] == "true",
 		RateLimit:        rateLimit,
-		ACLIP:            labels[LabelPrefix+"acl.ip"],
+		ACLIP:            aclIP,
 		BackendSSL:       labels[LabelPrefix+"backend.ssl"] == "true",
 		BackendSSLVerify: sslVerify,
 	}
