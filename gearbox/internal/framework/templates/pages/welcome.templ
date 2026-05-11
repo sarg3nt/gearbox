@@ -4,6 +4,7 @@ import (
 	"github.com/sarg3nt/gearbox/internal/framework/database"
 	"github.com/sarg3nt/gearbox/internal/framework/middleware"
 	"github.com/sarg3nt/gearbox/internal/framework/models"
+	"github.com/sarg3nt/gearbox/internal/framework/ui"
 )
 
 // WelcomePage is the first-run landing screen shown to an admin when nothing
@@ -99,18 +100,15 @@ templ WelcomePage(user *models.User, systemGears []database.Gear, csrfToken stri
 
 								<div class="space-y-3">
 									for _, g := range systemGears {
-										<label class="flex items-start p-4 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-slate-700/50 cursor-pointer">
-											<input
-												type="checkbox"
-												name="gears"
-												value={ g.Name }
-												class="mt-1 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 dark:border-gray-600 dark:bg-slate-700"
-											/>
-											<span class="ml-3">
+										<div class="flex items-start p-4 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-slate-700/50">
+											<div class="flex items-center h-5 mt-0.5 flex-shrink-0">
+												@ui.Toggle("welcome-gear-"+g.Name, "gears", g.Name, false, false)
+											</div>
+											<label for={ "welcome-gear-" + g.Name } class="ml-3 cursor-pointer flex-1">
 												<span class="block text-sm font-medium text-gray-900 dark:text-white">{ g.DisplayName }</span>
 												<span class="block text-sm text-gray-500 dark:text-gray-400">{ g.Description }</span>
-											</span>
-										</label>
+											</label>
+										</div>
 									}
 								</div>
 
