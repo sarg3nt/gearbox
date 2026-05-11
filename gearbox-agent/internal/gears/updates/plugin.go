@@ -784,12 +784,13 @@ func (p *Gear) handleInstallPackage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Name == "" {
-		jsonError(w, "package name is required", http.StatusBadRequest)
-		return
-	}
-	if len(req.Name) > 200 {
-		jsonError(w, "package name must be 200 characters or less", http.StatusBadRequest)
+	// 2026-05 audit P2-9: surface invalid package names as a clean 400 at
+	// the boundary rather than a generic 500 from the package manager.
+	// isValidPackageName enforces the Debian-style name pattern AND
+	// rejects leading hyphens — the latter prevents an attacker-chosen
+	// "package" being passed to apt-get as a flag.
+	if !isValidPackageName(req.Name) {
+		jsonError(w, "invalid package name", http.StatusBadRequest)
 		return
 	}
 
@@ -817,12 +818,9 @@ func (p *Gear) handleRemovePackage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Name == "" {
-		jsonError(w, "package name is required", http.StatusBadRequest)
-		return
-	}
-	if len(req.Name) > 200 {
-		jsonError(w, "package name must be 200 characters or less", http.StatusBadRequest)
+	// See P2-9 note on handleInstallPackage.
+	if !isValidPackageName(req.Name) {
+		jsonError(w, "invalid package name", http.StatusBadRequest)
 		return
 	}
 

@@ -122,11 +122,16 @@ func (a *aptPackageManager) InstallUpdates(securityOnly bool, packages []string)
 	return nil, nil
 }
 
+// "--" between the apt-get subcommand flags and the package-name operand
+// is defense-in-depth: isValidPackageName already rejects names with a
+// leading hyphen, but the explicit separator means a future change that
+// loosens the regex (or a missed validation site) still can't smuggle
+// a flag-shaped name as an apt-get option. See 2026-05 audit P2-9.
 func (a *aptPackageManager) InstallPackage(name string) error {
 	if !isValidPackageName(name) {
 		return fmt.Errorf("invalid package name: %s", name)
 	}
-	_, err := a.collector.runCommandWithOutput("apt-get", "install", "-y", name)
+	_, err := a.collector.runCommandWithOutput("apt-get", "install", "-y", "--", name)
 	if err != nil {
 		return fmt.Errorf("failed to install package %s: %w", name, err)
 	}
@@ -141,7 +146,7 @@ func (a *aptPackageManager) RemovePackage(name string, purge bool) error {
 	if purge {
 		action = "purge"
 	}
-	_, err := a.collector.runCommandWithOutput("apt-get", action, "-y", name)
+	_, err := a.collector.runCommandWithOutput("apt-get", action, "-y", "--", name)
 	if err != nil {
 		return fmt.Errorf("failed to remove package %s: %w", name, err)
 	}
@@ -608,7 +613,7 @@ func (a *aptPackageManager) HoldPackage(name string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "apt-mark", "hold", name)
+	cmd := exec.CommandContext(ctx, "apt-mark", "hold", "--", name)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("apt-mark hold %s: %w: %s", name, err, strings.TrimSpace(string(out)))
 	}
@@ -622,7 +627,7 @@ func (a *aptPackageManager) UnholdPackage(name string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "apt-mark", "unhold", name)
+	cmd := exec.CommandContext(ctx, "apt-mark", "unhold", "--", name)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("apt-mark unhold %s: %w: %s", name, err, strings.TrimSpace(string(out)))
 	}
