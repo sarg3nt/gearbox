@@ -5,6 +5,7 @@ package api
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -143,6 +144,16 @@ func NewServer(cfg ServerConfig) *Server {
 			ReadTimeout:  15 * time.Second,
 			WriteTimeout: 15 * time.Second,
 			IdleTimeout:  60 * time.Second,
+			// Explicit TLS 1.3 floor. Without this, Go's default is TLS 1.2,
+			// which is RFC-acceptable but exposes the agent to TLS 1.2-only
+			// cipher-suite weaknesses (CBC mode, RC4, etc.) on the off-chance
+			// a misconfigured client negotiates downwards. Both ends of the
+			// agent <-> dashboard channel are controlled by us; there is no
+			// legitimate reason to support pre-1.3 clients. See 2026-05
+			// security audit P2-7.
+			TLSConfig: &tls.Config{
+				MinVersion: tls.VersionTLS13,
+			},
 		},
 		router:   r,
 		logger:   cfg.Logger,
