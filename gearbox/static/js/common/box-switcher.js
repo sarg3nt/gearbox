@@ -247,16 +247,22 @@
     let evt = null;
     function subscribeSSE() {
         if (typeof EventSource === 'undefined') return;
+        if (evt) return; // already connected — guard against double-subscribe
         try {
             evt = new EventSource('/bx/api/events');
         } catch (_) { return; }
         evt.addEventListener('box.status', function (e) {
             try { applyStatus(JSON.parse(e.data)); } catch (_) {}
         });
+    }
+    // Register the visibilitychange listener exactly once at module load.
+    // Previously this was inside subscribeSSE() and accumulated one extra
+    // listener per tab-show, eventually opening multiple EventSources.
+    if (typeof EventSource !== 'undefined') {
         document.addEventListener('visibilitychange', function () {
             if (document.hidden) {
                 if (evt) { evt.close(); evt = null; }
-            } else if (!evt) {
+            } else {
                 subscribeSSE();
             }
         });

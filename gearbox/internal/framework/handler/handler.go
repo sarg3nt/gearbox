@@ -175,6 +175,28 @@ func (h *Handler) getEnabledServers() []models.BoxConfig {
 	return servers
 }
 
+// fullBoxRoster returns every configured box — including disabled and
+// partially-configured ones — without the UsesAgentAPI() filter applied by
+// getEnabledServers(). Used to publish the roster for the Bx fleet view +
+// switcher chrome, where StatusGray rows are meaningful and the user needs
+// to *see* the misconfigured boxes in order to fix them.
+//
+// API keys are intentionally not decrypted here — the roster is for UI
+// rendering only; agents that need authenticated calls go through the
+// existing per-request agent-client path which does its own decryption.
+func (h *Handler) fullBoxRoster() []models.BoxConfig {
+	dbBoxes, err := h.db.GetBoxes()
+	if err != nil {
+		h.logger.Error("failed to load full box roster", "error", err)
+		return h.getEnabledServers() // safe fallback: at least show what works
+	}
+	out := make([]models.BoxConfig, 0, len(dbBoxes))
+	for _, b := range dbBoxes {
+		out = append(out, b.ToBoxConfig(""))
+	}
+	return out
+}
+
 // getDefaultServerID returns the ID of the first enabled server, or empty string if none.
 func (h *Handler) getDefaultServerID() string {
 	servers := h.getEnabledServers()
@@ -211,17 +233,22 @@ func (h *Handler) InjectIntegrationStatus(next http.Handler) http.Handler {
 			ctx = auth.SetUserPermissions(ctx, perms)
 		}
 
-		// Publish the enabled-box roster so the header chip and switcher
-		// palette can render without re-querying the DB.
-		allBoxes := h.getEnabledServers()
-		ctx = auth.SetAllBoxes(ctx, allBoxes)
+		// Publish the *full* configured-box roster so the header chip,
+		// switcher palette, and Bx fleet view can render disabled or
+		// partially-configured boxes (the Bx page's StatusGray semantic).
+		// Active-box resolution below still uses the enabled+agent-API-using
+		// subset — landing on a disabled box has no gears to show.
+		fullRoster := h.fullBoxRoster()
+		ctx = auth.SetAllBoxes(ctx, fullRoster)
 
-		// Resolve the active box from ?box_id= (if any and valid).
+		enabled := h.getEnabledServers()
+
+		// Resolve the active box from ?box_id= (if any, enabled, and valid).
 		var activeBox *models.BoxConfig
 		if requested := r.URL.Query().Get("box_id"); requested != "" {
-			for i := range allBoxes {
-				if allBoxes[i].ID == requested {
-					activeBox = &allBoxes[i]
+			for i := range enabled {
+				if enabled[i].ID == requested {
+					activeBox = &enabled[i]
 					break
 				}
 			}

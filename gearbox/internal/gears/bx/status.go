@@ -158,12 +158,15 @@ func (m *statusMonitor) probe(ctx context.Context, b *database.BoxDB, apiKey str
 		bs.Contributors = []string{"Box disabled"}
 		return bs
 	}
-	if b.AgentURL == "" || apiKey == "" {
+	if b.AgentURL == "" {
 		bs.Level = StatusGray
-		bs.Contributors = []string{"Agent not configured"}
+		bs.Contributors = []string{"Agent URL not configured"}
 		return bs
 	}
 
+	// `/health` is unauthenticated, so a missing API key doesn't stop us
+	// from confirming the agent is reachable — it just degrades the rollup
+	// to Yellow with an explanatory contributor once Health() returns ok.
 	// Per-probe timeout bounds the HTTP request itself so a single hung
 	// agent can't stall the poll cycle past m.timeout.
 	client := agent.NewClientWithTimeout(b.AgentURL, apiKey, m.timeout)
@@ -177,7 +180,12 @@ func (m *statusMonitor) probe(ctx context.Context, b *database.BoxDB, apiKey str
 		return bs
 	}
 	bs.Reachable = true
-	bs.Level = StatusGreen
+	if apiKey == "" {
+		bs.Level = StatusYellow
+		bs.Contributors = append(bs.Contributors, "API key missing — authenticated endpoints unavailable")
+	} else {
+		bs.Level = StatusGreen
+	}
 	// Future contributors plug in here (cert expiring, alerts firing,
 	// OS updates pending, agent version mismatch, …) and bump Level up
 	// to Yellow or Red as appropriate. Left intentionally minimal in v1

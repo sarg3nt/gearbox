@@ -1962,16 +1962,18 @@ templ boxSwitcherPalette() {
 	{{ boxes := auth.GetAllBoxesFromContext(ctx) }}
 	{{ active, _ := auth.GetSelectedBoxFromContext(ctx) }}
 	if len(boxes) > 0 {
-		<div id="box-switcher-overlay" class="fixed inset-0 z-[60] hidden bg-black/40 backdrop-blur-sm" data-active-box-id={ activeBoxIDForChip(active, active != nil) }>
+		<div id="box-switcher-overlay" class="fixed inset-0 z-[60] hidden bg-black/40 backdrop-blur-sm" data-active-box-id={ activeBoxIDForChip(active, active != nil) } role="dialog" aria-modal="true" aria-labelledby="box-switcher-title">
 			<div class="absolute left-1/2 -translate-x-1/2 top-20 w-[480px] max-w-[92vw] rounded-lg bg-white dark:bg-slate-800 shadow-2xl border border-gray-200 dark:border-slate-700 overflow-hidden">
+				<h2 id="box-switcher-title" class="sr-only">Switch box</h2>
 				<div class="flex items-center gap-2 px-3 py-2 border-b border-gray-200 dark:border-slate-700">
-					<svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z"></path>
 					</svg>
 					<input
 						id="box-switcher-search"
 						type="search"
 						placeholder="Search boxes…"
+						aria-label="Search boxes"
 						autocomplete="off"
 						class="flex-1 bg-transparent text-sm text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none border-0"
 					/>
