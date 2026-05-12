@@ -398,8 +398,10 @@ func main() {
 	}
 	logger.Info("gear system initialized")
 
-	// Initialize WebAuthn for passkey support
-	if cfg.WebAuthnRPID != "" && cfg.WebAuthnRPID != "localhost" {
+	// Initialize WebAuthn for passkey support. `localhost` is a valid RPID
+	// per the WebAuthn spec and is whitelisted as a secure origin by every
+	// browser specifically for dev — don't gate it out.
+	if cfg.WebAuthnRPID != "" {
 		webAuthnCfg := &auth.WebAuthnConfig{
 			RPDisplayName: cfg.WebAuthnRPDisplayName,
 			RPID:          cfg.WebAuthnRPID,
@@ -416,7 +418,7 @@ func main() {
 				"origins", cfg.WebAuthnRPOrigins)
 		}
 	} else {
-		logger.Info("WebAuthn disabled (requires BASE_URL with non-localhost domain)")
+		logger.Info("WebAuthn disabled (BASE_URL did not yield a hostname)")
 	}
 
 	// Setup router
