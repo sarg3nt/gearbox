@@ -38,21 +38,23 @@ func (h *Handler) GearsPage(w http.ResponseWriter, r *http.Request) {
 		boxID = servers[0].ID
 	}
 
-	if boxID == "" {
-		http.Error(w, "No servers configured", http.StatusBadRequest)
-		return
-	}
+	// boxID may be empty on a fresh install — the template renders an
+	// "Add a Box" CTA in place of the per-box gear list. System-scoped
+	// gears still render regardless.
 
-	// Ensure default gears exist for this server
-	if err := h.db.EnsureServerGears(boxID); err != nil {
-		h.logger.Error("Failed to ensure server gears", "error", err)
-	}
+	var plugins []database.Gear
+	if boxID != "" {
+		// Ensure default gears exist for this box
+		if err := h.db.EnsureServerGears(boxID); err != nil {
+			h.logger.Error("Failed to ensure server gears", "error", err)
+		}
 
-	plugins, err := h.db.GetGears(boxID)
-	if err != nil {
-		h.logger.Error("Failed to get gears", "error", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
+		plugins, err = h.db.GetGears(boxID)
+		if err != nil {
+			h.logger.Error("Failed to get gears", "error", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	// Load system-scoped (box-agnostic) gears so they render alongside the

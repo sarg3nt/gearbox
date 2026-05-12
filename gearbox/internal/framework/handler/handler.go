@@ -175,6 +175,28 @@ func (h *Handler) getEnabledServers() []models.BoxConfig {
 	return servers
 }
 
+// fullBoxRoster returns every configured box — including disabled and
+// partially-configured ones — without the UsesAgentAPI() filter applied by
+// getEnabledServers(). Used to publish the roster for the Bx fleet view +
+// switcher chrome, where StatusGray rows are meaningful and the user needs
+// to *see* the misconfigured boxes in order to fix them.
+//
+// API keys are intentionally not decrypted here — the roster is for UI
+// rendering only; agents that need authenticated calls go through the
+// existing per-request agent-client path which does its own decryption.
+func (h *Handler) fullBoxRoster() []models.BoxConfig {
+	dbBoxes, err := h.db.GetBoxes()
+	if err != nil {
+		h.logger.Error("failed to load full box roster", "error", err)
+		return h.getEnabledServers() // safe fallback: at least show what works
+	}
+	out := make([]models.BoxConfig, 0, len(dbBoxes))
+	for _, b := range dbBoxes {
+		out = append(out, b.ToBoxConfig(""))
+	}
+	return out
+}
+
 // getDefaultServerID returns the ID of the first enabled server, or empty string if none.
 func (h *Handler) getDefaultServerID() string {
 	servers := h.getEnabledServers()
@@ -184,8 +206,23 @@ func (h *Handler) getDefaultServerID() string {
 	return ""
 }
 
-// InjectIntegrationStatus is middleware that adds integration status and user permissions to the request context.
-// This enables server-side conditional rendering of navigation items based on integration status and permissions.
+// InjectIntegrationStatus is middleware that adds integration status, the
+// active-box context, the enabled-box roster, and user permissions to the
+// request context. This is what drives the sidebar's scope-aware rendering
+// and the header's box-switcher chip.
+//
+// Active-box resolution:
+//   - If `?box_id=<id>` is present in the URL and refers to an enabled box,
+//     that box is the active context. The sidebar shows that box's enabled
+//     gears (plus all ScopeBoxAgnostic / ScopeSystem gears).
+//   - Otherwise the active context is empty ("box-agnostic"). The sidebar
+//     hides ScopeBox gears (they require a selection) and shows only
+//     ScopeBoxAgnostic + ScopeSystem entries.
+//
+// System gears (keyed by database.SystemServerID) are loaded unconditionally
+// because they are install-wide. The legacy "fall back to the first enabled
+// box" behavior is gone — the Bx fleet view is now the user's entry point
+// when no box is explicitly selected.
 func (h *Handler) InjectIntegrationStatus(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -196,69 +233,81 @@ func (h *Handler) InjectIntegrationStatus(next http.Handler) http.Handler {
 			ctx = auth.SetUserPermissions(ctx, perms)
 		}
 
-		boxID := h.getDefaultServerID()
-		if boxID != "" {
-			// Get integrations with their enabled status and sort order
-			integrations, err := h.db.GetGears(boxID)
+		// Publish the *full* configured-box roster so the header chip,
+		// switcher palette, and Bx fleet view can render disabled or
+		// partially-configured boxes (the Bx page's StatusGray semantic).
+		// Active-box resolution below still uses the enabled+agent-API-using
+		// subset — landing on a disabled box has no gears to show.
+		fullRoster := h.fullBoxRoster()
+		ctx = auth.SetAllBoxes(ctx, fullRoster)
+
+		enabled := h.getEnabledServers()
+
+		// Resolve the active box from ?box_id= (if any, enabled, and valid).
+		var activeBox *models.BoxConfig
+		if requested := r.URL.Query().Get("box_id"); requested != "" {
+			for i := range enabled {
+				if enabled[i].ID == requested {
+					activeBox = &enabled[i]
+					break
+				}
+			}
+		}
+		if activeBox != nil {
+			ctx = auth.SetSelectedBox(ctx, activeBox)
+		}
+
+		status := make(map[string]bool)
+		orderedIntegrations := make([]auth.SidebarIntegration, 0)
+
+		// System / box-agnostic gears go first so they render at the head of the nav.
+		systemGears, err := h.db.GetGears(database.SystemServerID)
+		if err != nil {
+			h.logger.Warn("failed to load system gears for sidebar", "error", err)
+		}
+		for _, sg := range systemGears {
+			status[sg.Name] = sg.Enabled
+			orderedIntegrations = append(orderedIntegrations, auth.SidebarIntegration{
+				Name:      sg.Name,
+				Enabled:   sg.Enabled,
+				SortOrder: sg.SortOrder,
+			})
+		}
+
+		if activeBox != nil {
+			integrations, err := h.db.GetGears(activeBox.ID)
 			if err != nil {
-				h.logger.Error("failed to get integrations for sidebar", "error", err)
-				// Continue without status - sidebar will show all items (fail open)
+				// Fail-open: a partial gear list could collapse the sidebar
+				// to system-gears-only, hiding box features the user
+				// actually has. Leave the gear-status/order context unset
+				// so OrderedIntegrationLinks falls back to its default
+				// (full) rendering branch.
+				h.logger.Error("failed to get box integrations for sidebar", "error", err, "box_id", activeBox.ID)
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
-
-			// Merge in system-wide (box-agnostic) gears so the sidebar can show them.
-			systemGears, err := h.db.GetGears(database.SystemServerID)
-			if err != nil {
-				h.logger.Warn("failed to load system gears for sidebar", "error", err)
-			}
-
-			// Build status map for backward compatibility
-			status := make(map[string]bool)
 			for _, i := range integrations {
 				status[i.Name] = i.Enabled
-			}
-			for _, i := range systemGears {
-				status[i.Name] = i.Enabled
-			}
-
-			// Build ordered list for sidebar (box gears first, then system gears
-			// at the head — Home should sit at the top of navigation when enabled).
-			orderedIntegrations := make([]auth.SidebarIntegration, 0, len(integrations)+len(systemGears))
-			for _, i := range systemGears {
 				orderedIntegrations = append(orderedIntegrations, auth.SidebarIntegration{
 					Name:      i.Name,
 					Enabled:   i.Enabled,
 					SortOrder: i.SortOrder,
 				})
 			}
-			for _, i := range integrations {
-				orderedIntegrations = append(orderedIntegrations, auth.SidebarIntegration{
-					Name:      i.Name,
-					Enabled:   i.Enabled,
-					SortOrder: i.SortOrder,
-				})
+		} else {
+			// No box selected — explicitly mark box-scoped gears off so the
+			// sidebar renderer hides them. ScopeBoxAgnostic gears (Bx, etc.)
+			// and ScopeSystem gears (Home) are injected above as system
+			// rows and remain visible.
+			for _, n := range []string{"haproxy", "metrics", "logs", "services", "certificates", "traffic", "alerts", "os_updates"} {
+				if _, present := status[n]; !present {
+					status[n] = false
+				}
 			}
-
-			ctx = auth.SetGearStatus(ctx, status)
-			ctx = auth.SetIntegrationOrder(ctx, orderedIntegrations)
-			next.ServeHTTP(w, r.WithContext(ctx))
-			return
 		}
 
-		// No server configured - explicitly disable all gears in navigation
-		// This provides a clean initial setup experience without gear clutter
-		status := map[string]bool{
-			"metrics":      false,
-			"logs":         false,
-			"services":     false,
-			"certificates": false,
-			"traffic":      false,
-			"alerts":       false,
-			"os_updates":   false,
-		}
 		ctx = auth.SetGearStatus(ctx, status)
-		ctx = auth.SetIntegrationOrder(ctx, []auth.SidebarIntegration{})
+		ctx = auth.SetIntegrationOrder(ctx, orderedIntegrations)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
