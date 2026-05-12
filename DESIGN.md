@@ -71,17 +71,53 @@ Each gear is self-contained: it defines its own routes, handlers, templates, and
 
 Gears progress through a state machine: `disabled` → `alpha` → `beta` → `production`. Alpha and beta gears must be explicitly enabled by the user. Production gears are enabled by default. The `disabled` state excludes the gear from the build entirely.
 
-### Dashboard Gears (7)
+### Gear Scopes
 
-| Gear         | Purpose                                      |
-|--------------|----------------------------------------------|
-| HAProxy      | HAProxy overview, status grid, and backend/frontend/server monitoring |
-| Metrics      | Historical CPU, memory, disk, network charts |
-| Services     | Systemd service monitoring and control       |
-| Certificates | TLS certificate expiration tracking          |
-| Logs         | Real-time log viewing and search             |
-| Traffic      | Traffic analysis and GeoIP visualization     |
-| Alerts       | Alert rules, notifications, and history      |
+Each gear declares a `Scope` controlling where its rows live in the database
+and how the sidebar treats it (see [`internal/framework/gear/interface.go`](gearbox/internal/framework/gear/interface.go)):
+
+- **`ScopeBox`** *(default)* — one row per (box_id, gear_name) in the gears
+  table. The gear is shown in the sidebar only when an active box context
+  is set, because its UI is meaningless without one. Examples: HAProxy,
+  Metrics, Logs, Services, Certificates, Traffic, Alerts, OS Updates.
+- **`ScopeSystem`** — a single install-wide row keyed by the
+  `SystemServerID` sentinel. The gear is always visible in the sidebar and
+  ignores box context. Example: the Home dashboard.
+- **`ScopeBoxAgnostic`** — install-wide like `ScopeSystem` but
+  semantically the gear lists or aggregates *across* boxes rather than
+  ignoring them. Always visible; box-specific gears are hidden when no box
+  is active because this gear is the place to pick one. Example: the Bx
+  fleet view.
+
+### Multi-box UX
+
+A single Gearbox dashboard connects to many agents. The user picks which box
+they are "in" via two affordances backed by the same `?box_id=<id>` query
+convention:
+
+1. **Bx fleet view** at `/bx` — a `ScopeBoxAgnostic` gear that lists every
+   configured box with live status dots and click-through to that box.
+2. **Persistent box-switcher chip** in the chrome — opens a Cockpit-style
+   command palette (search + arrow-keys; `g b` shortcut) for jumping
+   between boxes mid-task without losing place.
+
+When no box is selected, box-scoped gears are hidden from the sidebar; the
+user sees only `Bx`, `Home`, and `Settings`. Selecting a box hydrates the
+sidebar with that box's enabled gears.
+
+### Dashboard Gears (8)
+
+| Gear         | Scope        | Purpose                                       |
+|--------------|--------------|-----------------------------------------------|
+| Bx           | box-agnostic | Fleet overview: list + status + switcher home |
+| Home         | system       | App dashboard with launcher tiles and widgets |
+| HAProxy      | box          | HAProxy overview, status grid, and backend/frontend/server monitoring |
+| Metrics      | box          | Historical CPU, memory, disk, network charts  |
+| Services     | box          | Systemd service monitoring and control        |
+| Certificates | box          | TLS certificate expiration tracking           |
+| Logs         | box          | Real-time log viewing and search              |
+| Traffic      | box          | Traffic analysis and GeoIP visualization      |
+| Alerts       | box          | Alert rules, notifications, and history       |
 
 ### Agent Gears (7)
 

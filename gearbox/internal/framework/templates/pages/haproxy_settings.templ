@@ -9,84 +9,14 @@ import (
 	"github.com/sarg3nt/gearbox/internal/framework/templates/layouts"
 )
 
-// HAProxyServersPage renders the list of monitored servers.
-// When no servers exist, it uses a minimal layout without the sidebar (like login page).
+// HAProxyBoxesPage renders the list of monitored boxes. First-run onboarding
+// is owned by the /welcome screen (issue #49); this page always uses the
+// standard sidebar layout and shows an inline empty-state when the list is
+// zero.
 templ HAProxyBoxesPage(user *models.User, servers []*database.BoxDB) {
-	if len(servers) == 0 {
-		@HAProxyBoxesPageNoSidebar(user)
-	} else {
-		@layouts.Base("Boxes", user, "/settings") {
-			@HAProxyBoxesPageContent(user, servers)
-		}
+	@layouts.Base("Boxes", user, "/settings") {
+		@HAProxyBoxesPageContent(user, servers)
 	}
-}
-
-// HAProxyServersPageNoSidebar renders the boxes page without sidebar when no servers configured.
-templ HAProxyBoxesPageNoSidebar(user *models.User) {
-	<!DOCTYPE html>
-	<html lang="en" class="h-full">
-	<head>
-		<meta charset="UTF-8"/>
-		<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-		<title>Boxes - Gearbox</title>
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
-		if middleware.UseLocalAssets(ctx) {
-			<script src="/static/js/vendor/tailwind.js"></script>
-		} else {
-			<script src="https://cdn.tailwindcss.com"></script>
-		}
-		<script>
-			tailwind.config = { darkMode: 'class' }
-			// Apply theme immediately
-			function getThemePreference() {
-				const stored = localStorage.getItem('theme');
-				if (stored) return stored;
-				return 'system';
-			}
-			function getEffectiveTheme() {
-				const pref = getThemePreference();
-				if (pref === 'system') {
-					return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-				}
-				return pref;
-			}
-			if (getEffectiveTheme() === 'dark') {
-				document.documentElement.classList.add('dark');
-			}
-		</script>
-	</head>
-	<body class="h-full bg-gray-100 dark:bg-slate-900">
-		<div class="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-			<div class="max-w-2xl w-full">
-				<div class="text-center mb-8">
-					<div class="flex justify-center mb-4">
-						<img src="/favicon.svg" alt="Gearbox Logo" class="w-16 h-16"/>
-					</div>
-					<h1 class="text-3xl font-bold text-gray-900 dark:text-white">Gearbox</h1>
-					<p class="mt-2 text-sm text-gray-600 dark:text-gray-400">Real-time monitoring for HAProxy</p>
-				</div>
-				<div class="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-8 text-center">
-					<svg class="mx-auto h-16 w-16 text-gray-400 mb-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"></path>
-					</svg>
-					<h2 class="text-2xl font-semibold text-gray-900 dark:text-white mb-3">No boxes configured</h2>
-					<p class="text-gray-600 dark:text-gray-400 mb-6">
-						Get started by adding your first monitored box.
-					</p>
-					<a
-						href="/settings/boxes/new"
-						class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-					>
-						<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
-						</svg>
-						Add Box
-					</a>
-				</div>
-			</div>
-		</div>
-	</body>
-	</html>
 }
 
 // HAProxyServersPageContent renders the main content of the boxes page.

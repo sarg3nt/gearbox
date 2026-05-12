@@ -56,10 +56,28 @@ type Gear interface {
 	Migrations() []Migration
 }
 
-// Scope describes whether a gear is scoped to a specific monitored box
-// or applies system-wide. Box-scoped gears (the default) have one row per
-// (server_id, name) in the gears table. System-scoped gears have a single
-// row keyed by the SystemServerID sentinel.
+// Scope describes how a gear relates to monitored boxes. It controls both
+// where the gear's row(s) live in the gears table and when the gear is
+// shown in the sidebar.
+//
+// Three values are recognized:
+//
+//   - ScopeBox        — the default; one row per (server_id, name) in the
+//                       gears table. The gear is shown in the sidebar only
+//                       when the active box context has it enabled. Examples:
+//                       HAProxy, Metrics, Logs, Services, Certificates,
+//                       Traffic, Alerts, OS Updates.
+//   - ScopeSystem     — a single row keyed by the SystemServerID sentinel;
+//                       the gear is install-wide and is shown in the sidebar
+//                       regardless of which box (if any) is selected.
+//                       Example: the Home dashboard.
+//   - ScopeBoxAgnostic — a single install-wide row, like ScopeSystem, but
+//                       semantically the gear lists or aggregates *across*
+//                       boxes rather than ignoring boxes entirely. The
+//                       sidebar shows it independent of any box selection,
+//                       and box-specific gears are hidden when no box is
+//                       active (this gear is the place to pick one).
+//                       Example: the Bx (Boxes) fleet view.
 type Scope string
 
 const (
@@ -67,7 +85,16 @@ const (
 	ScopeBox Scope = "box"
 	// ScopeSystem indicates the gear is enabled globally for the whole install.
 	ScopeSystem Scope = "system"
+	// ScopeBoxAgnostic indicates the gear is install-wide and lists/aggregates
+	// across boxes. It is always visible in the sidebar.
+	ScopeBoxAgnostic Scope = "box_agnostic"
 )
+
+// IsBoxScoped reports whether the scope ties the gear to a specific box.
+// Box-scoped gears are hidden from the sidebar when no box is selected.
+func (s Scope) IsBoxScoped() bool {
+	return s == "" || s == ScopeBox
+}
 
 // Info contains metadata about a gear.
 type Info struct {
