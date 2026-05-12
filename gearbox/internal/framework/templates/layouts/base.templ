@@ -1758,7 +1758,11 @@ func firstEnabledIntegrationPath(ctx context.Context) string {
 func canViewIntegration(ctx context.Context, integrationName string) bool {
 	switch integrationName {
 	case "bx":
-		return true // Bx (fleet view) is the box switcher's home — always visible.
+		// Bx (fleet view) is gated on bx:view in handlers and the sidebar
+		// config (SidebarItem.RequiresPermission); mirror that here so the
+		// sidebar link doesn't render for users who'd get a 403 clicking it.
+		// `models.Component("bx")` matches the gear-declared permission name.
+		return auth.HasPermissionFromContext(ctx, models.Component("bx"), models.PermissionView)
 	case "home":
 		return true // Home is visible to all authenticated users when enabled.
 	case "metrics":

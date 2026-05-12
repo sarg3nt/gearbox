@@ -57,7 +57,7 @@ func (g *Gear) Initialize(ctx context.Context, deps gear.Dependencies) error {
 // Start launches the per-box status poller.
 func (g *Gear) Start(ctx context.Context) error {
 	if g.monitor != nil {
-		g.monitor.Start(context.Background())
+		g.monitor.Start(ctx)
 	}
 	return nil
 }

@@ -129,8 +129,8 @@ templ emptyState() {
 }
 
 // boxTable renders the fleet view. Server-side render is the source of truth
-// for initial paint; the page's JS reconciles rows with /bx/api/status and
-// listens on /bx/api/events for live updates.
+// for initial paint; the page's JS subscribes to /bx/api/events (SSE), which
+// pushes a full snapshot on every (re)connect and live transitions thereafter.
 //
 // Column order is deliberately minimal: status dot, name, location, agent
 // host, latency, last-checked. Anything heavier (per-box CPU/mem

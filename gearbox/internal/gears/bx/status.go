@@ -57,8 +57,9 @@ type statusMonitor struct {
 	mu       sync.RWMutex
 	statuses map[string]BoxStatus // keyed by BoxConfig.ID (UUID string)
 
-	stop chan struct{}
-	once sync.Once
+	stop      chan struct{}
+	startOnce sync.Once
+	stopOnce  sync.Once
 
 	subsMu sync.Mutex
 	subs   map[int64]chan BoxStatus
@@ -83,14 +84,14 @@ func newStatusMonitor(deps gear.Dependencies) *statusMonitor {
 }
 
 // Start launches the polling loop. Safe to call multiple times — only the
-// first call wins.
+// first call wins; subsequent calls are no-ops.
 func (m *statusMonitor) Start(ctx context.Context) {
-	go m.run(ctx)
+	m.startOnce.Do(func() { go m.run(ctx) })
 }
 
 // Stop signals the polling loop to exit. Subsequent calls are no-ops.
 func (m *statusMonitor) Stop() {
-	m.once.Do(func() { close(m.stop) })
+	m.stopOnce.Do(func() { close(m.stop) })
 }
 
 func (m *statusMonitor) run(ctx context.Context) {
@@ -164,14 +165,9 @@ func (m *statusMonitor) probe(ctx context.Context, b *database.BoxDB, apiKey str
 		return bs
 	}
 
-	// Per-probe context bounded by the timeout; do not let a single hung
-	// agent stall the whole poll cycle.
-	pctx, cancel := context.WithTimeout(ctx, m.timeout)
-	defer cancel()
-	_ = pctx // reserved for when the agent client supports ctx; the http
-	// client's per-request timeout already provides the upper bound.
-
-	client := agent.NewClient(b.AgentURL, apiKey)
+	// Per-probe timeout bounds the HTTP request itself so a single hung
+	// agent can't stall the poll cycle past m.timeout.
+	client := agent.NewClientWithTimeout(b.AgentURL, apiKey, m.timeout)
 	t0 := time.Now()
 	_, err := client.Health()
 	bs.LatencyMs = time.Since(t0).Milliseconds()
