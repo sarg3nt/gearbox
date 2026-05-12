@@ -40,7 +40,22 @@
 			.map(input => input.value);
 	}
 
-	async function saveLogSourcesNow() {
+	// Serialize saves so a slow/failing earlier request can't revert UI state
+	// after a later request has already succeeded with overlapping state.
+	// Each call chains onto the previous save's settlement; the state being
+	// POSTed is read at dequeue time, so by the time a later save runs it
+	// sees any reverts the earlier save's caller performed in its catch block.
+	let saveQueue = Promise.resolve();
+
+	function saveLogSourcesNow() {
+		const next = saveQueue
+			.catch(() => {}) // don't let a prior rejection break the chain
+			.then(() => postLogSources());
+		saveQueue = next;
+		return next;
+	}
+
+	async function postLogSources() {
 		const root = document.getElementById('logs-config-root');
 		if (!root) return;
 		const url = root.dataset.saveUrl;

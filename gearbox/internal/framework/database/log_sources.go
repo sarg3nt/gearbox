@@ -43,8 +43,9 @@ func (d *DB) GetEnabledLogSources(haproxyID int64) ([]LogSourceSetting, error) {
 	return sources, rows.Err()
 }
 
-// GetEnabledLogSourcesByServerID returns enabled log sources for a server by its server_id.
-// Returns empty slice (not error) if the server has no HAProxy configuration or no log sources.
+// GetEnabledLogSourcesByServerID returns enabled log sources for a box by its
+// box_id (the human-readable string identifier, e.g. "light-hugger").
+// Returns empty slice (not error) if no box matches or the box has no log sources.
 func (d *DB) GetEnabledLogSourcesByServerID(serverID string) ([]LogSourceSetting, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
