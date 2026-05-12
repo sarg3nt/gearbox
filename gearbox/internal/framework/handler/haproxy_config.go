@@ -600,48 +600,31 @@ func (h *Handler) HAProxyBoxLogSettingsPage(w http.ResponseWriter, r *http.Reque
 }
 
 // HAProxyBoxLogSettingsPost saves the log source settings for a server.
-//
-// When the client sends `Accept: application/json`, responds with
-// `{"success": true}` (or `{"success": false, "error": "..."}`) and stays on
-// the page. This is how the per-box log settings UI saves each toggle live
-// without a page reload. Otherwise it falls back to the classic redirect
-// flow for non-JS / form-POST callers.
 func (h *Handler) HAProxyBoxLogSettingsPost(w http.ResponseWriter, r *http.Request) {
 	user, _ := auth.GetUserFromContext(r.Context())
-	wantsJSON := strings.Contains(r.Header.Get("Accept"), "application/json")
-
-	respondError := func(status int, msg string) {
-		if wantsJSON {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(status)
-			_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "error": msg})
-			return
-		}
-		http.Error(w, msg, status)
-	}
 
 	// Only admins can access
 	if !h.authManager.HasPermission(r, models.ComponentSettings, models.PermissionManageBoxes) {
-		respondError(http.StatusForbidden, "Forbidden")
+		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		respondError(http.StatusBadRequest, "Invalid server ID")
+		http.Error(w, "Invalid server ID", http.StatusBadRequest)
 		return
 	}
 
 	server, err := h.db.GetBoxByID(id)
 	if err != nil || server == nil {
-		respondError(http.StatusNotFound, "Server not found")
+		http.Error(w, "Server not found", http.StatusNotFound)
 		return
 	}
 
 	// Parse form
 	if err := r.ParseForm(); err != nil {
-		respondError(http.StatusBadRequest, "Invalid form data")
+		http.Error(w, "Invalid form data", http.StatusBadRequest)
 		return
 	}
 
@@ -681,22 +664,12 @@ func (h *Handler) HAProxyBoxLogSettingsPost(w http.ResponseWriter, r *http.Reque
 	// Save to database
 	if err := h.db.SetEnabledLogSources(id, settings); err != nil {
 		h.logger.Error("Failed to save log sources", "error", err)
-		if wantsJSON {
-			respondError(http.StatusInternalServerError, "Failed to save settings: "+err.Error())
-			return
-		}
 		h.renderLogSettingsWithError(w, r, user, server, "Failed to save settings: "+err.Error())
 		return
 	}
 
 	// Log audit
 	h.logAudit(r, user.ID, "log_settings_update", fmt.Sprintf("Updated log settings for server %s: %d sources enabled", server.Name, len(settings)))
-
-	if wantsJSON {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "enabled": len(settings)})
-		return
-	}
 
 	// Redirect back to server list
 	http.Redirect(w, r, "/settings/boxes", http.StatusSeeOther)
