@@ -47,9 +47,8 @@ type BoxStatus struct {
 // mature. Designed so the heavy lift can move to a framework-level
 // boxhealth service later without changing the Bx page's API.
 type statusMonitor struct {
-	deps   gear.Dependencies
-	db     *database.DB
-	logger interface{}
+	deps gear.Dependencies
+	db   *database.DB
 
 	interval time.Duration
 	timeout  time.Duration
