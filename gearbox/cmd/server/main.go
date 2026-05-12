@@ -416,6 +416,17 @@ func main() {
 			logger.Info("WebAuthn initialized",
 				"rp_id", cfg.WebAuthnRPID,
 				"origins", cfg.WebAuthnRPOrigins)
+			// If RPID is "localhost" but BASE_URL was never explicitly set,
+			// the operator probably forgot to configure it. Passkey UI will
+			// render but registration will fail at the authenticator with an
+			// opaque origin-mismatch error — warn loudly so the misconfig is
+			// findable in the journal.
+			if cfg.WebAuthnRPID == "localhost" && os.Getenv("BASE_URL") == "" {
+				logger.Warn("WebAuthn RPID is 'localhost' because BASE_URL is unset — " +
+					"passkey UI will appear, but registration from any non-localhost " +
+					"hostname will fail with an origin-mismatch error. Set BASE_URL " +
+					"(or WEBAUTHN_RP_ID/WEBAUTHN_RP_ORIGINS) in production.")
+			}
 		}
 	} else {
 		logger.Info("WebAuthn disabled (BASE_URL did not yield a hostname)")
