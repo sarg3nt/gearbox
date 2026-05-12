@@ -1,11 +1,41 @@
 package layouts
 
 import "context"
+import "encoding/json"
 import "github.com/sarg3nt/gearbox/internal/framework/auth"
 import "github.com/sarg3nt/gearbox/internal/framework/models"
 import "github.com/sarg3nt/gearbox/internal/framework/ui"
 import "github.com/sarg3nt/gearbox/internal/framework/middleware"
 import "strings"
+
+// activeBoxIDForChip returns the active box's ID, or "" if no box is
+// selected — used as the data-active-box-id attribute on the chip so the
+// switcher palette can mark the current row.
+func activeBoxIDForChip(active *models.BoxConfig, has bool) string {
+	if !has || active == nil {
+		return ""
+	}
+	return active.ID
+}
+
+// encodeBoxesJSON serializes the box roster for the switcher palette's
+// dataset. We only ship `id` and `name` — the agent URL and API key never
+// leave the server, even though they are present in the source slice.
+func encodeBoxesJSON(boxes []models.BoxConfig) string {
+	type lite struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	out := make([]lite, 0, len(boxes))
+	for _, b := range boxes {
+		out = append(out, lite{ID: b.ID, Name: b.Name})
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
+}
 
 // isActivePath checks if the current path matches the nav link
 func isActivePath(href, currentPath string) bool {
@@ -890,6 +920,7 @@ templ Base(title string, user *models.User, currentPath ...string) {
 		<script src="/static/js/utils/char-limit.js" defer></script>
 		<script src="/static/js/common/page-header.js" defer></script>
 		<script src="/static/js/common/box-selector.js" defer></script>
+		<script src="/static/js/common/box-switcher.js" defer></script>
 	</head>
 	<body class="h-full bg-gray-100 dark:bg-slate-900">
 		@ui.CollapsibleRestoreScript()
@@ -1726,6 +1757,12 @@ func firstEnabledIntegrationPath(ctx context.Context) string {
 // Maps integration names to component View permissions.
 func canViewIntegration(ctx context.Context, integrationName string) bool {
 	switch integrationName {
+	case "bx":
+		// Bx (fleet view) is gated on bx:view in handlers and the sidebar
+		// config (SidebarItem.RequiresPermission); mirror that here so the
+		// sidebar link doesn't render for users who'd get a 403 clicking it.
+		// `models.Component("bx")` matches the gear-declared permission name.
+		return auth.HasPermissionFromContext(ctx, models.Component("bx"), models.PermissionView)
 	case "home":
 		return true // Home is visible to all authenticated users when enabled.
 	case "metrics":
@@ -1743,22 +1780,54 @@ func canViewIntegration(ctx context.Context, integrationName string) bool {
 	}
 }
 
+// isBoxScopedIntegration reports whether a sidebar integration is tied to a
+// specific box. Box-scoped integrations are hidden when no box is active in
+// the request context — the user has no place for them to point at.
+// Mirrors gear.Scope.IsBoxScoped() but kept as a template-local helper
+// because the sidebar renders from the integration *name* (a DB row), not
+// from the gear registry directly. The Bx (fleet view) and Home are the
+// only two install-wide entries today.
+func isBoxScopedIntegration(name string) bool {
+	switch name {
+	case "bx", "home":
+		return false
+	}
+	return true
+}
+
 // OrderedIntegrationLinks renders sidebar links for integrations in the user's custom order.
 // Falls back to default order if no custom order is stored.
-// Links are only shown if the integration is enabled AND the user has View permission.
+//
+// Two filters compose here:
+//
+//  1. Permissions — canViewIntegration(ctx, name).
+//  2. Active-box scope — when no box is selected (auth.GetSelectedBoxFromContext
+//     returns ok=false), box-scoped integrations are hidden. The user has
+//     no place for them to land — Bx (the fleet picker) is the way in.
+//     Install-wide entries (Bx, Home) are always shown.
+//
+// The fallback branch (when no integration order is in context) always
+// shows everything for backwards compatibility — that branch fires before
+// gears have any rows, e.g. an empty database, and is harmless because
+// the user has no boxes yet anyway.
 templ OrderedIntegrationLinks(currentPath string) {
 	if integrations, ok := auth.GetGearOrderFromContext(ctx); ok {
-		if len(integrations) > 0 {
-			// Show ordered integrations from database
-			for _, integration := range integrations {
-				if integration.Enabled && canViewIntegration(ctx, integration.Name) {
-					@renderIntegrationLink(integration.Name, currentPath)
-				}
+		// Always render the Bx fleet entry first when permitted — even if
+		// the integration table doesn't have a row for it yet (fresh install).
+		if !hasIntegration(integrations, "bx") && canViewIntegration(ctx, "bx") {
+			@SidebarLinkDraggable("/bx", "Bx", bxSidebarIcon(), currentPath, "bx")
+		}
+		{{ _, boxActive := auth.GetSelectedBoxFromContext(ctx) }}
+		for _, integration := range integrations {
+			if integration.Enabled && canViewIntegration(ctx, integration.Name) && (!isBoxScopedIntegration(integration.Name) || boxActive) {
+				@renderIntegrationLink(integration.Name, currentPath)
 			}
 		}
-		// If integrations list is empty (no server configured), show nothing
 	} else {
 		// Fallback to default order only if context doesn't exist at all (backwards compatibility)
+		if canViewIntegration(ctx, "bx") {
+			@SidebarLinkWithIntegration("/bx", "Bx", bxSidebarIcon(), currentPath, "bx")
+		}
 		if canViewIntegration(ctx, "haproxy") {
 			@SidebarLinkWithIntegration("/haproxy", "HAProxy", SidebarIconHAProxy(), currentPath, "haproxy")
 		}
@@ -1786,9 +1855,23 @@ templ OrderedIntegrationLinks(currentPath string) {
 	}
 }
 
+// hasIntegration reports whether an integration name is already in the
+// ordered list. Used by OrderedIntegrationLinks to decide whether to
+// inject the Bx synthetic entry on installs that predate the gear.
+func hasIntegration(list []auth.SidebarIntegration, name string) bool {
+	for _, i := range list {
+		if i.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
 // renderIntegrationLink renders a single integration link based on the integration name.
 templ renderIntegrationLink(name string, currentPath string) {
 	switch name {
+		case "bx":
+			@SidebarLinkDraggable("/bx", "Bx", bxSidebarIcon(), currentPath, "bx")
 		case "home":
 			@SidebarLinkDraggable("/home", "Home", SidebarIconHome(), currentPath, "home")
 		case "haproxy":
@@ -1812,11 +1895,123 @@ templ renderIntegrationLink(name string, currentPath string) {
 
 templ Header() {
 	<header class="fixed top-0 right-0 left-64 bg-white dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700 z-40 transition-all duration-300">
-		<div class="flex items-center px-6 h-[55px]">
+		<div class="flex items-center px-6 h-[55px] gap-3">
+			<!-- Box switcher chip (rendered when boxes are configured) -->
+			@boxSwitcherChip()
 			<!-- Page content (title, server selector, controls) - populated by page-specific slots -->
 			<div id="header-page-content" class="flex items-center flex-1">
 				<!-- Page-specific content will be injected here via JavaScript -->
 			</div>
 		</div>
 	</header>
+	@boxSwitcherPalette()
+}
+
+// boxSwitcherChip is the persistent host pill in the top-left of the
+// header chrome. It is the primary box-switching affordance — clicking it
+// opens the searchable palette. On installs with no boxes, or for users
+// who lack any box, the chip renders as a "Choose a box" CTA. On
+// box-agnostic pages without an active selection, it renders as
+// "All boxes" so the user can tell at a glance what context they are in.
+templ boxSwitcherChip() {
+	{{ boxes := auth.GetAllBoxesFromContext(ctx) }}
+	{{ active, hasActive := auth.GetSelectedBoxFromContext(ctx) }}
+	if len(boxes) == 0 {
+		<a
+			href="/settings/boxes/new"
+			class="inline-flex items-center gap-2 px-3 h-[34px] text-sm rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
+			title="No boxes configured — click to add one"
+		>
+			@boxChipIcon()
+			<span>Add a box</span>
+		</a>
+	} else {
+		<button
+			type="button"
+			id="box-switcher-chip"
+			data-active-box-id={ activeBoxIDForChip(active, hasActive) }
+			onclick="openBoxSwitcher()"
+			class="inline-flex items-center gap-2 px-3 h-[34px] text-sm rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
+			title="Switch boxes (press g then b)"
+		>
+			if hasActive {
+				<span
+					id="box-switcher-chip-dot"
+					class="inline-block w-2 h-2 rounded-full bg-gray-300 ring-1 ring-inset ring-gray-400/40 animate-pulse"
+					data-box-id={ active.ID }
+				></span>
+				<span class="font-medium truncate max-w-[18ch]">{ active.Name }</span>
+			} else {
+				@boxChipIcon()
+				<span class="text-gray-500 dark:text-gray-400">All boxes</span>
+			}
+			<svg class="w-3.5 h-3.5 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+			</svg>
+		</button>
+	}
+}
+
+// boxSwitcherPalette is the command-palette-style picker that opens when
+// the chip is clicked or `g b` is pressed. Rendered hidden by default;
+// box-switcher.js handles open/close + search filter + arrow-key nav.
+//
+// Boxes are JSON-encoded into the dataset so the palette renders without
+// a round-trip; status dots upgrade in place via SSE from /bx/api/events.
+templ boxSwitcherPalette() {
+	{{ boxes := auth.GetAllBoxesFromContext(ctx) }}
+	{{ active, _ := auth.GetSelectedBoxFromContext(ctx) }}
+	if len(boxes) > 0 {
+		<div id="box-switcher-overlay" class="fixed inset-0 z-[60] hidden bg-black/40 backdrop-blur-sm" data-active-box-id={ activeBoxIDForChip(active, active != nil) } role="dialog" aria-modal="true" aria-labelledby="box-switcher-title">
+			<div class="absolute left-1/2 -translate-x-1/2 top-20 w-[480px] max-w-[92vw] rounded-lg bg-white dark:bg-slate-800 shadow-2xl border border-gray-200 dark:border-slate-700 overflow-hidden">
+				<h2 id="box-switcher-title" class="sr-only">Switch box</h2>
+				<div class="flex items-center gap-2 px-3 py-2 border-b border-gray-200 dark:border-slate-700">
+					<svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z"></path>
+					</svg>
+					<input
+						id="box-switcher-search"
+						type="search"
+						placeholder="Search boxes…"
+						aria-label="Search boxes"
+						autocomplete="off"
+						class="flex-1 bg-transparent text-sm text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none border-0"
+					/>
+					<kbd class="hidden sm:inline-flex items-center px-1.5 h-5 text-[10px] font-mono text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-slate-700 rounded">esc</kbd>
+				</div>
+				<ul id="box-switcher-list" class="max-h-[60vh] overflow-y-auto py-1" data-boxes={ encodeBoxesJSON(boxes) }>
+					<!-- Items are rendered by box-switcher.js to keep dot/search behavior in one place -->
+				</ul>
+				<div class="flex items-center justify-between px-3 py-1.5 border-t border-gray-200 dark:border-slate-700 text-[11px] text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-slate-900/40">
+					<span><kbd class="font-mono">↑↓</kbd> navigate · <kbd class="font-mono">↵</kbd> select</span>
+					<a href="/bx" class="hover:underline">View all → Bx</a>
+				</div>
+			</div>
+		</div>
+	}
+}
+
+// boxChipIcon is the small 2×2 grid drawn inside the header chip when no
+// box is selected. Kept local to base.templ (rather than imported from the
+// bx gear) to avoid a layouts → gears import cycle.
+templ boxChipIcon() {
+	<svg class="w-3.5 h-3.5 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+		<rect x="3" y="3" width="7.5" height="7.5" rx="1.2"></rect>
+		<rect x="13.5" y="3" width="7.5" height="7.5" rx="1.2"></rect>
+		<rect x="3" y="13.5" width="7.5" height="7.5" rx="1.2"></rect>
+		<rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.2"></rect>
+	</svg>
+}
+
+// bxSidebarIcon is the sidebar variant of the Bx icon. Same artwork as
+// the chip icon but at sidebar size and color. Local to layouts so the
+// base template doesn't have to import the bx gear (which would create a
+// layouts → gears → layouts cycle).
+templ bxSidebarIcon() {
+	<svg class="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.6">
+		<rect x="3" y="3" width="7.5" height="7.5" rx="1.2"></rect>
+		<rect x="13.5" y="3" width="7.5" height="7.5" rx="1.2"></rect>
+		<rect x="3" y="13.5" width="7.5" height="7.5" rx="1.2"></rect>
+		<rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.2"></rect>
+	</svg>
 }

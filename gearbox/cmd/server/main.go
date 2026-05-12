@@ -31,6 +31,7 @@ import (
 
 	// Import gears - blank identifier triggers init() registration
 	_ "github.com/sarg3nt/gearbox/internal/gears/alerts"
+	_ "github.com/sarg3nt/gearbox/internal/gears/bx"
 	_ "github.com/sarg3nt/gearbox/internal/gears/certificates"
 	_ "github.com/sarg3nt/gearbox/internal/gears/haproxy"
 	_ "github.com/sarg3nt/gearbox/internal/gears/home"
