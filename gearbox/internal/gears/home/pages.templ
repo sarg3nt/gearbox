@@ -249,8 +249,8 @@ templ IndexPage(d IndexPageData) {
 		<div class="px-4 sm:px-6 lg:px-8 py-6">
 			if len(d.Tiles) == 0 {
 				<div id="home-empty-state" class="border-2 border-dashed border-gray-300 dark:border-slate-700 rounded-xl py-16 text-center">
-					<div class="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500 mb-3">
-						@HomeIcon()
+					<div class="mx-auto text-gray-400 dark:text-gray-500 mb-4 flex justify-center">
+						@HomeIconClass("w-20 h-20")
 					</div>
 					<h2 class="text-lg font-semibold text-gray-700 dark:text-gray-200">Your dashboard is empty</h2>
 					<p class="mt-2 text-sm text-gray-500 dark:text-gray-400 max-w-md mx-auto">

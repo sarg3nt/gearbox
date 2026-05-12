@@ -31,6 +31,7 @@ import (
 
 	// Import gears - blank identifier triggers init() registration
 	_ "github.com/sarg3nt/gearbox/internal/gears/alerts"
+	_ "github.com/sarg3nt/gearbox/internal/gears/bx"
 	_ "github.com/sarg3nt/gearbox/internal/gears/certificates"
 	_ "github.com/sarg3nt/gearbox/internal/gears/haproxy"
 	_ "github.com/sarg3nt/gearbox/internal/gears/home"
@@ -527,6 +528,12 @@ func main() {
 		// supplied by this protected group's middleware, not the path.
 		r.Get("/api/passkey/register/begin", h.PasskeyRegisterBegin)
 		r.Post("/api/passkey/register/finish", h.PasskeyRegisterFinish)
+
+		// First-run onboarding (issue #49). Admin-only. The /welcome page
+		// self-redirects to / once onboarding is complete (any box or
+		// system gear enabled), so it's safe to leave reachable.
+		r.Get("/welcome", h.WelcomePage)
+		r.Post("/onboarding", h.OnboardingPost)
 
 		// Settings routes
 		r.Route("/settings", func(r chi.Router) {
