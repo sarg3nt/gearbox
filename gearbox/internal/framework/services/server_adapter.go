@@ -28,6 +28,14 @@ func NewServerAdapter(db *database.DB, encryptor *crypto.Encryptor, fallback []m
 	}
 }
 
+// GetDB exposes the underlying *database.DB for gears that need to query
+// box rows beyond what the gear.ServerRegistry facade exposes (notably the
+// Bx gear's status monitor, which needs Location + APIKeyEncrypted to
+// probe every agent — fields the trimmed ServerConfig drops).
+func (a *ServerAdapter) GetDB() *database.DB {
+	return a.db
+}
+
 // GetEnabledBoxes returns all boxes that are currently enabled.
 func (a *ServerAdapter) GetEnabledBoxes() []gear.ServerConfig {
 	dbServers, err := a.db.GetEnabledBoxes()

@@ -184,13 +184,23 @@ func (h *Handler) getDefaultServerID() string {
 	return ""
 }
 
-// InjectIntegrationStatus is middleware that adds integration status and user permissions to the request context.
-// This enables server-side conditional rendering of navigation items based on integration status and permissions.
+// InjectIntegrationStatus is middleware that adds integration status, the
+// active-box context, the enabled-box roster, and user permissions to the
+// request context. This is what drives the sidebar's scope-aware rendering
+// and the header's box-switcher chip.
 //
-// System-scoped gears (Home, etc. — keyed by database.SystemServerID) are
-// always loaded, even when no boxes are registered. Box-scoped gears load
-// from the default box if one exists; otherwise they're explicitly disabled
-// so the sidebar stays clean during first-run.
+// Active-box resolution:
+//   - If `?box_id=<id>` is present in the URL and refers to an enabled box,
+//     that box is the active context. The sidebar shows that box's enabled
+//     gears (plus all ScopeBoxAgnostic / ScopeSystem gears).
+//   - Otherwise the active context is empty ("box-agnostic"). The sidebar
+//     hides ScopeBox gears (they require a selection) and shows only
+//     ScopeBoxAgnostic + ScopeSystem entries.
+//
+// System gears (keyed by database.SystemServerID) are loaded unconditionally
+// because they are install-wide. The legacy "fall back to the first enabled
+// box" behavior is gone — the Bx fleet view is now the user's entry point
+// when no box is explicitly selected.
 func (h *Handler) InjectIntegrationStatus(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -201,10 +211,29 @@ func (h *Handler) InjectIntegrationStatus(next http.Handler) http.Handler {
 			ctx = auth.SetUserPermissions(ctx, perms)
 		}
 
+		// Publish the enabled-box roster so the header chip and switcher
+		// palette can render without re-querying the DB.
+		allBoxes := h.getEnabledServers()
+		ctx = auth.SetAllBoxes(ctx, allBoxes)
+
+		// Resolve the active box from ?box_id= (if any and valid).
+		var activeBox *models.BoxConfig
+		if requested := r.URL.Query().Get("box_id"); requested != "" {
+			for i := range allBoxes {
+				if allBoxes[i].ID == requested {
+					activeBox = &allBoxes[i]
+					break
+				}
+			}
+		}
+		if activeBox != nil {
+			ctx = auth.SetSelectedBox(ctx, activeBox)
+		}
+
 		status := make(map[string]bool)
 		orderedIntegrations := make([]auth.SidebarIntegration, 0)
 
-		// System gears go first so they render at the head of the nav.
+		// System / box-agnostic gears go first so they render at the head of the nav.
 		systemGears, err := h.db.GetGears(database.SystemServerID)
 		if err != nil {
 			h.logger.Warn("failed to load system gears for sidebar", "error", err)
@@ -218,15 +247,15 @@ func (h *Handler) InjectIntegrationStatus(next http.Handler) http.Handler {
 			})
 		}
 
-		if boxID := h.getDefaultServerID(); boxID != "" {
-			integrations, err := h.db.GetGears(boxID)
+		if activeBox != nil {
+			integrations, err := h.db.GetGears(activeBox.ID)
 			if err != nil {
 				// Fail-open: a partial gear list could collapse the sidebar
 				// to system-gears-only, hiding box features the user
 				// actually has. Leave the gear-status/order context unset
 				// so OrderedIntegrationLinks falls back to its default
 				// (full) rendering branch.
-				h.logger.Error("failed to get box integrations for sidebar", "error", err)
+				h.logger.Error("failed to get box integrations for sidebar", "error", err, "box_id", activeBox.ID)
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
@@ -239,10 +268,10 @@ func (h *Handler) InjectIntegrationStatus(next http.Handler) http.Handler {
 				})
 			}
 		} else {
-			// No box configured — explicitly mark box-scoped gears off so
-			// the sidebar doesn't fall back to fail-open and clutter
-			// first-run with disabled items. System gears (Home) are
-			// already injected above and remain visible if enabled.
+			// No box selected — explicitly mark box-scoped gears off so the
+			// sidebar renderer hides them. ScopeBoxAgnostic gears (Bx, etc.)
+			// and ScopeSystem gears (Home) are injected above as system
+			// rows and remain visible.
 			for _, n := range []string{"haproxy", "metrics", "logs", "services", "certificates", "traffic", "alerts", "os_updates"} {
 				if _, present := status[n]; !present {
 					status[n] = false
