@@ -330,18 +330,33 @@ func (h *Handler) GearUpdatePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Handle config update based on gear type
+	wantsJSON := strings.Contains(r.Header.Get("Accept"), "application/json")
 	var newConfig json.RawMessage
 	switch gearName {
 	case database.GearServices:
 		newConfig, err = h.parseServicesConfig(r)
 	case database.GearLogs:
-		// Logs have a special handler that saves to log_sources table
+		// Logs have a special handler that saves to log_sources table.
+		// The gear configure page POSTs each toggle change with
+		// Accept: application/json and stays on the page, so respond
+		// in kind instead of redirecting.
 		err = h.saveLogSourcesConfig(boxID, r)
 		if err != nil {
+			if wantsJSON {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+				_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "error": err.Error()})
+				return
+			}
 			http.Redirect(w, r, redirectBase+"&error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 			return
 		}
 		h.logAudit(r, user.ID, "gear_updated", gearItem.DisplayName+" configuration updated")
+		if wantsJSON {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"success": true})
+			return
+		}
 		http.Redirect(w, r, redirectBase+"&success="+url.QueryEscape("Configuration saved successfully"), http.StatusSeeOther)
 		return
 	case database.GearCertificates:

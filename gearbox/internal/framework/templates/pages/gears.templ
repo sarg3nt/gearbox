@@ -438,14 +438,14 @@ func isShowAllEnabled(config json.RawMessage) bool {
 }
 
 templ logsConfigForm(integration *database.Gear, serverID string, availableLogSources []LogSourceInfo) {
-	<form method="POST" action={ templ.SafeURL("/settings/gears/" + integration.Name + "?server=" + serverID) }>
+	<div id="logs-config-root" data-save-url={ "/settings/gears/" + integration.Name + "?server=" + serverID }>
 		<div class="space-y-6">
 			<!-- Header with title and filter -->
 			<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
 				<div>
 					<h3 class="text-lg font-medium text-gray-900 dark:text-gray-100">Available Log Sources</h3>
 					<p class="text-sm text-gray-600 dark:text-gray-400">
-						Select which log sources should be available in the log viewer dropdown.
+						Select which log sources should be available in the log viewer dropdown. Changes save automatically.
 					</p>
 				</div>
 				if len(availableLogSources) > 0 {
@@ -528,19 +528,8 @@ templ logsConfigForm(integration *database.Gear, serverID string, availableLogSo
 					</button>
 				</div>
 			}
-
-			if len(availableLogSources) > 0 {
-				<div class="flex justify-end pt-4">
-					<button
-						type="submit"
-						class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
-					>
-						Save Configuration
-					</button>
-				</div>
-			}
 		</div>
-	</form>
+	</div>
 
 	<script src="/static/js/gears/logs-config.js"></script>
 }
