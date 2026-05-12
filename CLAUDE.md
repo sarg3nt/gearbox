@@ -102,26 +102,9 @@ When a new feature is planned or a bug is reported:
 7. **Track Progress** — Keep the project board and issues in sync
 8. **Complete** — When user confirms done: merge PR, close issue, move project card to Done
 
-### Branch Naming Convention
+### Branching, PR, and label conventions
 
-- **Features:** `feature/short-description` (e.g., `feature/dashboard-export`)
-- **Bug fixes:** `fix/short-description` (e.g., `fix/websocket-reconnect`)
-- **Always branch from `main`**
-
-### PR Convention
-
-- All PRs target `main`
-- PR body must include `Closes #<issue-number>` to auto-close the issue on merge
-- Use the standard PR template format (Summary, Test Plan)
-
-### Issue Labels
-
-Use these labels consistently:
-
-- `enhancement` — New features
-- `bug` — Bug fixes
-- `documentation` — Docs-only changes
-- `refactor` — Code improvements without behavior change
+Generic branching/PR/label rules live in `~/.claude/CLAUDE.md`. All of them apply here unmodified — `feature/...` and `fix/...` branches from `main`, `Closes #N` in PR bodies, the four standard labels.
 
 ### Project Board
 
@@ -150,14 +133,6 @@ TASKS.md is a **scratch pad only** — not a tracking system. The GitHub Project
 
 - `/dowork` - Read TASKS.md, create issues from it, and start working (ask questions as needed)
 - `/doallwork` - Read TASKS.md, create issues from it, and work autonomously
-
-## User Preferences
-
-### Code Block Formatting
-
-- **Always use fenced code blocks** (triple backticks) for commands
-- Fenced blocks provide a copy button in the IDE
-- Never use inline code for commands the user should run
 
 ## UI Conventions
 
@@ -241,13 +216,9 @@ import "github.com/sarg3nt/gearbox/internal/framework/ui"
 - Inform user before running `make deploy` for agent
 - Validate HAProxy config with `haproxy -c` before reload (if applicable)
 
-### Markdown Linting
+### Markdown and docs
 
-Run `npx markdownlint-cli '**/*.md' --config .markdownlint.json` to validate. Key rules: blank lines around lists/code blocks, specify language for code blocks, proper headings, single newline at EOF.
-
-### Creating New Documentation
-
-Store in `docs/` directory using kebab-case naming. Include TOC after main heading. Reference in README.md.
+See `~/.claude/CLAUDE.md` for markdown style and the `docs/` + kebab-case rule. This repo also requires a TOC after the main heading in new docs.
 
 ### Creating Reports and Scan Results
 
