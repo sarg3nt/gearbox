@@ -92,6 +92,35 @@ type Subscriber struct {
 	done     chan struct{}
 }
 
+// subscriberEventBufferSize is the per-subscriber Events channel capacity.
+// Sized to absorb bursts of high-frequency events (e.g. logs.updated emits
+// one event per log line tailed on the agent) without dropping. A slow SSE
+// consumer that stays behind this for the full window will still drop, but
+// the warning is throttled — see dropLogInterval.
+const subscriberEventBufferSize = 500
+
+// dropLogInterval is the minimum gap between consecutive "channel full"
+// warnings for the same (subscriber, event_type) pair. Drops still happen
+// at the same rate; only the log output is coalesced so a bursty consumer
+// produces one line per interval instead of one per dropped event.
+const dropLogInterval = 10 * time.Second
+
+// dropKey identifies a stream of drops to coalesce. Per-(subscriber, event-type)
+// so an overflow on logs.updated doesn't suppress a separate overflow on
+// metrics.updated for the same subscriber.
+type dropKey struct {
+	subID     string
+	eventType EventType
+}
+
+// dropAggregator tracks drops between log emissions for one dropKey.
+// Only accessed from the Hub's run goroutine, so no synchronization.
+type dropAggregator struct {
+	count      int64
+	firstSeen  time.Time
+	lastLogged time.Time
+}
+
 // Hub manages event distribution to subscribers.
 type Hub struct {
 	subscribers map[string]*Subscriber
@@ -101,6 +130,9 @@ type Hub struct {
 	register    chan *Subscriber
 	unregister  chan *Subscriber
 	done        chan struct{}
+	// subscriberDrops is owned by run() and must not be touched from other
+	// goroutines.
+	subscriberDrops map[dropKey]*dropAggregator
 }
 
 // NewHub creates a new event hub.
@@ -110,12 +142,13 @@ func NewHub(logger *slog.Logger) *Hub {
 	}
 
 	h := &Hub{
-		subscribers: make(map[string]*Subscriber),
-		logger:      logger,
-		broadcast:   make(chan Event, 100),
-		register:    make(chan *Subscriber),
-		unregister:  make(chan *Subscriber),
-		done:        make(chan struct{}),
+		subscribers:     make(map[string]*Subscriber),
+		logger:          logger,
+		broadcast:       make(chan Event, 100),
+		register:        make(chan *Subscriber),
+		unregister:      make(chan *Subscriber),
+		done:            make(chan struct{}),
+		subscriberDrops: make(map[dropKey]*dropAggregator),
 	}
 
 	return h
@@ -159,6 +192,7 @@ func (h *Hub) run() {
 				h.logger.Debug("subscriber unregistered", "id", sub.ID)
 			}
 			h.mu.Unlock()
+			h.cleanupDropTracker(sub.ID)
 
 		case event := <-h.broadcast:
 			h.mu.RLock()
@@ -172,10 +206,7 @@ func (h *Hub) run() {
 				select {
 				case sub.Events <- event:
 				default:
-					// Channel full, skip this event for this subscriber
-					h.logger.Warn("subscriber event channel full, dropping event",
-						"subscriber_id", sub.ID,
-						"event_type", event.Type)
+					h.recordDrop(sub.ID, event.Type)
 				}
 			}
 			h.mu.RUnlock()
@@ -188,12 +219,59 @@ func (h *Hub) Subscribe(id string, serverID string) *Subscriber {
 	sub := &Subscriber{
 		ID:       id,
 		ServerID: serverID,
-		Events:   make(chan Event, 50),
+		Events:   make(chan Event, subscriberEventBufferSize),
 		done:     make(chan struct{}),
 	}
 
 	h.register <- sub
 	return sub
+}
+
+// recordDrop accounts for one dropped event and emits a coalesced warning
+// at most once per dropLogInterval per (subscriber, event type). The first
+// drop in a window logs immediately so a fresh problem isn't hidden; later
+// drops accumulate until the interval elapses, then log with the count.
+// Called only from run(); no synchronization on subscriberDrops.
+func (h *Hub) recordDrop(subID string, eventType EventType) {
+	h.recordDropAt(subID, eventType, time.Now())
+}
+
+// recordDropAt is the testable form of recordDrop. now is the timestamp the
+// caller wants treated as "now" — production code passes time.Now(), tests
+// pass a controlled time so throttling behavior is deterministic.
+func (h *Hub) recordDropAt(subID string, eventType EventType, now time.Time) {
+	key := dropKey{subID: subID, eventType: eventType}
+
+	agg, ok := h.subscriberDrops[key]
+	if !ok {
+		agg = &dropAggregator{firstSeen: now}
+		h.subscriberDrops[key] = agg
+	}
+	agg.count++
+
+	if now.Sub(agg.lastLogged) < dropLogInterval {
+		return
+	}
+
+	h.logger.Warn("subscriber event channel full, dropping event(s)",
+		"subscriber_id", subID,
+		"event_type", eventType,
+		"dropped", agg.count,
+		"window", now.Sub(agg.firstSeen).Round(time.Millisecond))
+	agg.lastLogged = now
+	agg.firstSeen = now
+	agg.count = 0
+}
+
+// cleanupDropTracker removes any drop-aggregator entries for a subscriber
+// that has unsubscribed, so the map doesn't grow with churning subscribers.
+// Called only from run().
+func (h *Hub) cleanupDropTracker(subID string) {
+	for k := range h.subscriberDrops {
+		if k.subID == subID {
+			delete(h.subscriberDrops, k)
+		}
+	}
 }
 
 // Unsubscribe removes a subscriber.
