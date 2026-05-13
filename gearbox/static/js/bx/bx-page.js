@@ -1,17 +1,19 @@
 /**
  * Bx fleet page — client behaviors.
  *
- * The server renders the table with the current monitor snapshot baked in,
- * so the page is fully usable on first paint with JS disabled. This script
+ * The server bakes the current monitor snapshot into a JSON island
+ * (#bx-data) so the grid mounts with real rows on first paint. This script
  * upgrades it with:
  *
- *   1. Row click → navigate to that box's default landing.
- *   2. SSE subscription to /bx/api/events for live dot/latency updates
- *      without polling.
- *   3. Relative-time labels for the "last checked" column.
- *
- * SSE is intentionally a polyfill-free EventSource — every browser we care
- * about supports it natively. Reconnection is automatic.
+ *   1. Tabulator-based sortable, filterable grid (UniFi house style).
+ *   2. SSE subscription to /bx/api/events for live status / latency
+ *      updates without polling — events flow through grid.updateData()
+ *      so Tabulator handles in-place row replacement and re-sort.
+ *   3. Relative-time labels for the "last checked" column, refreshed on
+ *      a 5-second tick.
+ *   4. Row click → navigate to that box's default landing.
+ *   5. View-state filter dropdown (All / Healthy / Issues / Disabled)
+ *      that AND-composes with the search box via grid.setViewFilters().
  */
 (function () {
     'use strict';
@@ -25,94 +27,250 @@
     };
 
     const STATUS_TITLES = {
-        green: 'Healthy',
-        yellow: 'Warning',
-        red: 'Critical',
-        gray: 'Disabled',
+        green:   'Healthy',
+        yellow:  'Warning',
+        red:     'Critical',
+        gray:    'Disabled',
         unknown: 'Checking…',
     };
 
-    /* -------------------------------------------------------------- *
-     * Row click navigation
-     * -------------------------------------------------------------- */
-    document.addEventListener('click', function (e) {
-        const row = e.target.closest('.bx-row');
-        if (!row) return;
-        // Defer to nested anchors / buttons — they get their own behavior.
-        if (e.target.closest('a, button')) return;
-        const href = row.dataset.href;
-        if (href) window.location.assign(href);
-    });
+    // Status sort order: red > yellow > unknown > green > gray. Lets the
+    // user sort the Status column in a way that surfaces problems first.
+    const STATUS_RANK = { red: 0, yellow: 1, unknown: 2, green: 3, gray: 4 };
 
     /* -------------------------------------------------------------- *
-     * Relative-time formatter for "last checked"
+     * Time formatters
      * -------------------------------------------------------------- */
     function relTime(ts) {
         if (!ts) return '—';
-        const diff = (Date.now() - new Date(ts).getTime()) / 1000;
-        if (!isFinite(diff)) return '—';
+        const t = new Date(ts).getTime();
+        if (!isFinite(t) || t === 0) return '—';
+        const diff = (Date.now() - t) / 1000;
         if (diff < 5) return 'just now';
         if (diff < 60) return Math.floor(diff) + 's ago';
         if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
         if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
         return Math.floor(diff / 86400) + 'd ago';
     }
-    function refreshTimestamps() {
-        document.querySelectorAll('.bx-last-checked').forEach(function (cell) {
-            const ts = cell.dataset.ts;
-            if (!ts) return;
-            cell.textContent = relTime(ts);
-        });
+
+    /* -------------------------------------------------------------- *
+     * Cell formatters
+     * -------------------------------------------------------------- */
+    function statusDotFormatter(cell) {
+        const data = cell.getRow().getData();
+        const level = data.level || 'unknown';
+        const reachable = !!data.reachable;
+        let title = STATUS_TITLES[level] || level;
+        if (level === 'red' && !reachable) title = 'Agent unreachable';
+        const cls = STATUS_CLASSES[level] || STATUS_CLASSES.unknown;
+        const span = document.createElement('span');
+        span.className = 'inline-block w-2.5 h-2.5 rounded-full ' + cls;
+        span.title = title;
+        return span;
     }
-    refreshTimestamps();
-    setInterval(refreshTimestamps, 5000);
+
+    function nameFormatter(cell) {
+        const v = cell.getValue();
+        const span = document.createElement('span');
+        span.className = 'font-medium text-gray-900 dark:text-gray-100';
+        span.textContent = v == null ? '' : String(v);
+        return span;
+    }
+
+    function emDashIfEmpty(cell) {
+        const v = cell.getValue();
+        if (v == null || v === '') {
+            const span = document.createElement('span');
+            span.className = 'text-gray-400 dark:text-gray-500';
+            span.textContent = '—';
+            return span;
+        }
+        return String(v);
+    }
+
+    function agentFormatter(cell) {
+        const v = cell.getValue();
+        if (v == null || v === '') {
+            return emDashIfEmpty(cell);
+        }
+        const span = document.createElement('span');
+        span.className = 'font-mono text-xs truncate inline-block max-w-full text-gray-600 dark:text-gray-300';
+        span.textContent = String(v);
+        span.title = String(v);
+        return span;
+    }
+
+    function latencyFormatter(cell) {
+        const v = cell.getValue();
+        if (typeof v !== 'number' || v <= 0) {
+            const span = document.createElement('span');
+            span.className = 'text-gray-400 dark:text-gray-500';
+            span.textContent = '—';
+            return span;
+        }
+        const span = document.createElement('span');
+        span.className = 'font-mono text-xs tabular-nums text-gray-600 dark:text-gray-300';
+        span.textContent = v + 'ms';
+        return span;
+    }
+
+    function lastCheckedFormatter(cell) {
+        const v = cell.getValue();
+        if (!v) {
+            const span = document.createElement('span');
+            span.className = 'text-gray-400 dark:text-gray-500';
+            span.textContent = '—';
+            return span;
+        }
+        const span = document.createElement('span');
+        span.className = 'text-xs text-gray-500 dark:text-gray-400';
+        span.textContent = relTime(v);
+        return span;
+    }
+
+    /* -------------------------------------------------------------- *
+     * Mount the grid
+     * -------------------------------------------------------------- */
+    let grid = null;
+    let viewFilter = 'all';
+
+    function loadInitialRows() {
+        const node = document.getElementById('bx-data');
+        if (!node) return [];
+        try { return JSON.parse(node.textContent || '[]'); }
+        catch (_) { return []; }
+    }
+
+    function applyViewFilter(value) {
+        viewFilter = value || 'all';
+        if (!grid) return;
+        switch (viewFilter) {
+            case 'healthy':
+                grid.setViewFilters([{ field: 'level', type: '=', value: 'green' }]);
+                break;
+            case 'issues':
+                grid.setViewFilters([{ field: 'level', type: 'in', value: ['red', 'yellow'] }]);
+                break;
+            case 'disabled':
+                grid.setViewFilters([{ field: 'enabled', type: '=', value: false }]);
+                break;
+            case 'all':
+            default:
+                grid.clearViewFilters();
+        }
+    }
+
+    function init() {
+        const mount = document.getElementById('bx-grid');
+        if (!mount || typeof Tabulator === 'undefined' || typeof createDataGrid !== 'function') {
+            return;
+        }
+        const initial = loadInitialRows();
+
+        grid = createDataGrid('#bx-grid', {
+            data: initial,
+            layout: 'fitColumns',
+            placeholder: 'No boxes found',
+            initialSort: [{ column: 'name', dir: 'asc' }],
+            index: 'box_id',
+            // `height: auto` lets the table grow naturally with row count
+            // instead of forcing a fixed 100%-of-parent box (which made the
+            // grid look stretched and produced phantom vertical scrollbars
+            // when there's only one row). `maxHeight` caps it on long
+            // fleets so the page doesn't become endless-scroll on a 1k-box
+            // install.
+            height: 'auto',
+            maxHeight: '70vh',
+            searchInput: '#bx-search',
+            searchFields: ['name', 'location', 'agent_url'],
+            columns: [
+                {
+                    title: '',
+                    field: 'level',
+                    width: 36,
+                    minWidth: 36,
+                    hozAlign: 'center',
+                    headerSort: true,
+                    sorter: function (a, b) {
+                        const ra = STATUS_RANK[a] != null ? STATUS_RANK[a] : 99;
+                        const rb = STATUS_RANK[b] != null ? STATUS_RANK[b] : 99;
+                        return ra - rb;
+                    },
+                    formatter: statusDotFormatter,
+                    headerTooltip: 'Status — sort by severity',
+                    cssClass: 'bx-col-status',
+                },
+                { title: 'Name', field: 'name', formatter: nameFormatter, minWidth: 140 },
+                { title: 'Location', field: 'location', formatter: emDashIfEmpty, minWidth: 120 },
+                { title: 'Agent', field: 'agent_url', formatter: agentFormatter, minWidth: 200 },
+                {
+                    title: 'Latency',
+                    field: 'latency_ms',
+                    hozAlign: 'right',
+                    width: 110,
+                    formatter: latencyFormatter,
+                    sorter: 'number',
+                },
+                {
+                    title: 'Last checked',
+                    field: 'last_checked',
+                    width: 140,
+                    formatter: lastCheckedFormatter,
+                    sorter: function (a, b) {
+                        // Newest first by default. Empty values sort last.
+                        const ta = a ? new Date(a).getTime() : -Infinity;
+                        const tb = b ? new Date(b).getTime() : -Infinity;
+                        return ta - tb;
+                    },
+                },
+            ],
+        });
+
+        grid.on('rowClick', function (e, row) {
+            const data = row.getData();
+            if (!data || !data.box_id) return;
+            // /home with the cookie-driven box selection — switchBox writes
+            // the cookie via the box_id query and the middleware redirects
+            // us back to a clean /home URL.
+            window.switchBox(data.box_id, '/home');
+        });
+
+        // Cursor + hover styling for clickable rows.
+        grid.on('renderComplete', function () {
+            mount.querySelectorAll('.tabulator-row').forEach(function (r) {
+                r.style.cursor = 'pointer';
+            });
+        });
+
+        // Re-render only the relative-time column so "12s ago" stays fresh
+        // without flushing the whole grid.
+        setInterval(function () {
+            if (!grid || !grid.getColumns) return;
+            const col = grid.getColumn('last_checked');
+            if (col && col.redraw) col.redraw(true);
+        }, 5000);
+
+        // Apply any preselected view filter from the dropdown (browsers
+        // sometimes restore a non-default value via session history).
+        const sel = document.getElementById('bx-view-filter');
+        if (sel) applyViewFilter(sel.value);
+    }
+
+    // Expose for the inline onchange="" handler.
+    window.bxOnViewFilterChange = applyViewFilter;
 
     /* -------------------------------------------------------------- *
      * Live status updates via SSE
      * -------------------------------------------------------------- */
-    // setEmDash replaces a cell's contents with the standard em-dash span
-    // used by the server-side renderer for "no value." We build it via DOM
-    // APIs (not innerHTML) to keep the page XSS-safe in the face of any
-    // future SSE payload tampering.
-    function setEmDash(cell) {
-        while (cell.firstChild) cell.removeChild(cell.firstChild);
-        const span = document.createElement('span');
-        span.className = 'text-gray-400 dark:text-gray-500';
-        span.textContent = '—';
-        cell.appendChild(span);
-    }
-
-    function applyStatus(s) {
-        if (!s || !s.box_id) return;
-        const row = document.querySelector(
-            '.bx-row[data-box-id="' + CSS.escape(s.box_id) + '"]'
-        );
-        if (!row) return;
-
-        const dot = row.querySelector('.bx-status-dot');
-        if (dot) {
-            const level = s.level || 'unknown';
-            // Clear color classes, then apply the new set.
-            dot.className = 'inline-block w-2.5 h-2.5 rounded-full bx-status-dot ' +
-                (STATUS_CLASSES[level] || STATUS_CLASSES.unknown);
-            dot.dataset.level = level;
-            dot.title = STATUS_TITLES[level] || level;
-        }
-
-        const lat = row.querySelector('.bx-latency');
-        if (lat) {
-            if (s.latency_ms > 0) {
-                lat.textContent = s.latency_ms + 'ms';
-                lat.classList.remove('text-gray-400', 'dark:text-gray-500');
-            } else {
-                setEmDash(lat);
-            }
-        }
-
-        const ts = row.querySelector('.bx-last-checked');
-        if (ts && s.last_checked) {
-            ts.dataset.ts = s.last_checked;
-            ts.textContent = relTime(s.last_checked);
+    function applySSE(payload) {
+        if (!grid || !payload || !payload.box_id) return;
+        // updateData is upsert-by-index when `index` is set (we set it to
+        // box_id above). If the box is brand new we addData instead.
+        const existing = grid.getRow(payload.box_id);
+        if (existing) {
+            grid.updateData([payload]);
+        } else {
+            grid.addData([payload]);
         }
     }
 
@@ -121,21 +279,20 @@
         try {
             evt = new EventSource('/bx/api/events');
         } catch (_) {
-            return; // EventSource construction can throw in unusual sandboxes
+            return;
         }
         evt.addEventListener('box.status', function (e) {
-            try {
-                applyStatus(JSON.parse(e.data));
-            } catch (_) { /* ignore malformed events */ }
+            try { applySSE(JSON.parse(e.data)); }
+            catch (_) { /* ignore malformed events */ }
         });
         evt.addEventListener('error', function () {
-            // Browser will auto-reconnect; nothing to do.
+            // Browser auto-reconnects; nothing to do.
         });
     }
-    if (typeof EventSource !== 'undefined') {
+
+    function bootSSE() {
+        if (typeof EventSource === 'undefined') return;
         connect();
-        // Pause/resume on visibility change to avoid burning the connection
-        // budget while the tab is backgrounded.
         document.addEventListener('visibilitychange', function () {
             if (document.hidden) {
                 if (evt) { evt.close(); evt = null; }
@@ -143,5 +300,15 @@
                 connect();
             }
         });
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function () {
+            init();
+            bootSSE();
+        });
+    } else {
+        init();
+        bootSSE();
     }
 })();

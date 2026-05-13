@@ -18,6 +18,47 @@ func activeBoxIDForChip(active *models.BoxConfig, has bool) string {
 	return active.ID
 }
 
+// gearLabelForPath maps a request path to its display label (the human-
+// readable gear name shown in the header breadcrumb). Returns "" for paths
+// the breadcrumb shouldn't claim (e.g. the bare root, which RootRedirect
+// resolves anyway).
+func gearLabelForPath(path string) string {
+	switch {
+	case path == "/" || path == "":
+		return ""
+	case path == "/bx" || strings.HasPrefix(path, "/bx/"):
+		return "Bx"
+	case path == "/home" || strings.HasPrefix(path, "/home/"):
+		// /home's title role is taken over by the per-page board selector
+		// — surfacing both "Home" in the breadcrumb and the board name
+		// next to it is redundant. The page emits the board name via the
+		// hoisted page-header-source.
+		return ""
+	case path == "/haproxy" || strings.HasPrefix(path, "/haproxy/"):
+		return "HAProxy"
+	case path == "/history" || strings.HasPrefix(path, "/history/"):
+		return "Metrics"
+	case path == "/logs" || strings.HasPrefix(path, "/logs/"):
+		return "Logs"
+	case path == "/services" || strings.HasPrefix(path, "/services/"):
+		return "Services"
+	case path == "/certificates" || strings.HasPrefix(path, "/certificates/"):
+		return "Certificates"
+	case path == "/traffic" || strings.HasPrefix(path, "/traffic/"):
+		return "Traffic"
+	case path == "/alerts" || strings.HasPrefix(path, "/alerts/"):
+		return "Alerts"
+	case path == "/os-updates" || strings.HasPrefix(path, "/os-updates/"):
+		return "OS Updates"
+	case path == "/settings" || strings.HasPrefix(path, "/settings/"):
+		return "Settings"
+	case path == "/welcome":
+		return "Welcome"
+	}
+	return ""
+}
+
+
 // encodeBoxesJSON serializes the box roster for the switcher palette's
 // dataset. We only ship `id` and `name` — the agent URL and API key never
 // leave the server, even though they are present in the source slice.
@@ -35,6 +76,70 @@ func encodeBoxesJSON(boxes []models.BoxConfig) string {
 		return "[]"
 	}
 	return string(b)
+}
+
+// encodeGearsJSON serializes the per-user gear list for the command
+// palette. Filters to integrations the user can view AND that are
+// enabled — disabled gears would point at empty pages and clutter the
+// list. The label / path mapping mirrors what OrderedIntegrationLinks
+// renders into the sidebar.
+func encodeGearsJSON(ctx context.Context) string {
+	type lite struct {
+		Name    string `json:"name"`
+		Label   string `json:"label"`
+		Path    string `json:"path"`
+		Enabled bool   `json:"enabled"`
+	}
+	out := make([]lite, 0, 16)
+	integrations, ok := auth.GetGearOrderFromContext(ctx)
+	if ok {
+		for _, i := range integrations {
+			if !canViewIntegration(ctx, i.Name) {
+				continue
+			}
+			path := integrationPath(i.Name)
+			out = append(out, lite{
+				Name:    i.Name,
+				Label:   gearLabelForName(i.Name),
+				Path:    path,
+				Enabled: i.Enabled,
+			})
+		}
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
+}
+
+// gearLabelForName returns the user-facing label for a gear name. Mirrors
+// the labels used by SidebarLink* templates so the palette matches the
+// sidebar's vocabulary exactly.
+func gearLabelForName(name string) string {
+	switch name {
+	case "bx":
+		return "Bx"
+	case "home":
+		return "Home"
+	case "haproxy":
+		return "HAProxy"
+	case "metrics":
+		return "Metrics"
+	case "logs":
+		return "Logs"
+	case "services":
+		return "Services"
+	case "certificates":
+		return "Certificates"
+	case "traffic":
+		return "Traffic"
+	case "alerts":
+		return "Alerts"
+	case "os_updates":
+		return "OS Updates"
+	}
+	return name
 }
 
 // isActivePath checks if the current path matches the nav link
@@ -176,6 +281,39 @@ templ Base(title string, user *models.User, currentPath ...string) {
 				cursor: pointer;
 			}
 
+			/* Compact controls inside the header bar. Every page's
+			   per-page-source div is hoisted into #header-page-content,
+			   so this single rule slims every gear's toolbar without
+			   touching individual templates. Wins on specificity over
+			   per-page Tailwind classes (ID beats class). */
+			#header-page-content select,
+			#header-page-content input[type="text"],
+			#header-page-content input[type="search"],
+			#header-page-content input[type="number"] {
+				height: 30px;
+				min-height: 30px;
+				padding-top: 0.125rem;
+				padding-bottom: 0.125rem;
+				font-size: 0.8125rem; /* 13px */
+				line-height: 1rem;
+			}
+			#header-page-content select {
+				padding-left: 0.5rem;
+				padding-right: 1.75rem;
+			}
+			#header-page-content input[type="text"],
+			#header-page-content input[type="search"] {
+				padding-left: 0.625rem;
+				padding-right: 0.625rem;
+			}
+			/* Header buttons (refresh, copy, download, …) get the same
+			   compact footprint as the surrounding selects. */
+			#header-page-content button {
+				min-height: 30px;
+				padding-top: 0.25rem;
+				padding-bottom: 0.25rem;
+			}
+
 			/* Sidebar transition */
 			.sidebar {
 				transition: width 0.3s ease-in-out;
@@ -229,27 +367,36 @@ templ Base(title string, user *models.User, currentPath ...string) {
 				margin-left: 0;
 			}
 
-			/* Sidebar footer toggle-container (Edit Nav + Collapse buttons).
-			   - Expanded sidebar (16rem): two buttons sit side-by-side.
-			   - Collapsed sidebar (4rem): only ~32px of usable width per
-			     button, so they stack vertically. Animating
-			     grid-template-columns gets us a smooth interpolation
-			     between the two states without needing to touch
-			     flex-direction (which can't be animated). */
-			#toggle-container {
-				display: grid;
-				grid-template-columns: 1fr 1fr;
-				gap: 0.25rem;
-				align-items: center;
-				justify-items: center;
-				transition:
-					grid-template-columns 0.3s ease-in-out,
-					gap 0.3s ease-in-out;
+			/* Sidebar nav scrollbar — overlay-style (Slack/Linear pattern):
+			   invisible until hover, then a thin pill fades in. Keeps the
+			   sidebar quiet on tall viewports; usable when the gear list
+			   exceeds the available height. */
+			.sidebar-overlay-scroll {
+				/* Firefox */
+				scrollbar-width: thin;
+				scrollbar-color: transparent transparent;
+				transition: scrollbar-color 0.2s ease-in-out;
 			}
-			.sidebar-collapsed #toggle-container,
-			.sidebar-initially-collapsed #toggle-container {
-				grid-template-columns: 1fr;
-				gap: 0.5rem;
+			.sidebar-overlay-scroll:hover {
+				scrollbar-color: rgba(148, 163, 184, 0.5) transparent;
+			}
+			/* WebKit (Chrome, Safari, Edge) */
+			.sidebar-overlay-scroll::-webkit-scrollbar {
+				width: 6px;
+			}
+			.sidebar-overlay-scroll::-webkit-scrollbar-track {
+				background: transparent;
+			}
+			.sidebar-overlay-scroll::-webkit-scrollbar-thumb {
+				background: transparent;
+				border-radius: 3px;
+				transition: background 0.2s ease-in-out;
+			}
+			.sidebar-overlay-scroll:hover::-webkit-scrollbar-thumb {
+				background: rgba(148, 163, 184, 0.5);
+			}
+			.dark .sidebar-overlay-scroll:hover::-webkit-scrollbar-thumb {
+				background: rgba(100, 116, 139, 0.5);
 			}
 
 			/* Initial sidebar state from localStorage */
@@ -265,8 +412,141 @@ templ Base(title string, user *models.User, currentPath ...string) {
 			.sidebar-initially-collapsed .sidebar-text {
 				opacity: 0;
 			}
-			/* (Toggle-container layout for the collapsed state is now
-			   handled by the grid rules above, alongside .sidebar-collapsed.) */
+
+			/* Below md (~768px) pop the page's toolbar out as a sheet
+			   under the header. `#header-page-content.filters-open` uses
+			   ID+class specificity (1,1,0) which beats the .hidden
+			   utility (0,1,0), so no !important needed.
+
+			   Layout strategy inside the sheet:
+			   - Selects, text inputs, and search inputs each take a
+			     full row (one per row) so labels and placeholders are
+			     legible on a phone-width screen.
+			   - Icon-style buttons (refresh, copy, download,
+			     fullscreen) share a row at the bottom — stacking them
+			     would look silly on pages with several icon buttons
+			     (Logs is the motivating example). They're recognized
+			     as "icon buttons" by being <button> elements that
+			     contain only an <svg> child after my own padding rules
+			     normalize them; CSS just packs naturally-sized buttons
+			     together with flex-wrap. */
+			@media (max-width: 767px) {
+				#header-page-content.filters-open {
+					display: flex;
+					flex-direction: row;
+					flex-wrap: wrap;
+					align-items: center;
+					align-content: flex-start;
+					gap: 0.5rem;
+					position: fixed;
+					top: 55px;
+					left: 4rem;
+					right: 0;
+					padding: 0.75rem 1rem;
+					background-color: #ffffff;
+					border-bottom: 1px solid #e5e7eb;
+					box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+					z-index: 39;
+					max-height: 75vh;
+					overflow-y: auto;
+				}
+				.dark #header-page-content.filters-open {
+					background-color: rgb(30 41 59);   /* slate-800 */
+					border-bottom-color: rgb(51 65 85); /* slate-700 */
+				}
+				/* Hide the per-page spacer div (flex-1) — it's only
+				   useful for the inline-row layout. */
+				#header-page-content.filters-open > .flex-1 {
+					display: none;
+				}
+				/* Each inner control row (the per-page wrapper that
+				   bundles selects + inputs + buttons) becomes a flex
+				   wrap so its children can mix full-row wide controls
+				   with shared-row icon buttons. */
+				#header-page-content.filters-open .flex {
+					display: flex;
+					flex-direction: row;
+					flex-wrap: wrap;
+					align-items: center;
+					gap: 0.5rem;
+					margin: 0;
+				}
+				/* Tailwind's space-x-* utilities add margin-left to
+				   every child after the first. With our gap-based
+				   layout that's redundant and creates uneven shifting,
+				   so neutralise them. */
+				#header-page-content.filters-open .space-x-1 > :not([hidden]) ~ :not([hidden]),
+				#header-page-content.filters-open .space-x-2 > :not([hidden]) ~ :not([hidden]),
+				#header-page-content.filters-open .space-x-3 > :not([hidden]) ~ :not([hidden]),
+				#header-page-content.filters-open .space-x-4 > :not([hidden]) ~ :not([hidden]) {
+					margin-left: 0;
+				}
+				/* Wide controls (selects + text inputs) force a new
+				   row by being 100%-wide flex items. */
+				#header-page-content.filters-open select,
+				#header-page-content.filters-open input[type="text"],
+				#header-page-content.filters-open input[type="search"],
+				#header-page-content.filters-open input[type="number"] {
+					flex: 1 0 100%;
+					width: 100%;
+				}
+				/* Input wrappers (e.g. <div class="relative"> with a
+				   clear button inside) also take a full row so the
+				   input inside can stretch. */
+				#header-page-content.filters-open .relative {
+					flex: 1 0 100%;
+					width: 100%;
+				}
+				/* Buttons keep their natural width and flow inline —
+				   the row at the bottom of the sheet packs the icon
+				   buttons (refresh, copy, download, fullscreen, …). */
+				#header-page-content.filters-open button {
+					flex: 0 0 auto;
+				}
+				/* The font-size slider on /logs is inside a small flex
+				   container; let it sit on its own row with its label
+				   and current-value badge. */
+				#header-page-content.filters-open input[type="range"] {
+					flex: 1 1 auto;
+				}
+			}
+
+			/* Below md (~768px) force the sidebar to its collapsed (icon-
+			   only) rail regardless of the user's saved preference — full-
+			   width sidebar eats most of a phone viewport. ID-scoped rules
+			   beat the .sidebar-expanded/.sidebar-collapsed class rules on
+			   specificity, so the user's toggle state is left intact and
+			   restored when the viewport widens again. */
+			@media (max-width: 767px) {
+				#sidebar {
+					width: 4rem;
+				}
+				#sidebar .sidebar-text {
+					opacity: 0;
+					width: 0;
+					overflow: hidden;
+					display: inline-block;
+				}
+				#sidebar #sidebar-toggle-btn,
+				#sidebar #sidebar-edit-banner {
+					display: none;
+				}
+				#main-content {
+					margin-left: 4rem;
+				}
+				header {
+					left: 4rem;
+				}
+				/* Center the nav icons just like .sidebar-collapsed does. */
+				#sidebar .nav-link {
+					justify-content: center;
+					padding-left: 0;
+					padding-right: 0;
+				}
+				#sidebar .nav-link > * + * {
+					margin-left: 0;
+				}
+			}
 
 			/* Main content transition */
 			.main-content {
@@ -494,6 +774,54 @@ templ Base(title string, user *models.User, currentPath ...string) {
 				return stored === 'true';
 			}
 
+			// Header "Filters" popover (narrow viewports only). Pops
+			// #header-page-content out from its inline header slot into a
+			// fixed sheet just below the header. The state is one CSS
+			// class on the content node — no DOM moves, so per-page
+			// listeners on the controls keep working untouched. Auto-
+			// closes on Escape, click outside, and when the viewport
+			// widens back to md+.
+			function toggleHeaderFilters() {
+				const content = document.getElementById('header-page-content');
+				const btn = document.getElementById('header-filters-btn');
+				if (!content || !btn) return;
+				const opening = !content.classList.contains('filters-open');
+				content.classList.toggle('filters-open');
+				btn.setAttribute('aria-expanded', opening ? 'true' : 'false');
+			}
+			// Expose to other modules (shortcut-help.js calls this when
+			// `/` is pressed and the focus target lives in the hidden
+			// header content slot).
+			window.toggleHeaderFilters = toggleHeaderFilters;
+			function closeHeaderFilters() {
+				const content = document.getElementById('header-page-content');
+				const btn = document.getElementById('header-filters-btn');
+				if (!content || !btn) return;
+				if (!content.classList.contains('filters-open')) return;
+				content.classList.remove('filters-open');
+				btn.setAttribute('aria-expanded', 'false');
+			}
+			document.addEventListener('click', function (e) {
+				const content = document.getElementById('header-page-content');
+				if (!content || !content.classList.contains('filters-open')) return;
+				const btn = document.getElementById('header-filters-btn');
+				if (btn && btn.contains(e.target)) return;
+				if (content.contains(e.target)) return;
+				closeHeaderFilters();
+			});
+			document.addEventListener('keydown', function (e) {
+				if (e.key !== 'Escape') return;
+				const content = document.getElementById('header-page-content');
+				if (content && content.classList.contains('filters-open')) {
+					closeHeaderFilters();
+				}
+			});
+			window.addEventListener('resize', function () {
+				if (window.matchMedia('(min-width: 768px)').matches) {
+					closeHeaderFilters();
+				}
+			});
+
 			function toggleSidebar() {
 				const sidebar = document.getElementById('sidebar');
 				const mainContent = document.getElementById('main-content');
@@ -537,9 +865,21 @@ templ Base(title string, user *models.User, currentPath ...string) {
 				const iconCollapse = document.getElementById('sidebar-icon-collapse');
 				const iconExpand = document.getElementById('sidebar-icon-expand');
 
-				// Remove the initial state class
-				document.documentElement.classList.remove('sidebar-initially-collapsed');
-
+				// IMPORTANT: apply the correct sidebar/main-content classes
+				// BEFORE removing the .sidebar-initially-collapsed pin from
+				// <html>. Otherwise on a navigation where the user has the
+				// sidebar collapsed:
+				//   1. <html>.sidebar-initially-collapsed is removed → the
+				//      ID-scoped width override goes away.
+				//   2. The sidebar still carries its default
+				//      .sidebar-expanded class from the server HTML, so the
+				//      cascade snaps width to 16rem.
+				//   3. JS then adds .sidebar-collapsed → width transitions
+				//      back to 4rem.
+				// Step 2→3 animates because of `transition: width 0.3s` on
+				// .sidebar, producing a visible "twitch" left-to-right on
+				// every gear click. Applying classes first keeps the
+				// computed width pinned the whole time.
 				if (sidebar && mainContent) {
 					if (isCollapsed) {
 						sidebar.classList.add('sidebar-collapsed');
@@ -565,6 +905,10 @@ templ Base(title string, user *models.User, currentPath ...string) {
 						if (iconExpand) iconExpand.classList.add('hidden');
 					}
 				}
+
+				// Now safe to drop the initial-state pin — the regular
+				// class-based rules resolve to the same width.
+				document.documentElement.classList.remove('sidebar-initially-collapsed');
 			}
 
 			// Sidebar edit mode state
@@ -580,6 +924,8 @@ templ Base(title string, user *models.User, currentPath ...string) {
 				sidebarEditMode = !sidebarEditMode;
 				const iconEdit = document.getElementById('sidebar-icon-edit');
 				const iconSave = document.getElementById('sidebar-icon-save');
+				const banner = document.getElementById('sidebar-edit-banner');
+				const sidebar = document.getElementById('sidebar');
 				const dragHandles = document.querySelectorAll('.nav-drag-handle');
 				const navLinks = document.querySelectorAll('.nav-link');
 
@@ -587,6 +933,11 @@ templ Base(title string, user *models.User, currentPath ...string) {
 					// Enter edit mode
 					if (iconEdit) iconEdit.classList.add('hidden');
 					if (iconSave) iconSave.classList.remove('hidden');
+					if (banner) {
+						banner.classList.remove('hidden');
+						banner.classList.add('flex');
+					}
+					if (sidebar) sidebar.classList.add('sidebar-edit-mode');
 
 					// Show drag handle indicators
 					dragHandles.forEach(handle => handle.classList.remove('hidden'));
@@ -605,6 +956,11 @@ templ Base(title string, user *models.User, currentPath ...string) {
 					// Exit edit mode (save)
 					if (iconEdit) iconEdit.classList.remove('hidden');
 					if (iconSave) iconSave.classList.add('hidden');
+					if (banner) {
+						banner.classList.add('hidden');
+						banner.classList.remove('flex');
+					}
+					if (sidebar) sidebar.classList.remove('sidebar-edit-mode');
 
 					// Hide drag handle indicators
 					dragHandles.forEach(handle => handle.classList.add('hidden'));
@@ -618,6 +974,58 @@ templ Base(title string, user *models.User, currentPath ...string) {
 					// Save the new order
 					saveSidebarOrder();
 				}
+			}
+
+			// Right-click on any sidebar gear opens a tiny context menu with
+			// a "Reorder gears" entry. Lets the user discover the feature
+			// without needing the command palette — matches the Linear
+			// pattern (right-click → reorder).
+			document.addEventListener('contextmenu', function (e) {
+				const item = e.target.closest('.nav-item-draggable');
+				if (!item) return;
+				e.preventDefault();
+				showSidebarContextMenu(e.clientX, e.clientY);
+			});
+
+			function showSidebarContextMenu(x, y) {
+				let menu = document.getElementById('sidebar-context-menu');
+				if (!menu) {
+					menu = document.createElement('div');
+					menu.id = 'sidebar-context-menu';
+					menu.className = 'fixed z-[80] min-w-[160px] py-1 rounded-lg bg-white dark:bg-slate-800 shadow-2xl border border-gray-200 dark:border-slate-700';
+					const btn = document.createElement('button');
+					btn.type = 'button';
+					btn.className = 'w-full text-left px-3 py-1.5 text-sm text-gray-800 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-slate-700 flex items-center gap-2';
+					const icon = document.createElement('span');
+					icon.className = 'inline-block w-4 h-4 text-gray-500 dark:text-gray-400';
+					icon.textContent = '↕';
+					const label = document.createElement('span');
+					label.textContent = 'Reorder gears';
+					btn.appendChild(icon);
+					btn.appendChild(label);
+					btn.addEventListener('click', function () {
+						hideSidebarContextMenu();
+						if (!sidebarEditMode) toggleSidebarEditMode();
+					});
+					menu.appendChild(btn);
+					document.body.appendChild(menu);
+				}
+				menu.style.left = x + 'px';
+				menu.style.top = y + 'px';
+				menu.classList.remove('hidden');
+				// Dismiss on next outside click / escape.
+				setTimeout(function () {
+					document.addEventListener('click', hideSidebarContextMenu, { once: true });
+					document.addEventListener('keydown', sidebarContextMenuEsc, { once: true });
+				}, 0);
+			}
+			function sidebarContextMenuEsc(e) {
+				if (e.key === 'Escape') hideSidebarContextMenu();
+			}
+			function hideSidebarContextMenu() {
+				const menu = document.getElementById('sidebar-context-menu');
+				if (menu) menu.classList.add('hidden');
+				document.removeEventListener('keydown', sidebarContextMenuEsc);
 			}
 
 			function initSidebarSortable() {
@@ -923,7 +1331,10 @@ templ Base(title string, user *models.User, currentPath ...string) {
 		<script src="/static/js/utils/char-limit.js" defer></script>
 		<script src="/static/js/common/page-header.js" defer></script>
 		<script src="/static/js/common/box-selector.js" defer></script>
-		<script src="/static/js/common/box-switcher.js" defer></script>
+		<script src="/static/js/common/keymap.js" defer></script>
+		<script src="/static/js/common/focus-trap.js" defer></script>
+		<script src="/static/js/common/command-palette.js" defer></script>
+		<script src="/static/js/common/shortcut-help.js" defer></script>
 	</head>
 	<body class="h-full bg-gray-100 dark:bg-slate-900">
 		@ui.CollapsibleRestoreScript()
@@ -937,7 +1348,7 @@ templ Base(title string, user *models.User, currentPath ...string) {
 			} else {
 				@Sidebar(user, getPath(currentPath))
 				<div id="main-content" class="main-content ml-64 min-h-screen flex flex-col pt-[57px]">
-					@Header()
+					@Header(getPath(currentPath))
 					<main class="flex-1 p-6">
 						{ children... }
 					</main>
@@ -1319,62 +1730,60 @@ templ AlertDialog() {
 
 templ Sidebar(user *models.User, currentPath string) {
 	<aside id="sidebar" class="sidebar sidebar-expanded fixed left-0 top-0 h-full bg-white dark:bg-slate-950 text-gray-800 dark:text-white z-50 flex flex-col shadow-xl border-r border-gray-200 dark:border-slate-800">
-		<!-- Logo -->
-		<div class="flex items-center px-4 h-[56px] border-b border-gray-200 dark:border-slate-700">
-			<div class="flex items-center space-x-3">
+		<!-- Logo + Toggle (Linear / Notion pattern: collapse button at top
+		     where it's most predictable, freeing the footer for user
+		     identity + settings). -->
+		<div class="flex items-center px-3 h-[56px] border-b border-gray-200 dark:border-slate-700 gap-2 flex-shrink-0">
+			<a href="/" class="flex items-center gap-2 min-w-0 flex-1 group">
 				<img src="/favicon.svg" alt="Gearbox Logo" class="w-8 h-8 flex-shrink-0"/>
-				<span class="sidebar-text font-bold text-lg whitespace-nowrap">Gearbox</span>
-			</div>
+				<span class="sidebar-text font-bold text-lg whitespace-nowrap group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">Gearbox</span>
+			</a>
+			<button id="sidebar-toggle-btn" onclick="toggleSidebar()" class="p-1.5 hover:bg-gray-100 dark:hover:bg-slate-700 rounded transition-colors text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 flex-shrink-0" title="Toggle Sidebar">
+				<svg id="sidebar-icon-collapse" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+					<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+					<line x1="9" y1="3" x2="9" y2="21"></line>
+					<polyline points="15 8 12 12 15 16"></polyline>
+				</svg>
+				<svg id="sidebar-icon-expand" class="w-5 h-5 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+					<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+					<line x1="9" y1="3" x2="9" y2="21"></line>
+					<polyline points="13 8 16 12 13 16"></polyline>
+				</svg>
+			</button>
 		</div>
 
-		<!-- Navigation -->
-		<nav class="flex-1 py-4">
+		<!-- Edit-mode banner. Hidden by default; toggleSidebarEditMode()
+		     toggles `.sidebar-edit-mode` on #sidebar, which reveals this
+		     and gives the user a visible "Done" button to exit. Without
+		     this affordance the only way out was via the command palette,
+		     which is unintuitive once you're already in edit mode. -->
+		<div id="sidebar-edit-banner" class="hidden flex-shrink-0 px-3 py-2 bg-blue-50 dark:bg-blue-900/30 border-b border-blue-200 dark:border-blue-800 flex items-center gap-2">
+			<svg class="w-4 h-4 text-blue-600 dark:text-blue-400 flex-shrink-0 sidebar-edit-banner-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+				<path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"></path>
+			</svg>
+			<span class="text-xs text-blue-700 dark:text-blue-300 flex-1 sidebar-text whitespace-nowrap">Drag to reorder</span>
+			<button onclick="toggleSidebarEditMode()" class="px-2 py-0.5 text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors sidebar-text">Done</button>
+		</div>
+
+		<!-- Navigation. overflow-y:auto + thin overlay scrollbar (see CSS
+		     above) so a long gear list doesn't get clipped on small
+		     viewports. Edit-mode toggle is no longer in the footer — invoke
+		     via `Cmd+K → Reorder sidebar` or right-click a gear. The hidden
+		     button below keeps toggleSidebarEditMode()'s icon-swap logic
+		     working without being persistently visible. -->
+		<nav id="sidebar-nav-scroll" class="flex-1 py-4 overflow-y-auto sidebar-overlay-scroll">
 			<ul id="sidebar-nav-list" class="space-y-1">
 				@OrderedIntegrationLinks(currentPath)
 			</ul>
 		</nav>
-
-		<!-- Collapse/Expand and Edit toggle (no top border) -->
-		<div class="p-3">
-			<!-- Footer controls: Edit Nav + Collapse Sidebar. Layout (row vs
-			     stacked column) is driven entirely by #toggle-container CSS
-			     up top — see comment near `.sidebar-collapsed`. -->
-			<div id="toggle-container">
-				<!-- Edit/Save button -->
-				<button id="sidebar-edit-btn" onclick="toggleSidebarEditMode()" class="p-1.5 hover:bg-gray-100 dark:hover:bg-slate-700 rounded transition-colors text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200" title="Edit Navigation">
-					<!-- Edit icon (default) -->
-					<svg id="sidebar-icon-edit" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-						<path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"></path>
-					</svg>
-					<!-- Save icon (hidden by default) -->
-					<svg id="sidebar-icon-save" class="w-5 h-5 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-						<path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-					</svg>
-				</button>
-
-				<!-- Collapse/expand button -->
-				<button onclick="toggleSidebar()" class="p-1.5 hover:bg-gray-100 dark:hover:bg-slate-700 rounded transition-colors text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200" title="Toggle Sidebar">
-					<!-- Panel collapse icon (sidebar open) -->
-					<svg id="sidebar-icon-collapse" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-						<!-- Outer rectangle -->
-						<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-						<!-- Vertical divider line -->
-						<line x1="9" y1="3" x2="9" y2="21"></line>
-						<!-- Left-pointing arrow (collapse) -->
-						<polyline points="15 8 12 12 15 16"></polyline>
-					</svg>
-					<!-- Panel expand icon (sidebar collapsed) - hidden by default -->
-					<svg id="sidebar-icon-expand" class="w-5 h-5 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-						<!-- Outer rectangle -->
-						<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-						<!-- Vertical divider line -->
-						<line x1="9" y1="3" x2="9" y2="21"></line>
-						<!-- Right-pointing arrow (expand) -->
-						<polyline points="13 8 16 12 13 16"></polyline>
-					</svg>
-				</button>
-			</div>
-		</div>
+		<button id="sidebar-edit-btn" onclick="toggleSidebarEditMode()" class="hidden" aria-hidden="true" tabindex="-1">
+			<svg id="sidebar-icon-edit" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+				<path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"></path>
+			</svg>
+			<svg id="sidebar-icon-save" class="w-5 h-5 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+				<path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+			</svg>
+		</button>
 
 		<!-- User menu -->
 		<div class="py-1">
@@ -1896,18 +2305,74 @@ templ renderIntegrationLink(name string, currentPath string) {
 	}
 }
 
-templ Header() {
+templ Header(currentPath string) {
+	{{ active, hasActive := auth.GetSelectedBoxFromContext(ctx) }}
 	<header class="fixed top-0 right-0 left-64 bg-white dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700 z-40 transition-all duration-300">
 		<div class="flex items-center px-6 h-[55px] gap-3">
 			<!-- Box switcher chip (rendered when boxes are configured) -->
 			@boxSwitcherChip()
-			<!-- Page content (title, server selector, controls) - populated by page-specific slots -->
-			<div id="header-page-content" class="flex items-center flex-1">
+			<!-- Breadcrumb title: gear name (chip shows the box). Hidden
+			     below md to reclaim space for the controls. -->
+			@HeaderBreadcrumb(currentPath)
+			<!-- Filters toggle. Only visible below md, when the page's
+			     controls are hidden and need to be reached via a popover. -->
+			<button
+				id="header-filters-btn"
+				type="button"
+				class="md:hidden inline-flex items-center gap-1.5 px-2.5 h-[30px] text-sm rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
+				onclick="toggleHeaderFilters()"
+				aria-expanded="false"
+				aria-controls="header-page-content"
+				title="Show page filters"
+			>
+				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" aria-hidden="true">
+					<path stroke-linecap="round" stroke-linejoin="round" d="M3 4h18M6 12h12M10 20h4"></path>
+				</svg>
+				<span>Filters</span>
+			</button>
+			<!-- Slot for the page's refresh button (if any) below md. JS
+			     in header-refresh-shortcut.js detects #refresh-btn after
+			     page-header hoist and clone-mirrors it here so the user
+			     doesn't have to open the Filters sheet just to refresh.
+			     Empty above md and on pages without a refresh button. -->
+			<div id="header-refresh-slot" class="md:hidden flex items-center"></div>
+			<!-- Page controls. Above md: inline flex row inside the header.
+			     Below md: hidden by default, popped out as a sheet below
+			     the header when #header-filters-btn is toggled. -->
+			<div id="header-page-content" class="hidden md:flex items-center flex-1 min-w-0">
 				<!-- Page-specific content will be injected here via JavaScript -->
 			</div>
 		</div>
 	</header>
+	<!-- Global active-box id, rendered server-side from the cookie/url
+	     resolution. Reuses the legacy `default-server-id` element name
+	     so each page's existing getServerID() helper falls through to
+	     this without per-file edits. Replaces the per-page
+	     #default-server-id inputs that lived in every template. -->
+	if hasActive {
+		<input type="hidden" id="default-server-id" value={ active.ID } data-box-name={ active.Name }/>
+	} else {
+		<input type="hidden" id="default-server-id" value=""/>
+	}
 	@boxSwitcherPalette()
+}
+
+// HeaderBreadcrumb renders the compact page-title slot next to the chip.
+// The chip already shows the active box (with status dot + dropdown
+// chevron), so this only renders the current gear name — repeating the
+// box name here was redundant. Empty for paths the chip alone is enough
+// to describe (root, /home where the page emits its own board name).
+//
+// Hidden below md (~768px) to free horizontal real estate for the page's
+// own toolbar controls; the active sidebar entry tells the user where
+// they are at that point.
+templ HeaderBreadcrumb(currentPath string) {
+	{{ gearLabel := gearLabelForPath(currentPath) }}
+	if gearLabel != "" {
+		<div class="hidden md:block text-sm font-medium text-gray-800 dark:text-gray-200 whitespace-nowrap min-w-0">
+			{ gearLabel }
+		</div>
+	}
 }
 
 // boxSwitcherChip is the persistent host pill in the top-left of the
@@ -1922,7 +2387,7 @@ templ boxSwitcherChip() {
 	if len(boxes) == 0 {
 		<a
 			href="/settings/boxes/new"
-			class="inline-flex items-center gap-2 px-3 h-[34px] text-sm rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
+			class="inline-flex items-center gap-2 px-2.5 h-[30px] text-sm rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
 			title="No boxes configured — click to add one"
 		>
 			@boxChipIcon()
@@ -1934,8 +2399,8 @@ templ boxSwitcherChip() {
 			id="box-switcher-chip"
 			data-active-box-id={ activeBoxIDForChip(active, hasActive) }
 			onclick="openBoxSwitcher()"
-			class="inline-flex items-center gap-2 px-3 h-[34px] text-sm rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
-			title="Switch boxes (press g then b)"
+			class="inline-flex items-center gap-2 px-2.5 h-[30px] text-sm rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
+			title="Open command palette (Cmd/Ctrl+K)"
 		>
 			if hasActive {
 				<span
@@ -1943,10 +2408,14 @@ templ boxSwitcherChip() {
 					class="inline-block w-2 h-2 rounded-full bg-gray-300 ring-1 ring-inset ring-gray-400/40 animate-pulse"
 					data-box-id={ active.ID }
 				></span>
-				<span class="font-medium truncate max-w-[18ch]">{ active.Name }</span>
+				<!-- Box name is hidden on small viewports — the dot still
+				     conveys status, and the chevron still signals
+				     "switchable." Below sm the chip becomes a tiny
+				     dot+chevron button. -->
+				<span class="hidden sm:inline font-medium truncate max-w-[18ch]">{ active.Name }</span>
 			} else {
 				@boxChipIcon()
-				<span class="text-gray-500 dark:text-gray-400">All boxes</span>
+				<span class="hidden sm:inline text-gray-500 dark:text-gray-400">All boxes</span>
 			}
 			<svg class="w-3.5 h-3.5 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
@@ -1955,43 +2424,87 @@ templ boxSwitcherChip() {
 	}
 }
 
-// boxSwitcherPalette is the command-palette-style picker that opens when
-// the chip is clicked or `g b` is pressed. Rendered hidden by default;
-// box-switcher.js handles open/close + search filter + arrow-key nav.
-//
-// Boxes are JSON-encoded into the dataset so the palette renders without
-// a round-trip; status dots upgrade in place via SSE from /bx/api/events.
+// boxSwitcherPalette is a thin compat alias for CommandPalette. The chip
+// still calls openBoxSwitcher() — command-palette.js owns that name now,
+// and opens the unified palette. Kept as a templ so existing call sites
+// don't have to learn the new name.
 templ boxSwitcherPalette() {
+	@CommandPalette()
+	@ShortcutHelp()
+}
+
+// CommandPalette is the unified Cmd/Ctrl+K palette. The chip and `g b`
+// also open this. Catalog (boxes + gears) is rendered as JSON islands so
+// the palette opens instantly on first keypress without a fetch.
+templ CommandPalette() {
 	{{ boxes := auth.GetAllBoxesFromContext(ctx) }}
 	{{ active, _ := auth.GetSelectedBoxFromContext(ctx) }}
-	if len(boxes) > 0 {
-		<div id="box-switcher-overlay" class="fixed inset-0 z-[60] hidden bg-black/40 backdrop-blur-sm" data-active-box-id={ activeBoxIDForChip(active, active != nil) } role="dialog" aria-modal="true" aria-labelledby="box-switcher-title">
-			<div class="absolute left-1/2 -translate-x-1/2 top-20 w-[480px] max-w-[92vw] rounded-lg bg-white dark:bg-slate-800 shadow-2xl border border-gray-200 dark:border-slate-700 overflow-hidden">
-				<h2 id="box-switcher-title" class="sr-only">Switch box</h2>
-				<div class="flex items-center gap-2 px-3 py-2 border-b border-gray-200 dark:border-slate-700">
-					<svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z"></path>
-					</svg>
-					<input
-						id="box-switcher-search"
-						type="search"
-						placeholder="Search boxes…"
-						aria-label="Search boxes"
-						autocomplete="off"
-						class="flex-1 bg-transparent text-sm text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none border-0"
-					/>
-					<kbd class="hidden sm:inline-flex items-center px-1.5 h-5 text-[10px] font-mono text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-slate-700 rounded">esc</kbd>
-				</div>
-				<ul id="box-switcher-list" class="max-h-[60vh] overflow-y-auto py-1" data-boxes={ encodeBoxesJSON(boxes) }>
-					<!-- Items are rendered by box-switcher.js to keep dot/search behavior in one place -->
-				</ul>
-				<div class="flex items-center justify-between px-3 py-1.5 border-t border-gray-200 dark:border-slate-700 text-[11px] text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-slate-900/40">
-					<span><kbd class="font-mono">↑↓</kbd> navigate · <kbd class="font-mono">↵</kbd> select</span>
-					<a href="/bx" class="hover:underline">View all → Bx</a>
-				</div>
+	<div
+		id="cmdk-overlay"
+		class="fixed inset-0 z-[70] hidden bg-black/40 backdrop-blur-sm"
+		data-active-box-id={ activeBoxIDForChip(active, active != nil) }
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="cmdk-title"
+	>
+		<div class="cmdk-panel absolute left-1/2 -translate-x-1/2 top-[12vh] w-[640px] max-w-[92vw] max-h-[76vh] flex flex-col rounded-xl bg-white dark:bg-slate-800 shadow-2xl border border-gray-200 dark:border-slate-700 overflow-hidden">
+			<h2 id="cmdk-title" class="sr-only">Command palette</h2>
+			<div class="flex items-center gap-2 px-3 py-2.5 border-b border-gray-200 dark:border-slate-700 flex-shrink-0">
+				<svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z"></path>
+				</svg>
+				<input
+					id="cmdk-input"
+					type="search"
+					placeholder="Type a command, box, or gear…"
+					aria-label="Command palette search"
+					aria-controls="cmdk-list"
+					autocomplete="off"
+					class="flex-1 bg-transparent text-sm text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none border-0"
+				/>
+				<kbd class="hidden sm:inline-flex items-center px-1.5 h-5 text-[10px] font-mono text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-slate-700 rounded">esc</kbd>
+			</div>
+			<div id="cmdk-list" role="listbox" class="flex-1 min-h-0 overflow-y-auto py-1 sidebar-overlay-scroll"></div>
+			<div class="flex items-center justify-between px-3 py-1.5 border-t border-gray-200 dark:border-slate-700 text-[11px] text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-slate-900/40 flex-shrink-0">
+				<span><kbd class="font-mono">↑↓</kbd> navigate · <kbd class="font-mono">↵</kbd> select · <kbd class="font-mono">ctrl+↵</kbd> keep open</span>
+				<span>Press <kbd class="font-mono">?</kbd> to see all shortcuts</span>
 			</div>
 		</div>
-	}
+	</div>
+	<!-- Catalog JSON islands. Hidden text/json scripts; not executed, just
+	     parsed by command-palette.js at open time. -->
+	@templ.Raw("<script type=\"application/json\" id=\"cmdk-boxes\">" + encodeBoxesJSON(boxes) + "</script>")
+	@templ.Raw("<script type=\"application/json\" id=\"cmdk-gears\">" + encodeGearsJSON(ctx) + "</script>")
+}
+
+// ShortcutHelp is the `?`-opens overlay listing every global shortcut.
+// Frosted-glass look per issue #66: full-viewport dark blurred backdrop
+// with a translucent content panel sitting on top.
+templ ShortcutHelp() {
+	<div
+		id="shortcuts-help-overlay"
+		class="fixed inset-0 z-[75] hidden bg-black/50 backdrop-blur-md flex items-center justify-center p-6"
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="shortcuts-help-title"
+	>
+		<div class="shortcuts-help-panel relative w-full max-w-2xl rounded-2xl bg-white/5 backdrop-blur-xl border border-white/10 shadow-2xl overflow-hidden" tabindex="-1">
+			<div class="flex items-center justify-between px-5 py-3 border-b border-white/10">
+				<h2 id="shortcuts-help-title" class="text-white font-medium tracking-wide">Keyboard shortcuts</h2>
+				<button
+					type="button"
+					onclick="closeShortcutHelp()"
+					class="text-white/60 hover:text-white transition-colors"
+					aria-label="Close"
+				>
+					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+					</svg>
+				</button>
+			</div>
+			<div id="shortcuts-help-list" class="px-2 py-2 max-h-[60vh] overflow-y-auto"></div>
+		</div>
+	</div>
 }
 
 // boxChipIcon is the small 2×2 grid drawn inside the header chip when no
