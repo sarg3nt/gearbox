@@ -98,11 +98,10 @@ func (h *Handler) OSUpdatesPage(w http.ResponseWriter, r *http.Request) {
 		pythonToolsStatus, _ = client.GetPythonToolsStatus()
 	}
 
-	// Get snapshots
-	snapshots, _ := client.ListSnapshots()
-
-	// Get update history
-	history, _ := client.GetUpdateHistory(20)
+	// Snapshots and update history are now lazy-loaded by the page JS on
+	// first expand of their collapsible sections (see SECTIONS in
+	// os-updates-page.js). Skipping the server-side fetch here saves two
+	// agent round-trips on every page load.
 
 	// Prepare view model
 	data := pages.OSUpdatesPageData{
@@ -115,8 +114,6 @@ func (h *Handler) OSUpdatesPage(w http.ResponseWriter, r *http.Request) {
 		RebootStatus:     rebootStatus,
 		UnattendedConfig: unattendedConfig,
 		PythonToolsStatus: pythonToolsStatus,
-		Snapshots:        snapshots,
-		History:          history,
 		CanConfigure:     h.authManager.HasPermission(r, models.ComponentOSUpdates, models.PermissionConfigure),
 		CanAction:        h.authManager.HasPermission(r, models.ComponentOSUpdates, models.PermissionAction),
 	}

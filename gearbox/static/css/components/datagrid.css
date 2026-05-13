@@ -1,0 +1,288 @@
+/* UniFi-style data grid — Tabulator skin.
+ *
+ * Opt-in: applied to a Tabulator instance via the `datagrid-unifi` CSS class
+ * (set automatically by createDataGrid() in static/js/common/datagrid.js).
+ *
+ * Pairs with: flat header, accent on active sort column, hover-only sort
+ * arrows, no zebra stripes, dense rows. Use with a toolbar-mounted search
+ * input — do NOT enable per-column headerFilter.
+ */
+
+/* ---- Container ---- */
+.tabulator.datagrid-unifi {
+	background-color: transparent;
+	border: none;
+	font-size: 0.875rem;
+}
+
+/* ---- Header: flat, no background, no column dividers ---- */
+.tabulator.datagrid-unifi .tabulator-header {
+	background-color: transparent;
+	border-top: none;
+	border-bottom: 1px solid #e2e8f0;
+	color: #64748b;
+	font-weight: 500;
+}
+.dark .tabulator.datagrid-unifi .tabulator-header {
+	border-bottom-color: #334155;
+	color: #94a3b8;
+}
+
+.tabulator.datagrid-unifi .tabulator-header .tabulator-col {
+	background-color: transparent;
+	border-right: none;
+	padding: 0.5rem 0.25rem;
+}
+.tabulator.datagrid-unifi .tabulator-header .tabulator-col .tabulator-col-content {
+	padding: 0.25rem 0.5rem;
+}
+.tabulator.datagrid-unifi .tabulator-header .tabulator-col.tabulator-sortable .tabulator-col-title {
+	color: inherit;
+	font-weight: 500;
+	text-transform: none;
+	letter-spacing: 0;
+}
+
+/* Header hover: brighten text only (no background flash) */
+.tabulator.datagrid-unifi .tabulator-header .tabulator-col:hover {
+	background-color: transparent !important;
+}
+.tabulator.datagrid-unifi .tabulator-header .tabulator-col:hover .tabulator-col-content,
+.tabulator.datagrid-unifi .tabulator-header .tabulator-col:hover .tabulator-col-title {
+	color: #1e293b !important;
+}
+.dark .tabulator.datagrid-unifi .tabulator-header .tabulator-col:hover .tabulator-col-content,
+.dark .tabulator.datagrid-unifi .tabulator-header .tabulator-col:hover .tabulator-col-title {
+	color: #f1f5f9 !important;
+}
+
+/* ---- Sort arrows: hidden by default, visible on hover or when active ---- */
+.tabulator.datagrid-unifi .tabulator-header .tabulator-col.tabulator-sortable .tabulator-col-sorter {
+	opacity: 0;
+	transition: opacity 0.15s ease-in-out;
+}
+.tabulator.datagrid-unifi .tabulator-header .tabulator-col.tabulator-sortable:hover .tabulator-col-sorter,
+.tabulator.datagrid-unifi .tabulator-header .tabulator-col[aria-sort="ascending"] .tabulator-col-sorter,
+.tabulator.datagrid-unifi .tabulator-header .tabulator-col[aria-sort="descending"] .tabulator-col-sorter {
+	opacity: 1;
+}
+
+/* ---- Active sort column: blue accent on title + arrow ---- */
+.tabulator.datagrid-unifi .tabulator-header .tabulator-col[aria-sort="ascending"] .tabulator-col-title,
+.tabulator.datagrid-unifi .tabulator-header .tabulator-col[aria-sort="descending"] .tabulator-col-title,
+.tabulator.datagrid-unifi .tabulator-header .tabulator-col[aria-sort="ascending"]:hover .tabulator-col-title,
+.tabulator.datagrid-unifi .tabulator-header .tabulator-col[aria-sort="descending"]:hover .tabulator-col-title {
+	color: #2563eb !important;
+}
+.dark .tabulator.datagrid-unifi .tabulator-header .tabulator-col[aria-sort="ascending"] .tabulator-col-title,
+.dark .tabulator.datagrid-unifi .tabulator-header .tabulator-col[aria-sort="descending"] .tabulator-col-title,
+.dark .tabulator.datagrid-unifi .tabulator-header .tabulator-col[aria-sort="ascending"]:hover .tabulator-col-title,
+.dark .tabulator.datagrid-unifi .tabulator-header .tabulator-col[aria-sort="descending"]:hover .tabulator-col-title {
+	color: #3b82f6 !important;
+}
+/* Color the sorter arrow to match */
+.tabulator.datagrid-unifi .tabulator-header .tabulator-col[aria-sort="ascending"] .tabulator-arrow,
+.tabulator.datagrid-unifi .tabulator-header .tabulator-col[aria-sort="descending"] .tabulator-arrow {
+	border-bottom-color: #2563eb !important;
+	border-top-color: #2563eb !important;
+}
+.dark .tabulator.datagrid-unifi .tabulator-header .tabulator-col[aria-sort="ascending"] .tabulator-arrow,
+.dark .tabulator.datagrid-unifi .tabulator-header .tabulator-col[aria-sort="descending"] .tabulator-arrow {
+	border-bottom-color: #3b82f6 !important;
+	border-top-color: #3b82f6 !important;
+}
+
+/* ---- Body: no zebra stripes ---- */
+.tabulator.datagrid-unifi .tabulator-tableholder {
+	background-color: transparent;
+}
+.tabulator.datagrid-unifi .tabulator-tableholder .tabulator-table {
+	background-color: transparent;
+}
+.tabulator.datagrid-unifi .tabulator-tableholder .tabulator-table .tabulator-row,
+.tabulator.datagrid-unifi .tabulator-tableholder .tabulator-table .tabulator-row.tabulator-row-even,
+.tabulator.datagrid-unifi .tabulator-tableholder .tabulator-table .tabulator-row.tabulator-row-odd {
+	background-color: transparent !important;
+}
+.tabulator.datagrid-unifi .tabulator-tableholder .tabulator-table .tabulator-row .tabulator-cell,
+.tabulator.datagrid-unifi .tabulator-tableholder .tabulator-table .tabulator-row.tabulator-row-even .tabulator-cell,
+.tabulator.datagrid-unifi .tabulator-tableholder .tabulator-table .tabulator-row.tabulator-row-odd .tabulator-cell {
+	background-color: transparent !important;
+	border-right: none;
+}
+
+/* Row separator: single subtle horizontal line */
+.tabulator.datagrid-unifi .tabulator-tableholder .tabulator-table .tabulator-row {
+	border-bottom: 1px solid #f1f5f9;
+	color: #1e293b;
+}
+.dark .tabulator.datagrid-unifi .tabulator-tableholder .tabulator-table .tabulator-row {
+	border-bottom-color: #1e293b;
+	color: #e2e8f0 !important;
+}
+
+.tabulator.datagrid-unifi .tabulator-tableholder .tabulator-table .tabulator-row .tabulator-cell {
+	padding: 0.625rem 0.75rem;
+}
+
+/* Subtle row hover.
+ * Only background changes — the row's base color (set above) carries through.
+ * Do NOT set `color` here: legacy Tabulator CSS used `color: inherit !important`
+ * to defeat its own white-text override, but `inherit` cascades up past our
+ * base row-color rule and ends near the page-body color, which is roughly the
+ * hover background. Result: any cell text without its own explicit color class
+ * (e.g. unstyled `<span>`s in the Installed Version / Description columns)
+ * becomes unreadable. With the legacy rules now scoped to :not(.datagrid-unifi),
+ * we can leave color alone and the base #e2e8f0 / #1e293b row color stands.
+ */
+@media (hover: hover) and (pointer: fine) {
+	.tabulator.datagrid-unifi .tabulator-tableholder .tabulator-table .tabulator-row.tabulator-selectable:hover {
+		background-color: #f8fafc !important;
+	}
+	.tabulator.datagrid-unifi .tabulator-tableholder .tabulator-table .tabulator-row.tabulator-selectable:hover .tabulator-cell {
+		background-color: transparent !important;
+	}
+	.dark .tabulator.datagrid-unifi .tabulator-tableholder .tabulator-table .tabulator-row.tabulator-selectable:hover {
+		background-color: rgba(148, 163, 184, 0.10) !important;
+	}
+	.dark .tabulator.datagrid-unifi .tabulator-tableholder .tabulator-table .tabulator-row.tabulator-selectable:hover .tabulator-cell {
+		background-color: transparent !important;
+	}
+}
+
+/* ---- Column drag affordance ---- */
+.tabulator.datagrid-unifi .tabulator-header .tabulator-col {
+	cursor: grab;
+}
+.tabulator.datagrid-unifi .tabulator-header .tabulator-col.tabulator-moving {
+	background-color: rgba(59, 130, 246, 0.12) !important;
+	cursor: grabbing;
+}
+
+/* ---- Row selection checkboxes ----
+ * Tabulator emits its own checkbox via the `rowSelection` formatter. We
+ * replace the native browser checkbox with a themed one: subtle hollow box
+ * by default, blue-filled with a white checkmark when checked, blue-filled
+ * with a horizontal dash when indeterminate (header partial-select).
+ */
+.tabulator.datagrid-unifi .tabulator-cell.tabulator-row-handle,
+.tabulator.datagrid-unifi .tabulator-col .tabulator-col-content .tabulator-col-title {
+	user-select: none;
+}
+
+.tabulator.datagrid-unifi input[type="checkbox"] {
+	appearance: none;
+	-webkit-appearance: none;
+	width: 16px;
+	height: 16px;
+	margin: 0;
+	padding: 0;
+	border: 1.5px solid #cbd5e1;
+	border-radius: 3px;
+	background-color: #ffffff;
+	cursor: pointer;
+	vertical-align: middle;
+	position: relative;
+	transition: background-color 0.12s ease, border-color 0.12s ease;
+	flex-shrink: 0;
+}
+.dark .tabulator.datagrid-unifi input[type="checkbox"] {
+	border-color: #475569;
+	background-color: rgba(15, 23, 42, 0.6);
+}
+.tabulator.datagrid-unifi input[type="checkbox"]:hover {
+	border-color: #3b82f6;
+}
+.tabulator.datagrid-unifi input[type="checkbox"]:focus-visible {
+	outline: 2px solid rgba(59, 130, 246, 0.5);
+	outline-offset: 1px;
+}
+.tabulator.datagrid-unifi input[type="checkbox"]:checked,
+.tabulator.datagrid-unifi input[type="checkbox"]:indeterminate {
+	background-color: #3b82f6;
+	border-color: #3b82f6;
+}
+/* Checkmark (drawn via two borders forming an inverted L, rotated 45deg) */
+.tabulator.datagrid-unifi input[type="checkbox"]:checked::after {
+	content: '';
+	position: absolute;
+	left: 4px;
+	top: 1px;
+	width: 4px;
+	height: 8px;
+	border: solid #ffffff;
+	border-width: 0 2px 2px 0;
+	transform: rotate(45deg);
+}
+/* Indeterminate dash */
+.tabulator.datagrid-unifi input[type="checkbox"]:indeterminate::after {
+	content: '';
+	position: absolute;
+	left: 2px;
+	right: 2px;
+	top: 50%;
+	height: 2px;
+	margin-top: -1px;
+	background-color: #ffffff;
+	border-radius: 1px;
+}
+
+.tabulator.datagrid-unifi .tabulator-row.tabulator-selected {
+	background-color: rgba(59, 130, 246, 0.08) !important;
+}
+.dark .tabulator.datagrid-unifi .tabulator-row.tabulator-selected {
+	background-color: rgba(59, 130, 246, 0.14) !important;
+}
+
+/* ---- Collapsible card chrome ----
+ * Used by <details class="datagrid-card"> sections. The native chevron is
+ * hidden in favor of a custom one rendered inside the summary, so we can
+ * place the title + action buttons on the same row and rotate the chevron
+ * with the open state.
+ */
+details.datagrid-card > summary {
+	list-style: none;
+	cursor: pointer;
+	user-select: none;
+}
+details.datagrid-card > summary::-webkit-details-marker {
+	display: none;
+}
+details.datagrid-card > summary .datagrid-chevron {
+	transition: transform 0.2s ease-in-out;
+}
+details.datagrid-card[open] > summary .datagrid-chevron {
+	transform: rotate(90deg);
+}
+
+/* ---- Placeholder ---- */
+.tabulator.datagrid-unifi .tabulator-placeholder {
+	background-color: transparent;
+	color: #64748b;
+}
+.dark .tabulator.datagrid-unifi .tabulator-placeholder {
+	color: #94a3b8;
+}
+
+/* ---- Toolbar search input affordance (paired with createDataGrid) ----
+ * The grid factory wires a global search input. This rule styles any input
+ * marked with `data-datagrid-search` so the icon + padding are consistent
+ * across pages without having to repeat Tailwind classes.
+ */
+.datagrid-search-wrap {
+	position: relative;
+	display: inline-block;
+}
+.datagrid-search-wrap > svg {
+	position: absolute;
+	left: 0.625rem;
+	top: 50%;
+	transform: translateY(-50%);
+	width: 1rem;
+	height: 1rem;
+	color: #94a3b8;
+	pointer-events: none;
+}
+.datagrid-search-wrap > input[type="search"] {
+	padding-left: 2rem;
+}

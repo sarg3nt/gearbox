@@ -292,32 +292,33 @@ templ Base(title string, user *models.User, currentPath ...string) {
 				}
 			}
 
-			/* Dark mode Tabulator */
-			.dark .tabulator {
+			/* Dark mode Tabulator (legacy — for non-datagrid-unifi instances like statusgrid).
+			   New tables should opt into the UniFi skin via createDataGrid(). */
+			.dark .tabulator:not(.datagrid-unifi) {
 				background-color: #1e293b;
 				border-color: #475569;
 			}
-			.dark .tabulator .tabulator-header {
+			.dark .tabulator:not(.datagrid-unifi) .tabulator-header {
 				background-color: #334155;
 				border-color: #475569;
 				color: #e2e8f0;
 			}
-			.dark .tabulator .tabulator-header .tabulator-col {
+			.dark .tabulator:not(.datagrid-unifi) .tabulator-header .tabulator-col {
 				background-color: #334155;
 				border-color: #475569;
 			}
-			.dark .tabulator .tabulator-header .tabulator-col .tabulator-col-content {
+			.dark .tabulator:not(.datagrid-unifi) .tabulator-header .tabulator-col .tabulator-col-content {
 				color: #e2e8f0;
 			}
-			.dark .tabulator .tabulator-header .tabulator-col.tabulator-sortable .tabulator-col-title {
+			.dark .tabulator:not(.datagrid-unifi) .tabulator-header .tabulator-col.tabulator-sortable .tabulator-col-title {
 				color: #e2e8f0;
 			}
 			/* Header column hover */
-			.dark .tabulator .tabulator-header .tabulator-col:hover {
+			.dark .tabulator:not(.datagrid-unifi) .tabulator-header .tabulator-col:hover {
 				background-color: #475569 !important;
 			}
-			.dark .tabulator .tabulator-header .tabulator-col:hover .tabulator-col-content,
-			.dark .tabulator .tabulator-header .tabulator-col:hover .tabulator-col-title {
+			.dark .tabulator:not(.datagrid-unifi) .tabulator-header .tabulator-col:hover .tabulator-col-content,
+			.dark .tabulator:not(.datagrid-unifi) .tabulator-header .tabulator-col:hover .tabulator-col-title {
 				color: #ffffff !important;
 			}
 			.tabulator .tabulator-header .tabulator-header-filter input,
@@ -328,55 +329,55 @@ templ Base(title string, user *models.User, currentPath ...string) {
 				height: 24px;
 				font-size: 0.75rem;
 			}
-			.dark .tabulator .tabulator-header .tabulator-header-filter input,
-			.dark .tabulator .tabulator-header .tabulator-header-filter select {
+			.dark .tabulator:not(.datagrid-unifi) .tabulator-header .tabulator-header-filter input,
+			.dark .tabulator:not(.datagrid-unifi) .tabulator-header .tabulator-header-filter select {
 				background-color: #1e293b;
 				border-color: #475569;
 				color: #e2e8f0;
 			}
-			.dark .tabulator .tabulator-tableholder .tabulator-table .tabulator-row {
+			.dark .tabulator:not(.datagrid-unifi) .tabulator-tableholder .tabulator-table .tabulator-row {
 				background-color: #1e293b !important;
 				border-color: #475569;
 				color: #e2e8f0;
 			}
-			.dark .tabulator .tabulator-tableholder .tabulator-table .tabulator-row .tabulator-cell {
+			.dark .tabulator:not(.datagrid-unifi) .tabulator-tableholder .tabulator-table .tabulator-row .tabulator-cell {
 				background-color: #1e293b !important;
 				border-color: #475569;
 			}
-			.dark .tabulator .tabulator-tableholder .tabulator-table .tabulator-row.tabulator-row-even,
-			.dark .tabulator .tabulator-tableholder .tabulator-table .tabulator-row.tabulator-row-even .tabulator-cell {
+			.dark .tabulator:not(.datagrid-unifi) .tabulator-tableholder .tabulator-table .tabulator-row.tabulator-row-even,
+			.dark .tabulator:not(.datagrid-unifi) .tabulator-tableholder .tabulator-table .tabulator-row.tabulator-row-even .tabulator-cell {
 				background-color: #273549 !important;
 			}
-			.dark .tabulator .tabulator-tableholder .tabulator-table .tabulator-row.tabulator-row-odd,
-			.dark .tabulator .tabulator-tableholder .tabulator-table .tabulator-row.tabulator-row-odd .tabulator-cell {
+			.dark .tabulator:not(.datagrid-unifi) .tabulator-tableholder .tabulator-table .tabulator-row.tabulator-row-odd,
+			.dark .tabulator:not(.datagrid-unifi) .tabulator-tableholder .tabulator-table .tabulator-row.tabulator-row-odd .tabulator-cell {
 				background-color: #1e293b !important;
 			}
 			/* Hover states - Tabulator uses .tabulator-selectable:hover */
 			@media (hover:hover) and (pointer:fine) {
-				.dark .tabulator .tabulator-tableholder .tabulator-table .tabulator-row.tabulator-selectable:hover {
+				.dark .tabulator:not(.datagrid-unifi) .tabulator-tableholder .tabulator-table .tabulator-row.tabulator-selectable:hover {
 					background-color: #64748b !important;
 					color: #ffffff !important;
 				}
-				.dark .tabulator .tabulator-tableholder .tabulator-table .tabulator-row.tabulator-selectable:hover .tabulator-cell {
+				.dark .tabulator:not(.datagrid-unifi) .tabulator-tableholder .tabulator-table .tabulator-row.tabulator-selectable:hover .tabulator-cell {
 					background-color: #64748b !important;
 					color: #ffffff !important;
 				}
-				.dark .tabulator .tabulator-tableholder .tabulator-table .tabulator-row.tabulator-selectable:hover .tabulator-frozen {
+				.dark .tabulator:not(.datagrid-unifi) .tabulator-tableholder .tabulator-table .tabulator-row.tabulator-selectable:hover .tabulator-frozen {
 					background-color: #64748b !important;
 					color: #ffffff !important;
 				}
 			}
-			.dark .tabulator .tabulator-footer {
+			.dark .tabulator:not(.datagrid-unifi) .tabulator-footer {
 				background-color: #334155;
 				border-color: #475569;
 				color: #e2e8f0;
 			}
-			.dark .tabulator .tabulator-footer .tabulator-page {
+			.dark .tabulator:not(.datagrid-unifi) .tabulator-footer .tabulator-page {
 				background-color: #1e293b;
 				border-color: #475569;
 				color: #e2e8f0;
 			}
-			.dark .tabulator .tabulator-footer .tabulator-page.active {
+			.dark .tabulator:not(.datagrid-unifi) .tabulator-footer .tabulator-page.active {
 				background-color: #3b82f6;
 				color: white;
 			}
@@ -394,6 +395,8 @@ templ Base(title string, user *models.User, currentPath ...string) {
 		<link rel="stylesheet" href="/static/css/components/cards.css"/>
 		<link rel="stylesheet" href="/static/css/components/modals.css"/>
 		<link rel="stylesheet" href="/static/css/components/buttons.css"/>
+		<link rel="stylesheet" href="/static/css/components/datagrid.css"/>
+		<script src="/static/js/common/datagrid.js"></script>
 		<script>
 			// Theme management
 			function getThemePreference() {
