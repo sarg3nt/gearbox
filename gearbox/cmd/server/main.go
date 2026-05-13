@@ -31,6 +31,7 @@ import (
 
 	// Import gears - blank identifier triggers init() registration
 	_ "github.com/sarg3nt/gearbox/internal/gears/alerts"
+	_ "github.com/sarg3nt/gearbox/internal/gears/bx"
 	_ "github.com/sarg3nt/gearbox/internal/gears/certificates"
 	_ "github.com/sarg3nt/gearbox/internal/gears/haproxy"
 	_ "github.com/sarg3nt/gearbox/internal/gears/home"
@@ -397,8 +398,10 @@ func main() {
 	}
 	logger.Info("gear system initialized")
 
-	// Initialize WebAuthn for passkey support
-	if cfg.WebAuthnRPID != "" && cfg.WebAuthnRPID != "localhost" {
+	// Initialize WebAuthn for passkey support. `localhost` is a valid RPID
+	// per the WebAuthn spec and is whitelisted as a secure origin by every
+	// browser specifically for dev — don't gate it out.
+	if cfg.WebAuthnRPID != "" {
 		webAuthnCfg := &auth.WebAuthnConfig{
 			RPDisplayName: cfg.WebAuthnRPDisplayName,
 			RPID:          cfg.WebAuthnRPID,
@@ -413,9 +416,20 @@ func main() {
 			logger.Info("WebAuthn initialized",
 				"rp_id", cfg.WebAuthnRPID,
 				"origins", cfg.WebAuthnRPOrigins)
+			// If RPID is "localhost" but BASE_URL was never explicitly set,
+			// the operator probably forgot to configure it. Passkey UI will
+			// render but registration will fail at the authenticator with an
+			// opaque origin-mismatch error — warn loudly so the misconfig is
+			// findable in the journal.
+			if cfg.WebAuthnRPID == "localhost" && os.Getenv("BASE_URL") == "" {
+				logger.Warn("WebAuthn RPID is 'localhost' because BASE_URL is unset — " +
+					"passkey UI will appear, but registration from any non-localhost " +
+					"hostname will fail with an origin-mismatch error. Set BASE_URL " +
+					"(or WEBAUTHN_RP_ID/WEBAUTHN_RP_ORIGINS) in production.")
+			}
 		}
 	} else {
-		logger.Info("WebAuthn disabled (requires BASE_URL with non-localhost domain)")
+		logger.Info("WebAuthn disabled (BASE_URL did not yield a hostname)")
 	}
 
 	// Setup router
@@ -522,6 +536,18 @@ func main() {
 		// (per-user → system → fallback). See feature/dashboard-gear F1.
 		r.Get("/", h.RootRedirect)
 
+		// Passkey registration (authenticated). Mounted at the same /api/passkey
+		// prefix as the public login routes above for URL symmetry; auth is
+		// supplied by this protected group's middleware, not the path.
+		r.Get("/api/passkey/register/begin", h.PasskeyRegisterBegin)
+		r.Post("/api/passkey/register/finish", h.PasskeyRegisterFinish)
+
+		// First-run onboarding (issue #49). Admin-only. The /welcome page
+		// self-redirects to / once onboarding is complete (any box or
+		// system gear enabled), so it's safe to leave reachable.
+		r.Get("/welcome", h.WelcomePage)
+		r.Post("/onboarding", h.OnboardingPost)
+
 		// Settings routes
 		r.Route("/settings", func(r chi.Router) {
 			// Settings menu page (accessible by all authenticated users)
@@ -537,9 +563,7 @@ func main() {
 			r.Get("/change-password", h.ChangePasswordPage)
 			r.Post("/change-password", h.ChangePasswordPost)
 
-			// Passkey management
-			r.Get("/api/passkey/register/begin", h.PasskeyRegisterBegin)
-			r.Post("/api/passkey/register/finish", h.PasskeyRegisterFinish)
+			// Passkey deletion (still under /settings as a profile sub-action)
 			r.Post("/profile/passkey/delete", h.PasskeyDelete)
 
 			// User management routes (require admin or approve_users permission)
