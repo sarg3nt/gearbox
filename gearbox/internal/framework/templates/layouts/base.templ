@@ -116,6 +116,42 @@ func encodeGearsJSON(ctx context.Context) string {
 	return string(b)
 }
 
+// encodePagesJSON serializes the user's reachable settings/profile pages
+// for the command palette. Source of truth is models.SettingsPagesFor —
+// the Settings template renders cards from the same slice, so the palette
+// can never dangle a 403 destination or omit a page the user can reach.
+// Augmented with palette-only entries (Settings root, Profile sub-pages,
+// Add-a-box) that don't need their own Settings card.
+func encodePagesJSON(ctx context.Context) string {
+	type lite struct {
+		Name  string `json:"name"`
+		Label string `json:"label"`
+		Path  string `json:"path"`
+	}
+	user, _ := auth.GetUserFromContext(ctx)
+	perms, _ := auth.GetUserPermissionsFromContext(ctx)
+
+	pages := models.SettingsPagesFor(user, perms)
+	out := make([]lite, 0, len(pages)+4)
+	// Always reachable, but not their own Settings card.
+	out = append(out, lite{Name: "settings", Label: "Settings", Path: "/settings"})
+	out = append(out, lite{Name: "change-password", Label: "Change password", Path: "/settings/change-password"})
+	for _, p := range pages {
+		out = append(out, lite{Name: p.Name, Label: p.Label, Path: p.Path})
+		// Surface "Add a box" alongside the Boxes card for one-keystroke
+		// access from anywhere — only when the user can see Boxes itself.
+		if p.Name == "boxes" {
+			out = append(out, lite{Name: "boxes-new", Label: "Add a box", Path: "/settings/boxes/new"})
+		}
+	}
+
+	b, err := json.Marshal(out)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
+}
+
 // gearLabelForName returns the user-facing label for a gear name. Mirrors
 // the labels used by SidebarLink* templates so the palette matches the
 // sidebar's vocabulary exactly.
@@ -2478,6 +2514,7 @@ templ CommandPalette() {
 	     parsed by command-palette.js at open time. -->
 	@templ.Raw("<script type=\"application/json\" id=\"cmdk-boxes\">" + encodeBoxesJSON(boxes) + "</script>")
 	@templ.Raw("<script type=\"application/json\" id=\"cmdk-gears\">" + encodeGearsJSON(ctx) + "</script>")
+	@templ.Raw("<script type=\"application/json\" id=\"cmdk-pages\">" + encodePagesJSON(ctx) + "</script>")
 }
 
 // ShortcutHelp is the `?`-opens overlay listing every global shortcut.

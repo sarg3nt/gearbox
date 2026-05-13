@@ -2,9 +2,11 @@ package gear
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
@@ -461,6 +463,45 @@ func (m *Manager) RegisterRoutes(r chi.Router) {
 		p.RegisterRoutes(r)
 	}
 	m.logger.Info("registered gear routes", "count", loaded)
+}
+
+// CapabilityEntry is the per-gear shape returned by the capabilities API.
+// Stable JSON keys — the dashboard parses this to decide which gears to
+// surface in the Gears settings page.
+type CapabilityEntry struct {
+	Status       ProbeStatus       `json:"status"`
+	Reason       string            `json:"reason,omitempty"`
+	Capabilities map[string]string `json:"capabilities,omitempty"`
+}
+
+// CapabilitiesResponse is the envelope for GET /api/v1/system/capabilities.
+type CapabilitiesResponse struct {
+	Gears map[string]CapabilityEntry `json:"gears"`
+}
+
+// RegisterSystemRoutes registers cross-cutting agent endpoints that aren't
+// tied to a single gear. Today that's just the capability table; future
+// system-wide endpoints belong here too. Mount under the same auth group as
+// the plugin routes.
+func (m *Manager) RegisterSystemRoutes(r chi.Router) {
+	r.Get("/api/v1/system/capabilities", m.handleCapabilities)
+}
+
+// handleCapabilities renders the probe table — every registered gear, its
+// verdict, reason, and any detected capability key-values. The dashboard
+// uses this to hide gears that can't run on a given box (issue #71 item 2).
+func (m *Manager) handleCapabilities(w http.ResponseWriter, r *http.Request) {
+	plugins := All()
+	results := m.ProbeResults()
+	out := CapabilitiesResponse{Gears: make(map[string]CapabilityEntry, len(plugins))}
+	for _, p := range plugins {
+		name := p.Info().Name
+		out.Gears[name] = CapabilityEntry(results[name])
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(out); err != nil {
+		m.logger.Error("encode capabilities response failed", "error", err)
+	}
 }
 
 // GetHealth returns health status for all plugins.

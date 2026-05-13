@@ -207,6 +207,32 @@ func (h *Handler) getDefaultServerID() string {
 	return ""
 }
 
+// resolveBoxIDFromRequest picks the box ID to operate on, in priority:
+//  1. `?server=<id>` query param — explicit per-link override.
+//  2. `gearbox_active_box` cookie — the header pill's selection.
+//  3. The first enabled server — first-login fallback.
+//
+// Previously the Gears settings handlers only consulted `?server=` and fell
+// straight through to the first server when it was missing, which made the
+// page show the first box's gears even while the header pill was on a
+// different box (issue #71 item 1). Reading the cookie aligns these
+// handlers with the pill that's actually visible to the user.
+func (h *Handler) resolveBoxIDFromRequest(r *http.Request) string {
+	if id := r.URL.Query().Get("server"); id != "" {
+		return id
+	}
+	if c, err := r.Cookie(activeBoxCookieName); err == nil && c.Value != "" {
+		// Only honor the cookie if it still resolves to an enabled server —
+		// stale cookies (deleted/disabled boxes) shouldn't dictate behavior.
+		for _, s := range h.getEnabledServers() {
+			if s.ID == c.Value {
+				return c.Value
+			}
+		}
+	}
+	return h.getDefaultServerID()
+}
+
 // activeBoxCookieName is the cookie key that persists the user's selected
 // box across navigations. Lets gear links (e.g. /haproxy) drop the verbose
 // `?box_id=` query string and still resolve the active context.

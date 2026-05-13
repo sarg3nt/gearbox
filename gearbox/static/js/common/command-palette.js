@@ -42,6 +42,7 @@
      * -------------------------------------------------------------- */
     let boxes = [];   // [{id, name}]
     let gears = [];   // [{name, label, path, enabled}]
+    let pages = [];   // [{name, label, path}]   (settings + profile pages, perm-filtered)
     let actions = []; // [{id, label, subtitle?, run(), kbd?}]
     const statusByBox = new Map();
     let activeBoxID = '';
@@ -56,6 +57,7 @@
     function loadCatalog() {
         boxes = loadJSONIsland('cmdk-boxes') || [];
         gears = loadJSONIsland('cmdk-gears') || [];
+        pages = loadJSONIsland('cmdk-pages') || [];
         const overlay = document.getElementById('cmdk-overlay');
         if (overlay) activeBoxID = overlay.dataset.activeBoxId || '';
         actions = buildActions();
@@ -150,6 +152,9 @@
     function boxItems() {
         return boxes.map(function (b) { return { kind: 'box', id: 'box:' + b.id, label: b.name, box: b }; });
     }
+    function pageItems() {
+        return pages.map(function (p) { return { kind: 'page', id: 'page:' + p.name, label: p.label, subtitle: p.path, page: p }; });
+    }
     function actionItems() {
         return actions.map(function (a) {
             return { kind: 'action', id: a.id, label: a.label, subtitle: a.subtitle || '', kbd: a.kbd || '', action: a };
@@ -166,6 +171,11 @@
                 const b = boxes.find(function (x) { return ('box:' + x.id) === id; });
                 if (!b) return null;
                 return { kind: 'box', id: id, label: b.name, box: b };
+            }
+            case 'page': {
+                const p = pages.find(function (x) { return ('page:' + x.name) === id; });
+                if (!p) return null;
+                return { kind: 'page', id: id, label: p.label, subtitle: p.path, page: p };
             }
             case 'action': {
                 const a = actions.find(function (x) { return x.id === id; });
@@ -333,6 +343,7 @@
             { title: 'Recent', items: q ? [] : getRecentItems() },
             { title: 'Boxes', items: rankItems(boxItems(), q) },
             { title: 'Gears', items: rankItems(gearItems(), q) },
+            { title: 'Settings', items: rankItems(pageItems(), q) },
             { title: 'Actions', items: rankItems(actionItems(), q) },
         ];
         sections.forEach(function (s) {
@@ -407,6 +418,11 @@
                 pushRecent(item);
                 close();
                 window.location.assign(item.gear.path);
+                return;
+            case 'page':
+                pushRecent(item);
+                close();
+                window.location.assign(item.page.path);
                 return;
             case 'action':
                 pushRecent(item);
