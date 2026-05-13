@@ -31,10 +31,15 @@ RestartSec=5
 # data dir). ProtectHome=read-only is set since the agent runs as root and only
 # needs read access to home directories.
 #
-# pipx upgrades write new package files into /root/.local/share/pipx/venvs/<pkg>/
-# and pip caches downloads under /root/.cache/pip/, both inside the otherwise
-# read-only /root. ReadWritePaths= punches a hole through ProtectHome= for just
-# those subtrees. The "-" prefix tolerates the paths not existing yet.
+# pipx upgrades write new package files into /root/.local/share/pipx/venvs/<pkg>/,
+# pipx logs to /root/.local/state/pipx/log/, pipx CLI shims live at /root/.local/bin/,
+# and pip caches downloads under /root/.cache/pip/ — all inside the otherwise
+# read-only /root. We grant the broader XDG data/cache parents (/root/.local and
+# /root/.cache) rather than narrower per-tool subdirs because pipx and pip create
+# their state/log/cache subdirectories on demand at first use, and the mkdir of
+# e.g. /root/.local/state/pipx/ requires the /root/.local/state/ parent to be
+# writable. Nothing security-sensitive lives under either XDG dir on this host.
+# The "-" prefix tolerates the paths not existing yet.
 NoNewPrivileges=false
 ProtectHome=read-only
 ReadWritePaths=-/root/.local -/root/.cache

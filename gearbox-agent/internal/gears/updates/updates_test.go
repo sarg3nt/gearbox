@@ -515,10 +515,14 @@ func TestExtractPipxErrorDetail(t *testing.T) {
 			},
 		},
 		{
-			name:    "skips Failed to lines",
-			output:  "Failed to do thing\nreal cause line\nFailed to do other thing",
-			wantSubs: []string{"real cause line"},
-			notWant:  []string{"Failed to"},
+			name: "surfaces Failed to lines from pip (e.g. build-wheel failures)",
+			output: "Collecting cryptography\n" +
+				"Failed to build wheels for cryptography\n" +
+				"'/root/.local/share/pipx/venvs/foo/bin/python -m pip install --upgrade foo -q' failed",
+			wantSubs: []string{
+				"Failed to build wheels for cryptography",
+				"--upgrade foo -q' failed",
+			},
 		},
 		{
 			name:   "caps at 5 lines",

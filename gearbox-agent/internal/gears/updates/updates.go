@@ -253,8 +253,9 @@ func (c *UpdatesCollector) runPipxCommandWithOutput(args ...string) ([]byte, err
 // is on lines above it. We therefore return up to the last few non-empty lines
 // joined with "; ", capped at a reasonable display length.
 //
-// "Failed to" lines are still skipped — systemctl/systemd uses that prefix
-// internally and it tends to be noise for our callers.
+// No prefix-based filtering: pip diagnostics legitimately use "Failed to …"
+// prefixes too (e.g. "Failed to build wheels for cryptography"), and those
+// are exactly the actionable lines we want to surface.
 func extractPipxErrorDetail(output []byte) string {
 	if len(output) == 0 {
 		return ""
@@ -272,7 +273,7 @@ func extractPipxErrorDetail(output []byte) string {
 	var picked []string
 	for i := len(rawLines) - 1; i >= 0 && len(picked) < maxLines; i-- {
 		trimmed := strings.TrimSpace(rawLines[i])
-		if trimmed == "" || strings.HasPrefix(trimmed, "Failed to") {
+		if trimmed == "" {
 			continue
 		}
 		picked = append([]string{trimmed}, picked...)
