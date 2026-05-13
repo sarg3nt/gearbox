@@ -74,6 +74,32 @@ func (p *Gear) Start(ctx context.Context) error {
 	return nil
 }
 
+// Probe reports whether at least one of the security tools this gear knows
+// how to talk to is present. The gear monitors fail2ban (via
+// fail2ban-client) and nftables (via the nft binary or a config file);
+// without any of them there's nothing to monitor.
+func (p *Gear) Probe(ctx context.Context, deps gear.Dependencies) gear.ProbeResult {
+	hasFail2ban := false
+	hasNft := false
+	if _, err := exec.LookPath("fail2ban-client"); err == nil {
+		hasFail2ban = true
+	}
+	if _, err := exec.LookPath("nft"); err == nil {
+		hasNft = true
+	}
+	if !hasFail2ban && !hasNft {
+		return gear.ProbeNotInstalled("neither fail2ban-client nor nft found on PATH")
+	}
+	caps := map[string]string{}
+	if hasFail2ban {
+		caps["fail2ban"] = "present"
+	}
+	if hasNft {
+		caps["nftables"] = "present"
+	}
+	return gear.ProbeAvailable("security tools present", caps)
+}
+
 // Stop cleans up resources.
 func (p *Gear) Stop(ctx context.Context) error {
 	return nil

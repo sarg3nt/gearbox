@@ -388,8 +388,15 @@ func main() {
 	// Create plugin manager
 	gearManager := gear.NewManager(gearDeps, logger)
 
-	// Initialize all plugins
+	// Probe the host: each gear self-reports whether its prerequisites are
+	// present. Gears that probe negative are skipped for the rest of the
+	// lifecycle (no Initialize, no Start, no routes). A summary table is
+	// written to stderr (→ systemd journal) so operators can see at a
+	// glance which gears are running on this box and why others aren't.
 	ctx := context.Background()
+	gearManager.ProbeAll(ctx)
+
+	// Initialize the gears that probed Available.
 	if err := gearManager.InitializeAll(ctx); err != nil {
 		logger.Error("Failed to initialize plugins", "error", err)
 		os.Exit(1)

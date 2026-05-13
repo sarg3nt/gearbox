@@ -204,3 +204,94 @@ func NewUnhealthyStatus(message string) HealthStatus {
 		LastCheck: time.Now(),
 	}
 }
+
+// ProbeStatus is the agent's verdict on whether a gear can run on this host.
+// Operators reading the startup table and the upcoming
+// /api/v1/system/capabilities endpoint distinguish the four states because
+// the appropriate fix differs — "install the thing", "fix the access", or
+// "change the config" — and conflating them costs debugging time.
+type ProbeStatus string
+
+const (
+	// ProbeStatusAvailable means the gear's prerequisites are present and
+	// reachable. The gear will go through Initialize/Start normally.
+	ProbeStatusAvailable ProbeStatus = "available"
+
+	// ProbeStatusNotInstalled means the thing the gear manages isn't on
+	// this host at all. Expected on hosts that don't run this software.
+	ProbeStatusNotInstalled ProbeStatus = "not_installed"
+
+	// ProbeStatusInaccessible means the prerequisites exist but the agent
+	// can't reach them — bind mount missing, permission denied, socket
+	// unreadable. The fix is access, not installation.
+	ProbeStatusInaccessible ProbeStatus = "inaccessible"
+
+	// ProbeStatusDisabled means the gear was turned off by configuration.
+	// Reserved for a future GEARBOX_AGENT_DISABLE_GEARS-style mechanism;
+	// no gear returns this yet.
+	ProbeStatusDisabled ProbeStatus = "disabled"
+)
+
+// ProbeResult is what a ProbeableGear returns from Probe(). Status drives
+// the manager's load decision; Reason is a human-readable sentence shown
+// in the startup table and the capabilities API.
+type ProbeResult struct {
+	// Status is the verdict. Only Available causes the gear to load.
+	Status ProbeStatus
+
+	// Reason is a free-text sentence written for an operator: name the
+	// surface that was probed and what was wrong. Mandatory unless the
+	// status is Available (in which case it may describe what was found).
+	Reason string
+
+	// Capabilities is optional detected facts the gear wants to surface
+	// (e.g. "haproxy_version": "2.8.5", "stats_socket": "/run/haproxy/admin.sock").
+	// Populated mainly when Status == Available.
+	Capabilities map[string]string
+}
+
+// IsAvailable reports whether the gear should be loaded.
+func (r ProbeResult) IsAvailable() bool {
+	return r.Status == ProbeStatusAvailable
+}
+
+// ProbeAvailable returns an available ProbeResult with an optional reason
+// (typically the detected version or path) and capabilities map.
+func ProbeAvailable(reason string, capabilities map[string]string) ProbeResult {
+	return ProbeResult{Status: ProbeStatusAvailable, Reason: reason, Capabilities: capabilities}
+}
+
+// ProbeNotInstalled returns a result for the case where the software the
+// gear manages isn't on this host.
+func ProbeNotInstalled(reason string) ProbeResult {
+	return ProbeResult{Status: ProbeStatusNotInstalled, Reason: reason}
+}
+
+// ProbeInaccessible returns a result for the case where prereqs exist but
+// the agent can't reach them. Use when the fix is access, not installation.
+func ProbeInaccessible(reason string) ProbeResult {
+	return ProbeResult{Status: ProbeStatusInaccessible, Reason: reason}
+}
+
+// ProbeDisabled returns a result for gears that have been turned off by
+// configuration.
+func ProbeDisabled(reason string) ProbeResult {
+	return ProbeResult{Status: ProbeStatusDisabled, Reason: reason}
+}
+
+// ProbeableGear is implemented by gears that can self-report whether they
+// have what they need to run on the current host. Gears that do not
+// implement this interface are treated as always-available.
+//
+// Probe runs before Initialize. A non-Available result causes the manager
+// to skip Initialize, Start, and route registration for that gear — it
+// does not exist for this run.
+type ProbeableGear interface {
+	Gear
+
+	// Probe inspects the host for the gear's prerequisites and returns the
+	// verdict. It must be side-effect-free: do not connect to anything,
+	// do not mutate state, do not log loudly. The manager logs a single
+	// summary line per probe.
+	Probe(ctx context.Context, deps Dependencies) ProbeResult
+}

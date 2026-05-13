@@ -119,6 +119,35 @@ var certbotPaths = []string{
 	"/home/certbot/.local/bin/certbot", // pipx install as certbot user
 }
 
+// detectCertbotForProbe is the side-effect-free version of detectCertbot
+// for use by Probe(). It returns the resolved path and true if certbot is
+// present; otherwise an empty path and false. It does not log, mutate any
+// state, or shell out to `find` (the slow fallback path inside detectCertbot
+// is intentionally skipped — Probe must be fast).
+func detectCertbotForProbe() (string, bool) {
+	if resolved, err := exec.LookPath("certbot"); err == nil {
+		return resolved, true
+	}
+	for _, path := range certbotPaths {
+		info, err := os.Lstat(path)
+		if err != nil {
+			continue
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			resolved, err := filepath.EvalSymlinks(path)
+			if err != nil || !isSymlinkTargetSafe(resolved) {
+				continue
+			}
+			if info2, err := os.Stat(resolved); err == nil && info2.Mode()&0111 != 0 {
+				return path, true
+			}
+		} else if info.Mode()&0111 != 0 {
+			return path, true
+		}
+	}
+	return "", false
+}
+
 // detectCertbot checks if certbot is installed and functional.
 // If found, stores the path in c.certbotPath for later use.
 // Uses multiple detection strategies: PATH lookup, common paths, and find command.

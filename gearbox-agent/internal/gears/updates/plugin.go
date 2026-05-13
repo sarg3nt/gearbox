@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os/exec"
 	"strconv"
 	"strings"
 
@@ -54,6 +55,25 @@ func (p *Gear) Initialize(ctx context.Context, deps gear.Dependencies) error {
 // Start is a no-op for this gear.
 func (p *Gear) Start(ctx context.Context) error {
 	return nil
+}
+
+// Probe reports whether a supported package manager is present. The gear
+// manages installs, upgrades, snapshots, and reboot orchestration, all of
+// which require a real package manager on this host. Today only apt is
+// wired into the runner, but we accept any of the common Linux managers
+// here so the table reflects what's installed rather than what we've
+// implemented support for; mismatch is the right kind of warning.
+func (p *Gear) Probe(ctx context.Context, deps gear.Dependencies) gear.ProbeResult {
+	// Ordered by frequency on the hosts we care about. First hit wins.
+	for _, mgr := range []string{"apt-get", "apt", "dnf", "yum", "zypper", "apk"} {
+		if path, err := exec.LookPath(mgr); err == nil {
+			return gear.ProbeAvailable("package manager found", map[string]string{
+				"package_manager": mgr,
+				"path":            path,
+			})
+		}
+	}
+	return gear.ProbeNotInstalled("no supported package manager found on PATH (apt-get/apt/dnf/yum/zypper/apk)")
 }
 
 // Stop cleans up resources.
