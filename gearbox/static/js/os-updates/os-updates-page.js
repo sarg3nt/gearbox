@@ -165,8 +165,10 @@ document.addEventListener('DOMContentLoaded', function() {
 	// Delay slightly to ensure currentServerID is set
 	setTimeout(initSSE, 100);
 
-	// Lazily load Python package version info (slow PyPI check, done async)
-	if (document.querySelector('.pipx-version-cell, .pip-version-cell')) {
+	// Initialize pipx/pip grids from their embedded JSON, then kick off the
+	// async PyPI version check that fills in the "Latest" column.
+	if (document.getElementById('pipx-grid') || document.getElementById('pip-grid')) {
+		initPythonToolsGrids();
 		setTimeout(loadPythonVersions, 200);
 	}
 
@@ -328,11 +330,18 @@ function initSSE() {
 	};
 }
 
-// Manual refresh triggered by the LiveRefreshButton
-function manualRefresh() {
+// Manual refresh triggered by the LiveRefreshButton.
+// On this page the refresh icon is the only "check for updates" affordance —
+// run a real apt update check rather than a full page reload, so the user
+// stays on the current scroll position and search/sort state survives.
+async function manualRefresh() {
 	const icon = document.getElementById('refresh-icon');
 	if (icon) icon.classList.add('animate-spin');
-	window.location.reload();
+	try {
+		await checkForUpdates();
+	} finally {
+		if (icon) icon.classList.remove('animate-spin');
+	}
 }
 
 function switchServer(serverID) {
@@ -373,6 +382,15 @@ async function checkForUpdates() {
 			}
 		}
 		await refreshInstalledPackagesGrid();
+		// Also refresh any open collapsible sections so the refresh icon
+		// behaves predictably — same data update path as an SSE apt.completed.
+		// Closed sections are skipped (their grid hasn't been initialized
+		// yet and they'll fetch fresh on next expand anyway).
+		if (typeof isSectionOpen === 'function') {
+			if (isSectionOpen('snapshots')) refreshSnapshotsGrid();
+			if (isSectionOpen('history'))   refreshHistoryGrid();
+			if (isSectionOpen('logs'))      refreshLogsGrid();
+		}
 
 		if (btn) {
 			btn.disabled = false;
@@ -683,13 +701,11 @@ function deleteSnapshot(snapshotID) {
 					throw new Error(errMsg);
 				}
 				showToast('Snapshot deleted', 'success');
-				// Remove the snapshot row from the DOM immediately
-				const snapshotRow = document.querySelector('[data-snapshot-row="' + snapshotID + '"]');
-				if (snapshotRow) {
-					snapshotRow.remove();
+				// Refetch the snapshots grid from the server. Tabulator owns row
+				// state — direct DOM manipulation is no longer reliable here.
+				if (SECTIONS.snapshots) {
+					await SECTIONS.snapshots.refresh();
 					updateBulkDeleteButton();
-				} else {
-					setTimeout(() => window.location.reload(), 1000);
 				}
 			} catch (err) {
 				showToast('Failed to delete snapshot: ' + err.message, 'error');
@@ -702,36 +718,29 @@ function deleteSnapshot(snapshotID) {
 	});
 }
 
-function toggleSelectAllSnapshots(checked) {
-	document.querySelectorAll('.snapshot-checkbox').forEach(cb => {
-		cb.checked = checked;
-	});
-	updateBulkDeleteButton();
-}
-
+// Toggle the bulk-delete button visibility/label based on Tabulator selection.
+// Called from the snapshots grid's `rowSelectionChanged` callback in
+// initSnapshotsGrid(). Also called manually after delete-one to refresh state.
 function updateBulkDeleteButton() {
 	const btn = document.getElementById('bulk-delete-snapshots-btn');
 	if (!btn) return;
-	const all = document.querySelectorAll('.snapshot-checkbox');
-	const checked = document.querySelectorAll('.snapshot-checkbox:checked');
-	const selectAll = document.getElementById('select-all-snapshots');
-	if (selectAll) {
-		selectAll.checked = all.length > 0 && checked.length === all.length;
-		selectAll.indeterminate = checked.length > 0 && checked.length < all.length;
-	}
-	if (checked.length > 0) {
+	const grid = SECTIONS.snapshots && SECTIONS.snapshots.grid;
+	const count = grid ? grid.getSelectedData().length : 0;
+	if (count > 0) {
 		btn.classList.remove('hidden');
-		btn.textContent = 'Delete Selected (' + checked.length + ')';
+		btn.textContent = 'Delete Selected (' + count + ')';
 	} else {
 		btn.classList.add('hidden');
 	}
 }
 
 function bulkDeleteSnapshots() {
-	const checked = document.querySelectorAll('.snapshot-checkbox:checked');
-	if (checked.length === 0) return;
+	const grid = SECTIONS.snapshots && SECTIONS.snapshots.grid;
+	if (!grid) return;
+	const selected = grid.getSelectedData();
+	if (selected.length === 0) return;
+	const ids = selected.map(s => s.id);
 
-	const ids = Array.from(checked).map(cb => cb.dataset.snapshotId);
 	showConfirmModal({
 		title: 'Delete Snapshots',
 		message: 'Delete ' + ids.length + ' selected snapshot(s)? This action cannot be undone.',
@@ -745,13 +754,8 @@ function bulkDeleteSnapshots() {
 					const response = await fetch('/api/os-updates/snapshots/' + id + '?server=' + currentServerID, {
 						method: 'DELETE'
 					});
-					if (!response.ok) {
-						failed++;
-						continue;
-					}
+					if (!response.ok) { failed++; continue; }
 					deleted++;
-					const row = document.querySelector('[data-snapshot-row="' + id + '"]');
-					if (row) row.remove();
 				} catch {
 					failed++;
 				}
@@ -761,10 +765,10 @@ function bulkDeleteSnapshots() {
 			} else {
 				showToast(deleted + ' snapshot(s) deleted', 'success');
 			}
+			// Refresh the grid from the server rather than DOM-manipulating —
+			// Tabulator owns the row state now.
+			await SECTIONS.snapshots.refresh();
 			updateBulkDeleteButton();
-			if (document.querySelectorAll('[data-snapshot-row]').length === 0) {
-				setTimeout(() => window.location.reload(), 1000);
-			}
 		}
 	});
 }
@@ -897,54 +901,176 @@ function showRebootNotRequiredStatus() {
 	}
 }
 
-// Async version check — fetches latest PyPI versions and updates the Latest cells
+// pipx + pip live in Tabulator grids — see initPythonToolsGrids().
+let pipxGrid = null;
+let pipGrid = null;
+
+// Cell formatter for the "Latest" column shared by pipx and pip grids.
+// While latest_version is undefined the cell shows a spinner; once
+// loadPythonVersions() populates it the cell shows either a muted "in sync"
+// value, an amber "Update" badge for upgradable packages, or a dash when
+// PyPI didn't return anything for this package.
+function pythonLatestFormatter(cell) {
+	const row = cell.getRow().getData();
+	if (row.latest_version === undefined) {
+		return '<svg class="w-3.5 h-3.5 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>';
+	}
+	if (row.update_available) {
+		return '<span class="font-mono text-xs text-amber-600 dark:text-amber-400">' + escapeHtml(row.latest_version || '') + '</span>'
+		     + ' <span class="px-1.5 py-0.5 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded">Update</span>';
+	}
+	if (row.latest_version) {
+		return '<span class="font-mono text-xs text-gray-500 dark:text-gray-400">' + escapeHtml(row.latest_version) + '</span>';
+	}
+	return '<span class="text-xs text-gray-400 dark:text-gray-500">—</span>';
+}
+
+// Build a per-row "Upgrade / Uninstall" action column. The kind argument is
+// either 'pipx' or 'pip' so the cellClick can dispatch to the right handlers.
+function pythonActionColumn(kind) {
+	return {
+		title: '', headerSort: false, hozAlign: 'right', width: 200,
+		formatter: function(cell) {
+			const row = cell.getRow().getData();
+			const updateAvail = !!row.update_available;
+			const upgradeCls = 'py-upgrade-btn px-3 py-1 text-xs bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-400 rounded transition-colors mr-1.5 disabled:opacity-40 disabled:cursor-not-allowed';
+			const upgradeAttrs = updateAvail ? '' : ' disabled';
+			return '<button class="' + upgradeCls + '"' + upgradeAttrs + '>Upgrade</button>'
+			     + '<button class="py-uninstall-btn px-3 py-1 text-xs bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 rounded transition-colors">Uninstall</button>';
+		},
+		cellClick: function(e, cell) {
+			const name = cell.getRow().getData().name;
+			const btn = e.target;
+			if (btn.classList.contains('py-upgrade-btn') && !btn.disabled) {
+				if (kind === 'pipx') upgradePipxPackage(btn, name);
+				else                 upgradePipPackage(btn, name);
+			} else if (btn.classList.contains('py-uninstall-btn')) {
+				if (kind === 'pipx') uninstallPipxPackage(btn, name);
+				else                 uninstallPipPackage(btn, name);
+			}
+		},
+	};
+}
+
+function readJSONScript(id) {
+	const tag = document.getElementById(id);
+	if (!tag) return [];
+	try {
+		const parsed = JSON.parse(tag.textContent || 'null');
+		return Array.isArray(parsed) ? parsed : [];
+	} catch {
+		return [];
+	}
+}
+
+function initPythonToolsGrids() {
+	const canAction = document.getElementById('can-action')?.value === 'true';
+
+	const pipxEl = document.getElementById('pipx-grid');
+	if (pipxEl) {
+		const cols = [];
+		if (canAction) {
+			cols.push({
+				formatter: 'rowSelection', titleFormatter: 'rowSelection',
+				hozAlign: 'center', headerSort: false, width: 40,
+				cellClick: function(e, cell) { cell.getRow().toggleSelect(); },
+			});
+		}
+		cols.push({ title: 'Package',  field: 'name', sorter: 'string', minWidth: 160, widthGrow: 2,
+			formatter: cell => '<span class="font-mono text-xs font-medium">' + escapeHtml(cell.getValue() || '') + '</span>' });
+		cols.push({ title: 'Installed', field: 'version', sorter: 'string', width: 150,
+			formatter: cell => '<span class="font-mono text-xs">' + escapeHtml(cell.getValue() || '') + '</span>' });
+		cols.push({ title: 'Latest', field: 'latest_version', sorter: 'string', width: 170, formatter: pythonLatestFormatter });
+		cols.push({ title: 'Apps', field: 'apps', sorter: 'string', minWidth: 140, widthGrow: 2,
+			formatter: function(cell) {
+				const apps = cell.getValue();
+				if (Array.isArray(apps) && apps.length > 0) {
+					return '<span class="text-xs text-gray-500 dark:text-gray-400">' + escapeHtml(apps.join(', ')) + '</span>';
+				}
+				return '<span class="text-xs text-gray-400 dark:text-gray-500">—</span>';
+			},
+		});
+		if (canAction) cols.push(pythonActionColumn('pipx'));
+
+		pipxGrid = createDataGrid(pipxEl, {
+			data: readJSONScript('pipx-data'),
+			columns: cols,
+			maxHeight: '474px',
+			rowHeight: 36,
+			placeholder: 'No pipx packages installed',
+			initialSort: [{ column: 'name', dir: 'asc' }],
+			selectableRows: canAction,
+		});
+		if (canAction) {
+			pipxGrid.on('rowSelectionChanged', updatePipxBulkBar);
+		}
+	}
+
+	const pipEl = document.getElementById('pip-grid');
+	if (pipEl) {
+		const cols = [];
+		if (canAction) {
+			cols.push({
+				formatter: 'rowSelection', titleFormatter: 'rowSelection',
+				hozAlign: 'center', headerSort: false, width: 40,
+				cellClick: function(e, cell) { cell.getRow().toggleSelect(); },
+			});
+		}
+		cols.push({ title: 'Package', field: 'name', sorter: 'string', minWidth: 160, widthGrow: 3,
+			formatter: cell => '<span class="font-mono text-xs font-medium">' + escapeHtml(cell.getValue() || '') + '</span>' });
+		cols.push({ title: 'Installed', field: 'version', sorter: 'string', width: 150,
+			formatter: cell => '<span class="font-mono text-xs">' + escapeHtml(cell.getValue() || '') + '</span>' });
+		cols.push({ title: 'Latest', field: 'latest_version', sorter: 'string', width: 170, formatter: pythonLatestFormatter });
+		if (canAction) cols.push(pythonActionColumn('pip'));
+
+		pipGrid = createDataGrid(pipEl, {
+			data: readJSONScript('pip-data'),
+			columns: cols,
+			maxHeight: '474px',
+			rowHeight: 36,
+			placeholder: 'No user-installed pip packages',
+			initialSort: [{ column: 'name', dir: 'asc' }],
+			selectableRows: canAction,
+		});
+		if (canAction) {
+			pipGrid.on('rowSelectionChanged', updatePipBulkBar);
+		}
+	}
+}
+
+// Async PyPI version check — replaces the per-row spinner cells with real
+// latest-version info. Merges into the grid rows in place so sort/filter
+// state is preserved.
 async function loadPythonVersions() {
 	try {
 		const response = await fetch('/api/os-updates/python-tools/versions?server=' + currentServerID);
 		if (!response.ok) return;
 		const data = await response.json();
 
-		// Update pipx version cells
-		document.querySelectorAll('.pipx-version-cell').forEach(cell => {
-			const pkg = data.pipx?.packages?.find(p => p.name === cell.dataset.package);
-			renderVersionCell(cell, pkg);
-		});
+		const mergeLatest = (grid, pkgs) => {
+			if (!grid || !Array.isArray(pkgs)) return;
+			const byName = {};
+			pkgs.forEach(p => { byName[p.name] = p; });
+			grid.getRows().forEach(row => {
+				const d = row.getData();
+				const upd = byName[d.name];
+				if (upd) {
+					row.update({
+						latest_version: upd.latest_version || '',
+						update_available: !!upd.update_available,
+					});
+				} else {
+					// PyPI returned nothing for this package — clear the spinner
+					row.update({ latest_version: '', update_available: false });
+				}
+			});
+		};
 
-		// Update pip version cells
-		document.querySelectorAll('.pip-version-cell').forEach(cell => {
-			const pkg = data.pip?.packages?.find(p => p.name === cell.dataset.package);
-			renderVersionCell(cell, pkg);
-		});
+		mergeLatest(pipxGrid, data.pipx?.packages);
+		mergeLatest(pipGrid,  data.pip?.packages);
 	} catch {
-		// Non-fatal: leave spinners as-is on network error
+		// Non-fatal: spinners stay if the network blip; user can refresh.
 	}
-}
-
-function renderVersionCell(cell, pkg) {
-	if (!pkg) {
-		cell.innerHTML = '<span class="text-gray-400 dark:text-gray-500">—</span>';
-		disableUpgradeBtn(cell);
-		return;
-	}
-	if (pkg.update_available) {
-		cell.innerHTML =
-			'<span class="text-amber-600 dark:text-amber-400">' + pkg.latest_version + '</span>' +
-			'<span class="ml-1 px-1.5 py-0.5 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded">Update</span>';
-	} else if (pkg.latest_version) {
-		cell.innerHTML = '<span class="text-gray-500 dark:text-gray-400">' + pkg.latest_version + '</span>';
-		disableUpgradeBtn(cell);
-	} else {
-		cell.innerHTML = '<span class="text-gray-400 dark:text-gray-500">—</span>';
-		disableUpgradeBtn(cell);
-	}
-}
-
-// Disables the upgrade button in the same table row as the given version cell.
-function disableUpgradeBtn(cell) {
-	const row = cell.closest('tr');
-	if (!row) return;
-	const btn = row.querySelector('.pipx-upgrade-btn, .pip-upgrade-btn');
-	if (btn) btn.disabled = true;
 }
 
 // Button loading state helpers
@@ -965,33 +1091,24 @@ function clearButtonLoading(btn) {
 }
 
 // ── Multi-select: pipx ────────────────────────────────────────────────────────
+// Tabulator owns row selection state. These helpers project that state onto
+// the bulk-action bar in the section header.
 
-function onPipxCheckboxChange() {
-	const checked = document.querySelectorAll('.pipx-checkbox:checked');
-	const all = document.querySelectorAll('.pipx-checkbox');
+function updatePipxBulkBar() {
 	const bar = document.getElementById('pipx-bulk-bar');
 	const count = document.getElementById('pipx-selected-count');
-	const selectAll = document.getElementById('pipx-select-all');
-	if (bar) bar.classList.toggle('hidden', checked.length === 0);
-	if (count) count.textContent = checked.length + ' selected';
-	if (selectAll) selectAll.indeterminate = checked.length > 0 && checked.length < all.length;
-	if (selectAll) selectAll.checked = checked.length === all.length && all.length > 0;
-}
-
-function togglePipxSelectAll(cb) {
-	document.querySelectorAll('.pipx-checkbox').forEach(c => { c.checked = cb.checked; });
-	onPipxCheckboxChange();
+	const n = pipxGrid ? pipxGrid.getSelectedData().length : 0;
+	if (bar) bar.classList.toggle('hidden', n === 0);
+	if (count) count.textContent = n + ' selected';
 }
 
 function clearPipxSelection() {
-	document.querySelectorAll('.pipx-checkbox').forEach(c => { c.checked = false; });
-	const selectAll = document.getElementById('pipx-select-all');
-	if (selectAll) { selectAll.checked = false; selectAll.indeterminate = false; }
-	onPipxCheckboxChange();
+	if (pipxGrid) pipxGrid.deselectRow();
 }
 
 async function bulkUpgradePipx() {
-	const names = [...document.querySelectorAll('.pipx-checkbox:checked')].map(c => c.value);
+	if (!pipxGrid) return;
+	const names = pipxGrid.getSelectedData().map(r => r.name);
 	if (names.length === 0) return;
 	const btn = document.getElementById('pipx-bulk-upgrade-btn');
 	setButtonLoading(btn, 'Upgrading...');
@@ -1015,7 +1132,8 @@ async function bulkUpgradePipx() {
 }
 
 function bulkUninstallPipx() {
-	const names = [...document.querySelectorAll('.pipx-checkbox:checked')].map(c => c.value);
+	if (!pipxGrid) return;
+	const names = pipxGrid.getSelectedData().map(r => r.name);
 	if (names.length === 0) return;
 	showConfirmModal({
 		title: 'Uninstall Packages',
@@ -1045,32 +1163,21 @@ function bulkUninstallPipx() {
 
 // ── Multi-select: pip ─────────────────────────────────────────────────────────
 
-function onPipCheckboxChange() {
-	const checked = document.querySelectorAll('.pip-checkbox:checked');
-	const all = document.querySelectorAll('.pip-checkbox');
+function updatePipBulkBar() {
 	const bar = document.getElementById('pip-bulk-bar');
 	const count = document.getElementById('pip-selected-count');
-	const selectAll = document.getElementById('pip-select-all');
-	if (bar) bar.classList.toggle('hidden', checked.length === 0);
-	if (count) count.textContent = checked.length + ' selected';
-	if (selectAll) selectAll.indeterminate = checked.length > 0 && checked.length < all.length;
-	if (selectAll) selectAll.checked = checked.length === all.length && all.length > 0;
-}
-
-function togglePipSelectAll(cb) {
-	document.querySelectorAll('.pip-checkbox').forEach(c => { c.checked = cb.checked; });
-	onPipCheckboxChange();
+	const n = pipGrid ? pipGrid.getSelectedData().length : 0;
+	if (bar) bar.classList.toggle('hidden', n === 0);
+	if (count) count.textContent = n + ' selected';
 }
 
 function clearPipSelection() {
-	document.querySelectorAll('.pip-checkbox').forEach(c => { c.checked = false; });
-	const selectAll = document.getElementById('pip-select-all');
-	if (selectAll) { selectAll.checked = false; selectAll.indeterminate = false; }
-	onPipCheckboxChange();
+	if (pipGrid) pipGrid.deselectRow();
 }
 
 async function bulkUpgradePip() {
-	const names = [...document.querySelectorAll('.pip-checkbox:checked')].map(c => c.value);
+	if (!pipGrid) return;
+	const names = pipGrid.getSelectedData().map(r => r.name);
 	if (names.length === 0) return;
 	const btn = document.getElementById('pip-bulk-upgrade-btn');
 	setButtonLoading(btn, 'Upgrading...');
@@ -1094,7 +1201,8 @@ async function bulkUpgradePip() {
 }
 
 function bulkUninstallPip() {
-	const names = [...document.querySelectorAll('.pip-checkbox:checked')].map(c => c.value);
+	if (!pipGrid) return;
+	const names = pipGrid.getSelectedData().map(r => r.name);
 	if (names.length === 0) return;
 	showConfirmModal({
 		title: 'Uninstall Packages',
@@ -1901,68 +2009,8 @@ handleAptCompleted = function(event) {
 };
 
 // ============================================================================
-// Update Logs
+// Update Logs (lazy-loaded via SECTIONS.logs, see Collapsible Sections below)
 // ============================================================================
-
-async function loadUpdateLogs() {
-	const table = document.getElementById('update-logs-table');
-	if (!table) return;
-
-	table.innerHTML = '<tr><td colspan="5" class="px-4 py-8 text-center text-gray-500 dark:text-gray-400">Loading logs...</td></tr>';
-
-	try {
-		const response = await fetch(`/api/os-updates/logs?server=${currentServerID}&limit=50`);
-		if (!response.ok) {
-			throw new Error(await extractErrorMessage(response));
-		}
-
-		const data = await response.json();
-
-		if (!data.logs || data.logs.length === 0) {
-			table.innerHTML = '<tr><td colspan="5" class="px-4 py-8 text-center text-gray-500 dark:text-gray-400">No update logs available</td></tr>';
-			return;
-		}
-
-		table.innerHTML = '';
-		data.logs.forEach(log => {
-			const row = document.createElement('tr');
-			row.className = 'hover:bg-gray-50 dark:hover:bg-slate-700';
-
-			const date = new Date(log.started_at).toLocaleString();
-			const statusColor = log.status === 'completed'
-				? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-				: log.status === 'failed'
-					? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
-					: 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400';
-
-			const typeLabel = log.type === 'check' ? 'Update Check' : log.type === 'install' ? 'Install' : log.type;
-			let details = '';
-			if (log.packages && log.packages.length > 0) {
-				details = `${log.packages.length} package(s)`;
-			} else if (log.security_only) {
-				details = 'Security only';
-			}
-			if (log.error) {
-				details = log.error.substring(0, 60);
-			}
-
-			row.innerHTML = `
-				<td class="px-4 py-3 text-gray-600 dark:text-gray-400">${date}</td>
-				<td class="px-4 py-3"><span class="px-2 py-1 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded">${typeLabel}</span></td>
-				<td class="px-4 py-3"><span class="px-2 py-1 text-xs ${statusColor} rounded">${log.status}</span></td>
-				<td class="px-4 py-3 text-gray-600 dark:text-gray-400 text-xs">${details}</td>
-				<td class="px-4 py-3">
-					<button onclick="viewUpdateLog('${log.id}')" class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-xs font-medium">
-						View Output
-					</button>
-				</td>
-			`;
-			table.appendChild(row);
-		});
-	} catch (err) {
-		table.innerHTML = `<tr><td colspan="5" class="px-4 py-8 text-center text-red-500">${err.message}</td></tr>`;
-	}
-}
 
 async function viewUpdateLog(logID) {
 	const modal = document.getElementById('update-log-modal');
@@ -2141,18 +2189,17 @@ function initInstalledPackagesGrid(el, packages, canAction) {
 	const loading = document.getElementById('installed-packages-loading');
 	if (loading) loading.remove();
 
-	// Row height × 12 visible rows + header (~42px) + header filter row (~34px)
+	// Row height × 12 visible rows + header (~42px). Per-column filter row
+	// has been replaced by a toolbar-mounted global search (see #pkg-search).
 	const ROW_HEIGHT = 36;
 	const VISIBLE_ROWS = 12;
-	const gridHeight = (ROW_HEIGHT * VISIBLE_ROWS) + 42 + 34;
+	const gridHeight = (ROW_HEIGHT * VISIBLE_ROWS) + 42;
 
 	const columns = [
 		{
 			title: 'Package',
 			field: 'name',
 			sorter: 'string',
-			headerFilter: 'input',
-			headerFilterPlaceholder: 'filter...',
 			minWidth: 180,
 			formatter: function(cell) {
 				const row = cell.getRow().getData();
@@ -2175,9 +2222,7 @@ function initInstalledPackagesGrid(el, packages, canAction) {
 			title: 'Installed Version',
 			field: 'version',
 			sorter: 'string',
-			headerFilter: 'input',
-			headerFilterPlaceholder: 'filter...',
-			width: 160,
+			width: 170,
 			formatter: function(cell) {
 				return '<span class="font-mono text-xs">' + escapeHtml(cell.getValue() || '') + '</span>';
 			}
@@ -2186,9 +2231,7 @@ function initInstalledPackagesGrid(el, packages, canAction) {
 			title: 'Available Version',
 			field: 'available_version',
 			sorter: 'string',
-			headerFilter: 'input',
-			headerFilterPlaceholder: 'filter...',
-			width: 160,
+			width: 170,
 			formatter: function(cell) {
 				const val = cell.getValue();
 				if (val) {
@@ -2203,9 +2246,8 @@ function initInstalledPackagesGrid(el, packages, canAction) {
 			title: 'Description',
 			field: 'description',
 			sorter: 'string',
-			headerFilter: 'input',
-			headerFilterPlaceholder: 'filter...',
-			minWidth: 200,
+			minWidth: 160,
+			widthGrow: 3,
 			formatter: function(cell) {
 				return '<span class="text-xs">' + escapeHtml(cell.getValue() || '') + '</span>';
 			}
@@ -2217,7 +2259,7 @@ function initInstalledPackagesGrid(el, packages, canAction) {
 			title: '',
 			field: 'name',
 			headerSort: false,
-			width: 260,
+			width: 150,
 			hozAlign: 'right',
 			formatter: function(cell) {
 				const row = cell.getRow().getData();
@@ -2250,23 +2292,26 @@ function initInstalledPackagesGrid(el, packages, canAction) {
 	const filterSelect = document.getElementById('pkg-view-filter');
 	const initialFilter = filterSelect ? filterSelect.value : 'updates';
 
-	installedPkgTable = new Tabulator(el, {
+	installedPkgTable = createDataGrid(el, {
 		data: packages,
 		columns: columns,
-		layout: 'fitColumns',
 		height: gridHeight + 'px',
 		virtualDom: true,
 		virtualDomBuffer: 180,
 		rowHeight: ROW_HEIGHT,
-		sortMode: 'local',
-		filterMode: 'local',
 		initialSort: [{ column: 'name', dir: 'asc' }],
 		placeholder: 'No packages found',
-		tableBuilt: function() {
-			// Apply initial filter and show/hide Update All button after table is ready
-			_applyPkgViewFilter(initialFilter, packages);
-		},
+		searchInput: '#pkg-search',
+		searchFields: ['name', 'version', 'available_version', 'description'],
 	});
+
+	// Apply initial filter + visibility AFTER the constructor returns so
+	// `installedPkgTable` is guaranteed assigned. Previously this lived in the
+	// `tableBuilt` callback, where the timing was unreliable: on some loads it
+	// fired before _applyPkgViewFilter's `if (!installedPkgTable) return` had
+	// a truthy reference to bail past, leaving the "Update All (N)" button
+	// stuck in its hidden template state.
+	_applyPkgViewFilter(initialFilter, packages);
 }
 
 function onPkgViewFilterChange(value) {
@@ -2286,14 +2331,16 @@ function _applyPkgViewFilter(value, allData) {
 	if (value === 'updates') {
 		// Active updates: upgradable AND not held. "Hold" is an explicit operator
 		// opt-out from upgrade, so held rows do not belong in the updates view.
-		installedPkgTable.setFilter([
+		// setViewFilters composes with the toolbar search box; setFilter would
+		// clobber it.
+		installedPkgTable.setViewFilters([
 			{ field: 'update_available', type: '=', value: true },
 			{ field: 'is_held', type: '=', value: false },
 		]);
 	} else if (value === 'held') {
-		installedPkgTable.setFilter('is_held', '=', true);
+		installedPkgTable.setViewFilters({ field: 'is_held', type: '=', value: true });
 	} else {
-		installedPkgTable.clearFilter();
+		installedPkgTable.clearViewFilters();
 	}
 
 	// Count packages excluding held ones — held packages are intentionally
@@ -2302,10 +2349,14 @@ function _applyPkgViewFilter(value, allData) {
 	const updateCount = allData.filter(p => p.update_available && !p.is_held).length;
 	const securityCount = allData.filter(p => p.is_security_update && !p.is_held).length;
 
-	// Show/hide Update All button
+	// Update All / Security buttons drive the active-upgrades plan, so they
+	// only make sense on the "updates" view. On "held" or "all" they would be
+	// misleading (the visible rows are not what would be upgraded).
+	const onUpdatesView = value === 'updates';
+
 	const updateAllBtn = document.getElementById('pkg-update-all-btn');
 	const updateAllLabel = document.getElementById('pkg-update-all-label');
-	if (updateAllBtn && updateCount > 0) {
+	if (updateAllBtn && onUpdatesView && updateCount > 0) {
 		updateAllBtn.classList.remove('hidden');
 		if (updateAllLabel) {
 			updateAllLabel.textContent = 'Update All (' + updateCount + ')';
@@ -2314,10 +2365,9 @@ function _applyPkgViewFilter(value, allData) {
 		updateAllBtn.classList.add('hidden');
 	}
 
-	// Show/hide Security button
 	const secBtn = document.getElementById('pkg-update-security-btn');
 	if (secBtn) {
-		if (securityCount > 0) {
+		if (onUpdatesView && securityCount > 0) {
 			secBtn.classList.remove('hidden');
 		} else {
 			secBtn.classList.add('hidden');
@@ -2590,3 +2640,361 @@ async function confirmAptInstall() {
 		showToast('Failed to install package: ' + err.message, 'error');
 	}
 }
+
+// ============================================================================
+// Collapsible Sections (Snapshots, History, Logs)
+//
+// These three sections sit in <details data-section="..."> wrappers and are
+// lazy-loaded on first expand. While a section is open, apt.completed SSE
+// events trigger a refetch so the grid stays live. Closing the section stops
+// future refreshes. The grid instance itself is kept around — re-expanding
+// shows the cached data instantly (and then a refresh fires if SSE arrives).
+//
+// Caveat: apt operations performed OUTSIDE gearbox (e.g. `ssh dave@host;
+// apt install x`) won't fire the SSE event, so those changes only show up
+// after a manual refresh (page reload or the top-right refresh icon). A
+// future filesystem-watch on the agent could cover that.
+// ============================================================================
+
+const SECTIONS = {
+	snapshots: { details: null, grid: null, init: null, refresh: null },
+	history:   { details: null, grid: null, init: null, refresh: null },
+	logs:      { details: null, grid: null, init: null, refresh: null },
+};
+
+function isSectionOpen(name) {
+	const s = SECTIONS[name];
+	return !!(s && s.details && s.details.open);
+}
+
+function fmtLocalDateTime(value) {
+	if (!value) return '';
+	const d = new Date(value);
+	if (isNaN(d.getTime())) return escapeHtml(String(value));
+	return d.toLocaleString();
+}
+
+function snapshotIsAuto(reason) {
+	return typeof reason === 'string' && reason.indexOf('auto:') === 0;
+}
+
+function snapshotDescriptionText(reason) {
+	if (!reason || reason === 'manual') return '';
+	if (typeof reason === 'string' && reason.indexOf('auto: ') === 0) {
+		return reason.substring(6);
+	}
+	return reason;
+}
+
+function historyActionColor(action) {
+	switch (action) {
+		case 'install': return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400';
+		case 'upgrade': return 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400';
+		case 'remove':
+		case 'purge':   return 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400';
+		default:        return 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400';
+	}
+}
+
+async function fetchSnapshots() {
+	const r = await fetch('/api/os-updates/snapshots?server=' + currentServerID);
+	if (!r.ok) throw new Error(await extractErrorMessage(r));
+	const data = await r.json();
+	let snaps = data.snapshots || data || [];
+	if (!Array.isArray(snaps)) snaps = [];
+	return snaps.map(s => ({
+		id: s.id || s.ID || s.name || '',
+		createdAt: s.createdAt || s.created_at || s.CreatedAt || '',
+		reason: s.reason || s.Reason || '',
+	}));
+}
+
+function initSnapshotsGrid() {
+	const canAction = document.getElementById('can-action')?.value === 'true';
+	const el = document.getElementById('snapshots-grid');
+	if (!el) return;
+
+	const columns = [];
+	if (canAction) {
+		columns.push({
+			formatter: 'rowSelection', titleFormatter: 'rowSelection',
+			hozAlign: 'center', headerSort: false, width: 40,
+			cellClick: function(e, cell) { cell.getRow().toggleSelect(); },
+		});
+	}
+	columns.push({
+		title: 'Date', field: 'createdAt', sorter: 'string', width: 200,
+		formatter: cell => '<span class="text-xs">' + escapeHtml(fmtLocalDateTime(cell.getValue())) + '</span>',
+	});
+	columns.push({
+		title: 'Name', field: 'id', sorter: 'string', width: 170,
+		formatter: cell => '<span class="font-mono text-xs font-medium">' + escapeHtml(cell.getValue() || '') + '</span>',
+	});
+	columns.push({
+		title: 'Type', field: 'reason', sorter: 'string', width: 140,
+		formatter: function(cell) {
+			const reason = cell.getValue() || '';
+			const isFirst = cell.getRow().getPosition(true) === 1;
+			const typeBadge = snapshotIsAuto(reason)
+				? '<span class="px-2 py-0.5 text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded font-medium">auto</span>'
+				: '<span class="px-2 py-0.5 text-xs bg-gray-100 dark:bg-slate-600 text-gray-600 dark:text-gray-400 rounded font-medium">manual</span>';
+			const latest = isFirst
+				? ' <span class="px-2 py-0.5 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded font-medium">Latest</span>'
+				: '';
+			return typeBadge + latest;
+		},
+	});
+	columns.push({
+		title: 'Description', field: 'reason', sorter: 'string',
+		minWidth: 160, widthGrow: 3,
+		formatter: cell => '<span class="text-xs">' + escapeHtml(snapshotDescriptionText(cell.getValue())) + '</span>',
+	});
+	if (canAction) {
+		columns.push({
+			title: '', field: 'id', headerSort: false, width: 200, hozAlign: 'right',
+			formatter: function() {
+				return '<button class="snap-preview-btn text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-xs font-medium mr-3">Preview</button>'
+				     + '<button class="snap-restore-btn text-yellow-600 dark:text-yellow-400 hover:text-yellow-800 dark:hover:text-yellow-300 text-xs font-medium mr-3">Restore</button>'
+				     + '<button class="snap-delete-btn text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 text-xs font-medium">Delete</button>';
+			},
+			cellClick: function(e, cell) {
+				const id = cell.getRow().getData().id;
+				if (e.target.classList.contains('snap-preview-btn')) previewSnapshot(id);
+				else if (e.target.classList.contains('snap-restore-btn')) restoreSnapshot(id);
+				else if (e.target.classList.contains('snap-delete-btn')) deleteSnapshot(id);
+			},
+		});
+	}
+
+	SECTIONS.snapshots.grid = createDataGrid(el, {
+		data: [],
+		columns: columns,
+		// Auto-size to content, capped at 474px (12 rows × 36 + header). Sparse
+		// lists feel right-sized; long lists scroll inside the card.
+		maxHeight: '474px',
+		rowHeight: 36,
+		placeholder: 'No snapshots available',
+		initialSort: [{ column: 'createdAt', dir: 'desc' }],
+		selectableRows: canAction,
+	});
+	// Constructor-level event callbacks aren't reliably picked up in
+	// Tabulator 6.3 — subscribe imperatively after the table exists.
+	SECTIONS.snapshots.grid.on('rowSelectionChanged', updateBulkDeleteButton);
+}
+
+async function refreshSnapshotsGrid() {
+	if (!SECTIONS.snapshots.grid) return;
+	try {
+		const rows = await fetchSnapshots();
+		SECTIONS.snapshots.grid.setData(rows);
+	} catch (err) {
+		console.warn('Snapshots refresh failed:', err.message);
+	}
+}
+
+async function fetchHistory() {
+	const r = await fetch('/api/os-updates/history?server=' + currentServerID + '&limit=50');
+	if (!r.ok) throw new Error(await extractErrorMessage(r));
+	const data = await r.json();
+	let hist = data.history || data || [];
+	if (!Array.isArray(hist)) hist = [];
+	return hist.map(h => ({
+		timestamp:   h.timestamp || h.Timestamp || '',
+		action:      h.action || h.Action || '',
+		package:     h.package || h.Package || '',
+		fromVersion: h.fromVersion || h.from_version || h.FromVersion || '',
+		toVersion:   h.toVersion || h.to_version || h.ToVersion || '',
+		status:      h.status || h.Status || '',
+	}));
+}
+
+function initHistoryGrid() {
+	const el = document.getElementById('history-grid');
+	if (!el) return;
+	const columns = [
+		{
+			title: 'Timestamp', field: 'timestamp', sorter: 'string', width: 200,
+			formatter: cell => '<span class="text-xs">' + escapeHtml(fmtLocalDateTime(cell.getValue())) + '</span>',
+		},
+		{
+			title: 'Action', field: 'action', sorter: 'string', width: 110,
+			formatter: function(cell) {
+				const v = cell.getValue() || '';
+				return '<span class="px-2 py-0.5 text-xs rounded ' + historyActionColor(v) + '">' + escapeHtml(v) + '</span>';
+			},
+		},
+		{
+			title: 'Package', field: 'package', sorter: 'string', minWidth: 160, widthGrow: 2,
+			formatter: cell => '<span class="font-mono text-xs font-medium">' + escapeHtml(cell.getValue() || '') + '</span>',
+		},
+		{
+			title: 'Version Change', field: 'toVersion', sorter: 'string', minWidth: 160, widthGrow: 2,
+			formatter: function(cell) {
+				const row = cell.getRow().getData();
+				if (row.fromVersion && row.toVersion) {
+					return '<span class="font-mono text-xs">' + escapeHtml(row.fromVersion) + ' → ' + escapeHtml(row.toVersion) + '</span>';
+				}
+				if (row.toVersion) {
+					return '<span class="font-mono text-xs">' + escapeHtml(row.toVersion) + '</span>';
+				}
+				return '<span class="text-xs text-gray-500 dark:text-gray-400">—</span>';
+			},
+		},
+		{
+			title: 'Status', field: 'status', sorter: 'string', width: 110,
+			formatter: function(cell) {
+				const v = cell.getValue() || '';
+				if (v === 'success' || v === 'install' || v === 'upgrade') {
+					return '<span class="px-2 py-0.5 text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded">Success</span>';
+				}
+				if (v === 'remove' || v === 'purge') {
+					return '<span class="px-2 py-0.5 text-xs bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 rounded">Removed</span>';
+				}
+				return '<span class="px-2 py-0.5 text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded">' + escapeHtml(v) + '</span>';
+			},
+		},
+	];
+
+	SECTIONS.history.grid = createDataGrid(el, {
+		data: [],
+		columns: columns,
+		maxHeight: '474px',
+		rowHeight: 36,
+		placeholder: 'No update history available',
+		initialSort: [{ column: 'timestamp', dir: 'desc' }],
+	});
+}
+
+async function refreshHistoryGrid() {
+	if (!SECTIONS.history.grid) return;
+	try {
+		const rows = await fetchHistory();
+		SECTIONS.history.grid.setData(rows);
+	} catch (err) {
+		console.warn('History refresh failed:', err.message);
+	}
+}
+
+async function fetchLogs() {
+	const r = await fetch('/api/os-updates/logs?server=' + currentServerID + '&limit=50');
+	if (!r.ok) throw new Error(await extractErrorMessage(r));
+	const data = await r.json();
+	let logs = data.logs || data || [];
+	if (!Array.isArray(logs)) logs = [];
+	return logs;
+}
+
+function initLogsGrid() {
+	const el = document.getElementById('logs-grid');
+	if (!el) return;
+	const columns = [
+		{
+			title: 'Date', field: 'started_at', sorter: 'string', width: 200,
+			formatter: cell => '<span class="text-xs">' + escapeHtml(fmtLocalDateTime(cell.getValue())) + '</span>',
+		},
+		{
+			title: 'Type', field: 'type', sorter: 'string', width: 140,
+			formatter: function(cell) {
+				const v = cell.getValue() || '';
+				const label = v === 'check' ? 'Update Check' : v === 'install' ? 'Install' : v;
+				return '<span class="px-2 py-0.5 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded">' + escapeHtml(label) + '</span>';
+			},
+		},
+		{
+			title: 'Status', field: 'status', sorter: 'string', width: 120,
+			formatter: function(cell) {
+				const v = cell.getValue() || '';
+				const cls = v === 'completed'
+					? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+					: v === 'failed'
+						? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+						: 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400';
+				return '<span class="px-2 py-0.5 text-xs rounded ' + cls + '">' + escapeHtml(v) + '</span>';
+			},
+		},
+		{
+			title: 'Details', field: 'packages', sorter: 'string', minWidth: 160, widthGrow: 3,
+			formatter: function(cell) {
+				const row = cell.getRow().getData();
+				let detail = '';
+				if (row.error) detail = String(row.error).substring(0, 120);
+				else if (row.packages && row.packages.length > 0) detail = row.packages.length + ' package(s)';
+				else if (row.security_only) detail = 'Security only';
+				return '<span class="text-xs">' + escapeHtml(detail) + '</span>';
+			},
+		},
+		{
+			title: '', field: 'id', headerSort: false, width: 120, hozAlign: 'right',
+			formatter: () => '<button class="log-view-btn text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-xs font-medium">View Output</button>',
+			cellClick: function(e, cell) {
+				if (e.target.classList.contains('log-view-btn')) viewUpdateLog(cell.getRow().getData().id);
+			},
+		},
+	];
+
+	SECTIONS.logs.grid = createDataGrid(el, {
+		data: [],
+		columns: columns,
+		maxHeight: '474px',
+		rowHeight: 36,
+		placeholder: 'No update logs available',
+		initialSort: [{ column: 'started_at', dir: 'desc' }],
+	});
+}
+
+async function refreshLogsGrid() {
+	if (!SECTIONS.logs.grid) return;
+	try {
+		const rows = await fetchLogs();
+		SECTIONS.logs.grid.setData(rows);
+	} catch (err) {
+		console.warn('Logs refresh failed:', err.message);
+	}
+}
+
+function initCollapsibleSections() {
+	const map = {
+		snapshots: { init: initSnapshotsGrid, refresh: refreshSnapshotsGrid },
+		history:   { init: initHistoryGrid,   refresh: refreshHistoryGrid },
+		logs:      { init: initLogsGrid,      refresh: refreshLogsGrid },
+	};
+
+	document.querySelectorAll('details.datagrid-card[data-section]').forEach(d => {
+		const name = d.dataset.section;
+		const cfg = map[name];
+		if (!cfg) return;
+		SECTIONS[name].details = d;
+		SECTIONS[name].init = cfg.init;
+		SECTIONS[name].refresh = cfg.refresh;
+
+		// Action buttons inside <summary> need to NOT toggle the details on
+		// click — without this, clicking "Create Snapshot" would also collapse
+		// the section.
+		const summary = d.querySelector(':scope > summary');
+		if (summary) {
+			summary.addEventListener('click', function(e) {
+				if (e.target.closest('button')) {
+					e.preventDefault();
+					e.stopPropagation();
+				}
+			});
+		}
+
+		d.addEventListener('toggle', async function() {
+			if (!d.open) return;
+			if (!SECTIONS[name].grid) cfg.init();
+			await cfg.refresh();
+		});
+	});
+
+	// Live updates: when apt completes, refresh whichever sections are open.
+	if (window.registerEventHandler) {
+		window.registerEventHandler('apt.completed', function() {
+			if (isSectionOpen('snapshots')) refreshSnapshotsGrid();
+			if (isSectionOpen('history'))   refreshHistoryGrid();
+			if (isSectionOpen('logs'))      refreshLogsGrid();
+		});
+	}
+}
+
+document.addEventListener('DOMContentLoaded', initCollapsibleSections);
