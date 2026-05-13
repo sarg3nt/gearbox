@@ -38,7 +38,11 @@ type Package struct {
 	AvailableVersion string `json:"available_version"`
 	Architecture     string `json:"architecture"`
 	IsSecurityUpdate bool   `json:"is_security_update"`
-	Priority         string `json:"priority"` // low, medium, high, critical
+	// Always serialize is_held — the dashboard filters on `is_held === false`,
+	// so `omitempty` (dropping the field for false values) would cause those
+	// rows to be filtered out by strict-equality checks on the client.
+	IsHeld           bool   `json:"is_held"` // Package is held (pinned via apt-mark/dpkg) — apt will not upgrade it even though a newer version is available
+	Priority         string `json:"priority"`          // low, medium, high, critical
 	Repository       string `json:"repository"`
 	Size             int64  `json:"size_bytes"`    // Download size in bytes
 	ChangelogURL     string `json:"changelog_url"` // URL to package changelog (Launchpad)
@@ -57,7 +61,7 @@ type InstalledPackage struct {
 	UpdateAvailable  bool      `json:"update_available,omitempty"`
 	AvailableVersion string    `json:"available_version,omitempty"`
 	IsSecurityUpdate bool      `json:"is_security_update,omitempty"`
-	IsHeld           bool      `json:"is_held,omitempty"` // Package is held (pinned) by dpkg/apt-mark
+	IsHeld           bool      `json:"is_held"` // Package is held (pinned) by dpkg/apt-mark — always serialized (see note on Package above)
 	PackageURL       string    `json:"package_url,omitempty"` // Link to package info page
 }
 

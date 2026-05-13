@@ -666,6 +666,7 @@ type Package struct {
 	AvailableVersion string `json:"available_version"`
 	Architecture     string `json:"architecture"`
 	IsSecurityUpdate bool   `json:"is_security_update"`
+	IsHeld           bool   `json:"is_held"` // Held packages (apt-mark/dpkg pinned) won't be upgraded even when a newer version is available. Always serialized so the dashboard's strict-equality filter (`is_held === false`) sees the explicit value.
 	Priority         string `json:"priority"`
 	Repository       string `json:"repository"`
 	Size             int64  `json:"size_bytes"`
@@ -831,7 +832,7 @@ type InstalledPackage struct {
 	UpdateAvailable  bool   `json:"update_available,omitempty"`
 	AvailableVersion string `json:"available_version,omitempty"`
 	IsSecurityUpdate bool   `json:"is_security_update,omitempty"`
-	IsHeld           bool   `json:"is_held,omitempty"`
+	IsHeld           bool   `json:"is_held"` // Always serialized — see note on Package.IsHeld above.
 	PackageURL       string `json:"package_url,omitempty"`
 }
 
