@@ -496,12 +496,7 @@ func (m *Manager) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 	out := CapabilitiesResponse{Gears: make(map[string]CapabilityEntry, len(plugins))}
 	for _, p := range plugins {
 		name := p.Info().Name
-		pr := results[name]
-		out.Gears[name] = CapabilityEntry{
-			Status:       pr.Status,
-			Reason:       pr.Reason,
-			Capabilities: pr.Capabilities,
-		}
+		out.Gears[name] = CapabilityEntry(results[name])
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(out); err != nil {
