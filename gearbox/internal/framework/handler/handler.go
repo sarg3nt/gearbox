@@ -235,16 +235,35 @@ func acceptsHTML(r *http.Request) bool {
 // Cleared explicitly via clearActiveBoxCookie when the user picks "All boxes".
 const activeBoxCookieMaxAge = 60 * 60 * 24 * 365
 
+// requestIsTLS reports whether the current request appears to be served
+// over HTTPS, either directly (r.TLS != nil) or via a TLS-terminating
+// proxy that forwards X-Forwarded-Proto=https (the HAProxy front-end in
+// this homelab does exactly that). Used to gate the Secure cookie
+// attribute so cookies are HTTPS-only in production but still work on
+// plain http://localhost during development.
+func requestIsTLS(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	if strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+		return true
+	}
+	return false
+}
+
 // setActiveBoxCookie writes the active-box id to an HttpOnly cookie scoped
 // to the whole site. SameSite=Lax so cross-site navigations (share-links,
-// bookmarks) still pick it up; HttpOnly so JS can't read it.
-func setActiveBoxCookie(w http.ResponseWriter, boxID string) {
+// bookmarks) still pick it up; HttpOnly so JS can't read it. Secure is
+// set whenever the request is itself TLS — addresses CodeQL
+// js/clear-text-cookie / go-cookie-not-secure.
+func setActiveBoxCookie(w http.ResponseWriter, r *http.Request, boxID string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     activeBoxCookieName,
 		Value:    boxID,
 		Path:     "/",
 		MaxAge:   activeBoxCookieMaxAge,
 		HttpOnly: true,
+		Secure:   requestIsTLS(r),
 		SameSite: http.SameSiteLaxMode,
 	})
 }
@@ -252,13 +271,14 @@ func setActiveBoxCookie(w http.ResponseWriter, boxID string) {
 // clearActiveBoxCookie removes the persisted box selection. Triggered by
 // `?box_id=` (empty value) or by visiting /bx (the fleet picker) — both
 // signal the user wants the all-boxes context.
-func clearActiveBoxCookie(w http.ResponseWriter) {
+func clearActiveBoxCookie(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     activeBoxCookieName,
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
+		Secure:   requestIsTLS(r),
 		SameSite: http.SameSiteLaxMode,
 	})
 }
@@ -330,7 +350,7 @@ func (h *Handler) InjectIntegrationStatus(next http.Handler) http.Handler {
 		if activeBox == nil && !urlHasBoxID && !hasCookieSet && len(enabled) > 0 &&
 			r.URL.Path != "/bx" && !strings.HasPrefix(r.URL.Path, "/bx/") {
 			activeBox = &enabled[0]
-			setActiveBoxCookie(w, activeBox.ID)
+			setActiveBoxCookie(w, r, activeBox.ID)
 		}
 		// Persist / clear the cookie based on what the URL signaled, then
 		// redirect to the same path with `box_id` stripped so URLs stay clean.
@@ -340,9 +360,9 @@ func (h *Handler) InjectIntegrationStatus(next http.Handler) http.Handler {
 		// that still pass `?box_id=` don't break.
 		if urlHasBoxID && r.Method == http.MethodGet && acceptsHTML(r) {
 			if activeBox != nil {
-				setActiveBoxCookie(w, activeBox.ID)
+				setActiveBoxCookie(w, r, activeBox.ID)
 			} else {
-				clearActiveBoxCookie(w)
+				clearActiveBoxCookie(w, r)
 			}
 			q := r.URL.Query()
 			q.Del("box_id")
@@ -358,16 +378,16 @@ func (h *Handler) InjectIntegrationStatus(next http.Handler) http.Handler {
 		// document GET doesn't have to re-resolve.
 		if urlHasBoxID {
 			if activeBox != nil {
-				setActiveBoxCookie(w, activeBox.ID)
+				setActiveBoxCookie(w, r, activeBox.ID)
 			} else {
-				clearActiveBoxCookie(w)
+				clearActiveBoxCookie(w, r)
 			}
 		}
 		if r.URL.Path == "/bx" || r.URL.Path == "/bx/" {
 			// /bx is the all-boxes view — clear any sticky selection so the
 			// chip reads "All boxes" and the sidebar hides box-scoped gears.
 			if activeBox != nil {
-				clearActiveBoxCookie(w)
+				clearActiveBoxCookie(w, r)
 				activeBox = nil
 			}
 		}
