@@ -17,10 +17,6 @@ Environment=HOME=/root
 Environment=HAPROXY_AGENT_LISTEN=0.0.0.0:8405
 Environment=HAPROXY_AGENT_DATA_DIR=/var/lib/gearbox-agent
 Environment=HAPROXY_AGENT_LOG_LEVEL=info
-# pipx derives its log dir from XDG_STATE_HOME ($XDG_STATE_HOME/pipx/log).
-# Redirect to /tmp so ProtectHome=read-only doesn't cause pipx to crash before
-# listing packages. PrivateTmp=true ensures cleanup on service stop.
-Environment=XDG_STATE_HOME=/tmp/xdg-state
 
 # Optional: Load additional environment from file
 EnvironmentFile=-/etc/default/gearbox-agent
@@ -34,8 +30,19 @@ RestartSec=5
 # access to /etc (HAProxy config, certificates) and /var (package management,
 # data dir). ProtectHome=read-only is set since the agent runs as root and only
 # needs read access to home directories.
+#
+# pipx upgrades write new package files into /root/.local/share/pipx/venvs/<pkg>/,
+# pipx logs to /root/.local/state/pipx/log/, pipx CLI shims live at /root/.local/bin/,
+# and pip caches downloads under /root/.cache/pip/ — all inside the otherwise
+# read-only /root. We grant the broader XDG data/cache parents (/root/.local and
+# /root/.cache) rather than narrower per-tool subdirs because pipx and pip create
+# their state/log/cache subdirectories on demand at first use, and the mkdir of
+# e.g. /root/.local/state/pipx/ requires the /root/.local/state/ parent to be
+# writable. Nothing security-sensitive lives under either XDG dir on this host.
+# The "-" prefix tolerates the paths not existing yet.
 NoNewPrivileges=false
 ProtectHome=read-only
+ReadWritePaths=-/root/.local -/root/.cache
 PrivateTmp=true
 ProtectKernelTunables=true
 
