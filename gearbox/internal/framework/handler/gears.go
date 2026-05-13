@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sarg3nt/gearbox/internal/framework/agent"
@@ -93,6 +94,12 @@ var dashboardGearToAgentGear = map[string]string{
 	database.GearOSUpdates:    "updates",
 }
 
+// capabilitiesFetchTimeout caps the synchronous Gears-page → agent call
+// so a dead agent doesn't stall page rendering for the full 30s default.
+// 3s is enough for a healthy LAN agent, short enough that operators don't
+// notice when an agent is gone.
+const capabilitiesFetchTimeout = 3 * time.Second
+
 // filterGearsByAgentCapabilities removes gears the agent has reported as
 // not-installed / inaccessible / disabled. Fail-open on any error: when the
 // agent is unreachable or running a version without the capabilities
@@ -104,7 +111,10 @@ func (h *Handler) filterGearsByAgentCapabilities(boxID string, gears []database.
 		return gears
 	}
 
-	client := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey)
+	// Short timeout — this call sits on the critical path of every Gears
+	// page render, so a 30s default would freeze the UI when the box is
+	// down. Fail-open if it times out.
+	client := agent.NewClientWithTimeout(serverConfig.AgentURL, serverConfig.APIKey, capabilitiesFetchTimeout)
 	caps, err := client.GetCapabilities()
 	if err != nil {
 		h.logger.Debug("capabilities fetch failed; showing all gears", "box_id", boxID, "error", err)
@@ -355,7 +365,22 @@ func (h *Handler) GearUpdatePost(w http.ResponseWriter, r *http.Request) {
 	boxID := h.resolveBoxIDFromRequest(r)
 	redirectBase := "/settings/gears/" + gearName + "?server=" + url.QueryEscape(boxID)
 
+	// Compute wantsJSON up front so every error path below (parse failures,
+	// gear lookup failures, validation errors, save failures) can respond
+	// in the format the caller actually expects. AJAX auto-savers (services,
+	// logs) request JSON; classic form POSTs accept HTML and get redirects.
+	wantsJSON := strings.Contains(r.Header.Get("Accept"), "application/json")
+	jsonError := func(status int, msg string) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "error": msg})
+	}
+
 	if err := r.ParseForm(); err != nil {
+		if wantsJSON {
+			jsonError(http.StatusBadRequest, "Invalid form data")
+			return
+		}
 		http.Redirect(w, r, redirectBase+"&error="+url.QueryEscape("Invalid form data"), http.StatusSeeOther)
 		return
 	}
@@ -363,12 +388,15 @@ func (h *Handler) GearUpdatePost(w http.ResponseWriter, r *http.Request) {
 	// Get current gear
 	gearItem, err := h.db.GetGear(boxID, gearName)
 	if err != nil || gearItem == nil {
+		if wantsJSON {
+			jsonError(http.StatusNotFound, "Integration not found")
+			return
+		}
 		http.Redirect(w, r, "/settings/gears?server="+url.QueryEscape(boxID)+"&error="+url.QueryEscape("Integration not found"), http.StatusSeeOther)
 		return
 	}
 
 	// Handle config update based on gear type
-	wantsJSON := strings.Contains(r.Header.Get("Accept"), "application/json")
 	var newConfig json.RawMessage
 	switch gearName {
 	case database.GearServices:
@@ -381,9 +409,7 @@ func (h *Handler) GearUpdatePost(w http.ResponseWriter, r *http.Request) {
 		err = h.saveLogSourcesConfig(boxID, r)
 		if err != nil {
 			if wantsJSON {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusInternalServerError)
-				_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "error": err.Error()})
+				jsonError(http.StatusInternalServerError, err.Error())
 				return
 			}
 			http.Redirect(w, r, redirectBase+"&error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
@@ -414,9 +440,7 @@ func (h *Handler) GearUpdatePost(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		if wantsJSON {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "error": err.Error()})
+			jsonError(http.StatusBadRequest, err.Error())
 			return
 		}
 		http.Redirect(w, r, redirectBase+"&error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
@@ -427,9 +451,7 @@ func (h *Handler) GearUpdatePost(w http.ResponseWriter, r *http.Request) {
 	if err := h.db.SetGearConfig(boxID, gearName, newConfig, &user.ID); err != nil {
 		h.logger.Error("failed to update gear", "gear", gearName, "error", err)
 		if wantsJSON {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusInternalServerError)
-			_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "error": "Failed to save configuration"})
+			jsonError(http.StatusInternalServerError, "Failed to save configuration")
 			return
 		}
 		http.Redirect(w, r, redirectBase+"&error="+url.QueryEscape("Failed to save configuration"), http.StatusSeeOther)

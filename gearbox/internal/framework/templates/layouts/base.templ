@@ -117,10 +117,11 @@ func encodeGearsJSON(ctx context.Context) string {
 }
 
 // encodePagesJSON serializes the user's reachable settings/profile pages
-// for the command palette. Each entry has the same shape as a gear: name,
-// label, path. Only pages the current user can actually visit are emitted
-// — admin-only items are filtered out for non-admins so the palette
-// doesn't dangle 403 destinations. Issue #71 item 4.
+// for the command palette. Source of truth is models.SettingsPagesFor —
+// the Settings template renders cards from the same slice, so the palette
+// can never dangle a 403 destination or omit a page the user can reach.
+// Augmented with palette-only entries (Settings root, Profile sub-pages,
+// Add-a-box) that don't need their own Settings card.
 func encodePagesJSON(ctx context.Context) string {
 	type lite struct {
 		Name  string `json:"name"`
@@ -129,35 +130,19 @@ func encodePagesJSON(ctx context.Context) string {
 	}
 	user, _ := auth.GetUserFromContext(ctx)
 	perms, _ := auth.GetUserPermissionsFromContext(ctx)
-	isAdmin := user != nil && user.IsAdmin()
-	hasPerm := func(c models.Component, p models.Permission) bool {
-		return perms != nil && perms.HasPermission(c, p)
-	}
 
-	out := make([]lite, 0, 12)
-	add := func(name, label, path string) {
-		out = append(out, lite{Name: name, Label: label, Path: path})
-	}
-
-	// Always available
-	add("settings", "Settings", "/settings")
-	add("profile", "Profile", "/settings/profile")
-	add("change-password", "Change password", "/settings/change-password")
-	add("backups", "Database backups", "/settings/backup")
-
-	if isAdmin || hasPerm(models.ComponentSettings, models.PermissionManageBoxes) {
-		add("boxes", "Boxes", "/settings/boxes")
-		add("boxes-new", "Add a box", "/settings/boxes/new")
-	}
-	if isAdmin || hasPerm(models.ComponentGears, models.PermissionManage) {
-		add("gears", "Gears", "/settings/gears")
-	}
-	if isAdmin || hasPerm(models.ComponentUsers, models.PermissionApproveUsers) {
-		add("users", "User management", "/settings/users")
-	}
-	if isAdmin {
-		add("smtp", "Email (SMTP) settings", "/settings/smtp")
-		add("permissions", "Permission management", "/settings/permissions")
+	pages := models.SettingsPagesFor(user, perms)
+	out := make([]lite, 0, len(pages)+4)
+	// Always reachable, but not their own Settings card.
+	out = append(out, lite{Name: "settings", Label: "Settings", Path: "/settings"})
+	out = append(out, lite{Name: "change-password", Label: "Change password", Path: "/settings/change-password"})
+	for _, p := range pages {
+		out = append(out, lite{Name: p.Name, Label: p.Label, Path: p.Path})
+		// Surface "Add a box" alongside the Boxes card for one-keystroke
+		// access from anywhere — only when the user can see Boxes itself.
+		if p.Name == "boxes" {
+			out = append(out, lite{Name: "boxes-new", Label: "Add a box", Path: "/settings/boxes/new"})
+		}
 	}
 
 	b, err := json.Marshal(out)

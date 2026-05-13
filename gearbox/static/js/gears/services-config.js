@@ -27,6 +27,20 @@
 		return root ? root.dataset.action : '';
 	}
 
+	// Warn loudly when the page renders without a usable save URL. The
+	// previous quiet return path meant a future templ refactor that drops
+	// data-action would make every toggle appear to "save" while doing
+	// nothing — see Copilot review on PR #76.
+	let warnedNoActionURL = false;
+	function warnMissingActionURL() {
+		if (warnedNoActionURL) return;
+		warnedNoActionURL = true;
+		console.error('services-config: #services-config-root[data-action] missing — toggles will not persist');
+		if (window.showToast) {
+			window.showToast('Cannot save services: page is missing its save URL', 'error', 6000);
+		}
+	}
+
 	function gatherFormData() {
 		const data = new FormData();
 		document.querySelectorAll('#services-grid .service-item').forEach(item => {
@@ -49,7 +63,10 @@
 			return;
 		}
 		const url = getActionURL();
-		if (!url) return;
+		if (!url) {
+			warnMissingActionURL();
+			return;
+		}
 
 		saveInFlight = true;
 		fetch(url, {
