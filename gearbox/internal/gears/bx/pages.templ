@@ -1,12 +1,26 @@
 package bx
 
 import (
+	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/sarg3nt/gearbox/internal/framework/models"
 	"github.com/sarg3nt/gearbox/internal/framework/templates/layouts"
 )
+
+// encodeRowsJSON serializes the initial fleet snapshot for the grid mount.
+// The grid is the source of truth for layout / sort / filter UI; the SSE
+// stream upgrades rows in place.
+func encodeRowsJSON(rows []BoxStatus) string {
+	if len(rows) == 0 {
+		return "[]"
+	}
+	b, err := json.Marshal(rows)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
+}
 
 // IndexPageData is what the Bx fleet view consumes. Defining the shape here
 // (rather than passing positional args) keeps the templ signature stable
@@ -17,51 +31,9 @@ type IndexPageData struct {
 	Total int
 }
 
-// statusClasses returns Tailwind classes for the rollup dot. Mirrors the
-// up/down/degraded colors used elsewhere in the app so a "green" dot here
-// matches a "healthy" backend on the HAProxy page.
-func statusClasses(level StatusLevel) string {
-	switch level {
-	case StatusGreen:
-		return "bg-green-500 ring-1 ring-inset ring-green-600/40"
-	case StatusYellow:
-		return "bg-amber-400 ring-1 ring-inset ring-amber-600/40"
-	case StatusRed:
-		return "bg-red-500 ring-1 ring-inset ring-red-700/40"
-	case StatusGray:
-		return "bg-gray-400 ring-1 ring-inset ring-gray-500/40"
-	default: // unknown
-		return "bg-gray-300 ring-1 ring-inset ring-gray-400/40 animate-pulse"
-	}
-}
-
-// statusLabel returns a human-readable label used as the dot's title-tooltip.
-func statusLabel(level StatusLevel, reachable bool) string {
-	switch level {
-	case StatusGreen:
-		return "Healthy"
-	case StatusYellow:
-		return "Warning"
-	case StatusRed:
-		if !reachable {
-			return "Agent unreachable"
-		}
-		return "Critical"
-	case StatusGray:
-		return "Disabled"
-	default:
-		return "Checking…"
-	}
-}
-
-// boxDefaultPath returns the URL we navigate to when a row is clicked. The
-// chip switcher uses the same convention. For now every box opens at /home
-// with the box selected via ?box_id= — Home is the safest landing because
-// it is ScopeSystem and works for every box, even those with no other
-// gears enabled. A per-box "preferred landing" can be a future enhancement.
-func boxDefaultPath(boxID string) string {
-	return "/home?box_id=" + boxID
-}
+// Status dot colors and labels are now rendered client-side by bx-page.js so
+// the grid can re-format rows on SSE updates without a server round-trip.
+// Same color semantics — see STATUS_CLASSES / STATUS_TITLES in bx-page.js.
 
 templ IndexPage(d IndexPageData) {
 	@layouts.Base("Boxes", d.User, "/bx") {
@@ -70,30 +42,55 @@ templ IndexPage(d IndexPageData) {
 			if d.Total == 0 {
 				@emptyState()
 			} else {
-				@boxTable(d.Rows)
+				@boxGrid(d.Rows)
 			}
 		</div>
 		<script src="/static/js/bx/bx-page.js" defer></script>
 	}
 }
 
-// pageHeader renders the title row and a one-line summary of fleet size.
-// Filter / group-by controls land here as follow-up work.
+// pageHeader renders the toolbar above the grid: fleet count on the left,
+// search input + view-state filter in the middle, "Add box" on the right.
+// The page-title role is taken over by the global breadcrumb in the header.
 templ pageHeader(total int) {
-	<div class="mb-4 flex items-baseline justify-between">
-		<div>
-			<h1 class="text-xl font-bold text-gray-800 dark:text-gray-100">Boxes</h1>
-			<p class="text-sm text-gray-500 dark:text-gray-400">
-				if total == 1 {
-					1 box configured
-				} else {
-					{ fmt.Sprintf("%d boxes configured", total) }
-				}
-			</p>
-		</div>
+	<div class="mb-4 flex items-center gap-3">
+		<p class="text-sm text-gray-500 dark:text-gray-400 flex-shrink-0">
+			if total == 1 {
+				1 box
+			} else {
+				{ fmt.Sprintf("%d boxes", total) }
+			}
+		</p>
+		if total > 0 {
+			<div class="datagrid-search-wrap w-72">
+				<svg class="datagrid-search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z"></path>
+				</svg>
+				<input
+					type="search"
+					id="bx-search"
+					placeholder="Search boxes…"
+					aria-label="Search boxes"
+					autocomplete="off"
+					class="w-full"
+				/>
+			</div>
+			<select
+				id="bx-view-filter"
+				aria-label="Filter boxes view"
+				class="datagrid-view-filter"
+				onchange="window.bxOnViewFilterChange && window.bxOnViewFilterChange(this.value)"
+			>
+				<option value="all">All</option>
+				<option value="healthy">Healthy</option>
+				<option value="issues">Issues</option>
+				<option value="disabled">Disabled</option>
+			</select>
+		}
+		<div class="flex-1"></div>
 		<a
 			href="/settings/boxes/new"
-			class="inline-flex items-center px-3 h-[38px] text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors"
+			class="inline-flex items-center px-3 h-[34px] text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors flex-shrink-0"
 		>
 			<svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
@@ -128,85 +125,16 @@ templ emptyState() {
 	</div>
 }
 
-// boxTable renders the fleet view. Server-side render is the source of truth
-// for initial paint; the page's JS subscribes to /bx/api/events (SSE), which
-// pushes a full snapshot on every (re)connect and live transitions thereafter.
+// boxGrid renders the fleet-view mount point. Initial row data is shipped
+// inline as JSON so the grid hydrates without a round-trip; the page JS
+// then subscribes to /bx/api/events (SSE) for live status/latency updates.
 //
 // Column order is deliberately minimal: status dot, name, location, agent
 // host, latency, last-checked. Anything heavier (per-box CPU/mem
 // sparklines) can be opt-in later — at 1000 boxes the dense rendering of
 // every chart drags the page to a crawl.
-templ boxTable(rows []BoxStatus) {
-	<div class="overflow-hidden rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm">
-		<table class="min-w-full text-sm" id="bx-table">
-			<thead class="bg-gray-50 dark:bg-slate-900/60 text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400">
-				<tr>
-					<th class="px-3 py-2 text-left w-10"></th>
-					<th class="px-3 py-2 text-left">Name</th>
-					<th class="px-3 py-2 text-left">Location</th>
-					<th class="px-3 py-2 text-left">Agent</th>
-					<th class="px-3 py-2 text-right">Latency</th>
-					<th class="px-3 py-2 text-left">Last checked</th>
-				</tr>
-			</thead>
-			<tbody class="divide-y divide-gray-200 dark:divide-slate-700">
-				for _, row := range rows {
-					@boxRow(row)
-				}
-			</tbody>
-		</table>
-	</div>
+templ boxGrid(rows []BoxStatus) {
+	@templ.Raw("<script type=\"application/json\" id=\"bx-data\">" + encodeRowsJSON(rows) + "</script>")
+	<div id="bx-grid"></div>
 }
 
-templ boxRow(s BoxStatus) {
-	<tr
-		class="hover:bg-gray-50 dark:hover:bg-slate-700/50 cursor-pointer transition-colors bx-row"
-		data-box-id={ s.BoxID }
-		data-box-name={ s.Name }
-		data-href={ boxDefaultPath(s.BoxID) }
-	>
-		<td class="px-3 py-2">
-			<span
-				class={ "inline-block w-2.5 h-2.5 rounded-full bx-status-dot " + statusClasses(s.Level) }
-				data-level={ string(s.Level) }
-				title={ statusLabel(s.Level, s.Reachable) }
-			></span>
-		</td>
-		<td class="px-3 py-2 font-medium text-gray-900 dark:text-gray-100">{ s.Name }</td>
-		<td class="px-3 py-2 text-gray-600 dark:text-gray-300">
-			if s.Location != "" {
-				{ s.Location }
-			} else {
-				<span class="text-gray-400 dark:text-gray-500">—</span>
-			}
-		</td>
-		<td class="px-3 py-2 text-gray-600 dark:text-gray-300 font-mono text-xs truncate max-w-[24ch]">
-			{ s.AgentURL }
-		</td>
-		<td class="px-3 py-2 text-right text-gray-600 dark:text-gray-300 font-mono text-xs tabular-nums bx-latency">
-			if s.LatencyMs > 0 {
-				{ fmt.Sprintf("%dms", s.LatencyMs) }
-			} else {
-				<span class="text-gray-400 dark:text-gray-500">—</span>
-			}
-		</td>
-		<td class="px-3 py-2 text-gray-500 dark:text-gray-400 text-xs bx-last-checked" data-ts={ formatTS(s.LastChecked) }>
-			if s.LastChecked.IsZero() {
-				<span class="text-gray-400 dark:text-gray-500">—</span>
-			} else {
-				{ formatTS(s.LastChecked) }
-			}
-		</td>
-	</tr>
-}
-
-// formatTS returns the ISO-8601 stamp for the "last checked" column. The
-// page's JS rewrites these to "just now / 12s ago / 1m ago" on load so the
-// initial server render is unambiguous (an absolute time) but the steady-
-// state UI is the more human "relative time."
-func formatTS(t time.Time) string {
-	if t.IsZero() {
-		return ""
-	}
-	return t.UTC().Format("2006-01-02T15:04:05Z")
-}

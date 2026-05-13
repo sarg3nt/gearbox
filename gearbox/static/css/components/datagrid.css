@@ -273,6 +273,9 @@ details.datagrid-card[open] > summary .datagrid-chevron {
 	position: relative;
 	display: inline-block;
 }
+/* Match both the explicit class and the legacy bare `> svg` pattern so
+ * older callers (OS Updates) keep working without an edit. */
+.datagrid-search-wrap > .datagrid-search-icon,
 .datagrid-search-wrap > svg {
 	position: absolute;
 	left: 0.625rem;
@@ -284,5 +287,72 @@ details.datagrid-card[open] > summary .datagrid-chevron {
 	pointer-events: none;
 }
 .datagrid-search-wrap > input[type="search"] {
+	/* Override the global form rule (height: 42px) — the toolbar reads as
+	 * crowded when the search bar is taller than the surrounding
+	 * controls. Stick to ~34px to match the chip and the view filter. */
+	height: 34px;
+	min-height: 34px;
 	padding-left: 2rem;
+	padding-right: 0.75rem;
+	font-size: 0.875rem;
+	line-height: 1.25rem;
+	color: #1f2937;
+	background-color: #ffffff;
+	border: 1px solid #d1d5db;
+	border-radius: 0.5rem;
+	outline: none;
+	box-shadow: none;
+}
+.datagrid-search-wrap > input[type="search"]:focus {
+	border-color: #3b82f6;
+	box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+}
+.dark .datagrid-search-wrap > input[type="search"] {
+	color: #f1f5f9;
+	background-color: rgb(30 41 59); /* slate-800 */
+	border-color: rgb(71 85 105);    /* slate-600 */
+}
+.dark .datagrid-search-wrap > input[type="search"]::placeholder {
+	color: rgb(148 163 184);          /* slate-400 */
+}
+
+/* ---- View filter dropdown (paired with createDataGrid) ----
+ * Native <select> on macOS ignores dark mode by default. Force the chrome
+ * to follow the theme so the dropdown looks coherent next to the search
+ * input and the chip. The class is applied via the `datagrid-view-filter`
+ * marker; consumers can add it to any <select> in a datagrid toolbar.
+ */
+.datagrid-view-filter {
+	height: 34px;
+	min-height: 34px;
+	padding: 0 2rem 0 0.75rem;
+	font-size: 0.875rem;
+	line-height: 1.25rem;
+	color: #1f2937;
+	background-color: #ffffff;
+	border: 1px solid #d1d5db;
+	border-radius: 0.5rem;
+	cursor: pointer;
+	outline: none;
+	-webkit-appearance: none;
+	-moz-appearance: none;
+	appearance: none;
+	/* Inline chevron drawn as a data URL — keeps the markup HTML-only. */
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E");
+	background-repeat: no-repeat;
+	background-position: right 0.5rem center;
+	background-size: 1rem 1rem;
+}
+.datagrid-view-filter:focus {
+	border-color: #3b82f6;
+	box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+}
+.dark .datagrid-view-filter {
+	color: #f1f5f9;
+	background-color: rgb(30 41 59);
+	border-color: rgb(71 85 105);
+}
+.dark .datagrid-view-filter option {
+	background-color: rgb(30 41 59);
+	color: #f1f5f9;
 }

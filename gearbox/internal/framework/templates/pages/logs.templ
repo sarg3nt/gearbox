@@ -9,36 +9,11 @@ templ Logs(user *models.User, servers []models.BoxConfig) {
 		<!-- Include ansi_up library for log colorization -->
 		<script type="module" src="/static/js/vendor/ansi_up_wrapper.js"></script>
 
-		<!-- Hidden container for page header content - will be moved to main header via JS -->
+		<!-- Hidden container for page header content - will be moved to main header via JS.
+		     Title + box selector are now in the global header breadcrumb +
+		     chip; this slot only carries page-specific controls. -->
 		<div id="page-header-source" class="hidden">
-			<!-- Left side: Title with integrated server selector (matching Dashboard style) -->
-			<div class="flex items-center">
-				<h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">
-					Logs
-					if len(servers) > 1 {
-						<span class="text-gray-400 dark:text-gray-500 mx-2">:</span>
-						<span class="inline-block relative">
-							<select
-								id="server-select"
-								class="appearance-none bg-transparent text-xl font-bold text-gray-800 dark:text-gray-100 pr-7 cursor-pointer focus:outline-none hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-								onchange="onServerChange()"
-							>
-								for _, server := range servers {
-									<option value={ server.ID }>{ server.Name }</option>
-								}
-							</select>
-							<!-- Subtle dropdown indicator -->
-							<svg class="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-							</svg>
-						</span>
-					} else if len(servers) == 1 {
-						<span class="text-gray-400 dark:text-gray-500 mx-2">:</span>
-						<span id="single-server-name">{ servers[0].Name }</span>
-					}
-				</h2>
-			</div>
-			<!-- Right side spacer -->
+			<!-- Right side spacer pushes controls to the far right of the header -->
 			<div class="flex-1"></div>
 			<!-- Controls -->
 			<div class="flex items-center space-x-3">
@@ -166,11 +141,6 @@ templ Logs(user *models.User, servers []models.BoxConfig) {
 				</button>
 			</div>
 		</div>
-
-		<!-- Hidden server ID for single-server mode -->
-		if len(servers) > 0 {
-			<input type="hidden" id="default-server-id" value={ servers[0].ID }/>
-		}
 
 		<div id="log-page-container" class="-mx-6 -mt-6">
 			if len(servers) == 0 {

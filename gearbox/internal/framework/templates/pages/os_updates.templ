@@ -43,33 +43,9 @@ type OSUpdatesPageData struct {
 
 templ OSUpdatesPage(data OSUpdatesPageData) {
 	@layouts.Base("OS Updates", data.User, "/os-updates") {
-		<!-- Hidden container for page header content -->
+		<!-- Hidden container for page header content. Title + box selector
+		     live in the global header breadcrumb + chip. -->
 		<div id="page-header-source" class="hidden">
-			<div class="flex items-center">
-				<h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">
-					OS Updates
-					if len(data.Servers) > 1 {
-						<span class="text-gray-400 dark:text-gray-500 mx-2">:</span>
-						<span class="inline-block relative">
-							<select
-								id="server-selector"
-								class="appearance-none bg-transparent text-xl font-bold text-gray-800 dark:text-gray-100 pr-7 cursor-pointer focus:outline-none hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-								onchange="switchServer(this.value)"
-							>
-								for _, server := range data.Servers {
-									<option value={ server.ID } selected?={ server.ID == data.BoxID }>{ server.Name }</option>
-								}
-							</select>
-							<svg class="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-							</svg>
-						</span>
-					} else if len(data.Servers) == 1 {
-						<span class="text-gray-400 dark:text-gray-500 mx-2">:</span>
-						<span>{ data.Servers[0].Name }</span>
-					}
-				</h2>
-			</div>
 			<div class="flex-1"></div>
 			<div class="flex items-center space-x-3">
 				<!-- LiveRefreshButton serves dual purpose here: its color reflects

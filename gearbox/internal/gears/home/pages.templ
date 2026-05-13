@@ -105,12 +105,16 @@ templ IndexPage(d IndexPageData) {
 			     Home icon ... and there does not seem to be a way to
 			     navigate between boards"). -->
 			<div class="flex items-center gap-3 flex-shrink-0">
-				<h2 class="text-xl font-bold text-gray-800 dark:text-gray-100 whitespace-nowrap">
+				<!-- Board name. Sized to match the global breadcrumb so the
+				     toolbar reads as one row rather than two competing
+				     titles. When multiple boards exist this becomes a
+				     dropdown so the user can switch between them. -->
+				<div class="text-sm font-medium text-gray-800 dark:text-gray-200 whitespace-nowrap">
 					if len(d.Boards) > 1 {
 						<span class="inline-flex items-center relative group">
 							<select
 								id="home-board-select"
-								class="appearance-none bg-transparent text-xl font-bold text-gray-800 dark:text-gray-100 cursor-pointer focus:outline-none hover:text-blue-600 dark:hover:text-blue-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors pr-6"
+								class="appearance-none bg-transparent text-sm font-medium text-gray-800 dark:text-gray-200 cursor-pointer focus:outline-none hover:text-blue-600 dark:hover:text-blue-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors pr-5"
 								onchange="window.location.href = this.value"
 								aria-label="Switch board"
 							>
@@ -119,7 +123,7 @@ templ IndexPage(d IndexPageData) {
 								}
 							</select>
 							<svg
-								class="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500 group-hover:text-blue-500 dark:group-hover:text-blue-400 pointer-events-none transition-colors"
+								class="absolute right-0 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 dark:text-gray-500 group-hover:text-blue-500 dark:group-hover:text-blue-400 pointer-events-none transition-colors"
 								fill="none"
 								stroke="currentColor"
 								viewBox="0 0 24 24"
@@ -131,7 +135,7 @@ templ IndexPage(d IndexPageData) {
 					} else {
 						{ d.Board.Name }
 					}
-				</h2>
+				</div>
 			</div>
 
 			<!-- Center: search bar. Takes the remaining horizontal space and

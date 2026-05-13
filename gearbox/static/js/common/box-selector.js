@@ -7,17 +7,18 @@
  * that still has a `<select id="server-selector">` dropdown wired to
  * `onchange="switchBox(this.value)"`.
  *
- * Both paths converge on the same URL convention: a `?box_id=<id>` query
- * parameter on the current page. The server-side InjectIntegrationStatus
- * middleware reads that parameter, hydrates the sidebar with that box's
- * enabled gears, and renders the active-box chip.
+ * Active-box state is now persisted server-side in the `gearbox_active_box`
+ * cookie. The first request that carries `?box_id=<id>` writes the cookie;
+ * subsequent navigations don't need the query string. We still emit
+ * `?box_id=` on switch so the middleware updates the cookie, but the URL is
+ * cleaned up on landing — see InjectIntegrationStatus in handler.go.
  */
 
 /**
- * Navigate the current tab to the same path with `?box_id=<id>` set. Drops
- * any existing `box_id` even if the new id is empty (which clears box
- * context — useful for going from a box-specific page to a box-agnostic
- * one). The page reloads; there is no SPA layer in play.
+ * Navigate the current tab. Sends `?box_id=<id>` (or `?box_id=` to clear)
+ * so the server-side middleware can update the persistent cookie. The
+ * destination page itself doesn't need the query string going forward —
+ * the cookie carries the selection.
  *
  * @param {string|null} boxID — the box ID to activate, or empty/null to clear.
  * @param {string|null} [path] — optional target path; defaults to the current page.
@@ -27,10 +28,13 @@ function switchBox(boxID, path) {
     if (path) {
         url.pathname = path;
     }
+    // Clear other query params on box switch — they are page-state and
+    // typically don't make sense in a different box's context.
+    url.search = '';
     if (boxID) {
         url.searchParams.set('box_id', boxID);
     } else {
-        url.searchParams.delete('box_id');
+        url.searchParams.set('box_id', '');
     }
     window.location.assign(url.toString());
 }
