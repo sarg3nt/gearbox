@@ -694,6 +694,23 @@ templ Profile(user *models.User, passkeys []*models.Passkey, errorMessage string
 				</form>
 			</div>
 
+			<!-- Password — link to dedicated change-password page. Lives here
+			     since #71 item 5 retired the top-level Settings card. -->
+			<div class="bg-white dark:bg-slate-800 p-6 rounded-lg shadow">
+				<div class="flex items-center justify-between gap-4">
+					<div>
+						<h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100">Password</h2>
+						<p class="text-sm text-gray-600 dark:text-gray-400 mt-1">Change the password used to sign in.</p>
+					</div>
+					<a
+						href="/settings/change-password"
+						class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors text-sm"
+					>
+						Change Password
+					</a>
+				</div>
+			</div>
+
 			<!-- Passkeys Section -->
 			<div class="bg-white dark:bg-slate-800 p-6 rounded-lg shadow">
 				<h2 class="text-lg font-semibold mb-4 text-gray-800 dark:text-gray-100">Passkeys</h2>
@@ -825,20 +842,9 @@ templ Settings(user *models.User, perms *models.UserPermissions) {
 					</div>
 				</a>
 
-				<!-- Change Password -->
-				<a href="/settings/change-password" class="block bg-white dark:bg-slate-800 p-6 rounded-lg shadow hover:shadow-lg transition-shadow">
-					<div class="flex items-center space-x-4">
-						<div class="w-12 h-12 bg-yellow-100 dark:bg-yellow-900 rounded-lg flex items-center justify-center">
-							<svg class="w-6 h-6 text-yellow-600 dark:text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path>
-							</svg>
-						</div>
-						<div>
-							<h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100">Change Password</h2>
-							<p class="text-sm text-gray-600 dark:text-gray-400">Update your account password</p>
-						</div>
-					</div>
-				</a>
+			<!-- Change Password is no longer a top-level Settings card. Per
+			     issue #71 item 5 it lives on the Profile page now (the page
+			     itself is unchanged at /settings/change-password). -->
 
 			<!-- User Management - shown to admins or users with approve_users permission -->
 			if user.IsAdmin() || perms.HasPermission(models.ComponentUsers, models.PermissionApproveUsers) {

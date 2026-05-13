@@ -820,6 +820,24 @@ func (c *Client) GetTrafficSummary() (*TrafficSummaryResponse, error) {
 	return &resp, nil
 }
 
+// GetCapabilities retrieves the agent's probe table — every registered
+// gear's availability verdict and detected capability key-values. Used by
+// the dashboard's Gears settings page to hide gears the active box can't
+// run (issue #71 item 2).
+func (c *Client) GetCapabilities() (*CapabilitiesResponse, error) {
+	body, err := c.doRequest("GET", "/api/v1/system/capabilities", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp CapabilitiesResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse capabilities response: %w", err)
+	}
+
+	return &resp, nil
+}
+
 // IsAPIError checks if an error is an API error and returns it.
 func IsAPIError(err error) (*APIError, bool) {
 	if apiErr, ok := err.(*APIError); ok {

@@ -418,6 +418,7 @@ func main() {
 		r.Use(middleware.APIKeyAuth(server.APIKey(), logger, authBackoff))
 	})
 	gearManager.RegisterRoutes(pluginRouter)
+	gearManager.RegisterSystemRoutes(pluginRouter)
 
 	logger.Info("Plugin system initialized",
 		"plugins", gear.Names(),

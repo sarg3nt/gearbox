@@ -116,6 +116,57 @@ func encodeGearsJSON(ctx context.Context) string {
 	return string(b)
 }
 
+// encodePagesJSON serializes the user's reachable settings/profile pages
+// for the command palette. Each entry has the same shape as a gear: name,
+// label, path. Only pages the current user can actually visit are emitted
+// — admin-only items are filtered out for non-admins so the palette
+// doesn't dangle 403 destinations. Issue #71 item 4.
+func encodePagesJSON(ctx context.Context) string {
+	type lite struct {
+		Name  string `json:"name"`
+		Label string `json:"label"`
+		Path  string `json:"path"`
+	}
+	user, _ := auth.GetUserFromContext(ctx)
+	perms, _ := auth.GetUserPermissionsFromContext(ctx)
+	isAdmin := user != nil && user.IsAdmin()
+	hasPerm := func(c models.Component, p models.Permission) bool {
+		return perms != nil && perms.HasPermission(c, p)
+	}
+
+	out := make([]lite, 0, 12)
+	add := func(name, label, path string) {
+		out = append(out, lite{Name: name, Label: label, Path: path})
+	}
+
+	// Always available
+	add("settings", "Settings", "/settings")
+	add("profile", "Profile", "/settings/profile")
+	add("change-password", "Change password", "/settings/change-password")
+	add("backups", "Database backups", "/settings/backup")
+
+	if isAdmin || hasPerm(models.ComponentSettings, models.PermissionManageBoxes) {
+		add("boxes", "Boxes", "/settings/boxes")
+		add("boxes-new", "Add a box", "/settings/boxes/new")
+	}
+	if isAdmin || hasPerm(models.ComponentGears, models.PermissionManage) {
+		add("gears", "Gears", "/settings/gears")
+	}
+	if isAdmin || hasPerm(models.ComponentUsers, models.PermissionApproveUsers) {
+		add("users", "User management", "/settings/users")
+	}
+	if isAdmin {
+		add("smtp", "Email (SMTP) settings", "/settings/smtp")
+		add("permissions", "Permission management", "/settings/permissions")
+	}
+
+	b, err := json.Marshal(out)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
+}
+
 // gearLabelForName returns the user-facing label for a gear name. Mirrors
 // the labels used by SidebarLink* templates so the palette matches the
 // sidebar's vocabulary exactly.
@@ -2478,6 +2529,7 @@ templ CommandPalette() {
 	     parsed by command-palette.js at open time. -->
 	@templ.Raw("<script type=\"application/json\" id=\"cmdk-boxes\">" + encodeBoxesJSON(boxes) + "</script>")
 	@templ.Raw("<script type=\"application/json\" id=\"cmdk-gears\">" + encodeGearsJSON(ctx) + "</script>")
+	@templ.Raw("<script type=\"application/json\" id=\"cmdk-pages\">" + encodePagesJSON(ctx) + "</script>")
 }
 
 // ShortcutHelp is the `?`-opens overlay listing every global shortcut.

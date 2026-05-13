@@ -935,3 +935,22 @@ type ConfigureUnattendedRequest struct {
 	Enabled    bool `json:"enabled"`
 	AutoReboot bool `json:"auto_reboot"`
 }
+
+// CapabilityEntry is the per-gear probe verdict returned by
+// GET /api/v1/system/capabilities. Status mirrors the agent's ProbeStatus
+// (available / not_installed / inaccessible / disabled).
+type CapabilityEntry struct {
+	Status       string            `json:"status"`
+	Reason       string            `json:"reason,omitempty"`
+	Capabilities map[string]string `json:"capabilities,omitempty"`
+}
+
+// CapabilitiesResponse mirrors the agent's CapabilitiesResponse.
+type CapabilitiesResponse struct {
+	Gears map[string]CapabilityEntry `json:"gears"`
+}
+
+// IsAvailable reports whether the gear should be surfaced for this box.
+func (e CapabilityEntry) IsAvailable() bool {
+	return e.Status == "available"
+}

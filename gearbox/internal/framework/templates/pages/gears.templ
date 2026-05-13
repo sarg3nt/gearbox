@@ -288,14 +288,17 @@ templ GearDetailPage(user *models.User, serverID string, serverName string, inte
 }
 
 templ servicesConfigForm(integration *database.Gear, serverID string, availableServices []string) {
-	<form method="POST" action={ templ.SafeURL("/settings/gears/" + integration.Name + "?server=" + serverID) }>
+	<!-- No <form>: each toggle auto-saves via fetch() in services-config.js.
+	     The action URL still lives in data-action so the JS doesn't have to
+	     know how to construct it. -->
+	<div id="services-config-root" data-action={ "/settings/gears/" + integration.Name + "?server=" + serverID }>
 		<div class="space-y-6">
 			<!-- Header with title and filter -->
 			<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
 				<div>
 					<h3 class="text-lg font-medium text-gray-900 dark:text-gray-100">Monitored Services</h3>
 					<p class="text-sm text-gray-600 dark:text-gray-400">
-						Select which systemd services to monitor. These services will be displayed on the Services page.
+						Select which systemd services to monitor. Changes save automatically.
 					</p>
 				</div>
 				if len(availableServices) > 0 {
@@ -338,6 +341,7 @@ templ servicesConfigForm(integration *database.Gear, serverID string, availableS
 				<label class="flex items-center space-x-2">
 					<input
 						type="checkbox"
+						id="services-show-all"
 						name="show_all"
 						checked?={ isShowAllEnabled(integration.Config) }
 						class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 dark:border-gray-600 rounded"
@@ -348,17 +352,8 @@ templ servicesConfigForm(integration *database.Gear, serverID string, availableS
 					When enabled, you can query any systemd service by name on the Services page.
 				</p>
 			</div>
-
-			<div class="flex justify-end pt-4">
-				<button
-					type="submit"
-					class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
-				>
-					Save Configuration
-				</button>
-			</div>
 		</div>
-	</form>
+	</div>
 
 	<script src="/static/js/gears/services-config.js"></script>
 }

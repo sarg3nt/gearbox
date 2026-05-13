@@ -32,11 +32,9 @@ func (h *Handler) GearsPage(w http.ResponseWriter, r *http.Request) {
 	// Get enabled servers from database (dynamic, includes newly created servers)
 	servers := h.getEnabledServers()
 
-	// Get server ID from query param, default to first server
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" && len(servers) > 0 {
-		boxID = servers[0].ID
-	}
+	// Resolve which box to show config for: explicit ?server= wins, then
+	// the persistent active-box cookie (the header pill), then first server.
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	// boxID may be empty on a fresh install — the template renders an
 	// "Add a Box" CTA in place of the per-box gear list. System-scoped
@@ -55,6 +53,9 @@ func (h *Handler) GearsPage(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
+		// Hide gears the agent's probe phase says aren't available on this
+		// box (issue #71 item 2). Fails open if the agent is unreachable.
+		plugins = h.filterGearsByAgentCapabilities(boxID, plugins)
 	}
 
 	// Load system-scoped (box-agnostic) gears so they render alongside the
@@ -76,6 +77,59 @@ func (h *Handler) GearsPage(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("Failed to render gears template", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 	}
+}
+
+// dashboardGearToAgentGear maps a dashboard gear name to the agent gear
+// whose probe verdict gates its visibility. Dashboard gears not in this map
+// have no agent counterpart and are always shown (services & alerts are
+// always-on dashboard concepts; certbot piggy-backs on certificates;
+// system gears like home don't probe any host capability).
+var dashboardGearToAgentGear = map[string]string{
+	database.GearHAProxy:      "haproxy",
+	database.GearLogs:         "logs",
+	database.GearCertificates: "certificates",
+	database.GearMetrics:      "metrics",
+	database.GearTraffic:      "traffic",
+	database.GearOSUpdates:    "updates",
+}
+
+// filterGearsByAgentCapabilities removes gears the agent has reported as
+// not-installed / inaccessible / disabled. Fail-open on any error: when the
+// agent is unreachable or running a version without the capabilities
+// endpoint, we surface the full gear list so users aren't locked out of
+// configuring boxes mid-upgrade. Non-mapped gears are always retained.
+func (h *Handler) filterGearsByAgentCapabilities(boxID string, gears []database.Gear) []database.Gear {
+	serverConfig, exists := h.getServerConfig(boxID)
+	if !exists || !serverConfig.UsesAgentAPI() {
+		return gears
+	}
+
+	client := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey)
+	caps, err := client.GetCapabilities()
+	if err != nil {
+		h.logger.Debug("capabilities fetch failed; showing all gears", "box_id", boxID, "error", err)
+		return gears
+	}
+
+	out := make([]database.Gear, 0, len(gears))
+	for _, g := range gears {
+		agentName, gated := dashboardGearToAgentGear[g.Name]
+		if !gated {
+			out = append(out, g)
+			continue
+		}
+		entry, present := caps.Gears[agentName]
+		if !present {
+			// Agent didn't report this gear at all — keep it (older agent
+			// or gear not yet probe-aware).
+			out = append(out, g)
+			continue
+		}
+		if entry.IsAvailable() {
+			out = append(out, g)
+		}
+	}
+	return out
 }
 
 // getComponentForGear maps gear names to their corresponding permission component.
@@ -116,14 +170,9 @@ func (h *Handler) GearDetailPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get enabled servers from database (dynamic, includes newly created servers)
-	servers := h.getEnabledServers()
-
-	// Get server ID from query param
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" && len(servers) > 0 {
-		boxID = servers[0].ID
-	}
+	// Resolve which box to load config for. Same precedence as GearsPage so
+	// the configure link from the gears list lands on the right box.
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	if boxID == "" {
 		http.Error(w, "No servers configured", http.StatusBadRequest)
@@ -202,14 +251,9 @@ func (h *Handler) GearTogglePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get enabled servers from database (dynamic, includes newly created servers)
-	servers := h.getEnabledServers()
-
-	// Get server ID from query param
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" && len(servers) > 0 {
-		boxID = servers[0].ID
-	}
+	// Resolve which box to toggle for. Honors the active-box cookie when the
+	// AJAX call omits ?server= (some legacy callers do).
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	gearName := chi.URLParam(r, "name")
 
@@ -307,14 +351,8 @@ func (h *Handler) GearUpdatePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get enabled servers from database (dynamic, includes newly created servers)
-	servers := h.getEnabledServers()
-
-	// Get server ID from query param
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" && len(servers) > 0 {
-		boxID = servers[0].ID
-	}
+	// Resolve which box to update config for. Same precedence as GearsPage.
+	boxID := h.resolveBoxIDFromRequest(r)
 	redirectBase := "/settings/gears/" + gearName + "?server=" + url.QueryEscape(boxID)
 
 	if err := r.ParseForm(); err != nil {
@@ -375,6 +413,12 @@ func (h *Handler) GearUpdatePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
+		if wantsJSON {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "error": err.Error()})
+			return
+		}
 		http.Redirect(w, r, redirectBase+"&error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
@@ -382,11 +426,22 @@ func (h *Handler) GearUpdatePost(w http.ResponseWriter, r *http.Request) {
 	// Update the gear
 	if err := h.db.SetGearConfig(boxID, gearName, newConfig, &user.ID); err != nil {
 		h.logger.Error("failed to update gear", "gear", gearName, "error", err)
+		if wantsJSON {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "error": "Failed to save configuration"})
+			return
+		}
 		http.Redirect(w, r, redirectBase+"&error="+url.QueryEscape("Failed to save configuration"), http.StatusSeeOther)
 		return
 	}
 
 	h.logAudit(r, user.ID, "gear_updated", gearItem.DisplayName+" configuration updated")
+	if wantsJSON {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": true})
+		return
+	}
 	http.Redirect(w, r, redirectBase+"&success="+url.QueryEscape("Configuration saved successfully"), http.StatusSeeOther)
 }
 
@@ -815,13 +870,7 @@ func (h *Handler) getCuratedServicesList() []string {
 
 // APIGearsHandler returns all plugins as JSON.
 func (h *Handler) APIGearsHandler(w http.ResponseWriter, r *http.Request) {
-	// Get enabled servers from database (dynamic, includes newly created servers)
-	servers := h.getEnabledServers()
-
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" && len(servers) > 0 {
-		boxID = servers[0].ID
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	if boxID == "" {
 		w.Header().Set("Content-Type", "application/json")
@@ -845,13 +894,7 @@ func (h *Handler) APIGearsHandler(w http.ResponseWriter, r *http.Request) {
 
 // APIGearStatusHandler returns enabled status for plugins.
 func (h *Handler) APIGearStatusHandler(w http.ResponseWriter, r *http.Request) {
-	// Get enabled servers from database (dynamic, includes newly created servers)
-	servers := h.getEnabledServers()
-
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" && len(servers) > 0 {
-		boxID = servers[0].ID
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	if boxID == "" {
 		w.Header().Set("Content-Type", "application/json")
@@ -914,13 +957,7 @@ func (h *Handler) APIUpdateGearSortOrder(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Get enabled servers from database (dynamic, includes newly created servers)
-	servers := h.getEnabledServers()
-
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" && len(servers) > 0 {
-		boxID = servers[0].ID
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	if boxID == "" {
 		w.Header().Set("Content-Type", "application/json")
@@ -1030,7 +1067,7 @@ func (h *Handler) HAProxyGitSettingsSave(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	boxID := r.URL.Query().Get("server")
+	boxID := h.resolveBoxIDFromRequest(r)
 	if boxID == "" {
 		http.Error(w, "No server specified", http.StatusBadRequest)
 		return

@@ -3,7 +3,9 @@ package gear
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -232,6 +234,66 @@ func TestProbeTableHasHeaderAndAlignedRows(t *testing.T) {
 		if strings.Contains(line, "alpha") && strings.Contains(line, "ok") {
 			t.Errorf("enabled gear should not show its reason in the table, got line: %q", line)
 		}
+	}
+}
+
+func TestCapabilitiesEndpointReportsEveryGearWithVerdict(t *testing.T) {
+	// Dashboard relies on every probed gear appearing in the response so it
+	// can decide whether to surface or hide each gear's settings card.
+	// Available gears must be flagged available; non-available gears must
+	// carry their reason so the operator can act on it (issue #71 item 2).
+	a := &mockProbeGear{
+		info:        Info{Name: "alpha"},
+		probeResult: ProbeAvailable("ok", map[string]string{"version": "1.0"}),
+	}
+	b := &mockProbeGear{
+		info:        Info{Name: "bravo"},
+		probeResult: ProbeNotInstalled("not on PATH"),
+	}
+	withTestRegistry(t, a, b)
+
+	m, _ := newTestManager(t)
+	m.ProbeAll(context.Background())
+
+	r := chi.NewRouter()
+	m.RegisterSystemRoutes(r)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/system/capabilities", nil)
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	if got := rr.Header().Get("Content-Type"); got != "application/json" {
+		t.Errorf("content-type = %q, want application/json", got)
+	}
+
+	var resp CapabilitiesResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	alpha, ok := resp.Gears["alpha"]
+	if !ok {
+		t.Fatalf("alpha missing from response")
+	}
+	if alpha.Status != ProbeStatusAvailable {
+		t.Errorf("alpha status = %v, want available", alpha.Status)
+	}
+	if alpha.Capabilities["version"] != "1.0" {
+		t.Errorf("alpha capabilities = %v, want version=1.0", alpha.Capabilities)
+	}
+
+	bravo, ok := resp.Gears["bravo"]
+	if !ok {
+		t.Fatalf("bravo missing from response")
+	}
+	if bravo.Status != ProbeStatusNotInstalled {
+		t.Errorf("bravo status = %v, want not_installed", bravo.Status)
+	}
+	if bravo.Reason == "" {
+		t.Errorf("bravo reason is empty; operator-facing message lost")
 	}
 }
 
