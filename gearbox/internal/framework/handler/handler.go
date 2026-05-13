@@ -384,12 +384,17 @@ func (h *Handler) InjectIntegrationStatus(next http.Handler) http.Handler {
 			}
 		}
 		if r.URL.Path == "/bx" || r.URL.Path == "/bx/" {
-			// /bx is the all-boxes view — clear any sticky selection so the
-			// chip reads "All boxes" and the sidebar hides box-scoped gears.
-			if activeBox != nil {
+			// /bx is the all-boxes view — clear any sticky selection so
+			// the chip reads "All boxes" and the sidebar hides box-scoped
+			// gears. Clear whenever the cookie is present, not just when
+			// it resolved to an enabled box: otherwise a stale cookie
+			// (referencing a deleted/disabled box) survives indefinitely
+			// AND blocks the first-login auto-select branch below
+			// because hasCookieSet stays true.
+			if hasCookieSet {
 				clearActiveBoxCookie(w, r)
-				activeBox = nil
 			}
+			activeBox = nil
 		}
 		if activeBox != nil {
 			ctx = auth.SetSelectedBox(ctx, activeBox)

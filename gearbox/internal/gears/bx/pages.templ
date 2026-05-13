@@ -37,7 +37,6 @@ type IndexPageData struct {
 
 templ IndexPage(d IndexPageData) {
 	@layouts.Base("Boxes", d.User, "/bx") {
-		<link rel="stylesheet" href="/static/css/components/datagrid.css"/>
 		<div class="px-6 py-6">
 			@pageHeader(d.Total)
 			if d.Total == 0 {
@@ -78,6 +77,7 @@ templ pageHeader(total int) {
 			</div>
 			<select
 				id="bx-view-filter"
+				aria-label="Filter boxes view"
 				class="datagrid-view-filter"
 				onchange="window.bxOnViewFilterChange && window.bxOnViewFilterChange(this.value)"
 			>

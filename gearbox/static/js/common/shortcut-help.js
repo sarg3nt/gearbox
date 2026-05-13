@@ -12,13 +12,17 @@
 (function () {
     'use strict';
 
+    // `join` controls the visual separator between kbd chips for
+    // multi-key shortcuts: '+' for a chord (press together), 'then' for
+    // a sequence (press in order), '/' for "either of these keys".
+    // Single-key rows leave `join` unset and render no separator.
     const SHORTCUTS = [
         { keys: ['?'],                    label: 'Show this help' },
-        { keys: ['Cmd/Ctrl', 'K'],        label: 'Open command palette' },
-        { keys: ['g', 'b'],               label: 'Switch box (palette)' },
+        { keys: ['Cmd/Ctrl', 'K'],        label: 'Open command palette',                              join: '+' },
+        { keys: ['g', 'b'],               label: 'Switch box (palette)',                              join: 'then' },
         { keys: ['/'],                    label: 'Focus the page search input' },
         { keys: ['Esc'],                  label: 'Close dialog · or blur input · or go back' },
-        { keys: ['↑', '↓'],               label: 'Navigate dialog items' },
+        { keys: ['↑', '↓'],               label: 'Navigate dialog items',                             join: '/' },
         { keys: ['↵'],                    label: 'Select highlighted item' },
         { keys: ['Tab'],                  label: 'Cycle focus within a dialog' },
         { keys: ['Ctrl+↵'],               label: 'In palette: switch box but keep palette open' },
@@ -42,11 +46,10 @@
             const keys = document.createElement('span');
             keys.className = 'flex items-center gap-1';
             s.keys.forEach(function (k, i) {
-                if (i > 0 && (s.keys.length > 1)) {
-                    // Inter-key separator: "+" for chord, " then " for sequence.
+                if (i > 0 && s.join) {
                     const sep = document.createElement('span');
-                    sep.className = 'text-[10px] text-white/40 px-0.5';
-                    sep.textContent = (k === '↓' || k === '↑' || /^[A-Z]$/.test(s.keys[0])) ? ' ' : ' ';
+                    sep.className = 'text-[10px] text-white/50 px-0.5';
+                    sep.textContent = s.join;
                     keys.appendChild(sep);
                 }
                 const kbd = document.createElement('kbd');
@@ -129,6 +132,19 @@
             for (let i = 0; i < ids.length; i++) {
                 const el = document.getElementById(ids[i]);
                 if (el && !el.classList.contains('hidden')) return true;
+            }
+            // Narrow-viewport Filters sheet popped out under the header
+            // (`.filters-open` on #header-page-content). Treat as an
+            // overlay so pressing Esc to close it doesn't fall through
+            // to history.back().
+            const headerContent = document.getElementById('header-page-content');
+            if (headerContent && headerContent.classList.contains('filters-open')) {
+                return true;
+            }
+            // Right-click "Reorder gears" context menu on the sidebar.
+            const ctxMenu = document.getElementById('sidebar-context-menu');
+            if (ctxMenu && !ctxMenu.classList.contains('hidden')) {
+                return true;
             }
             return false;
         }

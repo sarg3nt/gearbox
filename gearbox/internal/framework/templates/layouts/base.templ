@@ -94,6 +94,9 @@ func encodeGearsJSON(ctx context.Context) string {
 	integrations, ok := auth.GetGearOrderFromContext(ctx)
 	if ok {
 		for _, i := range integrations {
+			if !i.Enabled {
+				continue
+			}
 			if !canViewIntegration(ctx, i.Name) {
 				continue
 			}
