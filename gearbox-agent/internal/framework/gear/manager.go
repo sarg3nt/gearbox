@@ -3,7 +3,10 @@ package gear
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,9 +21,15 @@ type Manager struct {
 	logger        *slog.Logger
 	initialized   map[string]bool
 	started       map[string]bool
+	probed        map[string]ProbeResult // verdict from ProbeAll
 	eventHandlers map[string][]func(events.Event) // eventType -> handlers
 	collectors    []*runningCollector      // Active periodic collectors
 	stopChan      chan struct{}            // Signal to stop all background goroutines
+
+	// tableWriter is where the probe summary table is rendered. Defaults
+	// to os.Stderr (which goes to the systemd journal in production).
+	// Tests override this to capture output.
+	tableWriter io.Writer
 }
 
 // runningCollector tracks an active periodic collector.
@@ -43,20 +52,159 @@ func NewManager(deps Dependencies, logger *slog.Logger) *Manager {
 		logger:        logger,
 		initialized:   make(map[string]bool),
 		started:       make(map[string]bool),
+		probed:        make(map[string]ProbeResult),
 		eventHandlers: make(map[string][]func(events.Event)),
 		collectors:    make([]*runningCollector, 0),
 		stopChan:      make(chan struct{}),
+		tableWriter:   os.Stderr,
 	}
 }
 
-// InitializeAll initializes all registered gears.
-// Returns an error if any plugin fails to initialize.
-func (m *Manager) InitializeAll(ctx context.Context) error {
+// ProbeAll runs each gear's Probe (if implemented) and records the verdict.
+// Gears that don't implement ProbeableGear are treated as always-available.
+// After all gears are probed, a summary table is written to the configured
+// table writer (defaults to os.Stderr → systemd journal) and a structured
+// completion line is logged via slog.
+//
+// Must be called before InitializeAll. The verdict drives whether each
+// gear participates in Initialize, Start, route registration, collectors,
+// and streamers.
+func (m *Manager) ProbeAll(ctx context.Context) {
 	plugins := All()
-	m.logger.Info("initializing plugins", "count", len(plugins))
+	m.logger.Info("probing host for gear capabilities", "registered_gears", len(plugins))
 
 	for _, p := range plugins {
 		info := p.Info()
+		result := probeOrDefault(ctx, p, m.deps)
+		m.mu.Lock()
+		m.probed[info.Name] = result
+		m.mu.Unlock()
+	}
+
+	m.logProbeTable()
+}
+
+// probeOrDefault calls a gear's Probe if it implements ProbeableGear, or
+// returns an Available result for gears that don't. Defaulting to
+// Available preserves the pre-probe-phase behavior for gears that haven't
+// been migrated yet.
+func probeOrDefault(ctx context.Context, p Gear, deps Dependencies) ProbeResult {
+	if probable, ok := p.(ProbeableGear); ok {
+		return probable.Probe(ctx, deps)
+	}
+	return ProbeAvailable("no probe implementation; defaulting to available", nil)
+}
+
+// isLoaded reports whether the gear should participate in the lifecycle.
+// If ProbeAll has not been called, every gear is considered loaded so that
+// existing callers (including tests) keep working.
+func (m *Manager) isLoaded(name string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	r, ok := m.probed[name]
+	if !ok {
+		return true
+	}
+	return r.IsAvailable()
+}
+
+// ProbeResults returns a snapshot of every gear's probe verdict. Useful
+// for the upcoming /api/v1/system/capabilities endpoint and for tests.
+func (m *Manager) ProbeResults() map[string]ProbeResult {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make(map[string]ProbeResult, len(m.probed))
+	for k, v := range m.probed {
+		out[k] = v
+	}
+	return out
+}
+
+// logProbeTable renders the visual probe summary to the table writer and
+// logs a structured completion line via slog. The visual table goes to
+// stderr (the systemd journal in production) because slog text handlers
+// quote multi-line msg strings; rendering raw to stderr keeps the table
+// readable in journalctl output without losing structured metadata in the
+// slog stream.
+func (m *Manager) logProbeTable() {
+	plugins := All()
+
+	type row struct {
+		name   string
+		status string
+		reason string
+	}
+
+	rows := make([]row, 0, len(plugins))
+	var available, unavailable int
+	for _, p := range plugins {
+		info := p.Info()
+		r := m.probed[info.Name]
+		label := "enabled"
+		if !r.IsAvailable() {
+			label = "disabled"
+			unavailable++
+		} else {
+			available++
+		}
+		reason := ""
+		if label == "disabled" {
+			reason = r.Reason
+		}
+		rows = append(rows, row{name: info.Name, status: label, reason: reason})
+	}
+
+	nameWidth := len("GEAR")
+	statusWidth := len("STATUS")
+	for _, r := range rows {
+		if l := len(r.name); l > nameWidth {
+			nameWidth = l
+		}
+		if l := len(r.status); l > statusWidth {
+			statusWidth = l
+		}
+	}
+	// 2-space padding between columns for legibility.
+	nameWidth += 2
+	statusWidth += 2
+
+	var b strings.Builder
+	b.WriteString("\nGear probe summary:\n\n")
+	fmt.Fprintf(&b, "  %-*s%-*s%s\n", nameWidth, "GEAR", statusWidth, "STATUS", "REASON")
+	for _, r := range rows {
+		fmt.Fprintf(&b, "  %-*s%-*s%s\n", nameWidth, r.name, statusWidth, r.status, r.reason)
+	}
+	b.WriteString("\n")
+
+	_, _ = io.WriteString(m.tableWriter, b.String())
+
+	m.logger.Info("gear probe complete",
+		"registered", len(plugins),
+		"available", available,
+		"unavailable", unavailable,
+	)
+}
+
+// InitializeAll initializes all registered gears that the probe phase
+// flagged as Available. Gears that probed negative are skipped silently —
+// they were already accounted for in the probe summary table.
+// Returns an error if any loaded plugin fails to initialize.
+func (m *Manager) InitializeAll(ctx context.Context) error {
+	plugins := All()
+	var loadedCount int
+	for _, p := range plugins {
+		if m.isLoaded(p.Info().Name) {
+			loadedCount++
+		}
+	}
+	m.logger.Info("initializing plugins", "loaded", loadedCount, "registered", len(plugins))
+
+	for _, p := range plugins {
+		info := p.Info()
+
+		if !m.isLoaded(info.Name) {
+			continue
+		}
 
 		// Create a plugin-specific logger
 		gearDeps := m.deps
@@ -78,7 +226,7 @@ func (m *Manager) InitializeAll(ctx context.Context) error {
 	// Set up event handlers for plugins that implement EventHandlerGear
 	m.setupEventHandlers()
 
-	m.logger.Info("all plugins initialized", "count", len(plugins))
+	m.logger.Info("all plugins initialized", "count", loadedCount)
 	return nil
 }
 
@@ -86,6 +234,9 @@ func (m *Manager) InitializeAll(ctx context.Context) error {
 func (m *Manager) setupEventHandlers() {
 	for _, p := range GetEventHandlerGears() {
 		info := p.Info()
+		if !m.isLoaded(info.Name) {
+			continue
+		}
 		for _, eventType := range p.SubscribedEvents() {
 			handler := p // Capture for closure
 			m.mu.Lock()
@@ -98,10 +249,11 @@ func (m *Manager) setupEventHandlers() {
 	}
 }
 
-// StartAll starts all initialized plugins.
+// StartAll starts every initialized plugin. Gears skipped by the probe
+// phase have initialized=false and are passed over silently.
 func (m *Manager) StartAll(ctx context.Context) error {
 	plugins := All()
-	m.logger.Info("starting plugins", "count", len(plugins))
+	var startedCount int
 
 	for _, p := range plugins {
 		info := p.Info()
@@ -111,7 +263,9 @@ func (m *Manager) StartAll(ctx context.Context) error {
 		m.mu.RUnlock()
 
 		if !initialized {
-			m.logger.Warn("skipping uninitialized gear", "gear", info.Name)
+			// Either skipped by probe (logged in the probe table) or a
+			// load-failure that already returned from InitializeAll. Either
+			// way, nothing to start.
 			continue
 		}
 
@@ -124,9 +278,12 @@ func (m *Manager) StartAll(ctx context.Context) error {
 		m.mu.Lock()
 		m.started[info.Name] = true
 		m.mu.Unlock()
+		startedCount++
 
 		m.logger.Debug("gear started", "gear", info.Name)
 	}
+
+	m.logger.Info("starting plugins", "count", startedCount)
 
 	// Start periodic collectors
 	m.startCollectors(ctx)
@@ -134,7 +291,7 @@ func (m *Manager) StartAll(ctx context.Context) error {
 	// Start streamers
 	m.startStreamers(ctx)
 
-	m.logger.Info("all plugins started", "count", len(plugins))
+	m.logger.Info("all plugins started", "count", startedCount)
 	return nil
 }
 
@@ -142,6 +299,9 @@ func (m *Manager) StartAll(ctx context.Context) error {
 func (m *Manager) startCollectors(ctx context.Context) {
 	for _, cp := range GetCollectorGears() {
 		info := cp.Info()
+		if !m.isLoaded(info.Name) {
+			continue
+		}
 		for _, c := range cp.Collectors() {
 			if c.Interval <= 0 {
 				// On-demand only collector
@@ -207,6 +367,9 @@ func (m *Manager) executeCollector(ctx context.Context, rc *runningCollector) {
 func (m *Manager) startStreamers(ctx context.Context) {
 	for _, sp := range GetStreamerGears() {
 		info := sp.Info()
+		if !m.isLoaded(info.Name) {
+			continue
+		}
 		for _, s := range sp.Streamers() {
 			if err := s.Start(ctx); err != nil {
 				m.logger.Error("failed to start streamer", "gear", info.Name, "streamer", s.Name, "error", err)
@@ -282,16 +445,22 @@ func (m *Manager) StopAll(ctx context.Context) error {
 	return nil
 }
 
-// RegisterRoutes registers HTTP routes for all plugins.
+// RegisterRoutes registers HTTP routes for plugins that the probe phase
+// flagged as loaded. Routes for skipped gears are intentionally absent so
+// the API doesn't lie about what the agent can actually do on this host.
 func (m *Manager) RegisterRoutes(r chi.Router) {
 	plugins := All()
-	m.logger.Info("registering gear routes", "count", len(plugins))
-
+	var loaded int
 	for _, p := range plugins {
 		info := p.Info()
+		if !m.isLoaded(info.Name) {
+			continue
+		}
+		loaded++
 		m.logger.Debug("registering routes", "gear", info.Name)
 		p.RegisterRoutes(r)
 	}
+	m.logger.Info("registered gear routes", "count", loaded)
 }
 
 // GetHealth returns health status for all plugins.

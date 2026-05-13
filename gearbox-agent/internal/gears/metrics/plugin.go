@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -54,6 +55,22 @@ func (p *Gear) Initialize(ctx context.Context, deps gear.Dependencies) error {
 	p.collector = NewCollector()
 	p.eventBus = deps.EventBus
 	return nil
+}
+
+// Probe reports whether the agent can read the kernel surfaces this gear
+// needs. /proc/stat is required for CPU and load metrics; on any modern
+// Linux it's always present and readable by an unprivileged process.
+// A containerized agent without /proc bind-mounted will land here as
+// inaccessible — the operator's fix is to add the mount, not install
+// software.
+func (p *Gear) Probe(ctx context.Context, deps gear.Dependencies) gear.ProbeResult {
+	if _, err := os.Stat("/proc/stat"); err != nil {
+		if os.IsNotExist(err) {
+			return gear.ProbeInaccessible("/proc/stat does not exist (containerized agent without /proc bind-mount?)")
+		}
+		return gear.ProbeInaccessible("/proc/stat present but unreadable: " + err.Error())
+	}
+	return gear.ProbeAvailable("/proc readable", nil)
 }
 
 // Start is a no-op - collection is handled by the plugin manager.

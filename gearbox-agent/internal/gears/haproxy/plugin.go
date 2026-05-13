@@ -4,7 +4,10 @@ package haproxy
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"os"
+	"os/exec"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -74,6 +77,41 @@ func (p *Gear) Health() gear.HealthStatus {
 		return gear.NewDegradedStatus("HAProxy stats not configured")
 	}
 	return gear.NewHealthyStatus("operational")
+}
+
+// Probe reports whether the agent has a usable HAProxy stats surface.
+// Logic, in order:
+//  1. Stats URL configured → trust the operator (no synchronous HTTP probe).
+//  2. Stats socket configured AND exists on disk → reachable.
+//  3. Stats socket configured but missing → inaccessible (config wrong, or
+//     bind mount missing in container mode; the reason names which).
+//  4. Nothing configured, but haproxy binary on PATH → inaccessible (host
+//     has HAProxy but agent wasn't told how to reach stats).
+//  5. None of the above → not_installed.
+func (p *Gear) Probe(ctx context.Context, deps gear.Dependencies) gear.ProbeResult {
+	if deps.HAProxyStatsURL != "" {
+		return gear.ProbeAvailable("stats URL configured", map[string]string{
+			"stats_url": deps.HAProxyStatsURL,
+		})
+	}
+	if deps.HAProxyStatsSocket != "" {
+		if _, err := os.Stat(deps.HAProxyStatsSocket); err == nil {
+			return gear.ProbeAvailable("stats socket reachable", map[string]string{
+				"stats_socket": deps.HAProxyStatsSocket,
+			})
+		}
+		return gear.ProbeInaccessible(fmt.Sprintf(
+			"stats socket configured at %s but does not exist (HAProxy not running, or bind mount missing in container mode)",
+			deps.HAProxyStatsSocket,
+		))
+	}
+	if path, err := exec.LookPath("haproxy"); err == nil {
+		return gear.ProbeInaccessible(fmt.Sprintf(
+			"haproxy binary present at %s but neither HAPROXY_STATS_SOCKET nor HAPROXY_STATS_URL is configured",
+			path,
+		))
+	}
+	return gear.ProbeNotInstalled("no haproxy binary on PATH; no stats socket or URL configured")
 }
 
 // RegisterRoutes registers HTTP API routes.

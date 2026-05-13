@@ -5,9 +5,9 @@ A Go service that runs on monitored servers and workstations to provide:
 1. **Gear-based data collection** - Gathers system metrics, service stats, logs, and security data
 2. **Secure REST API** - Exposes collected data over HTTPS with API key authentication
 3. **Real-time events** - WebSocket endpoint for live updates to Gearbox dashboard
-4. **Auto-discovery** - Detects installed services and enables relevant collectors
+4. **Capability-driven gear loading** - At startup the agent probes the host for each gear's prerequisites and loads only the gears that apply
 
-**Universal Monitoring:** Works on ANY Linux system - HAProxy hosts, Docker hosts, TrueNAS Scale, workstations, bare servers.
+**Universal Monitoring:** Works on ANY Linux system - HAProxy hosts, Docker hosts, TrueNAS Scale, workstations, bare servers. Gears that don't apply to the current host (e.g. `haproxy` on a TrueNAS box) are skipped at startup — no Initialize, no background goroutines, no failing collectors. See [docs/gear-probes.md](docs/gear-probes.md) for the probe lifecycle, status enum, and per-gear contracts.
 
 **HAProxy-Specific Features (when HAProxy is detected):**
 
@@ -361,6 +361,7 @@ gearbox-agent/
 
 ## Documentation
 
+- [Gear Probes](docs/gear-probes.md) - Capability-driven gear loading, status enum, per-gear contracts
 - [HAProxy API](docs/haproxy-api.md) - Stats, runtime info, validation
 - [Logs API](docs/logs-api.md) - Log streaming
 - [Security API](docs/security-api.md) - Fail2ban and firewall stats
