@@ -162,6 +162,78 @@ func TestBoxCapabilitiesAccessors(t *testing.T) {
 	}
 }
 
+func TestCapabilitiesCacheDifferentAgentURLBypassesCache(t *testing.T) {
+	srv, hits := newCapabilitiesServer(t, CapabilitiesResponse{
+		Gears: map[string]CapabilityEntry{"haproxy": {Status: "available"}},
+	})
+	defer srv.Close()
+	srv2, hits2 := newCapabilitiesServer(t, CapabilitiesResponse{
+		Gears: map[string]CapabilityEntry{"haproxy": {Status: "not_installed"}},
+	})
+	defer srv2.Close()
+
+	cache := NewCapabilitiesCache(5*time.Minute, 2*time.Second)
+
+	// Fetch against srv, then against srv2 with the same boxID. The
+	// second call must NOT serve cached data from srv — operator edits
+	// to the Agent URL should take effect on the next render.
+	caps1, err := cache.Get("box-1", srv.URL, "test-key")
+	if err != nil || !caps1.IsAvailable("haproxy") {
+		t.Fatalf("first Get: want available, got caps=%+v err=%v", caps1, err)
+	}
+	caps2, err := cache.Get("box-1", srv2.URL, "test-key")
+	if err != nil {
+		t.Fatalf("second Get: %v", err)
+	}
+	if caps2.IsAvailable("haproxy") {
+		t.Error("expected second Get to reflect srv2's not_installed verdict, got available (stale cache)")
+	}
+
+	if hits.Load() != 1 {
+		t.Errorf("srv: expected 1 hit, got %d", hits.Load())
+	}
+	if hits2.Load() != 1 {
+		t.Errorf("srv2: expected 1 hit, got %d", hits2.Load())
+	}
+}
+
+func TestCapabilitiesCacheInvalidateDropsAllAgentURLsForBox(t *testing.T) {
+	srv, hits := newCapabilitiesServer(t, CapabilitiesResponse{
+		Gears: map[string]CapabilityEntry{"haproxy": {Status: "available"}},
+	})
+	defer srv.Close()
+	srv2, hits2 := newCapabilitiesServer(t, CapabilitiesResponse{
+		Gears: map[string]CapabilityEntry{"haproxy": {Status: "available"}},
+	})
+	defer srv2.Close()
+
+	cache := NewCapabilitiesCache(5*time.Minute, 2*time.Second)
+	if _, err := cache.Get("box-1", srv.URL, "k"); err != nil {
+		t.Fatalf("seed srv: %v", err)
+	}
+	if _, err := cache.Get("box-1", srv2.URL, "k"); err != nil {
+		t.Fatalf("seed srv2: %v", err)
+	}
+
+	cache.Invalidate("box-1")
+
+	if _, err := cache.Get("box-1", srv.URL, "k"); err != nil {
+		t.Fatalf("post-invalidate srv: %v", err)
+	}
+	if _, err := cache.Get("box-1", srv2.URL, "k"); err != nil {
+		t.Fatalf("post-invalidate srv2: %v", err)
+	}
+
+	// Each backend should have been hit twice: once for the initial
+	// seed, once after invalidation dropped both entries for box-1.
+	if got := hits.Load(); got != 2 {
+		t.Errorf("srv hits = %d, want 2", got)
+	}
+	if got := hits2.Load(); got != 2 {
+		t.Errorf("srv2 hits = %d, want 2", got)
+	}
+}
+
 func TestCapabilitiesCacheInvalidateAll(t *testing.T) {
 	srv, hits := newCapabilitiesServer(t, CapabilitiesResponse{
 		Gears: map[string]CapabilityEntry{"haproxy": {Status: "available"}},

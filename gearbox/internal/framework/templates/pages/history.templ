@@ -68,12 +68,16 @@ templ History(user *models.User, servers []models.BoxConfig) {
 		if len(servers) == 0 {
 			@components.InfoAlert("No servers configured.")
 		} else {
-			<!-- No-HAProxy banner — shown when the active box's agent
-			     reports no HAProxy gear. JS toggles visibility based on
-			     /api/{boxID}/capabilities. -->
+			<!-- HAProxy-unavailable banner — shown when the active box's
+			     agent reports the HAProxy gear is anything other than
+			     'available'. JS in applyCapabilities() picks message
+			     text from the capability entry's status + reason so the
+			     copy matches reality: a missing binary (not_installed)
+			     gets different guidance than an unreachable socket
+			     (inaccessible) or an operator-disabled gear (disabled). -->
 			<div id="no-haproxy-banner" class="hidden mb-4 rounded-lg border border-blue-200 dark:border-blue-900/40 bg-blue-50 dark:bg-blue-900/20 px-4 py-3 text-sm text-blue-900 dark:text-blue-100">
-				<strong class="font-semibold">No HAProxy detected on this host.</strong>
-				Showing host-level metrics only. Install HAProxy or enable the agent's HAProxy gear to see proxy metrics.
+				<strong id="no-haproxy-banner-title" class="font-semibold">HAProxy metrics unavailable on this host.</strong>
+				<span id="no-haproxy-banner-detail">Showing host-level metrics only.</span>
 			</div>
 
 			<!-- KPI summary band — populated by loadKPISummary().
@@ -874,13 +878,14 @@ templ History(user *models.User, servers []models.BoxConfig) {
 		// rather than locking the user out of cards they may need.
 		async function applyCapabilities(serverID) {
 			let haproxyAvailable = true;
+			let haproxyEntry = null;
 			try {
 				const res = await fetch('/api/' + serverID + '/capabilities');
 				if (res.ok) {
 					const data = await res.json();
-					const entry = data && data.gears && data.gears.haproxy;
-					if (entry) {
-						haproxyAvailable = entry.status === 'available';
+					haproxyEntry = data && data.gears && data.gears.haproxy;
+					if (haproxyEntry) {
+						haproxyAvailable = haproxyEntry.status === 'available';
 					}
 				}
 			} catch (err) {
@@ -896,7 +901,50 @@ templ History(user *models.User, servers []models.BoxConfig) {
 			const banner = document.getElementById('no-haproxy-banner');
 			if (banner) {
 				banner.classList.toggle('hidden', haproxyAvailable);
+				if (!haproxyAvailable) {
+					updateNoHAProxyBanner(haproxyEntry);
+				}
 			}
+		}
+
+		// updateNoHAProxyBanner picks user-facing copy that matches the
+		// actual probe verdict — not_installed / inaccessible / disabled
+		// each get different guidance, and the agent's `reason` field is
+		// surfaced verbatim when present so operators see the exact
+		// detection failure.
+		function updateNoHAProxyBanner(entry) {
+			const titleEl = document.getElementById('no-haproxy-banner-title');
+			const detailEl = document.getElementById('no-haproxy-banner-detail');
+			if (!titleEl || !detailEl) return;
+
+			let title = 'HAProxy metrics unavailable on this host.';
+			let detail = 'Showing host-level metrics only.';
+
+			const status = entry && entry.status;
+			const reason = (entry && entry.reason) ? String(entry.reason) : '';
+
+			switch (status) {
+				case 'not_installed':
+					title = 'No HAProxy detected on this host.';
+					detail = 'Install HAProxy or enable the agent\'s HAProxy gear to see proxy metrics. Showing host-level metrics only.';
+					break;
+				case 'inaccessible':
+					title = 'HAProxy is installed but the agent can\'t reach its stats.';
+					detail = (reason ? reason + ' ' : '') + 'Showing host-level metrics only.';
+					break;
+				case 'disabled':
+					title = 'HAProxy gear disabled in agent configuration.';
+					detail = (reason ? reason + ' ' : '') + 'Showing host-level metrics only.';
+					break;
+				default:
+					// status === undefined (agent didn't surface haproxy at
+					// all — older agent or fetch failed). Keep the generic
+					// copy and don't pretend we know more than we do.
+					break;
+			}
+
+			titleEl.textContent = title;
+			detailEl.textContent = ' ' + detail;
 		}
 
 		// hoursToRange maps the hours-select dropdown value (e.g. "0.083",

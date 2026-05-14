@@ -88,7 +88,7 @@ func (h *Handler) APIMetricsSummaryHandler(w http.ResponseWriter, r *http.Reques
 	// down to nothing.
 	haproxyAvailable := true
 	if caps, ok := h.getBoxCapabilities(boxID); ok && caps != nil {
-		if entry, present := caps.Entry("haproxy"); present {
+		if entry, present := caps.Entry(sourceHAProxy); present {
 			haproxyAvailable = entry.IsAvailable()
 		}
 	}

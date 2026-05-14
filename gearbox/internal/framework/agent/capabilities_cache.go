@@ -49,21 +49,38 @@ func (b *BoxCapabilities) Entry(gearName string) (CapabilityEntry, bool) {
 	return e, ok
 }
 
-// CapabilitiesCache memoises agent capability fetches per box. Dashboard
-// pages call into this on every render that needs to decide what to
-// surface; without the cache, that's one synchronous round-trip per
-// render. TTL is short so a recently-restarted agent's new probe table
-// shows up without operator intervention; reconnect events should
-// invalidate explicitly via Invalidate() for an immediate refresh.
+// CapabilitiesCache memoises agent capability fetches per (box, agent
+// URL) pair. Dashboard pages call into this on every render that needs
+// to decide what to surface; without the cache, that's one synchronous
+// round-trip per render. TTL is short so a recently-restarted agent's
+// new probe table shows up without operator intervention; reconnect
+// events should invalidate explicitly via Invalidate() for an immediate
+// refresh.
+//
+// The cache key includes the agent URL (not just the box ID) so that an
+// operator editing a box's Agent URL — or re-pointing the same box ID
+// at a different host — gets fresh capabilities on the next render
+// rather than stale data from the prior agent until the 5-minute TTL
+// expires. The API key is intentionally not part of the key (rotations
+// don't change which gears the host runs; if the new key is wrong the
+// fetch errors and the negative-cache entry expires normally).
 //
 // Negative results (fetch errors, agent dead) are also cached for the
 // TTL window so a flaky or unreachable agent doesn't drag down every
 // page render with a fresh failed call.
 type CapabilitiesCache struct {
 	mu           sync.RWMutex
-	entries      map[string]*cachedCapabilities
+	entries      map[cacheKey]*cachedCapabilities
 	ttl          time.Duration
 	fetchTimeout time.Duration
+}
+
+// cacheKey identifies one cached entry by (boxID, agentURL). Splitting
+// into a struct rather than concatenating strings sidesteps any chance
+// of separator collision in operator-supplied URLs.
+type cacheKey struct {
+	boxID    string
+	agentURL string
 }
 
 type cachedCapabilities struct {
@@ -78,21 +95,27 @@ type cachedCapabilities struct {
 // 3s matches the value the Gears settings page used pre-cache.
 func NewCapabilitiesCache(ttl, fetchTimeout time.Duration) *CapabilitiesCache {
 	return &CapabilitiesCache{
-		entries:      make(map[string]*cachedCapabilities),
+		entries:      make(map[cacheKey]*cachedCapabilities),
 		ttl:          ttl,
 		fetchTimeout: fetchTimeout,
 	}
 }
 
-// Get returns the cached capabilities for boxID. If the entry is missing
-// or older than the TTL, the cache fetches fresh capabilities from
-// agentURL using the supplied API key. On fetch error, returns (nil, err);
-// the error is also cached for the TTL window. Callers should treat
-// (nil, err) as "unknown" and fail open — locking users out of pages
-// because the agent is briefly unreachable is worse than briefly showing
-// gears that may not be available.
+// Get returns the cached capabilities for (boxID, agentURL). If the
+// entry is missing or older than the TTL, the cache fetches fresh
+// capabilities from agentURL using the supplied API key. On fetch error,
+// returns (nil, err); the error is also cached for the TTL window.
+// Callers should treat (nil, err) as "unknown" and fail open — locking
+// users out of pages because the agent is briefly unreachable is worse
+// than briefly showing gears that may not be available.
+//
+// Changing agentURL for the same boxID produces a different cache entry,
+// so config edits take effect on the next call rather than waiting out
+// the TTL. The previous entry expires naturally; no explicit cleanup
+// needed for the rare case of an operator-driven URL change.
 func (c *CapabilitiesCache) Get(boxID, agentURL, apiKey string) (*BoxCapabilities, error) {
-	if entry, ok := c.lookup(boxID); ok {
+	k := cacheKey{boxID: boxID, agentURL: agentURL}
+	if entry, ok := c.lookup(k); ok {
 		return entry.caps, entry.err
 	}
 
@@ -106,7 +129,7 @@ func (c *CapabilitiesCache) Get(boxID, agentURL, apiKey string) (*BoxCapabilitie
 	}
 
 	c.mu.Lock()
-	c.entries[boxID] = &cachedCapabilities{caps: caps, err: err, fetchedAt: now}
+	c.entries[k] = &cachedCapabilities{caps: caps, err: err, fetchedAt: now}
 	c.mu.Unlock()
 
 	return caps, err
@@ -115,10 +138,10 @@ func (c *CapabilitiesCache) Get(boxID, agentURL, apiKey string) (*BoxCapabilitie
 // lookup returns a non-stale entry under the read lock, or (nil, false)
 // if missing/expired. Split out so Get's refresh path can drop the read
 // lock before doing network I/O.
-func (c *CapabilitiesCache) lookup(boxID string) (*cachedCapabilities, bool) {
+func (c *CapabilitiesCache) lookup(k cacheKey) (*cachedCapabilities, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	entry, ok := c.entries[boxID]
+	entry, ok := c.entries[k]
 	if !ok {
 		return nil, false
 	}
@@ -128,20 +151,25 @@ func (c *CapabilitiesCache) lookup(boxID string) (*cachedCapabilities, bool) {
 	return entry, true
 }
 
-// Invalidate drops the cached entry for boxID, forcing a fresh fetch on
-// the next Get. Call this when the box reconnects so a restarted agent's
-// new probe table is picked up immediately rather than at the next TTL
+// Invalidate drops every cached entry for boxID, regardless of the agent
+// URL it was fetched against. Call this when the box reconnects or when
+// the box's config changes (URL or API key edited), so the next Get
+// refetches against the current settings rather than at the next TTL
 // boundary.
 func (c *CapabilitiesCache) Invalidate(boxID string) {
 	c.mu.Lock()
-	delete(c.entries, boxID)
-	c.mu.Unlock()
+	defer c.mu.Unlock()
+	for k := range c.entries {
+		if k.boxID == boxID {
+			delete(c.entries, k)
+		}
+	}
 }
 
 // InvalidateAll drops every cached entry. Useful when global config that
 // affects probing changes (rare) and in tests.
 func (c *CapabilitiesCache) InvalidateAll() {
 	c.mu.Lock()
-	c.entries = make(map[string]*cachedCapabilities)
+	c.entries = make(map[cacheKey]*cachedCapabilities)
 	c.mu.Unlock()
 }
