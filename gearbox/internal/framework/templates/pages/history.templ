@@ -68,6 +68,19 @@ templ History(user *models.User, servers []models.BoxConfig) {
 		if len(servers) == 0 {
 			@components.InfoAlert("No servers configured.")
 		} else {
+			<!-- KPI summary band — populated by loadKPISummary().
+			     Each card shows a current value, delta vs the previous
+			     window of equal length, and an inline sparkline. -->
+			<div id="kpi-band" class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-4">
+				<!-- 6 skeleton placeholders so the layout doesn't pop in. -->
+				for i := 0; i < 6; i++ {
+					<div class="kpi-card-skel bg-white dark:bg-slate-800 rounded-lg shadow-sm p-3 h-[88px] animate-pulse">
+						<div class="h-3 w-20 bg-gray-200 dark:bg-slate-700 rounded mb-2"></div>
+						<div class="h-6 w-28 bg-gray-200 dark:bg-slate-700 rounded"></div>
+					</div>
+				}
+			</div>
+
 			<div class="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-6 mb-6">
 
 				<!-- Charts Grid - 4 columns on 2xl, 3 on xl, 2 on lg, 1 on smaller -->
@@ -179,13 +192,73 @@ templ History(user *models.User, servers []models.BoxConfig) {
 				</div>
 			</div>
 
-			<!-- Recent Incidents -->
-			<div class="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-6">
-				<h3 class="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">Recent Incidents</h3>
-				<div id="incidents-container">
-					<p class="text-gray-500 dark:text-gray-400">Loading incidents...</p>
+			<!-- Error Insights — replaces the old "Recent Incidents" list.
+			     Three columns answer "where are my errors coming from?":
+			     top backends by 5xx, top source IPs by 4xx+5xx, and top
+			     countries. Each row is clickable and opens the drill-down
+			     drawer. The panel renders nothing when there are no errors
+			     in the window — silence is the desired state. -->
+			<div id="error-insights-section" class="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-6 mb-6">
+				<div class="flex items-center justify-between mb-4">
+					<div>
+						<h3 class="text-xl font-semibold text-gray-800 dark:text-gray-100">Error Insights</h3>
+						<p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+							Where the 4xx/5xx responses in this window are coming from. Click any row to drill in.
+						</p>
+					</div>
+					<button
+						id="error-insights-refresh"
+						class="text-sm px-2 py-1 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+						title="Refresh error breakdown"
+						onclick="loadErrorInsights()"
+					>↻</button>
+				</div>
+				<div id="error-insights-body" class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+					<p class="text-gray-500 dark:text-gray-400 col-span-3 text-sm">Loading…</p>
+				</div>
+				<div id="error-insights-empty" class="hidden text-center py-6">
+					<svg class="w-10 h-10 mx-auto text-green-500 dark:text-green-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+					</svg>
+					<p class="text-gray-600 dark:text-gray-400 text-sm">No 4xx/5xx responses in this window. Everything's green.</p>
 				</div>
 			</div>
+
+			<!-- Drill-down drawer — slides in from the right with backend
+			     details, time series, top sources, and recent HAProxy error
+			     log lines. Backed by /api/{id}/metrics/backend/{name}/details
+			     plus /api/{id}/metrics/log-errors?backend=…. -->
+			<div id="drilldown-backdrop"
+				class="fixed inset-0 bg-black/40 z-[10000] hidden opacity-0 transition-opacity duration-200"
+				onclick="closeDrillDown()"
+			></div>
+			<aside id="drilldown-drawer"
+				class="fixed top-0 right-0 h-full w-full md:w-[640px] xl:w-[760px] bg-white dark:bg-slate-900 shadow-2xl z-[10001] hidden translate-x-full transition-transform duration-200 ease-out overflow-y-auto"
+				role="dialog"
+				aria-modal="true"
+			>
+				<header class="sticky top-0 bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-700 px-5 py-3 flex items-center justify-between z-10">
+					<div>
+						<div id="drilldown-eyebrow" class="text-xs uppercase tracking-wider text-gray-400 dark:text-gray-500">Backend</div>
+						<h2 id="drilldown-title" class="text-lg font-semibold text-gray-900 dark:text-gray-100">—</h2>
+					</div>
+					<div class="flex items-center gap-2">
+						<a id="drilldown-logs-link"
+							class="text-sm px-2 py-1 rounded bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 hidden"
+							target="_blank"
+							rel="noopener"
+						>View logs →</a>
+						<button onclick="closeDrillDown()" class="p-1 rounded hover:bg-gray-100 dark:hover:bg-slate-700" title="Close (Esc)">
+							<svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+							</svg>
+						</button>
+					</div>
+				</header>
+				<div id="drilldown-body" class="p-5 space-y-5">
+					<p class="text-sm text-gray-500 dark:text-gray-400">Loading…</p>
+				</div>
+			</aside>
 		}
 
 		<style>
@@ -202,6 +275,14 @@ templ History(user *models.User, servers []models.BoxConfig) {
 			width: 100% !important;
 			height: 100% !important;
 		}
+		.chart-card {
+			cursor: pointer;
+			transition: box-shadow 0.15s ease, transform 0.15s ease;
+		}
+		.chart-card:hover {
+			box-shadow: 0 8px 24px -8px rgba(15, 23, 42, 0.15);
+			transform: translateY(-1px);
+		}
 		.chart-card.fullscreen {
 			position: fixed !important;
 			top: 0 !important;
@@ -216,12 +297,166 @@ templ History(user *models.User, servers []models.BoxConfig) {
 			padding: 2rem !important;
 			display: flex !important;
 			flex-direction: column !important;
+			transform: none !important;
 		}
 		.chart-card.fullscreen .chart-aspect-container {
 			padding-bottom: 0 !important;
 			height: 100% !important;
 			flex: 1 !important;
 		}
+
+		/* KPI band */
+		.kpi-card {
+			position: relative;
+			background: white;
+			border-radius: 0.5rem;
+			padding: 0.75rem 0.9rem;
+			box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+			border-left: 3px solid transparent;
+			min-height: 88px;
+		}
+		.dark .kpi-card { background: rgb(30, 41, 59); box-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+		.kpi-card.status-good { border-left-color: #10b981; }
+		.kpi-card.status-warn { border-left-color: #f59e0b; }
+		.kpi-card.status-bad  { border-left-color: #ef4444; }
+		.kpi-label {
+			font-size: 0.75rem;
+			color: #6b7280;
+			text-transform: uppercase;
+			letter-spacing: 0.04em;
+			font-weight: 500;
+		}
+		.dark .kpi-label { color: #94a3b8; }
+		.kpi-value {
+			font-size: 1.5rem;
+			font-weight: 600;
+			color: #111827;
+			line-height: 1.1;
+			margin-top: 0.1rem;
+		}
+		.dark .kpi-value { color: #f1f5f9; }
+		.kpi-unit { font-size: 0.85rem; color: #6b7280; font-weight: 400; margin-left: 0.15rem; }
+		.dark .kpi-unit { color: #94a3b8; }
+		.kpi-delta { font-size: 0.75rem; font-weight: 500; }
+		.kpi-delta.up   { color: #ef4444; }
+		.kpi-delta.down { color: #10b981; }
+		.kpi-delta.neutral { color: #6b7280; }
+		.kpi-delta.inverse-good.up   { color: #10b981; } /* For traffic, going up is good */
+		.kpi-delta.inverse-good.down { color: #6b7280; }
+		.kpi-sparkline {
+			position: absolute;
+			right: 0.5rem;
+			bottom: 0.5rem;
+			width: 70px;
+			height: 24px;
+			pointer-events: none;
+		}
+
+		/* Error Insights tables */
+		.ei-col h4 {
+			font-size: 0.85rem;
+			font-weight: 600;
+			color: #374151;
+			margin-bottom: 0.5rem;
+			text-transform: uppercase;
+			letter-spacing: 0.04em;
+		}
+		.dark .ei-col h4 { color: #e5e7eb; }
+		.ei-row {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			padding: 0.5rem 0.6rem;
+			border-radius: 0.375rem;
+			cursor: pointer;
+			transition: background 0.1s;
+			border-left: 2px solid transparent;
+		}
+		.ei-row:hover {
+			background: rgb(243, 244, 246);
+			border-left-color: #3b82f6;
+		}
+		.dark .ei-row:hover { background: rgb(51, 65, 85); }
+		.ei-row + .ei-row { margin-top: 0.15rem; }
+		.ei-row .ei-primary { font-size: 0.875rem; color: #111827; font-weight: 500; }
+		.dark .ei-row .ei-primary { color: #f1f5f9; }
+		.ei-row .ei-secondary { font-size: 0.7rem; color: #6b7280; }
+		.dark .ei-row .ei-secondary { color: #94a3b8; }
+		.ei-row .ei-count {
+			font-size: 0.75rem;
+			font-weight: 600;
+			padding: 0.1rem 0.5rem;
+			border-radius: 999px;
+			background: rgb(254, 226, 226);
+			color: rgb(153, 27, 27);
+			white-space: nowrap;
+		}
+		.dark .ei-row .ei-count { background: rgba(239, 68, 68, 0.2); color: #fca5a5; }
+		.ei-row .ei-count.warning { background: rgb(254, 243, 199); color: rgb(146, 64, 14); }
+		.dark .ei-row .ei-count.warning { background: rgba(245, 158, 11, 0.2); color: #fcd34d; }
+
+		/* Drill-down drawer */
+		#drilldown-drawer.open { transform: translateX(0); }
+		#drilldown-backdrop.open { opacity: 1; }
+		.drilldown-section h3 {
+			font-size: 0.85rem;
+			font-weight: 600;
+			color: #374151;
+			margin-bottom: 0.5rem;
+			text-transform: uppercase;
+			letter-spacing: 0.04em;
+		}
+		.dark .drilldown-section h3 { color: #e5e7eb; }
+		.drilldown-kv {
+			display: grid;
+			grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+			gap: 0.75rem;
+		}
+		.drilldown-kv > div {
+			background: rgb(249, 250, 251);
+			border-radius: 0.375rem;
+			padding: 0.55rem 0.75rem;
+		}
+		.dark .drilldown-kv > div { background: rgb(30, 41, 59); }
+		.drilldown-kv .k {
+			font-size: 0.7rem;
+			color: #6b7280;
+			text-transform: uppercase;
+			letter-spacing: 0.04em;
+		}
+		.dark .drilldown-kv .k { color: #94a3b8; }
+		.drilldown-kv .v {
+			font-size: 1.15rem;
+			font-weight: 600;
+			color: #111827;
+		}
+		.dark .drilldown-kv .v { color: #f1f5f9; }
+		.drilldown-chart {
+			position: relative;
+			height: 160px;
+			background: rgb(249, 250, 251);
+			border-radius: 0.375rem;
+			padding: 0.5rem;
+		}
+		.dark .drilldown-chart { background: rgb(30, 41, 59); }
+		.log-line {
+			font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+			font-size: 0.72rem;
+			padding: 0.35rem 0.55rem;
+			border-radius: 0.25rem;
+			background: rgb(249, 250, 251);
+			color: #1f2937;
+			word-break: break-all;
+			margin-bottom: 0.25rem;
+			border-left: 2px solid #ef4444;
+		}
+		.dark .log-line { background: rgb(30, 41, 59); color: #e2e8f0; }
+		.log-line .lc-status { color: #ef4444; font-weight: 600; }
+		.log-line .lc-status.s4 { color: #f59e0b; }
+		.log-line .lc-path { color: #2563eb; }
+		.dark .log-line .lc-path { color: #93c5fd; }
+		.log-line .lc-ip { color: #7c3aed; }
+		.dark .log-line .lc-ip { color: #c4b5fd; }
 		</style>
 
 		<script>
@@ -242,6 +477,44 @@ templ History(user *models.User, servers []models.BoxConfig) {
 				danger: '#ef4444',
 				purple: '#8b5cf6',
 				cyan: '#06b6d4'
+			};
+		}
+
+		// gradientFor returns a Chart.js-compatible vertical gradient for the
+		// background fill of a line/area dataset. Falls back to a transparent
+		// background if no rendering context is available yet.
+		function gradientFor(ctx, hexColor) {
+			if (!ctx) return 'transparent';
+			const chart = ctx.chart || ctx;
+			const area = chart.chartArea;
+			if (!area) return 'transparent';
+			// Convert the line color to a low-opacity fill at the top and
+			// fully transparent at the bottom — Grafana-style trace area.
+			const fillTop = hexColor + '40';   // ~25% alpha
+			const fillMid = hexColor + '14';   // ~8% alpha
+			const fillBot = hexColor + '00';
+			const g = chart.ctx.createLinearGradient(0, area.top, 0, area.bottom);
+			g.addColorStop(0, fillTop);
+			g.addColorStop(0.5, fillMid);
+			g.addColorStop(1, fillBot);
+			return g;
+		}
+
+		// Build a filled-area dataset with a gradient. Used instead of the
+		// flat `backgroundColor: 'transparent'` we were using before so the
+		// charts look modern (gradient under the line) without needing a new
+		// chart library.
+		function makeAreaDataset(label, data, color) {
+			return {
+				label: label,
+				data: data,
+				borderColor: color,
+				backgroundColor: function(context) { return gradientFor(context, color); },
+				fill: true,
+				borderWidth: 1.6,
+				pointRadius: 0,
+				pointHoverRadius: 3,
+				tension: 0.4
 			};
 		}
 
@@ -269,12 +542,25 @@ templ History(user *models.User, servers []models.BoxConfig) {
 
 		function createChartOptions(minY = undefined) {
 			const colors = getChartColors();
+			const isDark = document.documentElement.classList.contains('dark');
 			return {
 				responsive: true,
 				maintainAspectRatio: false,
+				interaction: { mode: 'index', intersect: false }, // crosshair tooltip
 				plugins: {
 					legend: {
 						labels: { color: colors.text }
+					},
+					tooltip: {
+						backgroundColor: isDark ? 'rgba(15, 23, 42, 0.95)' : 'rgba(255, 255, 255, 0.97)',
+						titleColor: colors.text,
+						bodyColor: colors.text,
+						borderColor: colors.grid,
+						borderWidth: 1,
+						padding: 8,
+						boxPadding: 4,
+						usePointStyle: true,
+						titleFont: { weight: '600' }
 					},
 					zoom: getZoomOptions()
 				},
@@ -297,12 +583,25 @@ templ History(user *models.User, servers []models.BoxConfig) {
 
 		function createIntegerYAxisOptions() {
 			const colors = getChartColors();
+			const isDark = document.documentElement.classList.contains('dark');
 			return {
 				responsive: true,
 				maintainAspectRatio: false,
+				interaction: { mode: 'index', intersect: false },
 				plugins: {
 					legend: {
 						labels: { color: colors.text }
+					},
+					tooltip: {
+						backgroundColor: isDark ? 'rgba(15, 23, 42, 0.95)' : 'rgba(255, 255, 255, 0.97)',
+						titleColor: colors.text,
+						bodyColor: colors.text,
+						borderColor: colors.grid,
+						borderWidth: 1,
+						padding: 8,
+						boxPadding: 4,
+						usePointStyle: true,
+						titleFont: { weight: '600' }
 					},
 					zoom: getZoomOptions()
 				},
@@ -504,10 +803,6 @@ templ History(user *models.User, servers []models.BoxConfig) {
 				const metricsResponse = await fetch(`/api/${serverID}/history/metrics?hours=${hours}`);
 				const metricsData = await metricsResponse.json();
 
-				// Fetch incidents
-				const incidentsResponse = await fetch(`/api/${serverID}/incidents?limit=20`);
-				const incidentsData = await incidentsResponse.json();
-
 				// Cache the data for fullscreen toggle
 				cachedStatsData = statsData.data || [];
 				cachedMetricsData = metricsData.data || [];
@@ -515,14 +810,33 @@ templ History(user *models.User, servers []models.BoxConfig) {
 				// Render charts
 				destroyCharts();
 				renderAllCharts();
-				renderIncidents(incidentsData.incidents || []);
 
 				// Setup SSE connection for real-time updates
 				setupSSE(serverID);
 
+				// Kick off insights loads (don't block charts on these).
+				loadKPISummary();
+				loadErrorInsights();
+
 			} catch (error) {
 				console.error('Failed to load history data:', error);
 			}
+		}
+
+		// hoursToRange maps the hours-select dropdown value (e.g. "0.083",
+		// "24") to the human-readable range token the new /metrics/* APIs
+		// accept ("5m", "24h", …). Anything we don't recognise falls back
+		// to "24h" — matches the API's default and the dropdown's default.
+		function hoursToRange(hours) {
+			const h = parseFloat(hours);
+			if (h <= 0.1)   return '5m';
+			if (h <= 0.5)   return '30m';
+			if (h <= 1)     return '1h';
+			if (h <= 6)     return '6h';
+			if (h <= 24)    return '24h';
+			if (h <= 72)    return '3d';
+			if (h <= 168)   return '7d';
+			return '24h';
 		}
 
 		function setupSSE(serverID) {
@@ -1064,59 +1378,510 @@ templ History(user *models.User, servers []models.BoxConfig) {
 				data: {
 					labels: sampledData.map(d => formatTime(d.collected_at)),
 					datasets: [
-						{
-							label: '5xx Errors',
-							data: sampledData.map(d => d.total_5xx_errors),
-							borderColor: colors.danger,
-							backgroundColor: 'transparent',
-							borderWidth: 1.5,
-							pointRadius: 0,
-							pointHoverRadius: 3,
-							tension: 0.4
-						}
+						makeAreaDataset('5xx Errors', sampledData.map(d => d.total_5xx_errors), colors.danger)
 					]
 				},
 				options: createIntegerYAxisOptions()
 			});
 		}
 
-		function renderIncidents(incidents) {
-			const container = document.getElementById('incidents-container');
+		// ──────────────────────────────────────────────────────────────
+		// KPI band
+		// ──────────────────────────────────────────────────────────────
 
-			if (!incidents || incidents.length === 0) {
-				container.innerHTML = '<p class="text-gray-500 dark:text-gray-400">No recent incidents.</p>';
-				return;
+		async function loadKPISummary() {
+			const serverID = getServerID();
+			if (!serverID) return;
+			const range = hoursToRange(document.getElementById('hours-select').value);
+			try {
+				const res = await fetch('/api/' + serverID + '/metrics/summary?range=' + encodeURIComponent(range));
+				if (!res.ok) {
+					throw new Error('HTTP ' + res.status);
+				}
+				const data = await res.json();
+				renderKPICards(data.cards || []);
+			} catch (err) {
+				console.error('Failed to load KPI summary', err);
+				const band = document.getElementById('kpi-band');
+				if (band) band.innerHTML = '<div class="col-span-full text-sm text-red-500">Failed to load summary.</div>';
 			}
+		}
 
-			const html = incidents.map(function(incident) {
-				const severityClasses = {
-					'critical': 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200',
-					'warning': 'bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200',
-					'info': 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200'
-				};
-				const severityClass = severityClasses[incident.severity] || severityClasses.info;
-				const resolved = incident.resolved_at ?
-					'<span class="text-green-600 dark:text-green-400">Resolved: ' + new Date(incident.resolved_at).toLocaleString() + '</span>' :
-					'<span class="text-red-600 dark:text-red-400">Active</span>';
+		function renderKPICards(cards) {
+			const band = document.getElementById('kpi-band');
+			if (!band) return;
 
-				const backendSpan = incident.backend_name ?
-					'<span class="ml-2 text-sm text-blue-600 dark:text-blue-400">' + incident.backend_name + '</span>' : '';
-
-				return '<div class="border border-gray-200 dark:border-slate-600 rounded-lg p-4 mb-3">' +
-					'<div class="flex justify-between items-start">' +
-					'<div>' +
-					'<span class="px-2 py-1 text-xs font-semibold rounded ' + severityClass + '">' + incident.severity.toUpperCase() + '</span>' +
-					'<span class="ml-2 text-sm text-gray-500 dark:text-gray-400">' + incident.incident_type + '</span>' +
-					backendSpan +
-					'</div>' +
-					'<span class="text-sm text-gray-500 dark:text-gray-400">' + new Date(incident.started_at).toLocaleString() + '</span>' +
-					'</div>' +
-					'<p class="mt-2 text-gray-700 dark:text-gray-300">' + incident.message + '</p>' +
-					'<div class="mt-2 text-sm">' + resolved + '</div>' +
-					'</div>';
+			band.innerHTML = cards.map(function(c) {
+				const valueText = formatKPIValue(c);
+				const deltaHTML = formatKPIDelta(c);
+				return ''
+					+ '<div class="kpi-card status-' + (c.status || 'good') + '" title="' + escapeAttr(c.description || '') + '">'
+					+   '<div class="kpi-label">' + escapeHtml(c.label) + '</div>'
+					+   '<div class="kpi-value">' + valueText + '</div>'
+					+   '<div class="kpi-delta-row mt-1">' + deltaHTML + '</div>'
+					+   '<canvas class="kpi-sparkline" data-spark="' + escapeAttr(JSON.stringify(c.sparkline || [])) + '"'
+					+     ' data-status="' + (c.status || 'good') + '"></canvas>'
+					+ '</div>';
 			}).join('');
 
-			container.innerHTML = html;
+			// Render sparklines.
+			band.querySelectorAll('canvas.kpi-sparkline').forEach(function(canvas) {
+				try {
+					const pts = JSON.parse(canvas.dataset.spark || '[]');
+					drawSparkline(canvas, pts, canvas.dataset.status);
+				} catch (e) { /* ignore */ }
+			});
+		}
+
+		function formatKPIValue(c) {
+			// Health card uses PrevValue as the "total" — show as N/M.
+			if (c.key === 'health') {
+				return Math.round(c.value) + '<span class="kpi-unit">/ ' + Math.round(c.prev_value || 0) + '</span>';
+			}
+			let v = c.value;
+			let decimals = (typeof c.decimals === 'number') ? c.decimals : 1;
+			if (c.is_count && !c.unit) decimals = 0;
+			let displayValue;
+			if (Math.abs(v) >= 1e6) {
+				displayValue = (v / 1e6).toFixed(1) + 'M';
+			} else if (Math.abs(v) >= 1e4) {
+				displayValue = (v / 1e3).toFixed(1) + 'k';
+			} else {
+				displayValue = v.toFixed(decimals);
+			}
+			const unit = c.unit ? ('<span class="kpi-unit">' + escapeHtml(c.unit) + '</span>') : '';
+			return displayValue + unit;
+		}
+
+		function formatKPIDelta(c) {
+			// Health KPI doesn't need a delta — the N/M conveys state already.
+			if (c.key === 'health') {
+				return '<span class="kpi-delta neutral">live</span>';
+			}
+			const d = c.delta_pct || 0;
+			if (!isFinite(d) || (c.prev_value === 0 && c.value === 0)) {
+				return '<span class="kpi-delta neutral">no prior data</span>';
+			}
+			let cls = 'neutral';
+			let arrow = '→';
+			if (Math.abs(d) < 0.5) {
+				cls = 'neutral';
+			} else if (d > 0) {
+				cls = 'up'; arrow = '▲';
+			} else {
+				cls = 'down'; arrow = '▼';
+			}
+			// "Going up" is bad for error rate / 5xx / response time; good for traffic / sessions.
+			let inv = '';
+			if (c.key === 'requests' || c.key === 'sessions') {
+				inv = 'inverse-good ';
+			}
+			return '<span class="kpi-delta ' + inv + cls + '">'
+				+ arrow + ' ' + Math.abs(d).toFixed(1) + '% vs prior window</span>';
+		}
+
+		function drawSparkline(canvas, pts, status) {
+			if (!pts || pts.length < 2) return;
+			const dpr = window.devicePixelRatio || 1;
+			const w = canvas.clientWidth || 70;
+			const h = canvas.clientHeight || 24;
+			canvas.width = w * dpr;
+			canvas.height = h * dpr;
+			const ctx = canvas.getContext('2d');
+			ctx.scale(dpr, dpr);
+			const min = Math.min.apply(null, pts);
+			const max = Math.max.apply(null, pts);
+			const range = max - min || 1;
+			const color = status === 'bad' ? '#ef4444'
+				: status === 'warn' ? '#f59e0b'
+				: '#10b981';
+			ctx.lineWidth = 1.25;
+			ctx.strokeStyle = color;
+			ctx.beginPath();
+			for (let i = 0; i < pts.length; i++) {
+				const x = (i / (pts.length - 1)) * (w - 2) + 1;
+				const y = h - 1 - ((pts[i] - min) / range) * (h - 2);
+				if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+			}
+			ctx.stroke();
+			ctx.lineTo(w - 1, h);
+			ctx.lineTo(1, h);
+			ctx.closePath();
+			ctx.globalAlpha = 0.12;
+			ctx.fillStyle = color;
+			ctx.fill();
+			ctx.globalAlpha = 1;
+		}
+
+		// ──────────────────────────────────────────────────────────────
+		// Error Insights panel
+		// ──────────────────────────────────────────────────────────────
+
+		async function loadErrorInsights() {
+			const serverID = getServerID();
+			if (!serverID) return;
+			const range = hoursToRange(document.getElementById('hours-select').value);
+			const body = document.getElementById('error-insights-body');
+			const empty = document.getElementById('error-insights-empty');
+			try {
+				const res = await fetch('/api/' + serverID + '/metrics/error-breakdown?range=' + encodeURIComponent(range));
+				if (!res.ok) throw new Error('HTTP ' + res.status);
+				const data = await res.json();
+				renderErrorInsights(data);
+				const hasAny = (data.backends || []).length + (data.sources || []).length + (data.countries || []).length;
+				if (hasAny === 0) {
+					body.classList.add('hidden');
+					empty.classList.remove('hidden');
+				} else {
+					body.classList.remove('hidden');
+					empty.classList.add('hidden');
+				}
+			} catch (err) {
+				console.error('Failed to load error insights', err);
+				body.innerHTML = '<div class="col-span-3 text-sm text-red-500">Failed to load error breakdown.</div>';
+			}
+		}
+
+		function renderErrorInsights(data) {
+			const body = document.getElementById('error-insights-body');
+			if (!body) return;
+
+			const backendCol = renderEIBackends(data.backends || []);
+			const sourceCol  = renderEISources(data.sources || []);
+			const countryCol = renderEICountries(data.countries || []);
+
+			body.innerHTML = ''
+				+ '<div class="ei-col"><h4>Top backends by errors</h4><div>' + backendCol + '</div></div>'
+				+ '<div class="ei-col"><h4>Top source IPs</h4><div>' + sourceCol + '</div></div>'
+				+ '<div class="ei-col"><h4>Top countries</h4><div>' + countryCol + '</div></div>';
+		}
+
+		function renderEIBackends(rows) {
+			if (rows.length === 0) return '<p class="text-xs text-gray-500 dark:text-gray-400">No backend errors.</p>';
+			return rows.map(function(r) {
+				const total = (r.response_5xx || 0) + (r.response_4xx || 0);
+				const label5 = (r.response_5xx || 0) + ' 5xx';
+				const label4 = (r.response_4xx || 0) + ' 4xx';
+				const errorRate = (r.error_rate || 0).toFixed(1) + '%';
+				const cls = (r.response_5xx || 0) > 0 ? '' : ' warning';
+				return ''
+					+ '<div class="ei-row" data-backend="' + escapeAttr(r.backend_name) + '" onclick="openDrillDown(\'backend\', \'' + escapeJSArg(r.backend_name) + '\')">'
+					+   '<div>'
+					+     '<div class="ei-primary">' + escapeHtml(r.backend_name) + '</div>'
+					+     '<div class="ei-secondary">' + label5 + ' · ' + label4 + ' · ' + errorRate + ' err rate</div>'
+					+   '</div>'
+					+   '<div class="ei-count' + cls + '">' + total.toLocaleString() + '</div>'
+					+ '</div>';
+			}).join('');
+		}
+
+		function renderEISources(rows) {
+			if (rows.length === 0) return '<p class="text-xs text-gray-500 dark:text-gray-400">No erroring source IPs.</p>';
+			return rows.map(function(r) {
+				const flag = r.country_code && r.country_code !== 'XX' && r.country_code !== 'AG' ? r.country_code : '';
+				const meta = (r.country || 'Unknown') + ' · ' + (r.backends_hit || 0) + ' backends · ' + (r.error_rate || 0).toFixed(1) + '% err';
+				return ''
+					+ '<div class="ei-row" onclick="openDrillDown(\'source\', \'' + escapeJSArg(r.source_ip) + '\')">'
+					+   '<div>'
+					+     '<div class="ei-primary">' + escapeHtml(r.source_ip) + (flag ? ' <span class="text-xs text-gray-400">' + escapeHtml(flag) + '</span>' : '') + '</div>'
+					+     '<div class="ei-secondary">' + escapeHtml(meta) + '</div>'
+					+   '</div>'
+					+   '<div class="ei-count">' + (r.error_count || 0).toLocaleString() + '</div>'
+					+ '</div>';
+			}).join('');
+		}
+
+		function renderEICountries(rows) {
+			if (rows.length === 0) return '<p class="text-xs text-gray-500 dark:text-gray-400">No country breakdown.</p>';
+			return rows.map(function(r) {
+				return ''
+					+ '<div class="ei-row" style="cursor: default;">'
+					+   '<div>'
+					+     '<div class="ei-primary">' + escapeHtml(r.country || 'Unknown') + ' <span class="text-xs text-gray-400">' + escapeHtml(r.country_code || '') + '</span></div>'
+					+     '<div class="ei-secondary">' + (r.unique_ips || 0) + ' IPs · ' + (r.error_rate || 0).toFixed(1) + '% err</div>'
+					+   '</div>'
+					+   '<div class="ei-count">' + (r.errors || 0).toLocaleString() + '</div>'
+					+ '</div>';
+			}).join('');
+		}
+
+		// ──────────────────────────────────────────────────────────────
+		// Drill-down drawer
+		// ──────────────────────────────────────────────────────────────
+
+		let drilldownCharts = {};
+
+		function destroyDrilldownCharts() {
+			Object.values(drilldownCharts).forEach(function(c) { try { c.destroy(); } catch(e){} });
+			drilldownCharts = {};
+		}
+
+		function openDrillDown(kind, name) {
+			const drawer = document.getElementById('drilldown-drawer');
+			const backdrop = document.getElementById('drilldown-backdrop');
+			drawer.classList.remove('hidden');
+			backdrop.classList.remove('hidden');
+			// Force reflow so the transition triggers.
+			void drawer.offsetWidth;
+			drawer.classList.add('open');
+			backdrop.classList.add('open');
+
+			document.getElementById('drilldown-eyebrow').textContent = kind === 'backend' ? 'Backend' : 'Source IP';
+			document.getElementById('drilldown-title').textContent = name;
+			document.getElementById('drilldown-body').innerHTML = '<p class="text-sm text-gray-500">Loading…</p>';
+
+			if (kind === 'backend') {
+				loadBackendDrillDown(name);
+			} else if (kind === 'source') {
+				loadSourceDrillDown(name);
+			}
+		}
+
+		function closeDrillDown() {
+			const drawer = document.getElementById('drilldown-drawer');
+			const backdrop = document.getElementById('drilldown-backdrop');
+			drawer.classList.remove('open');
+			backdrop.classList.remove('open');
+			setTimeout(function() {
+				drawer.classList.add('hidden');
+				backdrop.classList.add('hidden');
+				destroyDrilldownCharts();
+			}, 200);
+		}
+
+		document.addEventListener('keydown', function(e) {
+			if (e.key === 'Escape' && document.getElementById('drilldown-drawer').classList.contains('open')) {
+				closeDrillDown();
+			}
+		});
+
+		async function loadBackendDrillDown(backendName) {
+			const serverID = getServerID();
+			const range = hoursToRange(document.getElementById('hours-select').value);
+			const url = '/api/' + serverID + '/metrics/backend/' + encodeURIComponent(backendName) + '/details?range=' + encodeURIComponent(range);
+			try {
+				const res = await fetch(url);
+				if (!res.ok) throw new Error('HTTP ' + res.status);
+				const data = await res.json();
+				renderBackendDrillDown(data);
+				const link = document.getElementById('drilldown-logs-link');
+				link.href = '/logs?server=' + encodeURIComponent(serverID) + '&source=haproxy';
+				link.classList.remove('hidden');
+				loadLogErrors(serverID, backendName);
+			} catch (err) {
+				console.error('Drill-down failed', err);
+				document.getElementById('drilldown-body').innerHTML =
+					'<p class="text-sm text-red-500">Failed to load backend details: ' + escapeHtml(err.message) + '</p>';
+			}
+		}
+
+		async function loadSourceDrillDown(sourceIP) {
+			const serverID = getServerID();
+			const html = ''
+				+ '<div class="drilldown-section">'
+				+   '<h3>Source IP details</h3>'
+				+   '<p class="text-sm text-gray-700 dark:text-gray-300">Per-source breakdowns and GeoIP lookup live on the Traffic gear.</p>'
+				+   '<p class="mt-3"><a class="text-blue-600 dark:text-blue-400 underline" href="/traffic?server=' + encodeURIComponent(serverID) + '" target="_blank" rel="noopener">Open Traffic gear →</a></p>'
+				+ '</div>';
+			document.getElementById('drilldown-body').innerHTML = html;
+		}
+
+		function renderBackendDrillDown(data) {
+			const ts = data.timeseries || [];
+			let total5xx = 0, total4xx = 0, total2xx = 0, total3xx = 0, totalReq = 0;
+			let avgRT = 0, rtN = 0;
+			ts.forEach(function(b) {
+				total5xx += b.response_5xx || 0;
+				total4xx += b.response_4xx || 0;
+				total2xx += b.response_2xx || 0;
+				total3xx += b.response_3xx || 0;
+				totalReq += b.requests || 0;
+				if ((b.avg_response_ms || 0) > 0) { avgRT += b.avg_response_ms; rtN++; }
+			});
+			if (rtN > 0) avgRT = avgRT / rtN;
+			const totalResp = total2xx + total3xx + total4xx + total5xx;
+			const errRate = totalResp > 0 ? ((total4xx + total5xx) / totalResp * 100).toFixed(2) : '0.00';
+
+			const sources = data.top_sources || [];
+
+			const sourcesHTML = sources.length === 0
+				? '<p class="text-sm text-gray-500 dark:text-gray-400">No source data in window.</p>'
+				: '<div class="space-y-1">' + sources.map(function(s) {
+					const flag = s.country_code && s.country_code !== 'XX' ? s.country_code : '';
+					return ''
+						+ '<div class="flex items-center justify-between text-sm py-1.5 px-2 rounded hover:bg-gray-50 dark:hover:bg-slate-800">'
+						+   '<div>'
+						+     '<span class="font-medium">' + escapeHtml(s.source_ip) + '</span>'
+						+     (flag ? ' <span class="text-xs text-gray-400">' + escapeHtml(flag) + '</span>' : '')
+						+     '<span class="ml-2 text-xs text-gray-500">' + escapeHtml(s.country || 'Unknown') + '</span>'
+						+   '</div>'
+						+   '<div class="text-xs text-gray-700 dark:text-gray-300">'
+						+     (s.requests || 0).toLocaleString() + ' req · '
+						+     '<span class="text-red-500">' + (s.error_count || 0) + ' err</span>'
+						+   '</div>'
+						+ '</div>';
+				}).join('') + '</div>';
+
+			document.getElementById('drilldown-body').innerHTML = ''
+				+ '<div class="drilldown-section">'
+				+   '<h3>Summary</h3>'
+				+   '<div class="drilldown-kv">'
+				+     '<div><div class="k">Requests</div><div class="v">' + totalReq.toLocaleString() + '</div></div>'
+				+     '<div><div class="k">Error rate</div><div class="v ' + (parseFloat(errRate) > 5 ? 'text-red-500' : '') + '">' + errRate + '%</div></div>'
+				+     '<div><div class="k">5xx</div><div class="v ' + (total5xx > 0 ? 'text-red-500' : '') + '">' + total5xx.toLocaleString() + '</div></div>'
+				+     '<div><div class="k">4xx</div><div class="v ' + (total4xx > 0 ? 'text-yellow-500' : '') + '">' + total4xx.toLocaleString() + '</div></div>'
+				+     '<div><div class="k">Avg latency</div><div class="v">' + Math.round(avgRT) + ' ms</div></div>'
+				+   '</div>'
+				+ '</div>'
+				+ '<div class="drilldown-section">'
+				+   '<h3>Requests &amp; errors over time</h3>'
+				+   '<div class="drilldown-chart"><canvas id="drilldown-rate-chart"></canvas></div>'
+				+ '</div>'
+				+ '<div class="drilldown-section">'
+				+   '<h3>Status code mix</h3>'
+				+   '<div class="drilldown-chart" style="height: 140px;"><canvas id="drilldown-status-chart"></canvas></div>'
+				+ '</div>'
+				+ '<div class="drilldown-section">'
+				+   '<h3>Top sources hitting this backend</h3>'
+				+   sourcesHTML
+				+ '</div>'
+				+ '<div class="drilldown-section">'
+				+   '<div class="flex items-center justify-between">'
+				+     '<h3>Recent 5xx log lines</h3>'
+				+     '<span id="drilldown-logs-state" class="text-xs text-gray-400">Loading…</span>'
+				+   '</div>'
+				+   '<div id="drilldown-logs-body" class="space-y-1 mt-1"></div>'
+				+ '</div>';
+
+			renderDrilldownRateChart(ts);
+			renderDrilldownStatusChart({ r2xx: total2xx, r3xx: total3xx, r4xx: total4xx, r5xx: total5xx });
+		}
+
+		function renderDrilldownRateChart(ts) {
+			const ctx = document.getElementById('drilldown-rate-chart');
+			if (!ctx || ts.length === 0) return;
+			const labels = ts.map(function(b) { return formatTime(b.bucket_time); });
+			const reqs   = ts.map(function(b) { return b.requests || 0; });
+			const errs   = ts.map(function(b) { return (b.response_4xx || 0) + (b.response_5xx || 0); });
+			const colors = getChartColors();
+			drilldownCharts.rate = new Chart(ctx.getContext('2d'), {
+				type: 'line',
+				data: {
+					labels: labels,
+					datasets: [
+						{ label: 'Requests', data: reqs, borderColor: colors.primary, backgroundColor: 'rgba(59, 130, 246, 0.08)', fill: true, borderWidth: 1.4, pointRadius: 0, tension: 0.35, yAxisID: 'y' },
+						{ label: 'Errors',   data: errs, borderColor: colors.danger,  backgroundColor: 'rgba(239, 68, 68, 0.15)', fill: true, borderWidth: 1.4, pointRadius: 0, tension: 0.35, yAxisID: 'y1' }
+					]
+				},
+				options: {
+					responsive: true,
+					maintainAspectRatio: false,
+					plugins: { legend: { labels: { color: colors.text, boxWidth: 10, font: { size: 10 } } } },
+					scales: {
+						x:  { ticks: { color: colors.text, maxTicksLimit: 6, font: { size: 10 } }, grid: { color: colors.grid } },
+						y:  { position: 'left',  beginAtZero: true, ticks: { color: colors.text, font: { size: 10 } }, grid: { color: colors.grid } },
+						y1: { position: 'right', beginAtZero: true, ticks: { color: colors.danger, font: { size: 10 } }, grid: { drawOnChartArea: false } }
+					}
+				}
+			});
+		}
+
+		function renderDrilldownStatusChart(s) {
+			const ctx = document.getElementById('drilldown-status-chart');
+			if (!ctx) return;
+			const colors = getChartColors();
+			drilldownCharts.status = new Chart(ctx.getContext('2d'), {
+				type: 'doughnut',
+				data: {
+					labels: ['2xx', '3xx', '4xx', '5xx'],
+					datasets: [{
+						data: [s.r2xx || 0, s.r3xx || 0, s.r4xx || 0, s.r5xx || 0],
+						backgroundColor: [colors.secondary, colors.primary, colors.warning, colors.danger],
+						borderWidth: 0
+					}]
+				},
+				options: {
+					responsive: true,
+					maintainAspectRatio: false,
+					plugins: {
+						legend: { position: 'right', labels: { color: colors.text, boxWidth: 12, font: { size: 11 } } }
+					},
+					cutout: '60%'
+				}
+			});
+		}
+
+		async function loadLogErrors(serverID, backendName) {
+			const state = document.getElementById('drilldown-logs-state');
+			const body = document.getElementById('drilldown-logs-body');
+			if (!state || !body) return;
+			try {
+				const url = '/api/' + serverID + '/metrics/log-errors?status_min=500&lines=3000'
+					+ (backendName ? '&backend=' + encodeURIComponent(backendName) : '');
+				const res = await fetch(url);
+				if (!res.ok) throw new Error('HTTP ' + res.status);
+				const data = await res.json();
+				if (!data.available) {
+					state.textContent = 'logs unavailable';
+					body.innerHTML = '<p class="text-xs text-gray-500">' + escapeHtml(data.reason || 'Agent did not return log data.') + '</p>';
+					return;
+				}
+				const matches = data.matches || [];
+				state.textContent = matches.length + ' match' + (matches.length === 1 ? '' : 'es');
+				if (matches.length === 0) {
+					body.innerHTML = '<p class="text-xs text-gray-500">No 5xx log lines in the last few thousand entries.</p>';
+					return;
+				}
+				body.innerHTML = matches.slice(0, 50).map(function(m) {
+					const statusClass = (m.status_code >= 500) ? '' : ' s4';
+					return ''
+						+ '<div class="log-line">'
+						+   '<span class="lc-status' + statusClass + '">' + m.status_code + '</span> '
+						+   (m.method ? escapeHtml(m.method) + ' ' : '')
+						+   (m.path ? '<span class="lc-path">' + escapeHtml(m.path) + '</span> ' : '')
+						+   (m.source_ip ? '<span class="lc-ip">' + escapeHtml(m.source_ip) + '</span> ' : '')
+						+   (m.server ? '→ ' + escapeHtml(m.server) : '')
+						+ '</div>';
+				}).join('');
+			} catch (err) {
+				console.error('log-errors fetch failed', err);
+				state.textContent = 'load failed';
+				body.innerHTML = '<p class="text-xs text-red-500">Failed to load log lines.</p>';
+			}
+		}
+
+		// ──────────────────────────────────────────────────────────────
+		// Helpers
+		// ──────────────────────────────────────────────────────────────
+
+		function escapeHtml(s) {
+			if (s === null || s === undefined) return '';
+			const div = document.createElement('div');
+			div.textContent = String(s);
+			return div.innerHTML;
+		}
+
+		function escapeAttr(s) {
+			return escapeHtml(s).replace(/"/g, '&quot;');
+		}
+
+		// escapeJSArg escapes a string for safe inclusion as a single-quoted
+		// JS argument inside a double-quoted HTML attribute, e.g.
+		//   <div onclick="openDrillDown('source', 'VALUE')">
+		// It must therefore neutralise BOTH the JS string context (\\ and ')
+		// AND the HTML attribute context (", <, >, & — otherwise a value
+		// containing `"` would break out of the attribute and a `<` could
+		// start a new tag). Backend names come from operator-controlled
+		// HAProxy config, but source IPs and country codes flow from
+		// agent-collected data, so defence-in-depth is warranted.
+		function escapeJSArg(s) {
+			return String(s)
+				.replace(/\\/g, '\\\\')
+				.replace(/'/g, "\\'")
+				.replace(/&/g, '&amp;')
+				.replace(/"/g, '&quot;')
+				.replace(/</g, '&lt;')
+				.replace(/>/g, '&gt;');
 		}
 
 		// Move page header content to main header

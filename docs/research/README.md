@@ -23,6 +23,11 @@ This directory contains active design documents and architectural research for t
   - Best-practice survey (Portainer, Lens, ArgoCD, Datadog, HAProxy stats, Grafana, NN/g)
   - Three layout options with ASCII mockups, recommendation, and implementation outline
 
+- **[metrics-source-agnostic.md](metrics-source-agnostic.md)**
+  - Plan to evolve the Metrics gear from "HAProxy with extras" to a source-agnostic dashboard with per-source attribution ([#87](https://github.com/sarg3nt/gearbox/issues/87))
+  - Surveys the existing capability/probe + discovery infrastructure on the agent side
+  - 9-phase rollout, each independently shippable, starting from a capability manifest endpoint and ending at multi-source (HAProxy + nginx + Apache + Caddy + Docker) drill-down
+
 ## Purpose
 
 These documents serve as:
