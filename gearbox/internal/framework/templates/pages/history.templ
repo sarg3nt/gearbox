@@ -68,6 +68,14 @@ templ History(user *models.User, servers []models.BoxConfig) {
 		if len(servers) == 0 {
 			@components.InfoAlert("No servers configured.")
 		} else {
+			<!-- No-HAProxy banner — shown when the active box's agent
+			     reports no HAProxy gear. JS toggles visibility based on
+			     /api/{boxID}/capabilities. -->
+			<div id="no-haproxy-banner" class="hidden mb-4 rounded-lg border border-blue-200 dark:border-blue-900/40 bg-blue-50 dark:bg-blue-900/20 px-4 py-3 text-sm text-blue-900 dark:text-blue-100">
+				<strong class="font-semibold">No HAProxy detected on this host.</strong>
+				Showing host-level metrics only. Install HAProxy or enable the agent's HAProxy gear to see proxy metrics.
+			</div>
+
 			<!-- KPI summary band — populated by loadKPISummary().
 			     Each card shows a current value, delta vs the previous
 			     window of equal length, and an inline sparkline. -->
@@ -86,9 +94,9 @@ templ History(user *models.User, servers []models.BoxConfig) {
 				<!-- Charts Grid - 4 columns on 2xl, 3 on xl, 2 on lg, 1 on smaller -->
 				<div id="charts-grid" class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
 					<!-- Sessions & Requests -->
-					<div id="card-sessions" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
+					<div id="card-sessions" data-source="haproxy" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
 						<div class="flex justify-between items-center mb-2">
-							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300">Sessions & Requests</h4>
+							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">HAProxy:</span> Sessions & Requests</h4>
 							<button onclick="toggleFullscreen('card-sessions')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
 								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
@@ -101,9 +109,9 @@ templ History(user *models.User, servers []models.BoxConfig) {
 					</div>
 
 					<!-- Server Health -->
-					<div id="card-health" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
+					<div id="card-health" data-source="haproxy" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
 						<div class="flex justify-between items-center mb-2">
-							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300">Server Health</h4>
+							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">HAProxy:</span> Server Health</h4>
 							<button onclick="toggleFullscreen('card-health')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
 								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
@@ -116,9 +124,9 @@ templ History(user *models.User, servers []models.BoxConfig) {
 					</div>
 
 					<!-- CPU Load -->
-					<div id="card-cpu" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
+					<div id="card-cpu" data-source="host" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
 						<div class="flex justify-between items-center mb-2">
-							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300">CPU Load</h4>
+							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Host:</span> CPU Load</h4>
 							<button onclick="toggleFullscreen('card-cpu')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
 								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
@@ -131,9 +139,9 @@ templ History(user *models.User, servers []models.BoxConfig) {
 					</div>
 
 					<!-- Memory Usage -->
-					<div id="card-memory" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
+					<div id="card-memory" data-source="host" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
 						<div class="flex justify-between items-center mb-2">
-							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300">Memory Usage</h4>
+							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Host:</span> Memory Usage</h4>
 							<button onclick="toggleFullscreen('card-memory')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
 								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
@@ -146,9 +154,9 @@ templ History(user *models.User, servers []models.BoxConfig) {
 					</div>
 
 					<!-- Network Traffic -->
-					<div id="card-network" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
+					<div id="card-network" data-source="host" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
 						<div class="flex justify-between items-center mb-2">
-							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300">Network Throughput</h4>
+							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Host:</span> Network Throughput</h4>
 							<button onclick="toggleFullscreen('card-network')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
 								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
@@ -161,9 +169,9 @@ templ History(user *models.User, servers []models.BoxConfig) {
 					</div>
 
 					<!-- Response Times -->
-					<div id="card-response-time" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
+					<div id="card-response-time" data-source="haproxy" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
 						<div class="flex justify-between items-center mb-2">
-							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300">Response Times</h4>
+							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">HAProxy:</span> Response Times</h4>
 							<button onclick="toggleFullscreen('card-response-time')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
 								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
@@ -176,9 +184,9 @@ templ History(user *models.User, servers []models.BoxConfig) {
 					</div>
 
 					<!-- Error Rates -->
-					<div id="card-errors" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
+					<div id="card-errors" data-source="haproxy" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
 						<div class="flex justify-between items-center mb-2">
-							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300">Error Rates (5xx)</h4>
+							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">HAProxy:</span> Error Rates (5xx)</h4>
 							<button onclick="toggleFullscreen('card-errors')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
 								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
@@ -198,12 +206,12 @@ templ History(user *models.User, servers []models.BoxConfig) {
 			     countries. Each row is clickable and opens the drill-down
 			     drawer. The panel renders nothing when there are no errors
 			     in the window — silence is the desired state. -->
-			<div id="error-insights-section" class="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-6 mb-6">
+			<div id="error-insights-section" data-source="haproxy" class="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-6 mb-6">
 				<div class="flex items-center justify-between mb-4">
 					<div>
-						<h3 class="text-xl font-semibold text-gray-800 dark:text-gray-100">Error Insights</h3>
+						<h3 class="text-xl font-semibold text-gray-800 dark:text-gray-100">HAProxy Error Insights</h3>
 						<p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-							Where the 4xx/5xx responses in this window are coming from. Click any row to drill in.
+							Where the 4xx/5xx responses in this window are coming from, as reported by HAProxy logs. Click any row to drill in.
 						</p>
 					</div>
 					<button
@@ -351,6 +359,36 @@ templ History(user *models.User, servers []models.BoxConfig) {
 			height: 24px;
 			pointer-events: none;
 		}
+		/* Source attribution. Used on chart-card titles and KPI cards so the
+		   reader can tell at a glance which collector produced the metric. */
+		.source-tag {
+			display: inline-block;
+			font-size: 0.7rem;
+			font-weight: 600;
+			letter-spacing: 0.02em;
+			text-transform: uppercase;
+			padding: 0.05rem 0.4rem;
+			margin-right: 0.4rem;
+			border-radius: 9999px;
+			background: #eef2ff;
+			color: #4338ca;
+			vertical-align: 0.15em;
+		}
+		.dark .source-tag { background: rgba(99, 102, 241, 0.15); color: #a5b4fc; }
+		.kpi-source-badge {
+			position: absolute;
+			top: 0.5rem;
+			right: 0.5rem;
+			font-size: 0.6rem;
+			font-weight: 600;
+			letter-spacing: 0.02em;
+			text-transform: uppercase;
+			padding: 0.05rem 0.4rem;
+			border-radius: 9999px;
+			background: #eef2ff;
+			color: #4338ca;
+		}
+		.dark .kpi-source-badge { background: rgba(99, 102, 241, 0.15); color: #a5b4fc; }
 
 		/* Error Insights tables */
 		.ei-col h4 {
@@ -794,6 +832,12 @@ templ History(user *models.User, servers []models.BoxConfig) {
 				return;
 			}
 
+			// Capability gating runs before chart rendering so HAProxy
+			// sections are hidden up-front rather than flickering in then
+			// out. Failures here fail open — the rest of the page still
+			// renders the same as before.
+			await applyCapabilities(serverID);
+
 			try {
 				// Fetch stats history
 				const statsResponse = await fetch(`/api/${serverID}/history/stats?hours=${hours}`);
@@ -820,6 +864,38 @@ templ History(user *models.User, servers []models.BoxConfig) {
 
 			} catch (error) {
 				console.error('Failed to load history data:', error);
+			}
+		}
+
+		// applyCapabilities fetches the per-box probe table and toggles
+		// HAProxy-specific UI based on whether the haproxy gear is
+		// available. Host-sourced cards always remain visible. Errors
+		// fail open: the dashboard reverts to "HAProxy assumed present"
+		// rather than locking the user out of cards they may need.
+		async function applyCapabilities(serverID) {
+			let haproxyAvailable = true;
+			try {
+				const res = await fetch('/api/' + serverID + '/capabilities');
+				if (res.ok) {
+					const data = await res.json();
+					const entry = data && data.gears && data.gears.haproxy;
+					if (entry) {
+						haproxyAvailable = entry.status === 'available';
+					}
+				}
+			} catch (err) {
+				console.debug('capabilities fetch failed; assuming haproxy present', err);
+			}
+
+			// Toggle every element tagged data-source="haproxy". Includes
+			// the chart cards plus the Error Insights panel.
+			document.querySelectorAll('[data-source="haproxy"]').forEach(function(el) {
+				el.classList.toggle('hidden', !haproxyAvailable);
+			});
+
+			const banner = document.getElementById('no-haproxy-banner');
+			if (banner) {
+				banner.classList.toggle('hidden', haproxyAvailable);
 			}
 		}
 
@@ -1414,8 +1490,15 @@ templ History(user *models.User, servers []models.BoxConfig) {
 			band.innerHTML = cards.map(function(c) {
 				const valueText = formatKPIValue(c);
 				const deltaHTML = formatKPIDelta(c);
+				// Source badge tells the reader which collector produced the
+				// number. Server emits source/source_label on every card;
+				// legacy responses without these fields render no badge.
+				const sourceBadge = c.source_label
+					? '<span class="kpi-source-badge" title="Reported by ' + escapeAttr(c.source_label) + '">' + escapeHtml(c.source_label) + '</span>'
+					: '';
 				return ''
-					+ '<div class="kpi-card status-' + (c.status || 'good') + '" title="' + escapeAttr(c.description || '') + '">'
+					+ '<div class="kpi-card status-' + (c.status || 'good') + '" data-source="' + escapeAttr(c.source || '') + '" title="' + escapeAttr(c.description || '') + '">'
+					+   sourceBadge
 					+   '<div class="kpi-label">' + escapeHtml(c.label) + '</div>'
 					+   '<div class="kpi-value">' + valueText + '</div>'
 					+   '<div class="kpi-delta-row mt-1">' + deltaHTML + '</div>'

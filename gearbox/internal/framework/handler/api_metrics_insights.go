@@ -57,6 +57,8 @@ type kpiCard struct {
 	Sparkline   []float64 `json:"sparkline"`     // 30 points spanning the current window
 	IsCount     bool      `json:"is_count"`      // hint to UI: render as integer count
 	Description string    `json:"description"`   // tooltip body
+	Source      string    `json:"source"`        // metric source: "haproxy", "host", … (drives the UI badge)
+	SourceLabel string    `json:"source_label"`  // human-readable form ("HAProxy", "Host") for the badge
 }
 
 // APIMetricsSummaryHandler returns the KPI band data for the top of the
@@ -79,17 +81,63 @@ func (h *Handler) APIMetricsSummaryHandler(w http.ResponseWriter, r *http.Reques
 	since, until, label := metricsRangeToTimes(r.URL.Query().Get("range"))
 	prevSince := since.Add(-until.Sub(since))
 
+	// Capability-aware gating: only emit HAProxy KPI cards when the agent
+	// surfaces an available haproxy gear. Hosts without HAProxy still get
+	// host-level cards below. Missing/unknown capabilities fail open
+	// (haproxyAvailable = true) so a flaky agent doesn't strip the band
+	// down to nothing.
+	haproxyAvailable := true
+	if caps, ok := h.getBoxCapabilities(boxID); ok && caps != nil {
+		if entry, present := caps.Entry("haproxy"); present {
+			haproxyAvailable = entry.IsAvailable()
+		}
+	}
+
+	cards := []kpiCard{}
+
+	if haproxyAvailable {
+		haproxyCards, err := h.haproxyKPICards(boxID, since, until, prevSince)
+		if err != nil {
+			h.logger.Error("metrics summary: haproxy KPIs", "error", err)
+			http.Error(w, "Failed to load stats history", http.StatusInternalServerError)
+			return
+		}
+		cards = append(cards, haproxyCards...)
+	}
+
+	hostCards, err := h.hostKPICards(boxID, since, until, prevSince)
+	if err != nil {
+		h.logger.Error("metrics summary: host KPIs", "error", err)
+		// Host KPIs are best-effort: an empty system_metrics_history table
+		// shouldn't blow up the band when HAProxy data is fine. Log and
+		// return whatever HAProxy gave us.
+	} else {
+		cards = append(cards, hostCards...)
+	}
+
+	h.writeJSON(w, map[string]interface{}{
+		"server_id":         boxID,
+		"range":             label,
+		"window_start":      since,
+		"window_end":        until,
+		"prev_window_start": prevSince,
+		"haproxy_available": haproxyAvailable,
+		"cards":             cards,
+	})
+}
+
+// haproxyKPICards returns the HAProxy-sourced KPI cards (requests/min,
+// response time, error rate, 5xx count, active sessions, backend health).
+// Computed from the dashboard's stats_history table — the source-of-truth
+// is HAProxy's own admin socket / stats URL via the agent.
+func (h *Handler) haproxyKPICards(boxID string, since, until, prevSince time.Time) ([]kpiCard, error) {
 	curr, err := h.db.GetStatsHistory(boxID, since, 5000)
 	if err != nil {
-		h.logger.Error("metrics summary: stats history", "error", err)
-		http.Error(w, "Failed to load stats history", http.StatusInternalServerError)
-		return
+		return nil, err
 	}
 	prevRaw, err := h.db.GetStatsHistory(boxID, prevSince, 5000)
 	if err != nil {
-		h.logger.Error("metrics summary: prev stats history", "error", err)
-		http.Error(w, "Failed to load stats history", http.StatusInternalServerError)
-		return
+		return nil, err
 	}
 	// GetStatsHistory takes a lower bound only, so prevRaw spans both the
 	// previous AND current windows. Trim to entries strictly before `since`
@@ -120,7 +168,9 @@ func (h *Handler) APIMetricsSummaryHandler(w http.ResponseWriter, r *http.Reques
 		DeltaPct:    pctDelta(currReqRate, prevReqRate),
 		Status:      "good",
 		Sparkline:   statSparkline(curr, func(s database.StatsSnapshot) float64 { return float64(s.TotalRequests) }, 30),
-		Description: "Total HTTP requests served per minute, averaged across the window.",
+		Description: "Total HTTP requests served per minute, averaged across the window. Reported by HAProxy stats.",
+		Source:      sourceHAProxy,
+		SourceLabel: sourceLabelHAProxy,
 	})
 
 	currRT := avgPositiveStat(curr, func(s database.StatsSnapshot) float64 { return float64(s.AvgResponseTime) })
@@ -142,7 +192,9 @@ func (h *Handler) APIMetricsSummaryHandler(w http.ResponseWriter, r *http.Reques
 		DeltaPct:    pctDelta(currRT, prevRT),
 		Status:      rtStatus,
 		Sparkline:   statSparkline(curr, func(s database.StatsSnapshot) float64 { return float64(s.AvgResponseTime) }, 30),
-		Description: "Mean backend response time across all backends.",
+		Description: "Mean backend response time across all backends. Reported by HAProxy stats.",
+		Source:      sourceHAProxy,
+		SourceLabel: sourceLabelHAProxy,
 	})
 
 	curr5xx, curr4xx, currTotalResp := h.errorTotals(boxID, since, until)
@@ -167,6 +219,8 @@ func (h *Handler) APIMetricsSummaryHandler(w http.ResponseWriter, r *http.Reques
 		Status:      errStatus,
 		Sparkline:   h.errorRateSparkline(boxID, since, until, 30),
 		Description: "Percentage of requests with 4xx or 5xx status. Click the Error Insights panel below to see which backend / source is responsible.",
+		Source:      sourceHAProxy,
+		SourceLabel: sourceLabelHAProxy,
 	})
 
 	cards = append(cards, kpiCard{
@@ -180,7 +234,9 @@ func (h *Handler) APIMetricsSummaryHandler(w http.ResponseWriter, r *http.Reques
 		DeltaPct:    pctDelta(float64(curr5xx), float64(prev5xx)),
 		Status:      statusFromCount(curr5xx, 5, 50),
 		Sparkline:   h.errorCountSparkline(boxID, since, until, 30),
-		Description: "Total HTTP 5xx server errors in this window.",
+		Description: "Total HTTP 5xx server errors in this window. Reported by HAProxy stats.",
+		Source:      sourceHAProxy,
+		SourceLabel: sourceLabelHAProxy,
 	})
 
 	currSess := lastStat(curr, func(s database.StatsSnapshot) float64 { return float64(s.TotalSessions) })
@@ -196,7 +252,9 @@ func (h *Handler) APIMetricsSummaryHandler(w http.ResponseWriter, r *http.Reques
 		DeltaPct:    pctDelta(currSess, prevSess),
 		Status:      "good",
 		Sparkline:   statSparkline(curr, func(s database.StatsSnapshot) float64 { return float64(s.TotalSessions) }, 30),
-		Description: "Current concurrent sessions across all backends.",
+		Description: "Current concurrent sessions across all backends. Reported by HAProxy stats.",
+		Source:      sourceHAProxy,
+		SourceLabel: sourceLabelHAProxy,
 	})
 
 	currHealthy := lastStat(curr, func(s database.StatsSnapshot) float64 { return float64(s.HealthyServers) })
@@ -221,18 +279,119 @@ func (h *Handler) APIMetricsSummaryHandler(w http.ResponseWriter, r *http.Reques
 		IsCount:     true,
 		Status:      healthStatus,
 		Sparkline:   statSparkline(curr, func(s database.StatsSnapshot) float64 { return float64(s.HealthyServers) }, 30),
-		Description: "Live healthy backend servers out of total configured.",
+		Description: "Live healthy backend servers out of total configured. Reported by HAProxy stats.",
+		Source:      sourceHAProxy,
+		SourceLabel: sourceLabelHAProxy,
 	})
 
-	h.writeJSON(w, map[string]interface{}{
-		"server_id":     boxID,
-		"range":         label,
-		"window_start":  since,
-		"window_end":    until,
-		"prev_window_start": prevSince,
-		"cards":         cards,
-	})
+	return cards, nil
 }
+
+// hostKPICards returns the host-level KPI cards (memory, disk, load,
+// network). Computed from the dashboard's system_metrics_history table.
+// Host metrics are produced by the agent on every box, regardless of
+// whether HAProxy or any other proxy is installed — so these cards always
+// render when data is available. CPU%, uptime, and failed-systemd
+// counters aren't persisted in system_metrics_history today; they'll
+// follow when the collector starts saving them.
+func (h *Handler) hostKPICards(boxID string, since, until, prevSince time.Time) ([]kpiCard, error) {
+	curr, err := h.db.GetSystemMetricsHistory(boxID, since, 5000)
+	if err != nil {
+		return nil, err
+	}
+	prevRaw, err := h.db.GetSystemMetricsHistory(boxID, prevSince, 5000)
+	if err != nil {
+		return nil, err
+	}
+	prev := prevRaw[:0]
+	for _, s := range prevRaw {
+		if s.CollectedAt.Before(since) {
+			prev = append(prev, s)
+		}
+	}
+
+	cards := []kpiCard{}
+
+	// Memory %
+	currMem := avgPositiveSysField(curr, func(s database.SystemMetricsSnapshot) float64 { return s.MemoryUsagePercent })
+	prevMem := avgPositiveSysField(prev, func(s database.SystemMetricsSnapshot) float64 { return s.MemoryUsagePercent })
+	memStatus := "good"
+	if currMem >= 80 {
+		memStatus = "warn"
+	}
+	if currMem >= 95 {
+		memStatus = "bad"
+	}
+	cards = append(cards, kpiCard{
+		Key:         "memory",
+		Label:       "Memory",
+		Value:       currMem,
+		Unit:        "%",
+		Decimals:    1,
+		PrevValue:   prevMem,
+		DeltaPct:    pctDelta(currMem, prevMem),
+		Status:      memStatus,
+		Sparkline:   sysSparkline(curr, func(s database.SystemMetricsSnapshot) float64 { return s.MemoryUsagePercent }, 30),
+		Description: "Average memory usage in this window. Reported by the agent's host collector.",
+		Source:      sourceHost,
+		SourceLabel: sourceLabelHost,
+	})
+
+	// Disk %
+	currDisk := avgPositiveSysField(curr, func(s database.SystemMetricsSnapshot) float64 { return s.DiskUsagePercent })
+	prevDisk := avgPositiveSysField(prev, func(s database.SystemMetricsSnapshot) float64 { return s.DiskUsagePercent })
+	diskStatus := "good"
+	if currDisk >= 80 {
+		diskStatus = "warn"
+	}
+	if currDisk >= 95 {
+		diskStatus = "bad"
+	}
+	cards = append(cards, kpiCard{
+		Key:         "disk",
+		Label:       "Disk",
+		Value:       currDisk,
+		Unit:        "%",
+		Decimals:    1,
+		PrevValue:   prevDisk,
+		DeltaPct:    pctDelta(currDisk, prevDisk),
+		Status:      diskStatus,
+		Sparkline:   sysSparkline(curr, func(s database.SystemMetricsSnapshot) float64 { return s.DiskUsagePercent }, 30),
+		Description: "Average disk usage on the root filesystem. Reported by the agent's host collector.",
+		Source:      sourceHost,
+		SourceLabel: sourceLabelHost,
+	})
+
+	// Load average (1 min)
+	currLoad := avgPositiveSysField(curr, func(s database.SystemMetricsSnapshot) float64 { return s.LoadAverage1 })
+	prevLoad := avgPositiveSysField(prev, func(s database.SystemMetricsSnapshot) float64 { return s.LoadAverage1 })
+	cards = append(cards, kpiCard{
+		Key:         "load_1m",
+		Label:       "Load (1m)",
+		Value:       currLoad,
+		Unit:        "",
+		Decimals:    2,
+		PrevValue:   prevLoad,
+		DeltaPct:    pctDelta(currLoad, prevLoad),
+		Status:      "good",
+		Sparkline:   sysSparkline(curr, func(s database.SystemMetricsSnapshot) float64 { return s.LoadAverage1 }, 30),
+		Description: "1-minute load average across the window. Reported by the agent's host collector.",
+		Source:      sourceHost,
+		SourceLabel: sourceLabelHost,
+	})
+
+	return cards, nil
+}
+
+// Source identifiers + display labels. Defined as constants so handlers
+// and templates stay aligned and a typo doesn't silently drop a card from
+// the filtered view.
+const (
+	sourceHAProxy      = "haproxy"
+	sourceLabelHAProxy = "HAProxy"
+	sourceHost         = "host"
+	sourceLabelHost    = "Host"
+)
 
 // APIMetricsErrorBreakdownHandler powers the "Error Insights" panel: a
 // three-column view of top-N backends, source IPs, and countries

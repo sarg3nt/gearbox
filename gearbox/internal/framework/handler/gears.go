@@ -105,19 +105,13 @@ const capabilitiesFetchTimeout = 3 * time.Second
 // agent is unreachable or running a version without the capabilities
 // endpoint, we surface the full gear list so users aren't locked out of
 // configuring boxes mid-upgrade. Non-mapped gears are always retained.
+//
+// Uses Handler.capabilities so repeated renders within the cache TTL share
+// one upstream fetch instead of one round-trip per render.
 func (h *Handler) filterGearsByAgentCapabilities(boxID string, gears []database.Gear) []database.Gear {
-	serverConfig, exists := h.getServerConfig(boxID)
-	if !exists || !serverConfig.UsesAgentAPI() {
-		return gears
-	}
-
-	// Short timeout — this call sits on the critical path of every Gears
-	// page render, so a 30s default would freeze the UI when the box is
-	// down. Fail-open if it times out.
-	client := agent.NewClientWithTimeout(serverConfig.AgentURL, serverConfig.APIKey, capabilitiesFetchTimeout)
-	caps, err := client.GetCapabilities()
-	if err != nil {
-		h.logger.Debug("capabilities fetch failed; showing all gears", "box_id", boxID, "error", err)
+	caps, ok := h.getBoxCapabilities(boxID)
+	if !ok {
+		// Either not agent-backed, or fetch failed. Fail-open.
 		return gears
 	}
 
@@ -128,7 +122,7 @@ func (h *Handler) filterGearsByAgentCapabilities(boxID string, gears []database.
 			out = append(out, g)
 			continue
 		}
-		entry, present := caps.Gears[agentName]
+		entry, present := caps.Entry(agentName)
 		if !present {
 			// Agent didn't report this gear at all — keep it (older agent
 			// or gear not yet probe-aware).

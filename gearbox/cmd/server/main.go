@@ -688,6 +688,11 @@ func main() {
 			r.Get("/{boxID}/metrics/backend/{backendName}/details", h.APIMetricsBackendDetailsHandler)
 			r.Get("/{boxID}/metrics/log-errors", h.APIMetricsLogErrorsHandler)
 
+			// Per-box capability manifest — exposes which agent gears probed
+			// available so the metrics gear (and future source-aware UI) can
+			// hide cards/KPIs that don't apply to this host.
+			r.Get("/{boxID}/capabilities", h.APIBoxCapabilitiesHandler)
+
 			// Disabled entities management
 			r.Get("/{boxID}/disabled-entities", h.APIDisabledEntitiesHandler)
 			r.Post("/{boxID}/disable-entity", h.APIDisableEntityHandler)
