@@ -5,18 +5,19 @@ import (
 	"strings"
 )
 
-// ContainerDiagram displays all containers in a backend with their relationships
+// ContainerDiagram renders a multi-container backend's topology — a stack
+// of boxes, blue for the container HAProxy routes to and grey for siblings
+// that share its network or support it. Intended only for backends with
+// real topology to show (VPN gateway or multi-container service); single-
+// container backends render their IP inline in the card header instead
+// and do not call this component. See BackendCard's `len(containers) > 1`
+// guard.
 templ ContainerDiagram(containers []models.Container, serverAddress string) {
 	if len(containers) > 0 {
 		<div class="mt-3">
 			if hasVPNGatewayPattern(containers) {
-				<!-- VPN Gateway Pattern: Stacked visualization -->
 				@vpnGatewayDiagram(containers, serverAddress)
-			} else if len(containers) == 1 {
-				<!-- Single Container: Taller box with IP on second line -->
-				@singleContainerDiagram(containers[0], serverAddress)
 			} else {
-				<!-- Multi Container Pattern: Stacked visualization -->
 				@simpleContainerDiagram(containers, serverAddress)
 			}
 		</div>
@@ -55,20 +56,6 @@ func getNestedContainers(containers []models.Container) []models.Container {
 		}
 	}
 	return nested
-}
-
-// singleContainerDiagram renders a single container with IP on second line
-templ singleContainerDiagram(container models.Container, serverAddress string) {
-	<div class="px-4 py-3 bg-blue-100 dark:bg-blue-900 border-2 border-blue-500 rounded-lg">
-		<div class="text-sm font-semibold text-blue-900 dark:text-blue-100">
-			{ container.Name }
-		</div>
-		if serverAddress != "" {
-			<div class="text-xs text-blue-700 dark:text-blue-300 font-mono mt-1">
-				{ serverAddress }
-			</div>
-		}
-	</div>
 }
 
 // vpnGatewayDiagram renders the VPN gateway pattern as stacked rows
