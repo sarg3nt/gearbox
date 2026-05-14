@@ -1866,9 +1866,22 @@ templ History(user *models.User, servers []models.BoxConfig) {
 		}
 
 		// escapeJSArg escapes a string for safe inclusion as a single-quoted
-		// JS argument inside an HTML onclick attribute.
+		// JS argument inside a double-quoted HTML attribute, e.g.
+		//   <div onclick="openDrillDown('source', 'VALUE')">
+		// It must therefore neutralise BOTH the JS string context (\\ and ')
+		// AND the HTML attribute context (", <, >, & — otherwise a value
+		// containing `"` would break out of the attribute and a `<` could
+		// start a new tag). Backend names come from operator-controlled
+		// HAProxy config, but source IPs and country codes flow from
+		// agent-collected data, so defence-in-depth is warranted.
 		function escapeJSArg(s) {
-			return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+			return String(s)
+				.replace(/\\/g, '\\\\')
+				.replace(/'/g, "\\'")
+				.replace(/&/g, '&amp;')
+				.replace(/"/g, '&quot;')
+				.replace(/</g, '&lt;')
+				.replace(/>/g, '&gt;');
 		}
 
 		// Move page header content to main header

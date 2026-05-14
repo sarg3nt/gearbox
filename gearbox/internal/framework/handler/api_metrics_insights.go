@@ -85,23 +85,26 @@ func (h *Handler) APIMetricsSummaryHandler(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "Failed to load stats history", http.StatusInternalServerError)
 		return
 	}
-	prev, err := h.db.GetStatsHistory(boxID, prevSince, 5000)
+	prevRaw, err := h.db.GetStatsHistory(boxID, prevSince, 5000)
 	if err != nil {
 		h.logger.Error("metrics summary: prev stats history", "error", err)
 		http.Error(w, "Failed to load stats history", http.StatusInternalServerError)
 		return
 	}
-	// prev contains both windows; trim to "previous-window only".
-	prevOnly := make([]int, 0, len(prev))
-	for i, s := range prev {
+	// GetStatsHistory takes a lower bound only, so prevRaw spans both the
+	// previous AND current windows. Trim to entries strictly before `since`
+	// so the prev-window aggregates (max counter, avg response time, …)
+	// reflect the prior window in isolation — otherwise every delta vs.
+	// prior is ~0% because we'd be comparing each window to its own union
+	// with the current window.
+	prev := prevRaw[:0]
+	for _, s := range prevRaw {
 		if s.CollectedAt.Before(since) {
-			prevOnly = append(prevOnly, i)
+			prev = append(prev, s)
 		}
 	}
 
 	cards := []kpiCard{}
-
-	_ = prevOnly
 
 	currReqMax := maxStatField(curr, func(s database.StatsSnapshot) float64 { return float64(s.TotalRequests) })
 	prevReqMax := maxStatField(prev, func(s database.StatsSnapshot) float64 { return float64(s.TotalRequests) })
@@ -434,8 +437,18 @@ func (h *Handler) APIMetricsLogErrorsHandler(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "Forbidden: insufficient permissions to view metrics", http.StatusForbidden)
 		return
 	}
+	// Lack of `logs:view` is the only "you're allowed on the metrics page,
+	// but this one sub-panel needs more permission" case we have. Return a
+	// soft envelope rather than 403 so the drawer can render the documented
+	// "logs unavailable" hint instead of the generic "fetch failed" error.
 	if !h.authManager.HasPermission(r, "logs", "view") {
-		http.Error(w, "Forbidden: log access required for log correlation", http.StatusForbidden)
+		h.writeJSON(w, map[string]interface{}{
+			"server_id":  chi.URLParam(r, "boxID"),
+			"available":  false,
+			"reason":     "Logs permission required to correlate access-log lines with metrics.",
+			"matchCount": 0,
+			"matches":    []haproxyLogLine{},
+		})
 		return
 	}
 
