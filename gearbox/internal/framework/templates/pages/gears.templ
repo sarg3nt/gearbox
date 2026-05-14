@@ -17,18 +17,6 @@ import (
 // gear list so toggling them isn't confused with the box selector.
 templ GearsPage(user *models.User, servers []models.BoxConfig, currentServerID string, systemGears []database.Gear, integrations []database.Gear, successMsg, errorMsg string) {
 	@layouts.Base("Gears", user, "/settings") {
-		<!-- Hidden container for page header content. Title + box selector
-		     live in the global header breadcrumb + chip. -->
-		<div id="page-header-source" class="hidden">
-			<div class="flex-1"></div>
-			<a href="/settings" class="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center">
-				<svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
-				</svg>
-				Back to Settings
-			</a>
-		</div>
-
 		<div class="max-w-4xl mx-auto px-4 py-8">
 			<input type="hidden" id="current-server-id" value={ currentServerID }/>
 
@@ -242,13 +230,6 @@ templ GearDetailPage(user *models.User, serverID string, serverName string, inte
 					{ integration.DisplayName }
 				</h2>
 			</div>
-			<div class="flex-1"></div>
-			<a href={ templ.SafeURL("/settings/gears?server=" + serverID) } class="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center">
-				<svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
-				</svg>
-				Back to Gears
-			</a>
 		</div>
 
 		<div class="max-w-4xl mx-auto px-4 py-8">

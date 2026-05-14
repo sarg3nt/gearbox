@@ -50,6 +50,10 @@ func gearLabelForPath(path string) string {
 		return "Alerts"
 	case path == "/os-updates" || strings.HasPrefix(path, "/os-updates/"):
 		return "OS Updates"
+	case path == "/config/firewall" || strings.HasPrefix(path, "/config/firewall/"):
+		return "Firewall Configuration"
+	case path == "/config/haproxy" || strings.HasPrefix(path, "/config/haproxy/"):
+		return "HAProxy Configuration"
 	case path == "/settings" || strings.HasPrefix(path, "/settings/"):
 		return "Settings"
 	case path == "/welcome":

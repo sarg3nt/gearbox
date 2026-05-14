@@ -1,15 +1,54 @@
 package pages
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/sarg3nt/gearbox/internal/framework/agent"
 	"github.com/sarg3nt/gearbox/internal/framework/database"
 	"github.com/sarg3nt/gearbox/internal/framework/models"
 )
+
+// canEditValue returns "1" / "0" — used to ferry a Go bool into a hidden
+// <input> the JS reads, since templ doesn't interpolate inside <script>.
+func canEditValue(canEdit bool) string {
+	if canEdit {
+		return "1"
+	}
+	return "0"
+}
+
+// sectionsJSON serializes the parsed nftables section list (tables + chains
+// with line numbers) so the editor JS can render the left-rail nav without
+// re-parsing the config client-side. Embedded into a hidden `<textarea>` (NOT
+// a `<script type="application/json">`) so templ HTML-escapes the body the
+// same way it does for any other interpolated text node — the JS reads
+// `.value` off the textarea and `JSON.parse`s it.
+func sectionsJSON(sections []agent.ConfigSection) string {
+	if len(sections) == 0 {
+		return "[]"
+	}
+	b, err := json.Marshal(sections)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
+}
+
+// shortSHA truncates a hex digest to the first 12 characters for compact
+// display in the page header. Safe on short / empty input — returns the
+// original string unchanged if it's already shorter than the target.
+func shortSHA(s string) string {
+	const n = 12
+	if len(s) <= n {
+		return s
+	}
+	return s[:n]
+}
 
 // backendBelongsToFrontend checks if a backend is associated with a frontend via metadata.
 func backendBelongsToFrontend(backendName, frontendName string, metadata *models.Metadata) bool {
