@@ -682,6 +682,12 @@ func main() {
 			r.Get("/{boxID}/history/backend/{backendName}", h.APIBackendHistoryHandler)
 			r.Get("/{boxID}/incidents", h.APIIncidentsHandler)
 
+			// Metrics gear v2 — insights & drill-down endpoints
+			r.Get("/{boxID}/metrics/summary", h.APIMetricsSummaryHandler)
+			r.Get("/{boxID}/metrics/error-breakdown", h.APIMetricsErrorBreakdownHandler)
+			r.Get("/{boxID}/metrics/backend/{backendName}/details", h.APIMetricsBackendDetailsHandler)
+			r.Get("/{boxID}/metrics/log-errors", h.APIMetricsLogErrorsHandler)
+
 			// Disabled entities management
 			r.Get("/{boxID}/disabled-entities", h.APIDisabledEntitiesHandler)
 			r.Post("/{boxID}/disable-entity", h.APIDisableEntityHandler)
