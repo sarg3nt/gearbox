@@ -139,6 +139,30 @@
 	text-decoration: underline;
 }
 
+/* Variant used when the tooltip describes a validation error rather than
+ * a keyword. Red accent on the border + title, slightly wider for room
+ * to show both the humanized + raw nft message. */
+.firewall-keyword-tooltip.firewall-keyword-tooltip-error {
+	border-color: #b91c1c;
+	box-shadow: 0 12px 28px rgba(127, 29, 29, 0.55);
+	max-width: 420px;
+}
+.firewall-keyword-tooltip.firewall-keyword-tooltip-error .firewall-keyword-tooltip-title {
+	color: #fca5a5;
+}
+.firewall-keyword-tooltip-raw {
+	margin: 8px 0 0;
+	padding: 6px 8px;
+	background: #1e1e1e;
+	border: 1px dashed #475569;
+	border-radius: 4px;
+	color: #94a3b8;
+	font-size: 11px;
+	white-space: pre-wrap;
+	max-height: 120px;
+	overflow: auto;
+}
+
 /* ---- Hint dropdown override ----------------------------------------- */
 .CodeMirror-hints {
 	background: #1e293b;

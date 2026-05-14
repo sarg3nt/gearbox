@@ -78,29 +78,20 @@ templ FirewallConfigPage(user *models.User, server *database.BoxDB, config *agen
 		     and runs flush to the edges (same pattern as the log viewer). -->
 		<div id="firewall-editor-shell" class="-mx-6 -mt-6 bg-[#0d0d0d] flex flex-col" style="min-height: calc(100vh - 55px);">
 			<div class="flex flex-1 min-h-0">
-				<!-- Left rail: section nav + error panel -->
+				<!-- Left rail: section nav. Validation feedback lives inline
+				     on the offending lines (red wavy underline + hover popup);
+				     save failures show in a dedicated modal. -->
 				<aside class="w-64 flex-shrink-0 border-r border-gray-800 bg-[#0f0f0f] flex flex-col overflow-hidden">
-					<div class="px-4 py-3 border-b border-gray-800">
+					<div class="px-4 py-3 border-b border-gray-800 flex items-center justify-between">
 						<h3 class="text-xs font-semibold uppercase tracking-wider text-gray-400">Tables &amp; Chains</h3>
+						<!-- Tiny status pill — green dot = valid, red dot = errors,
+						     spinner = validation in flight. Toggled by editor.js. -->
+						<span id="firewall-validate-status" class="flex items-center gap-1 text-[10px] uppercase tracking-wider text-gray-500" title="Validation status">
+							<span id="firewall-validate-status-dot" class="w-1.5 h-1.5 rounded-full bg-gray-600"></span>
+							<span id="firewall-validate-status-text">idle</span>
+						</span>
 					</div>
 					<nav id="firewall-section-nav" class="flex-1 overflow-y-auto px-2 py-2 space-y-0.5 text-sm"></nav>
-					<!-- Error panel — populated by the editor JS when validation fails. -->
-					<section id="firewall-error-panel" class="hidden border-t border-red-900/60 bg-red-950/30 max-h-72 overflow-y-auto">
-						<header class="px-4 py-2 flex items-center justify-between sticky top-0 bg-red-950/80 backdrop-blur">
-							<h3 class="text-xs font-semibold uppercase tracking-wider text-red-300 flex items-center gap-1.5">
-								<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-								</svg>
-								<span>Validation</span>
-							</h3>
-							<button id="firewall-error-close" type="button" class="text-red-300/60 hover:text-red-200" title="Dismiss">
-								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-								</svg>
-							</button>
-						</header>
-						<pre id="firewall-error-text" class="px-4 py-2 text-xs font-mono whitespace-pre-wrap text-red-200 leading-relaxed"></pre>
-					</section>
 				</aside>
 
 				<!-- Editor pane. CodeMirror mounts inside #firewall-editor. -->
@@ -132,6 +123,35 @@ templ FirewallConfigPage(user *models.User, server *database.BoxDB, config *agen
 					}
 				</div>
 			}
+		</div>
+
+		<!-- Validation Error Modal — shown when Save & Apply runs into errors.
+		     Real-time errors stay inline on the editor lines; this modal is
+		     specifically for the "you tried to save invalid config" case. -->
+		<div id="firewall-error-modal" class="hidden fixed inset-0 z-50 overflow-y-auto">
+			<div class="flex items-center justify-center min-h-screen px-4">
+				<div class="fixed inset-0 bg-black bg-opacity-50" data-firewall-error-dismiss></div>
+				<div class="relative bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-2xl w-full">
+					<div class="bg-red-600 dark:bg-red-700 rounded-t-lg px-6 py-4 flex items-center gap-3">
+						<svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+						</svg>
+						<div>
+							<h3 class="text-lg font-bold text-white">Configuration didn't apply</h3>
+							<p id="firewall-error-modal-summary" class="text-sm text-red-100"></p>
+						</div>
+					</div>
+					<div class="p-6 space-y-3">
+						<p class="text-sm text-gray-700 dark:text-gray-200">nftables refused the configuration. The offending lines are underlined in the editor — hover them for an explanation. The previous valid ruleset is still active.</p>
+						<pre id="firewall-error-modal-output" class="font-mono text-xs whitespace-pre-wrap text-gray-200 bg-[#0d0d0d] rounded-lg p-4 max-h-80 overflow-auto"></pre>
+					</div>
+					<div class="px-6 py-4 bg-gray-50 dark:bg-slate-700 rounded-b-lg flex justify-end">
+						<button data-firewall-error-dismiss type="button" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">
+							Got it
+						</button>
+					</div>
+				</div>
+			</div>
 		</div>
 
 		<!-- Snippets Modal — curated nftables patterns the user can insert. -->

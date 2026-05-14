@@ -13,10 +13,14 @@
  *   #firewall-sections-data   <script type=application/json>, parsed sections
  *   #firewall-editor          mount point for the CodeMirror instance
  *   #firewall-section-nav     left-rail container for the tables/chains list
- *   #firewall-error-panel     left-rail collapsible for validation failures
+ *   #firewall-validate-status / #firewall-validate-status-dot / -status-text
+ *                             tiny live status pill (idle/checking/valid/errors)
  *   #firewall-validate-btn / #firewall-save-btn / #firewall-backups-btn /
- *     #firewall-wrap-btn     toolbar buttons hoisted to the page header
+ *     #firewall-snippets-btn / #firewall-wrap-btn
+ *                             toolbar buttons hoisted to the page header
  *   #firewall-backups-modal   modal scaffold for the backups list
+ *   #firewall-snippets-modal  modal scaffold for the snippet catalog
+ *   #firewall-error-modal     modal shown when Save & Apply hits validation errors
  */
 (function () {
 	'use strict';
@@ -30,6 +34,21 @@
 	let canEdit = false;
 	let sections = [];
 	let lintMarkers = [];
+
+	// Real-time validation state.
+	//
+	// `validationErrors` holds the most recent parsed errors from nft -c -f
+	// (each with line/colStart/colEnd/message). The hover handler scans
+	// this list to look up the message for a given cursor position so we
+	// don't have to encode the message into the DOM.
+	//
+	// `validationDebounceTimer` is the pending setTimeout id for the
+	// debounced edit→validate trigger. `validationInFlight` lets us drop
+	// stale responses if a newer edit kicked off a fresher request.
+	let validationErrors = [];
+	let validationDebounceTimer = null;
+	let validationGeneration = 0; // monotonic; bumped each time a validate fires
+	const VALIDATE_DEBOUNCE_MS = 1000;
 
 	function init() {
 		serverID = document.getElementById('firewall-server-id')?.value || '';
@@ -87,11 +106,98 @@
 
 		setupAutocompleteOnType();
 		setupKeywordTooltip();
+		setupRealtimeValidation();
 		renderSectionNav();
 		setupToolbar();
 		setupBackupsModal();
 		setupSnippetsModal();
-		setupErrorPanelDismiss();
+		setupErrorModalDismiss();
+	}
+
+	// --------------------------------------------------------------------
+	// Real-time validation — fire `nft -c -f` (via the dashboard) after the
+	// user pauses typing. 1s debounce so a fast typist isn't slamming the
+	// agent. The explicit Validate button still works as a hard re-check
+	// and toasts on success; real-time updates the inline markers silently.
+	// --------------------------------------------------------------------
+	function setupRealtimeValidation() {
+		if (!cm) return;
+		cm.on('change', function () {
+			setValidateStatus('pending');
+			if (validationDebounceTimer) clearTimeout(validationDebounceTimer);
+			validationDebounceTimer = setTimeout(runRealtimeValidate, VALIDATE_DEBOUNCE_MS);
+		});
+	}
+
+	async function runRealtimeValidate() {
+		if (!cm) return;
+		const gen = ++validationGeneration;
+		const content = cm.getValue();
+		setValidateStatus('checking');
+		try {
+			const response = await fetch(`/api/${serverID}/firewall/config/validate`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ content: content, dry_run: true }),
+			});
+			// If a newer edit has already kicked off a fresher request,
+			// drop this response — the next one will land soon.
+			if (gen !== validationGeneration) return;
+			const data = await response.json();
+			if (data.success) {
+				applyValidationResult([]);
+				setValidateStatus('valid');
+			} else {
+				const errs = parseNftErrorLines(data.validation_output || data.message || '');
+				applyValidationResult(errs);
+				setValidateStatus(errs.length > 0 ? 'invalid' : 'unknown');
+			}
+		} catch (_err) {
+			// Network/transport error — leave existing markers, set status
+			// to "unknown" so the user knows we couldn't reach the agent.
+			if (gen !== validationGeneration) return;
+			setValidateStatus('unknown');
+		}
+	}
+
+	function setValidateStatus(state) {
+		const dot = document.getElementById('firewall-validate-status-dot');
+		const text = document.getElementById('firewall-validate-status-text');
+		const wrap = document.getElementById('firewall-validate-status');
+		if (!dot || !text || !wrap) return;
+		// Strip every state class then apply the new one.
+		dot.className = 'w-1.5 h-1.5 rounded-full';
+		switch (state) {
+			case 'pending':
+				dot.classList.add('bg-gray-500');
+				text.textContent = 'pending';
+				wrap.title = 'Waiting for you to pause typing…';
+				break;
+			case 'checking':
+				dot.classList.add('bg-blue-400', 'animate-pulse');
+				text.textContent = 'checking';
+				wrap.title = 'Running nft -c -f …';
+				break;
+			case 'valid':
+				dot.classList.add('bg-green-500');
+				text.textContent = 'valid';
+				wrap.title = 'Last validation passed';
+				break;
+			case 'invalid':
+				dot.classList.add('bg-red-500');
+				text.textContent = 'errors';
+				wrap.title = 'Hover the underlined lines for details';
+				break;
+			case 'unknown':
+				dot.classList.add('bg-yellow-500');
+				text.textContent = '—';
+				wrap.title = 'Validation unavailable';
+				break;
+			default:
+				dot.classList.add('bg-gray-600');
+				text.textContent = 'idle';
+				wrap.title = '';
+		}
 	}
 
 	// --------------------------------------------------------------------
@@ -209,13 +315,21 @@
 	}
 
 	// --------------------------------------------------------------------
-	// Validate — sends the current buffer to the agent (via dashboard)
-	// with dry_run=true. Toasts on success, surfaces errors in the
-	// left-rail error panel + as inline lint markers.
+	// Explicit Validate button — same wire as the real-time check but
+	// gives a toast on success (real-time updates are silent so they
+	// don't nag while the user is typing). Errors land as inline markers
+	// just like the real-time path.
 	// --------------------------------------------------------------------
 	async function validateConfig() {
 		if (!cm) return;
 		const content = cm.getValue();
+		// Cancel any in-flight debounce so we don't double-validate.
+		if (validationDebounceTimer) {
+			clearTimeout(validationDebounceTimer);
+			validationDebounceTimer = null;
+		}
+		const gen = ++validationGeneration;
+		setValidateStatus('checking');
 
 		try {
 			const response = await fetch(`/api/${serverID}/firewall/config/validate`, {
@@ -223,23 +337,36 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ content: content, dry_run: true }),
 			});
+			if (gen !== validationGeneration) return;
 			const data = await response.json();
 			if (data.success) {
-				clearValidationErrors();
+				applyValidationResult([]);
+				setValidateStatus('valid');
 				if (window.showToast) {
 					window.showToast('Configuration is valid', 'success', 3000);
 				}
 			} else {
-				showValidationErrors(data.validation_output || data.message || 'Unknown validation error');
+				const errs = parseNftErrorLines(data.validation_output || data.message || '');
+				applyValidationResult(errs);
+				setValidateStatus(errs.length > 0 ? 'invalid' : 'unknown');
+				if (errs.length === 0 && window.showToast) {
+					// Agent returned success:false but no parseable lines —
+					// surface the raw message as a toast so the user sees it.
+					window.showToast(data.message || 'Validation failed', 'error', 6000);
+				}
 			}
 		} catch (err) {
-			showValidationErrors('Validation request failed: ' + err.message);
+			setValidateStatus('unknown');
+			if (window.showToast) {
+				window.showToast('Validation request failed: ' + err.message, 'error', 5000);
+			}
 		}
 	}
 
 	// --------------------------------------------------------------------
-	// Save & Apply — POSTs the buffer with dry_run=false. Uses the same
-	// error-display path as Validate when the agent rejects the config.
+	// Save & Apply — POSTs the buffer with dry_run=false. Success → toast
+	// + SHA refresh. Failure → an error modal with the validator output
+	// AND inline markers so the user can navigate the bad lines.
 	// --------------------------------------------------------------------
 	async function saveConfig() {
 		if (!cm || !canEdit) return;
@@ -269,56 +396,68 @@
 				currentSHA = data.new_sha256 || currentSHA;
 				const sha = document.getElementById('firewall-config-sha');
 				if (sha) sha.value = currentSHA;
-				clearValidationErrors();
+				applyValidationResult([]);
+				setValidateStatus('valid');
 				if (window.showToast) {
 					window.showToast('Configuration saved and applied', 'success', 3000);
 				}
 			} else {
-				const msg = data.validation_output || data.message || 'Save failed';
-				showValidationErrors(msg);
-				if (window.showToast) {
-					window.showToast('Save failed — see validation panel', 'error', 5000);
-				}
+				const raw = data.validation_output || data.message || 'nftables refused the configuration.';
+				const errs = parseNftErrorLines(raw);
+				applyValidationResult(errs);
+				setValidateStatus(errs.length > 0 ? 'invalid' : 'unknown');
+				showErrorModal(raw, errs);
 			}
 		} catch (err) {
-			showValidationErrors('Save request failed: ' + err.message);
+			showErrorModal('Save request failed: ' + err.message, []);
 		}
 	}
 
 	// --------------------------------------------------------------------
-	// Validation error display — populates the left-rail panel AND adds
-	// inline gutter markers for each line nft pointed at.
+	// Validation result plumbing — single entry point for both real-time
+	// and explicit validate / save flows. Updates the cached error list
+	// (which the hover handler reads) and rewrites the inline markers.
 	// --------------------------------------------------------------------
-	function showValidationErrors(text) {
-		const panel = document.getElementById('firewall-error-panel');
-		const out = document.getElementById('firewall-error-text');
-		if (out) out.textContent = text;
-		if (panel) panel.classList.remove('hidden');
-		applyLintMarkers(parseNftErrorLines(text));
+	function applyValidationResult(items) {
+		validationErrors = items || [];
+		applyLintMarkers(validationErrors);
 	}
 
-	function clearValidationErrors() {
-		const panel = document.getElementById('firewall-error-panel');
-		if (panel) panel.classList.add('hidden');
-		applyLintMarkers([]);
-	}
-
-	function setupErrorPanelDismiss() {
-		const close = document.getElementById('firewall-error-close');
-		if (close) {
-			close.addEventListener('click', function () {
-				const panel = document.getElementById('firewall-error-panel');
-				if (panel) panel.classList.add('hidden');
-				// Keep gutter markers so the user can still see where the
-				// errors were after dismissing the text panel.
-			});
+	// --------------------------------------------------------------------
+	// Error modal (Save & Apply failure) — populates and shows the modal
+	// scaffold rendered by firewall_config.templ.
+	// --------------------------------------------------------------------
+	function showErrorModal(rawOutput, errs) {
+		const modal = document.getElementById('firewall-error-modal');
+		const summary = document.getElementById('firewall-error-modal-summary');
+		const output = document.getElementById('firewall-error-modal-output');
+		if (!modal || !summary || !output) return;
+		if (errs && errs.length > 0) {
+			summary.textContent = errs.length === 1
+				? errs[0].humanized || errs[0].message
+				: errs.length + ' error' + (errs.length === 1 ? '' : 's') + ' — hover the underlined lines for details.';
+		} else {
+			summary.textContent = '';
 		}
+		output.textContent = rawOutput;
+		modal.classList.remove('hidden');
+	}
+
+	function setupErrorModalDismiss() {
+		const modal = document.getElementById('firewall-error-modal');
+		if (!modal) return;
+		modal.querySelectorAll('[data-firewall-error-dismiss]').forEach(function (el) {
+			el.addEventListener('click', function () { modal.classList.add('hidden'); });
+		});
 	}
 
 	// nft's check output looks like:
 	//     /tmp/foo.conf:42:18-20: Error: syntax error, unexpected ...
 	// or with a trailing snippet/caret-line below. Pull the line number
 	// (and optional column span) out so we can put a marker in the gutter.
+	// Each parsed error gets a `humanized` field too — a plain-English
+	// rewrite of the most opaque nft messages so the hover tooltip can
+	// say something useful.
 	function parseNftErrorLines(text) {
 		const out = [];
 		if (!text) return out;
@@ -329,15 +468,105 @@
 			if (!Number.isFinite(line) || line < 1) continue;
 			const colStart = m[2] ? parseInt(m[2], 10) : null;
 			const colEnd = m[3] ? parseInt(m[3], 10) : colStart;
+			const rawMsg = (m[5] || '').trim();
 			out.push({
 				line: line - 1, // CM is 0-indexed
 				colStart: colStart != null ? colStart - 1 : null,
 				colEnd: colEnd != null ? colEnd : null,
 				severity: (m[4] || 'Error').toLowerCase(),
-				message: (m[5] || '').trim(),
+				message: rawMsg,
+				humanized: humanizeNftError(rawMsg),
 			});
 		}
 		return out;
+	}
+
+	// Translate the most opaque `nft -c -f` complaints into plain English.
+	// The raw message is always preserved in `message`; this function only
+	// produces the friendlier rephrasing for the hover tooltip / save
+	// modal. When no pattern matches, falls back to the raw message so
+	// we never hide what nft actually said.
+	function humanizeNftError(raw) {
+		if (!raw) return '';
+		const r = String(raw);
+
+		// "syntax error, unexpected X, expecting Y" — by far the most common.
+		const synErr = r.match(/^syntax error, unexpected ([^,]+?)(?:, expecting (.+))?$/i);
+		if (synErr) {
+			const got = synErr[1].trim();
+			const want = (synErr[2] || '').trim();
+			if (want) {
+				return 'Syntax error — expected ' + simplifyExpected(want) + ' here, but saw ' + simplifyGot(got) + '. Check for missing keywords, semicolons, or braces.';
+			}
+			return 'Syntax error — ' + simplifyGot(got) + ' isn\'t valid here. Check for missing keywords, semicolons, or braces.';
+		}
+
+		// Interface lookup failures.
+		if (/Could not process rule: No such file or directory/i.test(r)) {
+			return 'nftables couldn\'t resolve a referenced object — usually an interface name that doesn\'t exist on this host. Double-check `iif`/`oif`/`iifname`/`oifname` values.';
+		}
+
+		// IP family mixing.
+		if (/conflicting protocols specified: ip vs ip6/i.test(r) || /conflicting protocols specified: ip6 vs ip/i.test(r)) {
+			return 'You can\'t mix `ip` (IPv4) and `ip6` (IPv6) matches in the same rule. Use the `inet` family for dual-stack, or split into two rules.';
+		}
+
+		// Unknown set / map / chain references.
+		const noSet = r.match(/(?:set|map)\s+'?([^']+?)'?\s+does not exist/i);
+		if (noSet) {
+			return 'The referenced set/map `' + noSet[1] + '` isn\'t defined. Add a `set ' + noSet[1] + ' { type ...; elements = { ... }; }` block earlier in the file.';
+		}
+		const noChain = r.match(/(?:chain|jump|goto)\s+'?([^'\s]+)'?\s+does not exist/i);
+		if (noChain) {
+			return 'The chain `' + noChain[1] + '` referenced by jump/goto doesn\'t exist. Define it as a non-base chain in the same table.';
+		}
+
+		// Address / port parsing.
+		if (/Could not parse Network Address/i.test(r) || /not a valid Internet address/i.test(r)) {
+			return 'That looks like a malformed IP address or CIDR. Check for typos and that the prefix length (after `/`) is valid (0-32 for IPv4, 0-128 for IPv6).';
+		}
+		if (/Could not parse Service Port/i.test(r) || /invalid port/i.test(r)) {
+			return 'That isn\'t a valid port number. Use 1-65535, a named service from /etc/services, or a `{ port1, port2 }` set.';
+		}
+
+		// Unknown identifier.
+		const unkId = r.match(/unknown identifier:?\s+'?([^'\s]+)'?/i);
+		if (unkId) {
+			return '`' + unkId[1] + '` isn\'t recognized here. It might be a misspelled keyword, an undefined set/chain, or used in the wrong context.';
+		}
+
+		// Operation not supported / kernel rejection.
+		if (/Operation not supported/i.test(r)) {
+			return 'The kernel rejected this construct — typically because the running kernel/nftables version is missing a feature. Check the host\'s nft + kernel versions against what this rule needs.';
+		}
+
+		// `add element ... already exists` etc.
+		if (/already exists/i.test(r)) {
+			return 'Something with this name already exists in the ruleset. Use `flush` first, or pick a different name.';
+		}
+
+		// Default — pass the raw message through.
+		return r;
+	}
+
+	function simplifyExpected(want) {
+		// nft expectations come back as bison terminal lists like
+		// "newline or string" or "T_ACCEPT, T_DROP, ...". Try to render
+		// them as something a human reads.
+		return String(want)
+			.replace(/^T_/, '')
+			.replace(/\bT_/g, '')
+			.toLowerCase()
+			.replace(/\bnewline\b/g, 'a new line')
+			.replace(/\bstring\b/g, 'an identifier');
+	}
+
+	function simplifyGot(got) {
+		const g = String(got).trim();
+		if (g === 'newline') return 'a new line';
+		if (g === '$end') return 'end of input';
+		if (g === 'string') return 'an identifier';
+		return '`' + g + '`';
 	}
 
 	function applyLintMarkers(items) {
@@ -348,27 +577,52 @@
 		cm.clearGutter('CodeMirror-lint-markers');
 
 		items.forEach(function (item) {
+			// Gutter marker — the ✖ in the line-number gutter. `title` is
+			// the humanized message so the gutter ✖ itself is hoverable
+			// (native browser tooltip; cheaper than wiring CodeMirror's
+			// per-element listener on a gutter element).
 			const marker = document.createElement('div');
 			marker.className = 'firewall-lint-marker firewall-lint-' + item.severity;
-			marker.title = item.message;
+			marker.title = item.humanized || item.message;
 			marker.textContent = item.severity === 'warning' ? '!' : '✖';
 			cm.setGutterMarker(item.line, 'CodeMirror-lint-markers', marker);
 
-			// Underline the offending span if we have column info.
+			// Underline the offending span. If we have column info mark
+			// just that span; otherwise underline the whole line so the
+			// user always has somewhere to hover (an error with no
+			// underline would be confusing — "where do I point?").
+			let from, to;
 			if (item.colStart != null && item.colEnd != null && item.colEnd > item.colStart) {
-				const mark = cm.markText(
-					{ line: item.line, ch: item.colStart },
-					{ line: item.line, ch: item.colEnd },
-					{ className: 'firewall-lint-underline-' + item.severity }
-				);
-				lintMarkers.push(mark);
+				from = { line: item.line, ch: item.colStart };
+				to = { line: item.line, ch: item.colEnd };
+			} else {
+				const lineLen = (cm.getLine(item.line) || '').length;
+				from = { line: item.line, ch: 0 };
+				to = { line: item.line, ch: Math.max(1, lineLen) };
 			}
+			const mark = cm.markText(from, to, {
+				className: 'firewall-lint-underline-' + item.severity,
+			});
+			lintMarkers.push(mark);
 		});
+		// Deliberately do NOT scroll the editor on marker updates — that
+		// was unbearable during real-time validation while typing. The
+		// status pill turning red is the user's signal; they can click a
+		// table/chain in the nav to navigate to the bad section.
+	}
 
-		// Scroll to the first error so the user sees what nft is unhappy about.
-		if (items.length > 0) {
-			scrollToLine(items[0].line + 1);
+	// findErrorAt — used by the hover tooltip to map a cursor position to
+	// any active validation error covering it. Returns null when none.
+	// Errors with column info match only their underlined span; errors
+	// without column info match the whole offending line.
+	function findErrorAt(pos) {
+		if (!pos || !validationErrors.length) return null;
+		for (const e of validationErrors) {
+			if (e.line !== pos.line) continue;
+			if (e.colStart == null || e.colEnd == null) return e;
+			if (pos.ch >= e.colStart && pos.ch <= e.colEnd) return e;
 		}
+		return null;
 	}
 
 	// --------------------------------------------------------------------
@@ -685,24 +939,41 @@
 		wrapper.addEventListener('mousemove', function (ev) {
 			const pos = cm.coordsChar({ left: ev.clientX, top: ev.clientY }, 'window');
 			if (!pos) return hideTooltip();
+
+			// Errors take precedence over keyword docs — if the user is
+			// pointing at a red-underlined span, the explanation of THAT
+			// is what they want, not "here's what `dport` means".
+			const err = findErrorAt(pos);
+			if (err) {
+				showErrorTooltip(ev.clientX, ev.clientY, err);
+				return;
+			}
+
 			const token = cm.getTokenAt(pos);
 			if (!token || !token.string) return hideTooltip();
 			const doc = KEYWORD_DOCS[token.string];
 			if (!doc) return hideTooltip();
-			showTooltip(ev.clientX, ev.clientY, token.string, doc);
+			showKeywordTooltip(ev.clientX, ev.clientY, token.string, doc);
 		});
 		wrapper.addEventListener('mouseleave', hideTooltip);
 		wrapper.addEventListener('mousedown', hideTooltip);
 	}
 
-	function showTooltip(x, y, word, doc) {
-		clearTimeout(tooltipHideTimer);
+	function ensureTooltipEl() {
 		if (!tooltipEl) {
 			tooltipEl = document.createElement('div');
 			tooltipEl.className = 'firewall-keyword-tooltip';
 			document.body.appendChild(tooltipEl);
 		}
+		clearTimeout(tooltipHideTimer);
 		clearChildren(tooltipEl);
+		return tooltipEl;
+	}
+
+	function showKeywordTooltip(x, y, word, doc) {
+		const el = ensureTooltipEl();
+		el.classList.remove('firewall-keyword-tooltip-error');
+
 		const title = document.createElement('div');
 		title.className = 'firewall-keyword-tooltip-title';
 		title.textContent = word;
@@ -715,12 +986,42 @@
 		link.rel = 'noopener noreferrer';
 		link.className = 'firewall-keyword-tooltip-link';
 		link.textContent = 'open docs ›';
-		tooltipEl.appendChild(title);
-		tooltipEl.appendChild(body);
-		tooltipEl.appendChild(link);
-		tooltipEl.style.display = 'block';
 
-		// Position below+right of the cursor, but flip if it would overflow.
+		el.appendChild(title);
+		el.appendChild(body);
+		el.appendChild(link);
+		positionTooltip(x, y);
+	}
+
+	function showErrorTooltip(x, y, err) {
+		const el = ensureTooltipEl();
+		el.classList.add('firewall-keyword-tooltip-error');
+
+		const title = document.createElement('div');
+		title.className = 'firewall-keyword-tooltip-title';
+		title.textContent = (err.severity === 'warning' ? 'Warning' : 'Validation error')
+			+ ' · line ' + (err.line + 1);
+		const body = document.createElement('div');
+		body.className = 'firewall-keyword-tooltip-body';
+		body.textContent = err.humanized || err.message;
+		el.appendChild(title);
+		el.appendChild(body);
+
+		// Show the raw nft message too if it's different from the
+		// humanized one — the curated text gives the "what to do" and the
+		// raw text gives the "what nft literally said" for power users.
+		if (err.humanized && err.humanized !== err.message && err.message) {
+			const raw = document.createElement('pre');
+			raw.className = 'firewall-keyword-tooltip-raw';
+			raw.textContent = err.message;
+			el.appendChild(raw);
+		}
+
+		positionTooltip(x, y);
+	}
+
+	function positionTooltip(x, y) {
+		tooltipEl.style.display = 'block';
 		const pad = 14;
 		const rect = tooltipEl.getBoundingClientRect();
 		let left = x + pad;
