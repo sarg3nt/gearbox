@@ -102,6 +102,43 @@
 	-webkit-text-decoration: underline wavy #f59e0b;
 }
 
+/* ---- Keyword hover tooltip ------------------------------------------ */
+.firewall-keyword-tooltip {
+	position: fixed;
+	z-index: 60;
+	display: none;
+	max-width: 360px;
+	padding: 10px 12px;
+	background: #0f172a;
+	color: #e2e8f0;
+	border: 1px solid #334155;
+	border-radius: 8px;
+	box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
+	font-size: 12px;
+	line-height: 1.45;
+	pointer-events: auto;
+}
+.firewall-keyword-tooltip-title {
+	color: #a5b4fc;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+	font-weight: 700;
+	margin-bottom: 4px;
+}
+.firewall-keyword-tooltip-body {
+	color: #cbd5e1;
+}
+.firewall-keyword-tooltip-link {
+	display: inline-block;
+	margin-top: 8px;
+	color: #60a5fa;
+	font-weight: 600;
+	text-decoration: none;
+}
+.firewall-keyword-tooltip-link:hover {
+	color: #93c5fd;
+	text-decoration: underline;
+}
+
 /* ---- Hint dropdown override ----------------------------------------- */
 .CodeMirror-hints {
 	background: #1e293b;

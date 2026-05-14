@@ -36,6 +36,12 @@ templ FirewallConfigPage(user *models.User, server *database.BoxDB, config *agen
 						Save &amp; Apply
 					</button>
 				}
+				<button id="firewall-snippets-btn" class="h-[38px] px-4 py-1.5 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 flex items-center gap-2">
+					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+					</svg>
+					Snippets
+				</button>
 				<button id="firewall-backups-btn" class="h-[38px] px-4 py-1.5 bg-gray-600 text-white text-sm font-medium rounded-lg hover:bg-gray-700 flex items-center gap-2">
 					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
@@ -128,6 +134,42 @@ templ FirewallConfigPage(user *models.User, server *database.BoxDB, config *agen
 			}
 		</div>
 
+		<!-- Snippets Modal — curated nftables patterns the user can insert. -->
+		<div id="firewall-snippets-modal" class="hidden fixed inset-0 z-50 overflow-y-auto">
+			<div class="flex items-center justify-center min-h-screen px-4">
+				<div class="fixed inset-0 bg-black bg-opacity-50" data-firewall-snippets-dismiss></div>
+				<div class="relative bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[85vh] flex flex-col">
+					<div class="bg-purple-600 dark:bg-purple-700 rounded-t-lg px-6 py-4 flex items-center gap-3">
+						<svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+						</svg>
+						<h3 class="text-lg font-bold text-white">Insert nftables Snippet</h3>
+					</div>
+					<div class="px-6 py-3 border-b border-gray-200 dark:border-slate-700">
+						<input id="firewall-snippets-filter" type="text" placeholder="Search snippets..." maxlength="100" class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-purple-500 focus:border-purple-500"/>
+					</div>
+					<div class="flex-1 flex overflow-hidden min-h-0">
+						<div id="firewall-snippets-list" class="w-1/3 border-r border-gray-200 dark:border-slate-700 overflow-y-auto p-2 space-y-0.5"></div>
+						<div class="w-2/3 overflow-y-auto p-5 bg-gray-50 dark:bg-slate-900">
+							<p id="firewall-snippets-desc" class="text-sm text-gray-600 dark:text-gray-300 mb-3">Pick a snippet on the left to see what it does.</p>
+							<pre id="firewall-snippets-code" class="font-mono text-xs whitespace-pre-wrap bg-[#0d0d0d] text-gray-200 rounded-lg p-4 max-h-[50vh] overflow-auto"></pre>
+						</div>
+					</div>
+					<div class="px-6 py-4 bg-gray-50 dark:bg-slate-700 rounded-b-lg flex justify-between items-center">
+						<button type="button" data-firewall-snippets-dismiss class="px-4 py-2 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100">
+							Cancel
+						</button>
+						<button id="firewall-snippets-insert" type="button" disabled class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+							</svg>
+							Insert at Cursor
+						</button>
+					</div>
+				</div>
+			</div>
+		</div>
+
 		<!-- Backups Modal (kept simple; matches the existing site pattern) -->
 		<div id="firewall-backups-modal" class="hidden fixed inset-0 z-50 overflow-y-auto">
 			<div class="flex items-center justify-center min-h-screen px-4">
@@ -166,6 +208,7 @@ templ FirewallConfigPage(user *models.User, server *database.BoxDB, config *agen
 		<script src="https://unpkg.com/codemirror@5.65.18/addon/search/searchcursor.js"></script>
 		<script src="https://unpkg.com/codemirror@5.65.18/addon/search/search.js"></script>
 		<script src="/static/js/firewall_config/nftables-mode.js"></script>
+		<script src="/static/js/firewall_config/snippets.js"></script>
 		<script src="/static/js/firewall_config/editor.js"></script>
 	}
 }

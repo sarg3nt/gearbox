@@ -86,9 +86,11 @@
 		sourceTextarea.style.display = 'none';
 
 		setupAutocompleteOnType();
+		setupKeywordTooltip();
 		renderSectionNav();
 		setupToolbar();
 		setupBackupsModal();
+		setupSnippetsModal();
 		setupErrorPanelDismiss();
 	}
 
@@ -186,11 +188,13 @@
 		const save = document.getElementById('firewall-save-btn');
 		const backups = document.getElementById('firewall-backups-btn');
 		const wrap = document.getElementById('firewall-wrap-btn');
+		const snippets = document.getElementById('firewall-snippets-btn');
 
 		if (validate) validate.addEventListener('click', validateConfig);
 		if (save) save.addEventListener('click', saveConfig);
 		if (backups) backups.addEventListener('click', showBackups);
 		if (wrap) wrap.addEventListener('click', toggleWrap);
+		if (snippets) snippets.addEventListener('click', showSnippets);
 	}
 
 	function toggleWrap() {
@@ -471,5 +475,267 @@
 	// our XSS-paranoid hooks happy.
 	function clearChildren(el) {
 		while (el.firstChild) el.removeChild(el.firstChild);
+	}
+
+	// --------------------------------------------------------------------
+	// Snippets modal — a curated catalog of common nftables patterns the
+	// user can browse and insert at the cursor. Catalog data is provided
+	// by snippets.js as `window.FIREWALL_SNIPPETS`.
+	// --------------------------------------------------------------------
+	let selectedSnippet = null;
+
+	function setupSnippetsModal() {
+		const modal = document.getElementById('firewall-snippets-modal');
+		if (!modal) return;
+		modal.querySelectorAll('[data-firewall-snippets-dismiss]').forEach(function (el) {
+			el.addEventListener('click', function () { modal.classList.add('hidden'); });
+		});
+		const insertBtn = document.getElementById('firewall-snippets-insert');
+		if (insertBtn) insertBtn.addEventListener('click', insertSelectedSnippet);
+		const filter = document.getElementById('firewall-snippets-filter');
+		if (filter) filter.addEventListener('input', renderSnippetList);
+	}
+
+	function showSnippets() {
+		const modal = document.getElementById('firewall-snippets-modal');
+		if (!modal) return;
+		modal.classList.remove('hidden');
+		selectedSnippet = null;
+		renderSnippetList();
+		renderSnippetPreview();
+	}
+
+	function renderSnippetList() {
+		const wrap = document.getElementById('firewall-snippets-list');
+		if (!wrap || !window.FIREWALL_SNIPPETS) return;
+		clearChildren(wrap);
+
+		const filterEl = document.getElementById('firewall-snippets-filter');
+		const q = (filterEl ? filterEl.value : '').trim().toLowerCase();
+		const matches = window.FIREWALL_SNIPPETS.filter(function (s) {
+			if (!q) return true;
+			return (
+				s.title.toLowerCase().indexOf(q) >= 0 ||
+				s.description.toLowerCase().indexOf(q) >= 0 ||
+				s.category.toLowerCase().indexOf(q) >= 0 ||
+				s.code.toLowerCase().indexOf(q) >= 0
+			);
+		});
+
+		// Group by category, preserving the catalog's order within each.
+		const grouped = new Map();
+		matches.forEach(function (s) {
+			if (!grouped.has(s.category)) grouped.set(s.category, []);
+			grouped.get(s.category).push(s);
+		});
+
+		grouped.forEach(function (items, category) {
+			const heading = document.createElement('h4');
+			heading.className = 'px-2 pt-3 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400';
+			heading.textContent = category;
+			wrap.appendChild(heading);
+			items.forEach(function (snippet) {
+				const btn = document.createElement('button');
+				btn.type = 'button';
+				btn.className =
+					'w-full text-left px-3 py-2 rounded text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-700';
+				btn.textContent = snippet.title;
+				btn.addEventListener('click', function () {
+					selectedSnippet = snippet;
+					// Visual selected state
+					wrap.querySelectorAll('button').forEach(function (b) {
+						b.classList.remove('bg-blue-100', 'dark:bg-blue-900/30', 'text-blue-700', 'dark:text-blue-200');
+					});
+					btn.classList.add('bg-blue-100', 'dark:bg-blue-900/30', 'text-blue-700', 'dark:text-blue-200');
+					renderSnippetPreview();
+				});
+				wrap.appendChild(btn);
+			});
+		});
+
+		if (matches.length === 0) {
+			const empty = document.createElement('p');
+			empty.className = 'px-3 py-4 text-sm text-gray-500 dark:text-gray-400';
+			empty.textContent = 'No snippets match.';
+			wrap.appendChild(empty);
+		}
+	}
+
+	function renderSnippetPreview() {
+		const desc = document.getElementById('firewall-snippets-desc');
+		const code = document.getElementById('firewall-snippets-code');
+		const insertBtn = document.getElementById('firewall-snippets-insert');
+		if (!desc || !code || !insertBtn) return;
+
+		if (!selectedSnippet) {
+			desc.textContent = 'Pick a snippet on the left to see what it does.';
+			code.textContent = '';
+			insertBtn.setAttribute('disabled', 'disabled');
+			insertBtn.classList.add('opacity-50', 'cursor-not-allowed');
+			return;
+		}
+		desc.textContent = selectedSnippet.description;
+		code.textContent = selectedSnippet.code;
+		if (canEdit) {
+			insertBtn.removeAttribute('disabled');
+			insertBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+		}
+	}
+
+	function insertSelectedSnippet() {
+		if (!selectedSnippet || !cm || !canEdit) return;
+		const modal = document.getElementById('firewall-snippets-modal');
+
+		// Insert at the cursor; preserve indentation by replicating the
+		// leading whitespace of the current line on each newline of the
+		// snippet (other than the first, which goes wherever the cursor
+		// is). This keeps a snippet inserted inside a chain `{}` block
+		// readable rather than dropping it flush-left.
+		const cur = cm.getCursor();
+		const lineText = cm.getLine(cur.line) || '';
+		const indentMatch = lineText.match(/^[\t ]*/);
+		const indent = (indentMatch && indentMatch[0]) || '';
+		const indented = selectedSnippet.code
+			.split('\n')
+			.map(function (l, i) { return i === 0 ? l : indent + l; })
+			.join('\n');
+		cm.replaceSelection(indented, 'around');
+		cm.focus();
+		if (modal) modal.classList.add('hidden');
+		if (window.showToast) {
+			window.showToast('Inserted: ' + selectedSnippet.title, 'success', 2000);
+		}
+	}
+
+	// --------------------------------------------------------------------
+	// Hover tooltips — when the mouse pauses over a keyword in the editor,
+	// show a small popover with a one-line description and a doc link.
+	// Driven by a table of well-known nftables tokens; everything else is
+	// ignored. The popover is built lazily and follows the mouse.
+	// --------------------------------------------------------------------
+	const KEYWORD_DOCS = {
+		table:    { text: 'Container for chains, sets, maps, and other objects. Bound to an address family (ip, ip6, inet, arp, bridge, netdev).', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Configuring_tables' },
+		chain:    { text: 'A list of rules. Base chains attach to a netfilter hook via `type ... hook ... priority ...`.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Configuring_chains' },
+		rule:     { text: 'A match + verdict pair inside a chain. Rules are evaluated in order; first match wins.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Simple_rule_management' },
+		set:      { text: 'A named collection of values (IPs, ports, names). Reference with `@setname` in a rule.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Sets' },
+		map:      { text: 'A key→value lookup table. Use with vmap for verdict maps that branch on a header field.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Maps' },
+		flowtable:{ text: 'Software flow offload — bypass the netfilter hooks for established flows.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Flowtables' },
+		counter:  { text: 'Increment a packet/byte counter. Standalone or attached to a rule.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Counters' },
+		limit:    { text: 'Rate-limit matching packets. Common forms: `limit rate 10/second`, `limit rate over 5/minute`.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Rate_limiting_matchings' },
+
+		// Families
+		ip:       { text: 'IPv4 address family. Used in `table ip ...` and as a match prefix (`ip saddr`, `ip protocol`).', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Configuring_tables' },
+		ip6:      { text: 'IPv6 address family.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Configuring_tables' },
+		inet:     { text: 'Dual-stack family — one table handles both IPv4 and IPv6 traffic.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Configuring_tables' },
+		arp:      { text: 'ARP family — filter ARP packets.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Configuring_tables' },
+		bridge:   { text: 'Bridge family — filter traffic crossing a Linux bridge.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Configuring_tables' },
+		netdev:   { text: 'Netdev family — ingress hook on a specific interface, before any other netfilter processing.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Netdev_family' },
+
+		// Hooks
+		prerouting:  { text: 'Hook: packets just arrived, before routing decisions. Used for DNAT and ingress filtering.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Netfilter_hooks' },
+		input:       { text: 'Hook: packets destined for this host. Where most "host firewall" rules live.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Netfilter_hooks' },
+		forward:     { text: 'Hook: packets passing through this host (routing/bridging). For router/gateway rules.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Netfilter_hooks' },
+		output:      { text: 'Hook: packets generated by this host. Filtering here is rarely needed.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Netfilter_hooks' },
+		postrouting: { text: 'Hook: packets about to leave, after routing. Standard place for SNAT/masquerade.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Netfilter_hooks' },
+		ingress:     { text: 'Hook: per-device ingress (netdev family) — runs before the rest of netfilter.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Netdev_family' },
+		egress:      { text: 'Hook: per-device egress (netdev family).', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Netdev_family' },
+
+		// Verdicts
+		accept:   { text: 'Verdict: accept the packet and stop traversing this chain.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Simple_rule_management' },
+		drop:     { text: 'Verdict: drop the packet silently.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Simple_rule_management' },
+		reject:   { text: 'Verdict: drop the packet and send an ICMP/TCP-reset response. Customize with `reject with ...`.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Quick_reference-nftables_in_10_minutes#Reject' },
+		jump:     { text: 'Verdict: jump to another chain; control returns here on `return` or fallthrough.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Configuring_chains#Jumping_to_chain' },
+		goto:     { text: 'Verdict: jump to another chain; control does NOT return (replaces this chain\'s evaluation).', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Configuring_chains#Jumping_to_chain' },
+		queue:    { text: 'Verdict: pass packet to userspace via NFQUEUE.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Queueing_to_userspace' },
+		'return': { text: 'Verdict: return from a sub-chain to the calling chain.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Configuring_chains' },
+
+		// Common matches
+		meta:     { text: 'Match on packet metadata: iif/oif/iifname/oifname/mark/priority/protocol/length/skuid/...', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Matching_packet_metainformation' },
+		ct:       { text: 'Match on conntrack: state/status/direction/mark/saddr/daddr/sport/dport/proto/helper/...', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Matching_connection_tracking_stateful_metainformation' },
+		tcp:      { text: 'TCP header match: sport, dport, flags, sequence, ack, win, doff, checksum, urgptr.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Quick_reference-nftables_in_10_minutes' },
+		udp:      { text: 'UDP header match: sport, dport, length, checksum.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Quick_reference-nftables_in_10_minutes' },
+		icmp:     { text: 'ICMPv4 match: type, code, checksum, id, seq, mtu.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Quick_reference-nftables_in_10_minutes' },
+		icmpv6:   { text: 'ICMPv6 match: type, code, checksum, mtu. Be careful not to block ND if you want IPv6 to work.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Quick_reference-nftables_in_10_minutes' },
+		iifname:  { text: 'Match on input interface NAME (e.g. "eno1", "wg0"). Slower than `iif` but stable across reboots.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Matching_packet_metainformation' },
+		oifname:  { text: 'Match on output interface NAME. Use for outbound rules on a router.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Matching_packet_metainformation' },
+		saddr:    { text: 'Source address. Used as `ip saddr ...`, `ip6 saddr ...`, or with sets/maps.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Quick_reference-nftables_in_10_minutes' },
+		daddr:    { text: 'Destination address.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Quick_reference-nftables_in_10_minutes' },
+		sport:    { text: 'Source port (tcp/udp/sctp/dccp).', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Quick_reference-nftables_in_10_minutes' },
+		dport:    { text: 'Destination port.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Quick_reference-nftables_in_10_minutes' },
+		state:    { text: 'ct state: new, established, related, untracked, invalid. Pair with accept/drop verdicts.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Matching_connection_tracking_stateful_metainformation' },
+
+		// Actions
+		log:      { text: 'Log matching packets to the kernel ring buffer. `log prefix "..." level info`.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Logging_traffic' },
+		snat:     { text: 'Source NAT — rewrite source address (postrouting). Static counterpart of masquerade.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Performing_Network_Address_Translation_(NAT)' },
+		dnat:     { text: 'Destination NAT — rewrite destination address/port (prerouting). Used for port forwards.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Performing_Network_Address_Translation_(NAT)' },
+		masquerade:{ text: 'Source NAT to the outbound interface\'s IP. Use when WAN IP is dynamic.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Performing_Network_Address_Translation_(NAT)' },
+		redirect: { text: 'Special DNAT — rewrite destination to the local host. Used for transparent proxy.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Performing_Network_Address_Translation_(NAT)' },
+		policy:   { text: 'Default verdict for a base chain when no rule matches. Almost always `drop` or `accept`.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Configuring_chains' },
+		priority: { text: 'Chain priority (signed int or named: filter=0, nat=-100 prerouting / 100 postrouting, mangle=-150, ...).', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Netfilter_hooks' },
+		hook:     { text: 'Which netfilter hook this base chain attaches to: prerouting, input, forward, output, postrouting, ingress, egress.', href: 'https://wiki.nftables.org/wiki-nftables/index.php/Netfilter_hooks' },
+	};
+
+	let tooltipEl = null;
+	let tooltipHideTimer = null;
+
+	function setupKeywordTooltip() {
+		if (!cm) return;
+		const wrapper = cm.getWrapperElement();
+
+		wrapper.addEventListener('mousemove', function (ev) {
+			const pos = cm.coordsChar({ left: ev.clientX, top: ev.clientY }, 'window');
+			if (!pos) return hideTooltip();
+			const token = cm.getTokenAt(pos);
+			if (!token || !token.string) return hideTooltip();
+			const doc = KEYWORD_DOCS[token.string];
+			if (!doc) return hideTooltip();
+			showTooltip(ev.clientX, ev.clientY, token.string, doc);
+		});
+		wrapper.addEventListener('mouseleave', hideTooltip);
+		wrapper.addEventListener('mousedown', hideTooltip);
+	}
+
+	function showTooltip(x, y, word, doc) {
+		clearTimeout(tooltipHideTimer);
+		if (!tooltipEl) {
+			tooltipEl = document.createElement('div');
+			tooltipEl.className = 'firewall-keyword-tooltip';
+			document.body.appendChild(tooltipEl);
+		}
+		clearChildren(tooltipEl);
+		const title = document.createElement('div');
+		title.className = 'firewall-keyword-tooltip-title';
+		title.textContent = word;
+		const body = document.createElement('div');
+		body.className = 'firewall-keyword-tooltip-body';
+		body.textContent = doc.text;
+		const link = document.createElement('a');
+		link.href = doc.href;
+		link.target = '_blank';
+		link.rel = 'noopener noreferrer';
+		link.className = 'firewall-keyword-tooltip-link';
+		link.textContent = 'open docs ›';
+		tooltipEl.appendChild(title);
+		tooltipEl.appendChild(body);
+		tooltipEl.appendChild(link);
+		tooltipEl.style.display = 'block';
+
+		// Position below+right of the cursor, but flip if it would overflow.
+		const pad = 14;
+		const rect = tooltipEl.getBoundingClientRect();
+		let left = x + pad;
+		let top = y + pad;
+		if (left + rect.width > window.innerWidth) left = x - rect.width - pad;
+		if (top + rect.height > window.innerHeight) top = y - rect.height - pad;
+		tooltipEl.style.left = Math.max(8, left) + 'px';
+		tooltipEl.style.top = Math.max(8, top) + 'px';
+	}
+
+	function hideTooltip() {
+		if (!tooltipEl) return;
+		clearTimeout(tooltipHideTimer);
+		tooltipHideTimer = setTimeout(function () {
+			if (tooltipEl) tooltipEl.style.display = 'none';
+		}, 80);
 	}
 })();
