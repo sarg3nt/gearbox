@@ -10,21 +10,7 @@ import (
 
 // FirewallConfigPage renders the firewall configuration editor page.
 templ FirewallConfigPage(user *models.User, server *database.BoxDB, config *agent.FirewallConfigResponse, gitConfig *database.BoxGitConfig, changes []database.ConfigChange, canEdit bool) {
-	@layouts.Base("Firewall Configuration", user, "/config") {
-		<!-- Hidden container for page header content -->
-		<div id="page-header-source" class="hidden">
-			<div class="flex items-center">
-				<h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">Firewall Configuration</h2>
-				<span class="ml-3 text-sm text-gray-500 dark:text-gray-400">{ server.Name }</span>
-			</div>
-			<div class="flex-1"></div>
-			<a href="/" class="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center">
-				<svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
-				</svg>
-				Back to Dashboard
-			</a>
-		</div>
+	@layouts.Base("Firewall Configuration", user, "/config/firewall") {
 
 		<div class="max-w-7xl mx-auto px-4 py-6">
 			<!-- Toolbar -->
@@ -183,17 +169,6 @@ templ FirewallConfigPage(user *models.User, server *database.BoxDB, config *agen
 		<script>
 		const serverID = "{ server.BoxID }";
 		let currentSHA = "{ config.SHA256 }";
-
-		function setupPageHeader() {
-			const source = document.getElementById('page-header-source');
-			const target = document.getElementById('header-page-content');
-			if (source && target) {
-				while (source.firstChild) {
-					target.appendChild(source.firstChild);
-				}
-				source.remove();
-			}
-		}
 
 		async function validateConfig() {
 			const content = document.getElementById('config-editor').value;
@@ -369,22 +344,13 @@ templ FirewallConfigPage(user *models.User, server *database.BoxDB, config *agen
 			const lineHeight = parseFloat(getComputedStyle(editor).lineHeight) || 20;
 			editor.scrollTop = (line - 1) * lineHeight;
 		}
-
-		document.addEventListener('DOMContentLoaded', setupPageHeader);
 		</script>
 	}
 }
 
 // FirewallConfigPageWithError renders the config page with an error message.
 templ FirewallConfigPageWithError(user *models.User, server *database.BoxDB, errorMsg string, canEdit bool) {
-	@layouts.Base("Firewall Configuration", user, "/config") {
-		<div id="page-header-source" class="hidden">
-			<div class="flex items-center">
-				<h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">Firewall Configuration</h2>
-				<span class="ml-3 text-sm text-gray-500 dark:text-gray-400">{ server.Name }</span>
-			</div>
-		</div>
-
+	@layouts.Base("Firewall Configuration", user, "/config/firewall") {
 		<div class="max-w-4xl mx-auto px-4 py-8">
 			<div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
 				<div class="flex items-center gap-3">
@@ -397,26 +363,6 @@ templ FirewallConfigPageWithError(user *models.User, server *database.BoxDB, err
 					</div>
 				</div>
 			</div>
-
-			<div class="mt-4">
-				<a href="/" class="text-blue-600 dark:text-blue-400 hover:underline">
-					&larr; Back to Dashboard
-				</a>
-			</div>
 		</div>
-
-		<script>
-		function setupPageHeader() {
-			const source = document.getElementById('page-header-source');
-			const target = document.getElementById('header-page-content');
-			if (source && target) {
-				while (source.firstChild) {
-					target.appendChild(source.firstChild);
-				}
-				source.remove();
-			}
-		}
-		document.addEventListener('DOMContentLoaded', setupPageHeader);
-		</script>
 	}
 }

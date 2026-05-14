@@ -1109,14 +1109,45 @@ func (c *Client) GetFirewallConfig() (*FirewallConfigResponse, error) {
 }
 
 // UpdateFirewallConfig updates the firewall configuration.
+// Note: Returns a response even on validation failure (400) - check resp.Success field.
+// The agent returns 400 with a valid JSON body containing validation details
+// (nft -c -f output, expected-SHA mismatch, etc.) rather than a generic error.
 func (c *Client) UpdateFirewallConfig(req *FirewallConfigUpdateRequest) (*FirewallConfigUpdateResponse, error) {
-	body, err := c.doRequestWithBody("POST", "/api/v1/firewall/config", req)
+	fullURL := c.baseURL + "/api/v1/firewall/config"
+
+	jsonBody, err := json.Marshal(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to marshal request body: %w", err)
+	}
+
+	httpReq, err := http.NewRequest("POST", fullURL, strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+	httpReq.Header.Set("Accept", "application/json")
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	httpResp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer httpResp.Body.Close()
+
+	body, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	var resp FirewallConfigUpdateResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
+		if httpResp.StatusCode >= 400 {
+			return nil, &APIError{
+				StatusCode: httpResp.StatusCode,
+				Message:    fmt.Sprintf("HTTP %d: %s", httpResp.StatusCode, http.StatusText(httpResp.StatusCode)),
+			}
+		}
 		return nil, fmt.Errorf("failed to parse firewall config update response: %w", err)
 	}
 

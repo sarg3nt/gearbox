@@ -10,7 +10,7 @@ import (
 
 // HAProxyConfigPage renders the HAProxy configuration editor page.
 templ HAProxyConfigPage(user *models.User, server *database.BoxDB, config *agent.HAProxyConfigResponse, gitConfig *database.BoxGitConfig, changes []database.ConfigChange, canEdit bool) {
-	@layouts.Base("HAProxy Configuration", user, "/config") {
+	@layouts.Base("HAProxy Configuration", user, "/config/haproxy") {
 		@haproxy_config.EditorHeader(server, config, canEdit)
 		<!-- Hidden inputs to pass data to JavaScript -->
 		<input type="hidden" id="server-id-source" value={ server.BoxID }/>
@@ -25,13 +25,7 @@ templ HAProxyConfigPage(user *models.User, server *database.BoxDB, config *agent
 }
 
 templ HAProxyConfigPageWithError(user *models.User, server *database.BoxDB, errorMsg string, canEdit bool) {
-	@layouts.Base("HAProxy Configuration", user, "/config") {
-		<div id="page-header-source" class="hidden">
-			<div class="flex items-center">
-				<h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">HAProxy Configuration</h2>
-				<span class="ml-3 text-sm text-gray-500 dark:text-gray-400">{ server.Name }</span>
-			</div>
-		</div>
+	@layouts.Base("HAProxy Configuration", user, "/config/haproxy") {
 		<div class="max-w-4xl mx-auto px-4 py-8">
 			<div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
 				<div class="flex items-center gap-3">
@@ -44,24 +38,6 @@ templ HAProxyConfigPageWithError(user *models.User, server *database.BoxDB, erro
 					</div>
 				</div>
 			</div>
-			<div class="mt-4">
-				<a href="/settings/boxes" class="text-blue-600 dark:text-blue-400 hover:underline">
-					← Back to Boxes
-				</a>
-			</div>
 		</div>
-		<script>
-		function setupPageHeader() {
-			const source = document.getElementById('page-header-source');
-			const target = document.getElementById('header-page-content');
-			if (source && target) {
-				while (source.firstChild) {
-					target.appendChild(source.firstChild);
-				}
-				source.remove();
-			}
-		}
-		document.addEventListener('DOMContentLoaded', setupPageHeader);
-		</script>
 	}
 }

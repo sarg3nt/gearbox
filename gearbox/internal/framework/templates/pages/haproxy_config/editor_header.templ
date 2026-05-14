@@ -6,12 +6,10 @@ import (
 )
 
 templ EditorHeader(server *database.BoxDB, config *agent.HAProxyConfigResponse, canEdit bool) {
-	<!-- Hidden container for page header content -->
+	<!-- Hidden container for page header content. The breadcrumb title is
+	     rendered by the global header via gearLabelForPath; this slot just
+	     hosts the page's toolbar controls. -->
 	<div id="page-header-source" class="hidden">
-		<div class="flex items-center">
-			<h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">HAProxy Configuration</h2>
-			<span class="ml-3 text-sm text-gray-500 dark:text-gray-400">{ server.Name }</span>
-		</div>
 		<div class="flex-1"></div>
 		<!-- Controls -->
 		<div class="flex items-center space-x-3">
