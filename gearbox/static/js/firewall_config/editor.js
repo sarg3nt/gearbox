@@ -104,6 +104,18 @@
 		// want the duplicate UI).
 		sourceTextarea.style.display = 'none';
 
+		// Clamp the page body so the firewall editor lives in its own
+		// fixed viewport — no body-level scroll, no horizontal overflow
+		// from long rule lines. Internal scrolling (the CodeMirror scroller
+		// + the section nav) still works as expected. Math-based fixes
+		// (`calc(100vh - 57px)` etc.) kept missing by a few pixels because
+		// the global header height varies across themes; locking overflow
+		// is the bulletproof option, and since gearbox does full page
+		// loads between gears the side-effect is naturally undone when the
+		// user navigates away.
+		document.documentElement.style.overflow = 'hidden';
+		document.body.style.overflow = 'hidden';
+
 		setupAutocompleteOnType();
 		setupKeywordTooltip();
 		setupRealtimeValidation();
