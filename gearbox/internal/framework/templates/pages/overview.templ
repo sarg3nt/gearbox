@@ -1027,43 +1027,75 @@ templ BackendGridPartial(stats *models.HAProxyStats, serverID string, metadata *
 
 // StackSection renders one bucket from GroupBackendsByStack.
 //
-// Multi-backend stacks (real docker-compose projects with >1 exposed
-// route) get a labeled card containing the merged container topology
-// once at the top and a grid of compact BackendCards below — fixing
-// the per-card duplication called out in #79.
-//
-// Singleton (`IsStandalone`) and `IsHardware` buckets render as a flat
-// grid with no wrapper, preserving the existing look-and-feel for
-// trivial cases. Hardware backends never have a container topology;
-// standalone singletons keep their per-card topology via the regular
-// BackendCard rendering path.
+// Real multi-backend stacks get a labeled `<section>` with a compact
+// topology pill row at the top (one small chip per container, blue for
+// backend-serving, muted for supporting) and a grid of compact
+// BackendCards below. The Standalone and Hardware buckets get a thin
+// labeled header for visual parity with named stacks, but no topology
+// row — the cards in those buckets still draw their own per-card
+// topology via BackendCard.
 templ StackSection(stack StackGroup, metadata *models.Metadata, serverID string, disabledEntities []database.DisabledEntity, canManageDisabled bool) {
-	if stack.IsStandalone || stack.IsHardware {
-		<!-- Flat grid for trivial cases — no wrapper chrome. -->
+	if stack.IsStandalone {
+		@stackBucketHeader("services", "Standalone services", fmt.Sprintf("%d backends", len(stack.Backends)), "bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300")
+		<div class="backend-card-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+			for _, backend := range stack.Backends {
+				@BackendCard(backend, GetBackendDisplayName(backend.Name), GetContainersForBackend(backend.Name, metadata), ParseBackendName(backend.Name), metadata, IsBackendDisabled(backend.Name, BuildDisabledEntitiesMap(disabledEntities)), serverID, GetDisabledEntity(backend.Name, disabledEntities), canManageDisabled)
+			}
+		</div>
+	} else if stack.IsHardware {
+		@stackBucketHeader("hardware", "Hardware", fmt.Sprintf("%d backends", len(stack.Backends)), "bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300")
 		<div class="backend-card-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
 			for _, backend := range stack.Backends {
 				@BackendCard(backend, GetBackendDisplayName(backend.Name), GetContainersForBackend(backend.Name, metadata), ParseBackendName(backend.Name), metadata, IsBackendDisabled(backend.Name, BuildDisabledEntitiesMap(disabledEntities)), serverID, GetDisabledEntity(backend.Name, disabledEntities), canManageDisabled)
 			}
 		</div>
 	} else {
-		<!-- Multi-backend stack: topology once, compact cards below. -->
-		<section class="border border-gray-300 dark:border-slate-600 rounded-lg bg-gray-50 dark:bg-slate-800/40 p-4">
-			<div class="flex flex-wrap items-baseline gap-2 mb-3">
+		<section class="border border-gray-200 dark:border-slate-700 rounded-lg bg-white/40 dark:bg-slate-800/30 px-4 py-3">
+			<div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-3">
 				<span class="px-2 py-0.5 text-xs font-semibold rounded bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 uppercase tracking-wide">stack</span>
 				<h5 class="text-base font-semibold text-gray-800 dark:text-gray-100 capitalize">{ stack.DisplayName }</h5>
 				<span class="text-xs text-gray-500 dark:text-gray-400">
 					{ fmt.Sprintf("%d backends · %d containers", len(stack.Backends), len(stack.Topology)) }
 				</span>
+				if len(stack.Topology) > 0 {
+					<div class="flex flex-wrap items-center gap-1.5 ml-auto">
+						for _, c := range stack.Topology {
+							@stackTopologyChip(c)
+						}
+					</div>
+				}
 			</div>
-			if len(stack.Topology) > 0 {
-				@components.ContainerDiagram(stack.Topology, "")
-			}
-			<div class="backend-card-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+			<div class="backend-card-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
 				for _, backend := range stack.Backends {
 					@BackendCard(backend, GetBackendDisplayName(backend.Name), nil, ParseBackendName(backend.Name), metadata, IsBackendDisabled(backend.Name, BuildDisabledEntitiesMap(disabledEntities)), serverID, GetDisabledEntity(backend.Name, disabledEntities), canManageDisabled)
 				}
 			</div>
 		</section>
+	}
+}
+
+// stackBucketHeader is a thin labeled separator for the Standalone and
+// Hardware buckets so they aren't visually anonymous next to named stacks.
+// It echoes the chip + name + count layout of a stack section header but
+// without the wrapping `<section>` chrome.
+templ stackBucketHeader(label, displayName, countText, chipClasses string) {
+	<div class="flex items-baseline gap-x-3 mb-2 mt-1">
+		<span class={ "px-2 py-0.5 text-xs font-semibold rounded uppercase tracking-wide " + chipClasses }>{ label }</span>
+		<h5 class="text-base font-semibold text-gray-800 dark:text-gray-100">{ displayName }</h5>
+		<span class="text-xs text-gray-500 dark:text-gray-400">{ countText }</span>
+	</div>
+}
+
+// stackTopologyChip renders one container in the merged stack topology as
+// a compact pill. Backend-serving containers (the ones routed by HAProxy)
+// get a blue fill; supporting containers (workers, sidecars, etc.) get a
+// muted grey fill. Designed to flex-wrap inline next to the stack header
+// instead of stacking as tall full-width blocks like `ContainerDiagram`.
+templ stackTopologyChip(c models.Container) {
+	if c.IsBackend {
+		<span class="px-2 py-0.5 text-xs rounded bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-200 font-medium" title="serves an HAProxy backend">{ c.Name }</span>
+	} else {
+		<span class="px-2 py-0.5 text-xs rounded bg-gray-200 dark:bg-slate-700 text-gray-600 dark:text-gray-400" title="supporting container">{ c.Name }</span>
 	}
 }
 
