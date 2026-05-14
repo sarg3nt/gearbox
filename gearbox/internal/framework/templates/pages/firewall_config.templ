@@ -75,8 +75,15 @@ templ FirewallConfigPage(user *models.User, server *database.BoxDB, config *agen
 		<textarea id="firewall-sections-data" class="hidden">{ sectionsJSON(config.Sections) }</textarea>
 
 		<!-- Full-bleed editor surface that breaks out of the base padding
-		     and runs flush to the edges (same pattern as the log viewer). -->
-		<div id="firewall-editor-shell" class="-mx-6 -mt-6 bg-[#0d0d0d] flex flex-col" style="min-height: calc(100vh - 55px);">
+		     and runs flush to the edges (same pattern as the log viewer).
+		     `-mb-6` cancels the `<main class="p-6">` bottom padding so the
+		     shell ends exactly at the viewport bottom; the 57px in the
+		     height calc is the fixed global header (55px row + 2px border)
+		     that main-content pads under via `pt-[57px]`. With `height`
+		     (not `min-height`) the shell never exceeds the viewport, so
+		     the body never gains a vertical scrollbar — the editor + nav
+		     handle their own internal scrolling. -->
+		<div id="firewall-editor-shell" class="-mx-6 -mt-6 -mb-6 bg-[#0d0d0d] flex flex-col" style="height: calc(100vh - 57px);">
 			<div class="flex flex-1 min-h-0">
 				<!-- Left rail: section nav. Validation feedback lives inline
 				     on the offending lines (red wavy underline + hover popup);
