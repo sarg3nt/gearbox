@@ -248,6 +248,12 @@ func (h *Handler) HAProxyBoxUpdatePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The Agent URL or API key may have changed; drop any cached
+	// capabilities so the next render fetches against the new endpoint
+	// rather than serving stale data from the previous agent until the
+	// TTL expires.
+	h.invalidateBoxCapabilities(server.BoxID)
+
 	// Log audit
 	h.logAudit(r, user.ID, "haproxy_box_update", fmt.Sprintf("Updated HAProxy box: %s (%s)", server.Name, server.BoxID))
 
@@ -310,6 +316,11 @@ func (h *Handler) HAProxyBoxDeletePost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to delete server", http.StatusInternalServerError)
 		return
 	}
+
+	// Drop cached capabilities — even if the same box ID is recreated
+	// later, it's likely a different host and we shouldn't serve the
+	// previous probe table.
+	h.invalidateBoxCapabilities(server.BoxID)
 
 	// Log audit
 	h.logAudit(r, user.ID, "haproxy_box_delete", fmt.Sprintf("Deleted HAProxy box: %s (%s)", server.Name, server.BoxID))

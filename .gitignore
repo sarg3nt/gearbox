@@ -12,6 +12,7 @@ gearbox-agent/data/
 # Environment
 gearbox/.env
 gearbox-agent/.env
+.local.config
 *.local.json
 .mcp.json
 

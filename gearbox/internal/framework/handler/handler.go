@@ -7,14 +7,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sarg3nt/gearbox/internal/framework/agent"
+	"github.com/sarg3nt/gearbox/internal/framework/auth"
 	"github.com/sarg3nt/gearbox/internal/framework/collector"
 	"github.com/sarg3nt/gearbox/internal/framework/database"
-	"github.com/sarg3nt/gearbox/internal/framework/auth"
 	"github.com/sarg3nt/gearbox/internal/framework/events"
+	"github.com/sarg3nt/gearbox/internal/framework/models"
 	"github.com/sarg3nt/gearbox/internal/framework/services/crypto"
 	"github.com/sarg3nt/gearbox/internal/framework/services/email"
 	"github.com/sarg3nt/gearbox/internal/framework/services/geoip"
-	"github.com/sarg3nt/gearbox/internal/framework/models"
 )
 
 // Handler holds dependencies for HTTP handlers.
@@ -31,6 +32,12 @@ type Handler struct {
 	eventHub         *events.Hub
 	wsManager        *collector.WebSocketManager
 	geoipClient      *geoip.Client
+
+	// capabilities caches per-box probe tables so gear-page handlers don't
+	// fire a fresh agent call on every render. TTL is short enough that a
+	// restarted agent's new probe table shows up within minutes; reconnect
+	// events explicitly invalidate for an immediate refresh.
+	capabilities *agent.CapabilitiesCache
 
 	// Config redactor for hiding sensitive values (e.g., stats auth passwords)
 	configRedactor *ConfigRedactor
@@ -83,9 +90,46 @@ func NewHandler(
 		encryptor:       encryptor,
 		registry:        registry,
 		geoipClient:     geoip.NewClient(),
+		capabilities:    agent.NewCapabilitiesCache(capabilityCacheTTL, capabilitiesFetchTimeout),
 		configRedactor:  NewConfigRedactor(),
 		prevSourceData:  make(map[string]*trafficSourceSnapshot),
 		prevBackendData: make(map[string]*trafficBackendSnapshot),
+	}
+}
+
+// capabilityCacheTTL is the freshness window for cached agent probe tables.
+// Short enough that a restarted agent's new probe table shows up without
+// operator intervention; long enough that the dashboard doesn't fire a
+// fresh agent call on every page render. Reconnect events invalidate
+// explicitly via Handler.invalidateBoxCapabilities for faster refresh.
+const capabilityCacheTTL = 5 * time.Minute
+
+// getBoxCapabilities returns the cached capabilities for boxID, or fetches
+// fresh ones if missing/stale. Returns (nil, false) when the box isn't
+// configured or doesn't use the agent API. Errors are logged at debug —
+// callers should fail open (show the full UI) when capabilities are
+// unknown, the same way filterGearsByAgentCapabilities does.
+func (h *Handler) getBoxCapabilities(boxID string) (*agent.BoxCapabilities, bool) {
+	serverConfig, exists := h.getServerConfig(boxID)
+	if !exists || !serverConfig.UsesAgentAPI() {
+		return nil, false
+	}
+	caps, err := h.capabilities.Get(boxID, serverConfig.AgentURL, serverConfig.APIKey)
+	if err != nil {
+		h.logger.Debug("capabilities fetch failed",
+			"box_id", boxID, "error", err)
+		return nil, false
+	}
+	return caps, caps != nil
+}
+
+// invalidateBoxCapabilities drops the cached probe table for boxID so the
+// next getBoxCapabilities call refetches. Wired to server.connected events
+// by handler.go's main wiring so a restarted agent's new probe table is
+// reflected immediately rather than at the next TTL boundary.
+func (h *Handler) invalidateBoxCapabilities(boxID string) {
+	if h.capabilities != nil {
+		h.capabilities.Invalidate(boxID)
 	}
 }
 
@@ -104,9 +148,34 @@ func (h *Handler) SetWebAuthnManager(mgr *auth.WebAuthnManager) {
 	h.webAuthnMgr = mgr
 }
 
-// SetEventHub sets the event hub for real-time updates.
+// SetEventHub sets the event hub for real-time updates and starts a
+// background subscriber that invalidates the per-box capabilities cache
+// whenever an agent (re)connects. This gives operators an immediate
+// refresh after restarting an agent — without it, a restarted agent's
+// new probe table would only surface at the next TTL boundary.
 func (h *Handler) SetEventHub(hub *events.Hub) {
 	h.eventHub = hub
+	if hub != nil {
+		go h.watchAgentReconnects(hub)
+	}
+}
+
+// watchAgentReconnects subscribes to server.connected events and drops
+// the cached capabilities for that box. Runs for the lifetime of the
+// process; exits when the hub closes the subscription channel during
+// shutdown.
+func (h *Handler) watchAgentReconnects(hub *events.Hub) {
+	sub := hub.Subscribe("capabilities-cache-invalidator", "")
+	defer hub.Unsubscribe(sub)
+	for evt := range sub.Events {
+		if evt.Type != events.EventTypeServerConnected {
+			continue
+		}
+		if evt.ServerID == "" {
+			continue
+		}
+		h.invalidateBoxCapabilities(evt.ServerID)
+	}
 }
 
 // SetWebSocketManager sets the WebSocket manager for Agent connections.

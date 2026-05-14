@@ -163,3 +163,53 @@ func statusFromCount(count int64, warnAt, badAt int64) string {
 	}
 	return "good"
 }
+
+// sysField mirrors snapshotField for SystemMetricsSnapshot rows, so the
+// host KPI cards can reuse the same aggregate/sparkline shape as the
+// HAProxy cards without templated generics.
+type sysField func(s database.SystemMetricsSnapshot) float64
+
+// avgPositiveSysField is the SystemMetricsSnapshot counterpart of
+// avgPositiveStat — averages f over rows where f(s) > 0 so empty buckets
+// don't pull down legitimate readings.
+func avgPositiveSysField(curr []database.SystemMetricsSnapshot, f sysField) float64 {
+	var sum float64
+	var n int
+	for i := range curr {
+		v := f(curr[i])
+		if v > 0 {
+			sum += v
+			n++
+		}
+	}
+	if n == 0 {
+		return 0
+	}
+	return sum / float64(n)
+}
+
+// sysSparkline downsamples a SystemMetricsSnapshot slice to ~points values
+// for KPI-card sparklines. Mirrors statSparkline so host and HAProxy
+// cards render identically.
+func sysSparkline(curr []database.SystemMetricsSnapshot, f sysField, points int) []float64 {
+	if len(curr) == 0 {
+		return []float64{}
+	}
+	if len(curr) <= points {
+		out := make([]float64, len(curr))
+		for i := range curr {
+			out[i] = f(curr[i])
+		}
+		return out
+	}
+	out := make([]float64, 0, points)
+	step := float64(len(curr)) / float64(points)
+	for i := 0; i < points; i++ {
+		idx := int(float64(i) * step)
+		if idx >= len(curr) {
+			idx = len(curr) - 1
+		}
+		out = append(out, f(curr[idx]))
+	}
+	return out
+}

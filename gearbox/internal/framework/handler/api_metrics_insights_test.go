@@ -134,6 +134,46 @@ func TestAvgPositiveStatSkipsZeros(t *testing.T) {
 	}
 }
 
+func TestAvgPositiveSysFieldSkipsZeros(t *testing.T) {
+	rows := []database.SystemMetricsSnapshot{
+		{MemoryUsagePercent: 40},
+		{MemoryUsagePercent: 0}, // empty bucket — should be skipped
+		{MemoryUsagePercent: 60},
+	}
+	got := avgPositiveSysField(rows, func(s database.SystemMetricsSnapshot) float64 { return s.MemoryUsagePercent })
+	if got != 50 {
+		t.Errorf("expected avg of (40, 60) = 50, got %v", got)
+	}
+}
+
+func TestSysSparklineDownsamples(t *testing.T) {
+	rows := make([]database.SystemMetricsSnapshot, 100)
+	for i := range rows {
+		rows[i].MemoryUsagePercent = float64(i)
+	}
+	out := sysSparkline(rows, func(s database.SystemMetricsSnapshot) float64 { return s.MemoryUsagePercent }, 30)
+	if len(out) != 30 {
+		t.Errorf("expected 30 sparkline points, got %d", len(out))
+	}
+	if out[0] != 0 {
+		t.Errorf("first point should be 0, got %v", out[0])
+	}
+	if out[29] < 90 {
+		t.Errorf("last point should be near series end, got %v", out[29])
+	}
+}
+
+func TestSysSparklineShortSeriesPassThrough(t *testing.T) {
+	rows := []database.SystemMetricsSnapshot{
+		{MemoryUsagePercent: 10},
+		{MemoryUsagePercent: 20},
+	}
+	out := sysSparkline(rows, func(s database.SystemMetricsSnapshot) float64 { return s.MemoryUsagePercent }, 30)
+	if len(out) != 2 {
+		t.Errorf("expected pass-through of 2 points, got %d", len(out))
+	}
+}
+
 func TestParseHAProxyLogLine_5xx(t *testing.T) {
 	// Representative HAProxy HTTP log line with a 502 response.
 	raw := `Apr 14 02:13:45 lighthugger haproxy[1234]: 203.0.113.42:51234 [14/Apr/2026:02:13:45.123] https-in~ app-backend/server1 0/0/1/0/1 502 1234 - - ---- 5/5/0/0/0 0/0 "GET /api/widgets HTTP/1.1"`
