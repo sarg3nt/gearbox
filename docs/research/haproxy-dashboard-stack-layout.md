@@ -1,7 +1,8 @@
 # HAProxy Dashboard: Stack Layout Redesign
 
 > Research and recommendation for [issue #79](https://github.com/sarg3nt/gearbox/issues/79).
-> Status: design proposal — no code changes yet.
+> Status: shipped on `feature/79-haproxy-dashboard-research`. Implementation
+> follows **Option 1** with extra polish — see [What shipped](#what-shipped).
 
 ## Table of contents
 
@@ -10,6 +11,7 @@
 - [Best-practice research](#best-practice-research)
 - [Layout options](#layout-options)
 - [Recommendation](#recommendation)
+- [What shipped](#what-shipped)
 - [Bottom-of-page widgets that aren't loading](#bottom-of-page-widgets-that-arent-loading)
 - [Traffic-gear coupling (related, separate issue)](#traffic-gear-coupling-related-separate-issue)
 - [Open questions](#open-questions)
@@ -324,6 +326,70 @@ at a glance.
    row spans the full stack section width.
 6. **Backwards-compat** — orphaned backends keep falling into the existing
    "Other Backends" section unchanged.
+
+## What shipped
+
+Implementation followed Option 1 plus several refinements that came out
+of live review against `localhost:3000/haproxy`:
+
+- **Stack sections** ([overview.templ `StackSection`](../../gearbox/internal/framework/templates/pages/overview.templ)) —
+  multi-backend docker-compose stacks render as a labeled `<section>` with
+  a compact topology pill row at the header. Backend-serving containers
+  get a blue pill; supporting containers (gluetun, etc.) get a muted grey
+  pill. Pills flex-wrap inline next to the stack name; no more full-width
+  topology blocks.
+
+- **Flat bucket, no labels** — singleton backends and hardware backends
+  collapse into a single trailing `IsFlat` bucket with no section header.
+  The `CT` / `HW` badge on each card already conveys the type, so a
+  "Standalone services" or "Hardware" label was just repetition.
+
+- **Single-container cards drop the topology box** ([`BackendCard`](../../gearbox/internal/framework/templates/pages/overview.templ)) —
+  cards with `len(containers) <= 1` render the IP inline next to the
+  card title (monospaced, baseline-aligned) instead of below in a blue
+  box. The `ContainerDiagram` component is now only invoked when there
+  is genuine multi-container topology to show (VPN gateway or multi-
+  container service); the unreachable `singleContainerDiagram` branch
+  was deleted.
+
+- **Title prefix drop inside stacks** — `BackendCard` takes an
+  `inStackSection bool` flag. When `true`, the card title is just the
+  item name (e.g. `bazarr`), linked directly to its service URL.
+  Previously it rendered `Arr → bazarr` with `Arr` as the link, which
+  was confusing because clicking `Arr` on the bazarr card opened bazarr.
+  Outside a stack section the `Group → Item` form is preserved for
+  cases like `Plex → tcp` where there's no enclosing context.
+
+- **Help cursor removed** — `cursor-help` was stripped from the four
+  card badges that have tooltips (`HW`, `CT`, `DISABLED`, info icon).
+  Tooltips still appear on hover; the cursor stays as the default.
+
+- **Frontend status pill suppressed when healthy** — the green
+  `ACTIVE` pill on every healthy frontend was 100% noise (OPEN is the
+  steady state). Only renders now when status is not `OPEN`, as a loud
+  red pill that's visually unmissable against the otherwise pill-free
+  frontend header.
+
+- **Info-icon tooltip anchor flipped** — was `right-0 top-6` which
+  extended the 16rem-wide tooltip leftward past the card edge and clipped
+  behind the sidebar on left-column cards. Now `left-0 top-6` so the
+  tooltip extends rightward into the card body. Arrow indicator flipped
+  to match.
+
+- **IP baseline alignment** — the title row uses `items-baseline` (not
+  `items-start`) so the smaller monospaced IP shares a baseline with
+  the larger title text.
+
+### Out of scope (deliberate non-changes)
+
+- `ContainerDiagram` retains its blue/grey contrast for multi-container
+  cards — discussed but not changed; the contrast is doing real work
+  there.
+- The frontend status pill still uses the existing
+  `bg-red-100/bg-red-900` color tokens — no new design tokens introduced.
+- Orphaned/system backends still render through the same grid path,
+  outside any stack section. The `inStackSection` flag is passed as
+  `false` at those call sites.
 
 ## Bottom-of-page widgets that aren't loading
 
