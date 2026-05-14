@@ -122,6 +122,19 @@ func (p *Gear) RegisterRoutes(r chi.Router) {
 	r.Get("/api/v1/haproxy/validate", p.handleConfigValidation)
 }
 
+// MetricCategories declares the metric categories this gear produces
+// data for. The agent's manager uses this to build the
+// category-to-producers table that drives primary-source selection.
+// HAProxy stats provide request-level data (requests/sec, response
+// codes, response times, per-backend breakdowns) — the
+// CategoryHTTPRequests slot. When other HTTP-source gears land
+// (nginx, Apache, Caddy, Traefik), they'll join the same category
+// and the operator can pick between them via
+// GEARBOX_AGENT_HTTP_SOURCE.
+func (p *Gear) MetricCategories() []gear.MetricCategory {
+	return []gear.MetricCategory{gear.CategoryHTTPRequests}
+}
+
 // Collectors returns the periodic collectors for this gear.
 func (p *Gear) Collectors() []gear.Collector {
 	if p.statsClient == nil {

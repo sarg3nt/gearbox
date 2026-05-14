@@ -375,3 +375,59 @@ func TestGetEnvDurationSecondsOrDefault(t *testing.T) {
 		})
 	}
 }
+
+func TestNormaliseSourceOverride(t *testing.T) {
+	cases := []struct {
+		in, want string
+	}{
+		{"", ""},
+		{"   ", ""},
+		{"haproxy", "haproxy"},
+		{"HAProxy", "haproxy"},
+		{" HAPROXY ", "haproxy"},
+		{"  Nginx  ", "nginx"},
+	}
+	for _, tc := range cases {
+		if got := normaliseSourceOverride(tc.in); got != tc.want {
+			t.Errorf("normaliseSourceOverride(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestLoad_HTTPSourceOverride(t *testing.T) {
+	saved := os.Getenv("GEARBOX_AGENT_HTTP_SOURCE")
+	t.Cleanup(func() {
+		if saved != "" {
+			os.Setenv("GEARBOX_AGENT_HTTP_SOURCE", saved)
+		} else {
+			os.Unsetenv("GEARBOX_AGENT_HTTP_SOURCE")
+		}
+	})
+
+	os.Setenv("GEARBOX_AGENT_HTTP_SOURCE", " Nginx ")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.HTTPSource != "nginx" {
+		t.Errorf("HTTPSource = %q, want %q (trimmed + lowercased)", cfg.HTTPSource, "nginx")
+	}
+}
+
+func TestLoad_HTTPSourceDefaultsEmpty(t *testing.T) {
+	saved := os.Getenv("GEARBOX_AGENT_HTTP_SOURCE")
+	os.Unsetenv("GEARBOX_AGENT_HTTP_SOURCE")
+	t.Cleanup(func() {
+		if saved != "" {
+			os.Setenv("GEARBOX_AGENT_HTTP_SOURCE", saved)
+		}
+	})
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.HTTPSource != "" {
+		t.Errorf("HTTPSource = %q, want empty (auto-detect)", cfg.HTTPSource)
+	}
+}

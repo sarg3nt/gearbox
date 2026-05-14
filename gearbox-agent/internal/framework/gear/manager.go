@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -65,7 +66,9 @@ func NewManager(deps Dependencies, logger *slog.Logger) *Manager {
 // ProbeAll runs each gear's Probe (if implemented) and records the verdict.
 // Gears that don't implement ProbeableGear are treated as always-available.
 // After all gears are probed, a summary table is written to the configured
-// table writer (defaults to os.Stderr → systemd journal) and a structured
+// table writer (defaults to os.Stderr → systemd journal), the primary
+// metric source per category is resolved (logging override warnings for
+// any operator-supplied overrides that don't resolve), and a structured
 // completion line is logged via slog.
 //
 // Must be called before InitializeAll. The verdict drives whether each
@@ -84,6 +87,32 @@ func (m *Manager) ProbeAll(ctx context.Context) {
 	}
 
 	m.logProbeTable()
+	m.logPrimarySources()
+}
+
+// logPrimarySources resolves and logs the primary metric source per
+// category. Runs at startup (from ProbeAll) so override warnings appear
+// in the journal alongside the probe table, and operators can confirm at
+// a glance which source the dashboard will treat as authoritative.
+// Categories with no available producer are silently skipped — they're
+// just absent from this host, no log noise warranted.
+func (m *Manager) logPrimarySources() {
+	picks := m.ResolvePrimarySources()
+	if len(picks) == 0 {
+		return
+	}
+	for _, cat := range AllMetricCategories() {
+		sel, ok := picks[cat]
+		if !ok {
+			continue
+		}
+		m.logger.Info("primary metric source resolved",
+			"category", cat,
+			"source", sel.Source,
+			"reason", sel.Reason,
+			"alternatives", sel.Alternatives,
+		)
+	}
 }
 
 // probeOrDefault calls a gear's Probe if it implements ProbeableGear, or
@@ -477,6 +506,205 @@ type CapabilityEntry struct {
 // CapabilitiesResponse is the envelope for GET /api/v1/system/capabilities.
 type CapabilitiesResponse struct {
 	Gears map[string]CapabilityEntry `json:"gears"`
+
+	// PrimarySources keys each MetricCategory to the gear that's been
+	// chosen as the authoritative producer on this host. Categories
+	// with no available producer are omitted entirely (rather than
+	// surfacing as an empty SourceSelection) so the dashboard can
+	// distinguish "no category" from "category exists but unselected".
+	PrimarySources map[MetricCategory]SourceSelection `json:"primary_sources,omitempty"`
+}
+
+// preferenceOrder ranks gears for each metric category when multiple
+// produce the same data and the operator hasn't set an override. First
+// match wins. The order encodes opinions about what's most likely to be
+// the user's "real" source on a homelab-flavoured deploy:
+//
+//   - HAProxy comes first because in this project HAProxy is the L7
+//     entry point and its stats see the union of every backend's
+//     traffic; other web servers tend to be backends behind it. A box
+//     with both an HAProxy frontend AND a backend nginx benefits from
+//     the proxy view first.
+//   - nginx > Apache > Caddy > Traefik is rough order-of-prevalence
+//     across the homelab fleet. Operators on a Traefik-primary host
+//     will simply set GEARBOX_AGENT_HTTP_SOURCE=traefik; this list
+//     just makes the no-config case do something reasonable rather
+//     than picking arbitrarily.
+//
+// Entries that aren't yet implemented as gears are harmless — the
+// resolver only considers gears that probed Available.
+var preferenceOrder = map[MetricCategory][]string{
+	CategoryHTTPRequests: {"haproxy", "nginx", "apache", "caddy", "traefik"},
+}
+
+// ResolvePrimarySources picks the primary metric source for each
+// defined MetricCategory based on the probe table, the built-in
+// preference order, and any operator overrides in deps.SourceOverrides.
+// The returned map omits any category for which no available producer
+// exists — callers should treat missing keys as "no primary".
+//
+// Resolution rules per category:
+//  1. If deps.SourceOverrides[category] names a gear that probed
+//     Available AND is a registered producer (implements
+//     MetricSourceGear and declares the category), use it. The
+//     SourceSelection.Reason names the env var so operators can
+//     verify the override took effect.
+//  2. Otherwise walk preferenceOrder[category] and pick the first
+//     gear that probed Available + is a registered producer.
+//  3. If neither path finds anything, the category is omitted.
+//
+// Overrides that name an unknown gear, a not-Available gear, or a gear
+// that doesn't produce data for this category log a warning at startup
+// and fall through to auto-detection — operators templating env files
+// across heterogeneous fleets shouldn't lose metrics because one host
+// doesn't have the override's target installed.
+func (m *Manager) ResolvePrimarySources() map[MetricCategory]SourceSelection {
+	probed := m.ProbeResults()
+
+	// Build category-to-producers from the registered gears that
+	// implement MetricSourceGear. Producers are filtered to only those
+	// that probed Available — a not-installed nginx isn't a candidate.
+	producers := make(map[MetricCategory][]string)
+	registeredFor := make(map[MetricCategory]map[string]struct{})
+	for _, p := range All() {
+		name := p.Info().Name
+		src, ok := p.(MetricSourceGear)
+		if !ok {
+			continue
+		}
+		for _, cat := range src.MetricCategories() {
+			if registeredFor[cat] == nil {
+				registeredFor[cat] = make(map[string]struct{})
+			}
+			registeredFor[cat][name] = struct{}{}
+			if r, ok := probed[name]; ok && r.IsAvailable() {
+				producers[cat] = append(producers[cat], name)
+			}
+		}
+	}
+
+	out := make(map[MetricCategory]SourceSelection)
+	for _, cat := range AllMetricCategories() {
+		available := producers[cat]
+		if len(available) == 0 {
+			// No producer — omit the category entirely. The dashboard
+			// reads missing key as "no primary for this category".
+			continue
+		}
+
+		// Order alternatives by the built-in preference so the
+		// dashboard's "switch source" UI presents a stable list.
+		ordered := orderByPreference(available, preferenceOrder[cat])
+
+		// Operator override: must be available AND a registered
+		// producer. Fall through with a warning otherwise.
+		override := strings.ToLower(strings.TrimSpace(deps_override(m.deps, cat)))
+		if override != "" {
+			if _, isProducer := registeredFor[cat][override]; !isProducer {
+				m.logger.Warn("source override names a gear that doesn't produce this metric category; falling back to auto-detect",
+					"category", cat,
+					"override", override,
+					"env_var", overrideEnvVarFor(cat))
+			} else if !containsString(ordered, override) {
+				m.logger.Warn("source override names an unavailable gear; falling back to auto-detect",
+					"category", cat,
+					"override", override,
+					"env_var", overrideEnvVarFor(cat))
+			} else {
+				out[cat] = SourceSelection{
+					Category:     cat,
+					Source:       override,
+					Reason:       "operator override via " + overrideEnvVarFor(cat),
+					Alternatives: withoutString(ordered, override),
+				}
+				continue
+			}
+		}
+
+		// Auto-detect from preference order.
+		out[cat] = SourceSelection{
+			Category:     cat,
+			Source:       ordered[0],
+			Reason:       "auto-detected from preference order",
+			Alternatives: ordered[1:],
+		}
+	}
+
+	return out
+}
+
+// deps_override fetches the operator's override for a category from
+// Dependencies. Standalone (not a method) so tests that build
+// Dependencies directly stay readable.
+func deps_override(d Dependencies, cat MetricCategory) string {
+	if d.SourceOverrides == nil {
+		return ""
+	}
+	return d.SourceOverrides[cat]
+}
+
+// overrideEnvVarFor names the env var that controls a category. Kept
+// in one place so warning messages and docs stay aligned with what
+// operators actually set in their env files.
+func overrideEnvVarFor(cat MetricCategory) string {
+	switch cat {
+	case CategoryHTTPRequests:
+		return "GEARBOX_AGENT_HTTP_SOURCE"
+	default:
+		return "(unknown category)"
+	}
+}
+
+// orderByPreference returns the subset of `available` ordered by where
+// each entry appears in `preferred`. Entries in `available` that
+// aren't in `preferred` get appended at the end (sorted alphabetically
+// so the result is deterministic across runs). Lets newer producers
+// that haven't been ranked yet still surface as alternatives without
+// editing preferenceOrder.
+func orderByPreference(available, preferred []string) []string {
+	have := make(map[string]struct{}, len(available))
+	for _, n := range available {
+		have[n] = struct{}{}
+	}
+
+	out := make([]string, 0, len(available))
+	used := make(map[string]struct{}, len(available))
+	for _, n := range preferred {
+		if _, ok := have[n]; ok {
+			out = append(out, n)
+			used[n] = struct{}{}
+		}
+	}
+	// Tack on any available producer not in the preference list,
+	// alphabetised for determinism.
+	var extras []string
+	for _, n := range available {
+		if _, ok := used[n]; !ok {
+			extras = append(extras, n)
+		}
+	}
+	sort.Strings(extras)
+	out = append(out, extras...)
+	return out
+}
+
+func containsString(haystack []string, needle string) bool {
+	for _, s := range haystack {
+		if s == needle {
+			return true
+		}
+	}
+	return false
+}
+
+func withoutString(in []string, drop string) []string {
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if s != drop {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // RegisterSystemRoutes registers cross-cutting agent endpoints that aren't
@@ -488,12 +716,17 @@ func (m *Manager) RegisterSystemRoutes(r chi.Router) {
 }
 
 // handleCapabilities renders the probe table — every registered gear, its
-// verdict, reason, and any detected capability key-values. The dashboard
-// uses this to hide gears that can't run on a given box (issue #71 item 2).
+// verdict, reason, and any detected capability key-values — plus the
+// resolved primary metric source per category. The dashboard uses this
+// to hide gears that can't run on a given box (issue #71 item 2) and to
+// pick which source's data to render for each category (issue #91).
 func (m *Manager) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 	plugins := All()
 	results := m.ProbeResults()
-	out := CapabilitiesResponse{Gears: make(map[string]CapabilityEntry, len(plugins))}
+	out := CapabilitiesResponse{
+		Gears:          make(map[string]CapabilityEntry, len(plugins)),
+		PrimarySources: m.ResolvePrimarySources(),
+	}
 	for _, p := range plugins {
 		name := p.Info().Name
 		out.Gears[name] = CapabilityEntry(results[name])

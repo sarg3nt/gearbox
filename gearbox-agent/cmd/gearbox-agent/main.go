@@ -383,6 +383,7 @@ func main() {
 		HAProxyStatsPassword: cfg.HAProxyStatsPassword,
 		HAProxyConfigPath:    cfg.HAProxyConfigFile,
 		CertbotTimer:         cfg.CertbotTimer,
+		SourceOverrides:      buildSourceOverrides(cfg),
 	}
 
 	// Create plugin manager
@@ -564,4 +565,17 @@ func main() {
 	}
 
 	logger.Info("Server stopped")
+}
+
+// buildSourceOverrides packs the per-category override env vars from
+// the agent's Config into the category-keyed map that Dependencies
+// (and the manager's primary-source resolver) consume. Empty values
+// are omitted so the map only contains explicit operator picks —
+// callers downstream treat absence as "auto-detect".
+func buildSourceOverrides(cfg *config.Config) map[gear.MetricCategory]string {
+	out := make(map[gear.MetricCategory]string)
+	if cfg.HTTPSource != "" {
+		out[gear.CategoryHTTPRequests] = cfg.HTTPSource
+	}
+	return out
 }

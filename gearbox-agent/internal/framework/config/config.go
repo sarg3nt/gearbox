@@ -66,6 +66,21 @@ type Config struct {
 	// endpoint + schema list to unauthenticated callers in production. See
 	// 2026-05 security audit P3-2.
 	SwaggerEnabled bool
+
+	// Metric-source overrides. Each one points a single metric category
+	// at a specific gear, bypassing auto-detection. Empty = pure
+	// auto-detection (built-in preference order). Lowercased at load
+	// time; the manager validates that each named gear is actually
+	// available before honouring the override (falls back to auto and
+	// warns otherwise).
+	//
+	// Background: most hosts have one obvious producer per metric
+	// category. When two coexist (e.g. HAProxy + nginx both serving
+	// HTTP), the agent picks one as primary; this override lets the
+	// operator force the choice for boxes where the built-in
+	// preference picks wrong. See [docs/source-detection.md] /
+	// issue #95.
+	HTTPSource string // GEARBOX_AGENT_HTTP_SOURCE — primary for CategoryHTTPRequests
 }
 
 // DefaultConfig returns the default configuration.
@@ -161,7 +176,20 @@ func Load() (*Config, error) {
 	// Swagger UI off by default; opt in for dev / API debugging.
 	cfg.SwaggerEnabled = os.Getenv("HAPROXY_AGENT_SWAGGER_ENABLED") == "true"
 
+	// Metric-source overrides. Lowercased + trimmed so 'HAProxy ' and
+	// 'haproxy' both match the gear's Info().Name. Empty = auto-detect.
+	cfg.HTTPSource = normaliseSourceOverride(os.Getenv("GEARBOX_AGENT_HTTP_SOURCE"))
+
 	return cfg, nil
+}
+
+// normaliseSourceOverride trims + lowercases an operator-supplied gear
+// name so case / whitespace differences ('HAProxy ' vs 'haproxy') don't
+// cause silent misses against Info().Name. Returns "" for an empty or
+// whitespace-only input, which downstream callers treat as "no
+// override, auto-detect".
+func normaliseSourceOverride(raw string) string {
+	return strings.ToLower(strings.TrimSpace(raw))
 }
 
 // Validate validates the configuration.
