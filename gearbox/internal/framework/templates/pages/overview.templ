@@ -741,11 +741,16 @@ templ StatsPartial(stats *models.HAProxyStats, serverID string, metadata *models
 					</div>
 				}
 
-				<!-- Show backends if has backends - all in one grid, no grouping -->
+				<!-- Backends, grouped by docker-compose stack. Multi-backend stacks
+				     render their container topology ONCE at the stack header; the
+				     per-backend cards inside are compact (no inline diagram).
+				     Singleton + hardware backends fold into trailing flat buckets
+				     so the UI doesn't grow section chrome for trivial cases. See
+				     docs/research/haproxy-dashboard-stack-layout.md (#79). -->
 				if frontendStatus.HasBackends {
-					<div id={ fmt.Sprintf("%s-backends-%s", serverID, frontendStatus.Frontend.Name) } class="backend-card-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-						for _, backend := range GetBackendsForFrontend(frontendStatus.Frontend.Name, stats.Backends, metadata) {
-							@BackendCard(backend, GetBackendDisplayName(backend.Name), GetContainersForBackend(backend.Name, metadata), ParseBackendName(backend.Name), metadata, IsBackendDisabled(backend.Name, BuildDisabledEntitiesMap(disabledEntities)), serverID, GetDisabledEntity(backend.Name, disabledEntities), canManageDisabled)
+					<div id={ fmt.Sprintf("%s-backends-%s", serverID, frontendStatus.Frontend.Name) } data-backends-root class="space-y-4">
+						for _, stack := range GroupBackendsByStack(GetBackendsForFrontend(frontendStatus.Frontend.Name, stats.Backends, metadata), metadata) {
+							@StackSection(stack, metadata, serverID, disabledEntities, canManageDisabled)
 						}
 					</div>
 				}
@@ -979,11 +984,16 @@ templ BackendGridPartial(stats *models.HAProxyStats, serverID string, metadata *
 					</div>
 				}
 
-				<!-- Show backends if has backends - all in one grid, no grouping -->
+				<!-- Backends, grouped by docker-compose stack. Multi-backend stacks
+				     render their container topology ONCE at the stack header; the
+				     per-backend cards inside are compact (no inline diagram).
+				     Singleton + hardware backends fold into trailing flat buckets
+				     so the UI doesn't grow section chrome for trivial cases. See
+				     docs/research/haproxy-dashboard-stack-layout.md (#79). -->
 				if frontendStatus.HasBackends {
-					<div id={ fmt.Sprintf("%s-backends-%s", serverID, frontendStatus.Frontend.Name) } class="backend-card-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-						for _, backend := range GetBackendsForFrontend(frontendStatus.Frontend.Name, stats.Backends, metadata) {
-							@BackendCard(backend, GetBackendDisplayName(backend.Name), GetContainersForBackend(backend.Name, metadata), ParseBackendName(backend.Name), metadata, IsBackendDisabled(backend.Name, BuildDisabledEntitiesMap(disabledEntities)), serverID, GetDisabledEntity(backend.Name, disabledEntities), canManageDisabled)
+					<div id={ fmt.Sprintf("%s-backends-%s", serverID, frontendStatus.Frontend.Name) } data-backends-root class="space-y-4">
+						for _, stack := range GroupBackendsByStack(GetBackendsForFrontend(frontendStatus.Frontend.Name, stats.Backends, metadata), metadata) {
+							@StackSection(stack, metadata, serverID, disabledEntities, canManageDisabled)
 						}
 					</div>
 				}
@@ -1013,6 +1023,48 @@ templ BackendGridPartial(stats *models.HAProxyStats, serverID string, metadata *
 			}
 		}
 	</div>
+}
+
+// StackSection renders one bucket from GroupBackendsByStack.
+//
+// Multi-backend stacks (real docker-compose projects with >1 exposed
+// route) get a labeled card containing the merged container topology
+// once at the top and a grid of compact BackendCards below — fixing
+// the per-card duplication called out in #79.
+//
+// Singleton (`IsStandalone`) and `IsHardware` buckets render as a flat
+// grid with no wrapper, preserving the existing look-and-feel for
+// trivial cases. Hardware backends never have a container topology;
+// standalone singletons keep their per-card topology via the regular
+// BackendCard rendering path.
+templ StackSection(stack StackGroup, metadata *models.Metadata, serverID string, disabledEntities []database.DisabledEntity, canManageDisabled bool) {
+	if stack.IsStandalone || stack.IsHardware {
+		<!-- Flat grid for trivial cases — no wrapper chrome. -->
+		<div class="backend-card-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+			for _, backend := range stack.Backends {
+				@BackendCard(backend, GetBackendDisplayName(backend.Name), GetContainersForBackend(backend.Name, metadata), ParseBackendName(backend.Name), metadata, IsBackendDisabled(backend.Name, BuildDisabledEntitiesMap(disabledEntities)), serverID, GetDisabledEntity(backend.Name, disabledEntities), canManageDisabled)
+			}
+		</div>
+	} else {
+		<!-- Multi-backend stack: topology once, compact cards below. -->
+		<section class="border border-gray-300 dark:border-slate-600 rounded-lg bg-gray-50 dark:bg-slate-800/40 p-4">
+			<div class="flex flex-wrap items-baseline gap-2 mb-3">
+				<span class="px-2 py-0.5 text-xs font-semibold rounded bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 uppercase tracking-wide">stack</span>
+				<h5 class="text-base font-semibold text-gray-800 dark:text-gray-100 capitalize">{ stack.DisplayName }</h5>
+				<span class="text-xs text-gray-500 dark:text-gray-400">
+					{ fmt.Sprintf("%d backends · %d containers", len(stack.Backends), len(stack.Topology)) }
+				</span>
+			</div>
+			if len(stack.Topology) > 0 {
+				@components.ContainerDiagram(stack.Topology, "")
+			}
+			<div class="backend-card-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+				for _, backend := range stack.Backends {
+					@BackendCard(backend, GetBackendDisplayName(backend.Name), nil, ParseBackendName(backend.Name), metadata, IsBackendDisabled(backend.Name, BuildDisabledEntitiesMap(disabledEntities)), serverID, GetDisabledEntity(backend.Name, disabledEntities), canManageDisabled)
+				}
+			</div>
+		</section>
+	}
 }
 
 templ BackendCard(backend models.Backend, displayName string, containers []models.Container, groupInfo BackendGroupInfo, metadata *models.Metadata, isDisabled bool, serverID string, disabledEntity *database.DisabledEntity, canManageDisabled bool) {
@@ -1136,7 +1188,10 @@ templ BackendCard(backend models.Backend, displayName string, containers []model
 						</svg>
 						<!-- Tooltip -->
 						<div class="invisible group-hover:visible absolute right-0 top-6 w-64 p-3 bg-gray-900 dark:bg-gray-800 text-white text-xs rounded-lg shadow-lg z-10">
-							if len(containers) > 0 && hasSharedNetwork(containers) {
+							if groupInfo.Group == "hardware" {
+								<p class="font-semibold mb-1">Hardware Service</p>
+								<p>This service runs directly on hardware (not containerized) and is accessed via its IP address.</p>
+							} else if len(containers) > 0 && hasSharedNetwork(containers) {
 								<p class="font-semibold mb-1">VPN Gateway Architecture</p>
 								<p>The backend container shares the network namespace of a VPN gateway. All traffic is routed through the VPN for privacy.</p>
 							} else if len(containers) > 1 {
@@ -1146,8 +1201,11 @@ templ BackendCard(backend models.Backend, displayName string, containers []model
 								<p class="font-semibold mb-1">Simple Container</p>
 								<p>This is a standalone container service with direct HAProxy routing.</p>
 							} else {
-								<p class="font-semibold mb-1">Hardware Service</p>
-								<p>This service runs directly on hardware (not containerized) and is accessed via its IP address.</p>
+								<!-- Stack member: this card is one of N backends in a docker-compose
+								     stack; the full container topology is rendered once at the stack
+								     section header above. -->
+								<p class="font-semibold mb-1">Stack Member</p>
+								<p>One of several HAProxy routes served by this docker-compose stack. See the topology above for the full picture.</p>
 							}
 							<!-- Arrow pointing to icon -->
 							<div class="absolute -top-1 right-2 w-2 h-2 bg-gray-900 dark:bg-gray-800 transform rotate-45"></div>

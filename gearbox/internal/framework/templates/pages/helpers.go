@@ -350,6 +350,139 @@ func GetServiceURL(backendName string, metadata *models.Metadata) string {
 	return "https://" + backendMeta.Hostname
 }
 
+// StackGroup is a group of HAProxy backends that share a single
+// docker-compose stack (a "stack" being the leading underscore-separated
+// segment of the backend name, e.g. `arr` in `arr_sonarr_backend`).
+//
+// Existed to fix #79: previously every backend card re-rendered the full
+// stack topology with one container highlighted, so a 5-backend Arr stack
+// drew 5 copies of the same 6-container diagram. With StackGroup the
+// topology is hoisted to the stack level and rendered once; each backend
+// card inside the stack is compact (no per-card diagram).
+//
+// Singleton stacks (one backend per group) and hardware backends are
+// collected into trailing "Standalone" / "Hardware" buckets so the UI
+// doesn't grow section chrome for trivial cases — those still render as
+// flat cards exactly as they did before.
+type StackGroup struct {
+	StackName    string             // the parsed group key, e.g. "arr" — empty for synthetic buckets
+	DisplayName  string             // capitalized label used in the section header
+	IsStandalone bool               // synthetic bucket for singleton non-hardware backends
+	IsHardware   bool               // synthetic bucket for `hardware_*` backends
+	Backends     []models.Backend   // backends in this stack, sorted alphabetically
+	Topology     []models.Container // merged container list — IsBackend OR'd across members
+}
+
+// GroupBackendsByStack groups backends within a frontend by their parsed
+// `BackendGroupInfo.Group` (the docker-compose project prefix). Multi-
+// backend non-hardware groups become their own StackGroup with a merged
+// container topology; singleton non-hardware groups fold into a synthetic
+// "Standalone" bucket; hardware groups fold into a synthetic "Hardware"
+// bucket. The returned slice is ordered: real stacks alphabetically,
+// then Standalone, then Hardware — so the visually heavy multi-container
+// stacks lead and the cheap rows trail.
+//
+// metadata may be nil; in that case Topology is empty for every group.
+func GroupBackendsByStack(backends []models.Backend, metadata *models.Metadata) []StackGroup {
+	type bucket struct {
+		stackName  string
+		backends   []models.Backend
+		containers []models.Container
+		isBackend  map[string]bool // container name -> true if it serves at least one backend in this group
+	}
+
+	byKey := map[string]*bucket{}
+	keyOrder := []string{}
+
+	for _, b := range backends {
+		info := ParseBackendName(b.Name)
+		key := info.Group
+		if key == "" {
+			key = "__none__"
+		}
+		bk, ok := byKey[key]
+		if !ok {
+			bk = &bucket{stackName: info.Group, isBackend: map[string]bool{}}
+			byKey[key] = bk
+			keyOrder = append(keyOrder, key)
+		}
+		bk.backends = append(bk.backends, b)
+		if metadata == nil {
+			continue
+		}
+		bm := metadata.GetMetadataForBackend(b.Name)
+		if bm == nil {
+			continue
+		}
+		for _, c := range bm.Containers {
+			if c.IsBackend {
+				bk.isBackend[c.Name] = true
+			}
+			// dedupe by name, preserve first-seen order
+			already := false
+			for _, existing := range bk.containers {
+				if existing.Name == c.Name {
+					already = true
+					break
+				}
+			}
+			if !already {
+				bk.containers = append(bk.containers, c)
+			}
+		}
+	}
+
+	// Apply the OR-merged IsBackend flag back onto the topology list and
+	// sort each bucket's backends for stable display.
+	for _, bk := range byKey {
+		for i := range bk.containers {
+			bk.containers[i].IsBackend = bk.isBackend[bk.containers[i].Name]
+		}
+		sort.Slice(bk.backends, func(i, j int) bool { return bk.backends[i].Name < bk.backends[j].Name })
+	}
+
+	// Partition into real stacks vs the trailing Standalone / Hardware
+	// buckets. Real stacks are alphabetized; the trailing buckets keep
+	// the order singletons appeared in (matches old GroupBackends).
+	var realStacks []StackGroup
+	standalone := StackGroup{StackName: "", DisplayName: "Standalone services", IsStandalone: true}
+	hardware := StackGroup{StackName: "hardware", DisplayName: "Hardware", IsHardware: true}
+
+	for _, key := range keyOrder {
+		bk := byKey[key]
+		if key == "hardware" {
+			hardware.Backends = append(hardware.Backends, bk.backends...)
+			hardware.Topology = append(hardware.Topology, bk.containers...)
+			continue
+		}
+		if len(bk.backends) <= 1 {
+			standalone.Backends = append(standalone.Backends, bk.backends...)
+			// no topology rendered at the standalone-bucket level — each
+			// card still gets its own container list via BackendCard
+			continue
+		}
+		display := bk.stackName
+		if display != "" {
+			display = strings.ToUpper(display[:1]) + display[1:]
+		}
+		realStacks = append(realStacks, StackGroup{
+			StackName:   bk.stackName,
+			DisplayName: display,
+			Backends:    bk.backends,
+			Topology:    bk.containers,
+		})
+	}
+	sort.Slice(realStacks, func(i, j int) bool { return realStacks[i].StackName < realStacks[j].StackName })
+
+	result := realStacks
+	if len(standalone.Backends) > 0 {
+		result = append(result, standalone)
+	}
+	if len(hardware.Backends) > 0 {
+		result = append(result, hardware)
+	}
+	return result
+}
 
 // StatusSummary holds summary statistics for status doughnuts
 type StatusSummary struct {
