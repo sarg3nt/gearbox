@@ -173,6 +173,14 @@ func main() {
 		logger.Warn("TLS not configured — session cookies will be sent over HTTP (insecure)")
 	}
 
+	// Dev-only loopback auto-login (issue #83). Both calls are no-ops in
+	// production builds (no `-tags dev`) — the bypass code is not even
+	// linked in. See gearbox/internal/framework/auth/dev_bypass_off.go.
+	if err := auth.SeedDevUserIfEnabled(db, logger); err != nil {
+		log.Fatalf("Failed to seed dev user for loopback bypass: %v", err)
+	}
+	auth.LogDevBypassStartupBanner(logger)
+
 	// Initialize email service
 	emailService := email.NewService(db, logger, cfg.BaseURL)
 	logger.Info("email service initialized")

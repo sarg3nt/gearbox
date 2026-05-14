@@ -27,6 +27,17 @@ type SidebarIntegration struct {
 // RequireAuth is middleware that requires authentication.
 func (m *Manager) RequireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Dev-only loopback bypass — short-circuits the session check when
+		// the binary is built with `-tags dev`, GEARBOX_DEV_AUTO_LOGIN=1,
+		// and the request originates from a loopback IP. In production
+		// builds tryDevBypass is a hard-coded `nil, false` stub (see
+		// dev_bypass_off.go); no codepath exists to enable the bypass.
+		if devUser, ok := tryDevBypass(m, r); ok {
+			ctx := context.WithValue(r.Context(), userContextKey, devUser)
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
+
 		user, err := m.GetUser(r)
 		if err != nil {
 			// Not authenticated, redirect to login with return URL
