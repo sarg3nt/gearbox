@@ -125,10 +125,13 @@ See [VS Code Integration](#vs-code-integration) below for debugger support.
 
 ## Dev-Only Loopback Auto-Login
 
-`make dev` builds with `-tags dev` (see [.air.toml](../.air.toml)), which
-compiles in a localhost-only auto-login bypass. When all three of these
-conditions hold, the request is auto-authenticated as the seeded `dev`
-user — no login screen, no cookie management:
+`make dev` builds with `-tags dev` — the flag is set by the `dev:` target
+in [gearbox/Makefile](../Makefile), which overrides air's build command
+via `air --build.cmd "$(DEV_BUILD_CMD)"`. (`.air.toml` is per-developer
+and gitignored, so the build flag intentionally lives in the Makefile.)
+The tag compiles in a localhost-only auto-login bypass. When all three
+of these conditions hold, the request is auto-authenticated as the
+seeded `dev` user — no login screen, no cookie management:
 
 1. The binary was built with `-tags dev`.
 2. The environment variable `GEARBOX_DEV_AUTO_LOGIN=1` is set.

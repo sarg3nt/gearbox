@@ -1,8 +1,11 @@
 //go:build dev
 
 // Dev-only loopback auto-login bypass. Compiled in only when the binary
-// is built with `-tags dev` (see gearbox/.air.toml and the production
-// build path which deliberately omits the tag). See issue #83.
+// is built with `-tags dev`. The tag is set by the `dev:` target in
+// gearbox/Makefile via `air --build.cmd "$(DEV_BUILD_CMD)"`; the
+// production build paths (`make build`, `make deploy-build`) deliberately
+// omit it, so this file and its symbols are not in release binaries at
+// all. See issue #83.
 
 package auth
 
@@ -17,12 +20,26 @@ import (
 	"github.com/sarg3nt/gearbox/internal/framework/models"
 )
 
+const (
+	// devBypassEnvVar gates whether the bypass is allowed to fire even
+	// when the binary was built with `-tags dev`. Set to "1" to enable.
+	devBypassEnvVar = "GEARBOX_DEV_AUTO_LOGIN"
+
+	// devBypassEmail is the email/username of the seeded dev account that
+	// the bypass auto-authenticates as. The account must exist (and be
+	// active) in the users table; the bypass never creates sessions or
+	// auto-promotes a non-existent user.
+	devBypassEmail = "dev"
+)
+
 var devBypassBannerOnce sync.Once
 
 // tryDevBypass returns the seeded `dev` user when ALL of these hold:
 //
-//  1. The binary was built with `-tags dev` (this file is compiled in;
-//     the production sibling dev_bypass_off.go is not).
+//  1. The binary was built with `-tags dev` (gearbox/Makefile's `dev:`
+//     target adds the tag via `air --build.cmd "$(DEV_BUILD_CMD)"`; this
+//     file is compiled in. The production sibling dev_bypass_off.go is
+//     compiled in for tag-less builds and provides a no-op stub.).
 //  2. GEARBOX_DEV_AUTO_LOGIN=1 is set in the process environment.
 //  3. r.RemoteAddr is a loopback address (127.0.0.0/8 or ::1).
 //
@@ -92,7 +109,9 @@ func SeedDevUserIfEnabled(db *database.DB, logger *slog.Logger) error {
 // Designed to be impossible to miss in logs so an operator never confuses
 // a dev binary for a production one.
 //
-// Production builds replace this with a no-op (dev_bypass_off.go).
+// Production builds replace this with a no-op (dev_bypass_off.go) — the
+// production build targets in gearbox/Makefile (`build`, `deploy-build`)
+// omit `-tags dev`, so this banner cannot fire on a release artifact.
 func LogDevBypassStartupBanner(logger *slog.Logger) {
 	if os.Getenv(devBypassEnvVar) != "1" {
 		logger.Info("dev auto-login: bypass compiled in (`-tags dev`) but disabled — set GEARBOX_DEV_AUTO_LOGIN=1 to enable")
