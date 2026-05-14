@@ -8,6 +8,14 @@ import (
 )
 
 // FirewallConfigPage renders the firewall configuration editor page.
+//
+// Precondition: `config` must be non-nil. The HTTP handler routes the nil /
+// fetch-error case to FirewallConfigPageWithError, so by the time this
+// template is invoked the agent payload is known to exist. The hidden
+// input + textarea elements below dereference `config` unconditionally on
+// that basis; the optional `if config != nil` guard around the SHA /
+// timestamp header block is purely cosmetic (keeps the metadata strip
+// from rendering blanks if a future caller ever violates the contract).
 templ FirewallConfigPage(user *models.User, server *database.BoxDB, config *agent.FirewallConfigResponse, gitConfig *database.BoxGitConfig, changes []database.ConfigChange, canEdit bool) {
 	@layouts.Base("Firewall Configuration", user, "/config/firewall") {
 		<!-- Action toolbar hoisted to the global page header (right of the
@@ -19,7 +27,7 @@ templ FirewallConfigPage(user *models.User, server *database.BoxDB, config *agen
 				if config != nil {
 					<div class="hidden xl:flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400 mr-2">
 						<span title="File last modified">{ config.LastModified.Format("2006-01-02 15:04:05") }</span>
-						<span class="font-mono">SHA { config.SHA256[:12] }</span>
+						<span class="font-mono">SHA { shortSHA(config.SHA256) }</span>
 					</div>
 				}
 				if canEdit {

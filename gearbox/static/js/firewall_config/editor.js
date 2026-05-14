@@ -265,7 +265,6 @@
 	function makeNavButton(section, kind) {
 		const btn = document.createElement('button');
 		btn.type = 'button';
-		btn.dataset.line = String(section.start_line || 1);
 		btn.className =
 			'w-full text-left px-2 py-1 rounded text-gray-300 hover:bg-gray-800 hover:text-white flex items-center gap-2';
 		const dot = document.createElement('span');
