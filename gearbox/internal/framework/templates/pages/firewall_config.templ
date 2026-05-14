@@ -166,9 +166,15 @@ templ FirewallConfigPage(user *models.User, server *database.BoxDB, config *agen
 			</div>
 		</div>
 
+		<!-- Hidden inputs ferry Go values to the JS below. templ does NOT
+		     interpolate `{ ... }` inside <script> blocks (they render as
+		     literal text), so we read these from the DOM instead. -->
+		<input type="hidden" id="firewall-server-id" value={ server.BoxID }/>
+		<input type="hidden" id="firewall-config-sha" value={ config.SHA256 }/>
+
 		<script>
-		const serverID = "{ server.BoxID }";
-		let currentSHA = "{ config.SHA256 }";
+		const serverID = document.getElementById('firewall-server-id').value;
+		let currentSHA = document.getElementById('firewall-config-sha').value;
 
 		async function validateConfig() {
 			const content = document.getElementById('config-editor').value;
