@@ -638,7 +638,16 @@ func (m *Manager) GetDB() *database.DB {
 }
 
 // GetUserPermissions retrieves permissions for the current user.
+//
+// Prefers the user placed in the request context by RequireAuth (which is
+// also where the dev-loopback bypass injects its synthetic user). Falls back
+// to the session-cookie lookup so callers that build a request without the
+// auth middleware in front of them — e.g. SSE setup, tests — still resolve.
 func (m *Manager) GetUserPermissions(r *http.Request) (*models.UserPermissions, error) {
+	if user, ok := GetUserFromContext(r.Context()); ok && user != nil {
+		return m.db.GetUserPermissions(user.ID)
+	}
+
 	user, err := m.GetUser(r)
 	if err != nil {
 		return nil, err
