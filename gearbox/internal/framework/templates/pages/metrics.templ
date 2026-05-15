@@ -448,12 +448,36 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 			outline-offset: -4px;
 			cursor: move;
 		}
+		/* Make each tile a flex column so the chart container can
+		   flex to fill the GridStack-controlled height instead of
+		   computing its own from the chart-aspect-container's
+		   padding-bottom trick (which was sized to viewport width
+		   and overflowed the tile). overflow:hidden clips any
+		   stragglers (legends, axis labels) that briefly extend past
+		   the bounds during GridStack resize transitions. */
 		#charts-grid .grid-stack-item-content {
-			/* Inherit the chart-card's own border-radius rather than
-			   the GridStack default (which is rectangular) so the
-			   drag handle visually matches the card. */
-			overflow: visible;
+			display: flex;
+			flex-direction: column;
+			height: 100%;
+			overflow: hidden;
 		}
+		/* Inside a GridStack tile, drop the percent-of-width
+		   aspect-ratio trick — the tile's height comes from gs-h *
+		   cellHeight, and the canvas should fill what's left after
+		   the header row. min-height: 0 is the flex-child idiom
+		   that lets the container shrink below its content's
+		   intrinsic size (without it, the chart's reported size
+		   refuses to go below ~432px and overflows). */
+		#charts-grid .chart-aspect-container {
+			position: relative;
+			flex: 1 1 auto;
+			min-height: 0;
+			width: 100%;
+			height: auto;
+			padding-bottom: 0;
+		}
+		/* Original aspect-ratio rule preserved for any usages
+		   outside the metrics grid (drill-down drawer, etc.). */
 		.chart-aspect-container {
 			position: relative;
 			width: 100%;
