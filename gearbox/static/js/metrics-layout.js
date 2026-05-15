@@ -69,16 +69,22 @@
 
   // 12-column grid matches the templ's default coordinates (half-
   // width tiles are gs-w=6, the full-width Sessions tile is gs-w=12).
-  // margin: 16 felt too tight vertically — adjacent rows visibly
-  // butted up against each other in dark mode where the inner
-  // card backgrounds blur into the page background. Bumped to 24
-  // (12px around every tile → 24px between neighbours) so rows
-  // breathe without spreading the grid too wide.
+  //
+  // Asymmetric margins: rows need more breathing room than columns
+  // because chart axis labels live at the top/bottom of each tile,
+  // pushing the visual content edges closer together vertically
+  // than horizontally. With a symmetric 12px-each-side margin, two
+  // stacked rows looked merged. 18 top/bottom (= 36px between
+  // rows) + 12 left/right (= 24px between side-by-side neighbours)
+  // gives a comfortable read.
   const gs = GridStack.init(
     {
       column: 12,
       cellHeight: 80,
-      margin: 24,
+      marginTop: 18,
+      marginBottom: 18,
+      marginLeft: 12,
+      marginRight: 12,
       float: false,
       staticGrid: true, // read-only until edit mode toggles
       acceptWidgets: false,
