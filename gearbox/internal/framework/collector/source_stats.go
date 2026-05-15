@@ -19,7 +19,7 @@ package collector
 import (
 	"errors"
 	"log/slog"
-	"strings"
+	"net/http"
 	"time"
 
 	"github.com/sarg3nt/gearbox/internal/framework/agent"
@@ -113,29 +113,27 @@ func (s *SourceStatsCollector) collectOne(source string) {
 
 // isExpectedSourceMiss reports whether the agent error matches one
 // of the "this source isn't installed/ready on this host" shapes we
-// want to swallow silently. We match on the HTTP status fragment in
-// the agent client's error format ("status 503: …", "status 404:
-// …") because the client doesn't expose typed errors; doing it here
-// keeps the collector quiet without the client needing a refactor.
+// want to swallow silently. The agent client returns *agent.APIError
+// for any non-2xx response with the HTTP status code on a typed
+// field — we inspect that directly rather than substring-matching
+// the Message text, which would have been brittle (and previously
+// broken — the Message is just the parsed response body, not a
+// "status NNN" string).
+//
+// 503 = source-not-installed-or-not-yet-scraped (the per-source
+// /stats handler returns 503 before its first successful collection),
+// 404 = pre-#100 agent that doesn't have the endpoint at all.
 func isExpectedSourceMiss(err error) bool {
 	if err == nil {
 		return false
 	}
-	msg := err.Error()
-	if strings.Contains(msg, "status 503") || strings.Contains(msg, "status 404") {
-		return true
+	var apiErr *agent.APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.StatusCode == http.StatusNotFound ||
+			apiErr.StatusCode == http.StatusServiceUnavailable
 	}
-	// Older agents (pre-#100) won't have the endpoint at all —
-	// surfaces as a 404 from the chi router. Same swallow.
-	return errors.Is(err, errNotImplementedOnAgent)
+	return false
 }
-
-// errNotImplementedOnAgent is a sentinel future code can wrap into
-// returned errors when the agent rejects a probe path because the
-// gear hasn't shipped on its build yet. Today nothing returns it;
-// declared here so callers reading the swallow logic above can see
-// the shape of "expected miss" reasoning at a glance.
-var errNotImplementedOnAgent = errors.New("endpoint not implemented on agent")
 
 // normaliseSourceStats maps one source's agent-side JSON shape into
 // the common SourceStatsSnapshot the database stores. Each source

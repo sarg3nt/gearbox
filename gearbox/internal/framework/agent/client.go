@@ -276,8 +276,6 @@ func (c *Client) doRequestWithBody(method, path string, reqBody interface{}) ([]
 	return c.doRequestWithBodyAndQuery(method, path, reqBody, nil)
 }
 
-
-
 // doRequestWithBodyAndQuery performs an HTTP request with a JSON body and query parameters.
 func (c *Client) doRequestWithBodyAndQuery(method, path string, reqBody interface{}, query url.Values) ([]byte, error) {
 	fullURL := c.baseURL + path
@@ -1903,14 +1901,17 @@ type AccessLogResponse struct {
 }
 
 // GetAccessLogRecent fetches recent parsed log records from the
-// agent's access-log endpoint. statusMin defaults to 500 server-
-// side when 0 is passed (agent's own convention); limit and lines
-// are clamped server-side to [1, 10000]. Returns the envelope as-is
-// so the handler can decide whether to surface available=false
-// content versus a 4xx.
+// agent's access-log endpoint. statusMin = 0 is a valid value
+// meaning "disable filtering" — the agent treats it that way (see
+// gearbox-agent's access-log handler). To distinguish "caller
+// supplied 0 explicitly" from "caller wants the agent default of
+// 500" we treat any non-negative value as caller-supplied and pass
+// it through; a negative value (e.g. -1) is the way to fall back
+// to the agent default. limit > 0 follows the same explicit/default
+// split — 0 is server-default, positive is explicit.
 func (c *Client) GetAccessLogRecent(source string, statusMin, limit int) (*AccessLogResponse, error) {
 	q := url.Values{}
-	if statusMin > 0 {
+	if statusMin >= 0 {
 		q.Set("status_min", fmt.Sprintf("%d", statusMin))
 	}
 	if limit > 0 {

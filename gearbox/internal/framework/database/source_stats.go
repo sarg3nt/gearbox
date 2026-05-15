@@ -109,6 +109,14 @@ func (d *DB) GetLatestSourceStats(serverID, source string) (*SourceStatsSnapshot
 // collected_at ascending. Used by the time-series chart cards
 // (request rate over the last hour, etc.). Caller clamps the
 // limit; we just translate the SQL.
+//
+// IMPORTANT ordering note: when the time range contains more rows
+// than `limit` allows, we want the NEWEST rows (so the chart shows
+// the recent end of the window, not stale samples from the start
+// of a multi-day range). The SQL therefore selects in DESC order
+// with LIMIT, then we reverse to chronological order for the
+// caller. SQLite plans this as well as ASC-LIMIT because the
+// underlying index is ordered.
 func (d *DB) GetSourceStatsRange(serverID, source string, since, until time.Time, limit int) ([]SourceStatsSnapshot, error) {
 	if limit <= 0 || limit > 10000 {
 		limit = 10000
@@ -123,7 +131,7 @@ func (d *DB) GetSourceStatsRange(serverID, source string, since, until time.Time
 		FROM source_stats
 		WHERE server_id = ? AND source = ?
 		  AND collected_at >= ? AND collected_at <= ?
-		ORDER BY collected_at ASC
+		ORDER BY collected_at DESC
 		LIMIT ?`,
 		serverID, source, since, until, limit,
 	)
@@ -140,7 +148,15 @@ func (d *DB) GetSourceStatsRange(serverID, source string, since, until time.Time
 		}
 		out = append(out, *s)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// Reverse to chronological order so the chart renders earliest
+	// → latest as the caller (and Chart.js) expects.
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	return out, nil
 }
 
 // PruneSourceStats deletes rows older than `before` for the given

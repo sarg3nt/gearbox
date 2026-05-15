@@ -33,20 +33,32 @@ import (
 	"github.com/sarg3nt/gearbox/internal/framework/models"
 )
 
-// supportedNonHAProxySources is the dispatch set for /source/{source}/*.
-// HAProxy is intentionally excluded — its data flows through the
-// existing /metrics/summary + /metrics/log-errors endpoints which
-// read from stats_history / GetLogs, not from source_stats.
-//
-// Kept in sync with collector.SupportedSources() (the agent-side
-// scraper polls the same set). A new source landing requires both
-// lists to grow in lockstep; the per-source handler test covers
-// each entry to keep them honest.
-var supportedNonHAProxySources = map[string]struct{}{
+// supportedSourceSummaries is the dispatch set for the per-source
+// SUMMARY endpoint. HAProxy is intentionally excluded — its data
+// flows through the existing /metrics/summary endpoint which reads
+// from stats_history, not source_stats. Must stay in lockstep with
+// collector.SupportedSources() (the agent-side scraper polls the
+// same set).
+var supportedSourceSummaries = map[string]struct{}{
 	sourceNginx:   {},
 	sourceApache:  {},
 	sourceCaddy:   {},
 	sourceTraefik: {},
+}
+
+// supportedLogErrorSources is the dispatch set for the per-source
+// LOG-ERRORS endpoint. Distinct from supportedSourceSummaries
+// because Traefik has no access-log parser on the agent side
+// (gearbox-agent/internal/gears/accesslog/plugin.go registers
+// haproxy / nginx / apache / caddy only — Traefik's "logs" come
+// through Prometheus). Advertising Traefik here would always proxy
+// to a 404 from the agent, which would surface as a confusing
+// "logs unavailable" envelope.
+var supportedLogErrorSources = map[string]struct{}{
+	sourceHAProxy: {},
+	sourceNginx:   {},
+	sourceApache:  {},
+	sourceCaddy:   {},
 }
 
 // sourceSummaryResponse is the JSON the per-source summary endpoint
@@ -83,7 +95,7 @@ func (h *Handler) APIMetricsSourceSummaryHandler(w http.ResponseWriter, r *http.
 		return
 	}
 	source := chi.URLParam(r, "source")
-	if _, ok := supportedNonHAProxySources[source]; !ok {
+	if _, ok := supportedSourceSummaries[source]; !ok {
 		http.Error(w, "Unsupported source — valid: nginx, apache, caddy, traefik", http.StatusNotFound)
 		return
 	}
@@ -173,18 +185,16 @@ func (h *Handler) APIMetricsSourceLogErrorsHandler(w http.ResponseWriter, r *htt
 		return
 	}
 	source := chi.URLParam(r, "source")
-	// HAProxy IS allowed here even though we excluded it from the
-	// summary handler — the agent's access-log endpoint supports
-	// "haproxy" as a profile, and the dashboard's Phase-5 plan is
-	// to migrate the Error Insights panel onto this endpoint for
-	// EVERY source including HAProxy. The summary handler stays
-	// HAProxy-excluded because HAProxy summary still flows through
-	// stats_history; log parsing is the Phase-5 unification point.
-	if source != sourceHAProxy {
-		if _, ok := supportedNonHAProxySources[source]; !ok {
-			http.Error(w, "Unsupported source — valid: haproxy, nginx, apache, caddy, traefik", http.StatusNotFound)
-			return
-		}
+	// supportedLogErrorSources includes HAProxy (the agent's access-
+	// log endpoint supports it as a profile, and Phase 5 unifies log
+	// parsing across every source) but excludes Traefik (the agent
+	// has no Traefik access-log parser — it expects Prometheus-only
+	// metrics from Traefik). Listing Traefik here would proxy to a
+	// 404 from the agent and surface as a confusing
+	// "logs unavailable" envelope.
+	if _, ok := supportedLogErrorSources[source]; !ok {
+		http.Error(w, "Unsupported source — valid: haproxy, nginx, apache, caddy", http.StatusNotFound)
+		return
 	}
 
 	serverConfig, exists := h.getServerConfig(boxID)

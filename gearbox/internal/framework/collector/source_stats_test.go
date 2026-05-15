@@ -133,19 +133,26 @@ func TestNormaliseSourceStatsTolerantOfMissingFields(t *testing.T) {
 }
 
 func TestIsExpectedSourceMiss(t *testing.T) {
+	// The agent client returns *agent.APIError for any non-2xx
+	// response — we match on the typed field, not the message text.
+	// 404 and 503 are the "source not present / not ready" shapes
+	// we swallow; everything else surfaces as a warning.
 	cases := []struct {
+		name string
 		err  error
 		want bool
 	}{
-		{nil, false},
-		{errors.New("status 503: no data"), true},
-		{errors.New("status 404: not found"), true},
-		{errors.New("status 500: something broke"), false},
-		{errors.New("connection refused"), false},
+		{"nil", nil, false},
+		{"503 (not yet collected)", &agent.APIError{StatusCode: 503, Message: "stats not yet collected"}, true},
+		{"404 (endpoint missing on older agent)", &agent.APIError{StatusCode: 404, Message: "not found"}, true},
+		{"500 (real failure)", &agent.APIError{StatusCode: 500, Message: "boom"}, false},
+		{"plain error (transport)", errors.New("connection refused"), false},
 	}
 	for _, tc := range cases {
-		if got := isExpectedSourceMiss(tc.err); got != tc.want {
-			t.Errorf("isExpectedSourceMiss(%v) = %v, want %v", tc.err, got, tc.want)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isExpectedSourceMiss(tc.err); got != tc.want {
+				t.Errorf("isExpectedSourceMiss(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
 	}
 }
