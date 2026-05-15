@@ -452,6 +452,12 @@ func main() {
 	r.Use(gbmiddleware.SecurityHeaders)
 	// Inject asset configuration for templates (CDN vs local assets)
 	r.Use(gbmiddleware.InjectAssetConfig(cfg.UseLocalAssets))
+
+	// Themed 404 for unmatched routes. The handler is intentionally
+	// static (inline HTML, no auth/DB/templ) so a typo'd URL can't be a
+	// side channel for fingerprinting session state. See the handler's
+	// own godoc for the rationale.
+	r.NotFound(handler.NotFoundHandler)
 	// Note: Timeout middleware is applied per-route group below
 	// SSE endpoints need to bypass the timeout middleware
 
