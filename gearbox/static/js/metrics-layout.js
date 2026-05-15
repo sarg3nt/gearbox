@@ -70,12 +70,11 @@
   // 12-column grid matches the templ's default coordinates (half-
   // width tiles are gs-w=6, the full-width Sessions tile is gs-w=12).
   //
-  // Asymmetric margins so rows breathe more than columns: chart
-  // axis labels live at the top/bottom of each tile so adjacent
-  // rows' visible content edges approach each other faster than
-  // adjacent columns. 24 top/bottom (= 48px between rows) +
-  // 12 left/right (= 24px between side-by-side) is the ratio that
-  // reads right after multiple feedback passes on PR #104.
+  // Margins set to 6 on every side → 12px visible gap between
+  // tiles on both axes. Matches the KPI band's Tailwind gap-3
+  // (12px) directly above the grid, so the whole metrics page
+  // reads as one consistently-spaced surface rather than two
+  // grids with different rhythms.
   //
   // ALSO: keep getCellHeight(false) (not cellHeight()) anywhere we
   // need the cell height — the bare cellHeight() getter side-
@@ -86,10 +85,10 @@
     {
       column: 12,
       cellHeight: 80,
-      marginTop: 24,
-      marginBottom: 24,
-      marginLeft: 12,
-      marginRight: 12,
+      marginTop: 6,
+      marginBottom: 6,
+      marginLeft: 6,
+      marginRight: 6,
       float: false,
       staticGrid: true, // read-only until edit mode toggles
       acceptWidgets: false,
