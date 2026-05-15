@@ -41,6 +41,7 @@ import (
 	"github.com/sarg3nt/gearbox-agent/internal/framework/services/sync"
 
 	// Import plugins - blank identifier triggers init() registration
+	_ "github.com/sarg3nt/gearbox-agent/internal/gears/accesslog"
 	_ "github.com/sarg3nt/gearbox-agent/internal/gears/apache"
 	_ "github.com/sarg3nt/gearbox-agent/internal/gears/caddy"
 	_ "github.com/sarg3nt/gearbox-agent/internal/gears/certs"
@@ -397,6 +398,10 @@ func main() {
 		CaddyAdminURL:        cfg.CaddyAdminURL,
 		TraefikMetricsURL:    cfg.TraefikMetricsURL,
 		DockerSocket:         cfg.DockerSocket,
+		HAProxyAccessLog:     cfg.HAProxyAccessLog,
+		NginxAccessLog:       cfg.NginxAccessLog,
+		ApacheAccessLog:      cfg.ApacheAccessLog,
+		CaddyAccessLog:       cfg.CaddyAccessLog,
 	}
 
 	// Create plugin manager

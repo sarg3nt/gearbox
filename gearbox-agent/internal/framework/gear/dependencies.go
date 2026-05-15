@@ -66,6 +66,15 @@ type Dependencies struct {
 	CaddyAdminURL     string // CADDY_ADMIN_URL
 	TraefikMetricsURL string // TRAEFIK_METRICS_URL
 	DockerSocket      string // DOCKER_SOCKET
+
+	// Per-source access-log paths. Empty means "fall back to the
+	// gear's well-known default"; an explicit value bypasses the
+	// fallback (and a non-existent path then surfaces as
+	// "log file not readable" through the access-log endpoint).
+	HAProxyAccessLog string // HAPROXY_ACCESS_LOG
+	NginxAccessLog   string // NGINX_ACCESS_LOG
+	ApacheAccessLog  string // APACHE_ACCESS_LOG
+	CaddyAccessLog   string // CADDY_ACCESS_LOG
 }
 
 // Common event types used across plugins.
