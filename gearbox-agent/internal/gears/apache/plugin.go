@@ -103,7 +103,7 @@ func (g *Gear) Info() gear.Info {
 	return gear.Info{
 		Name:        "apache",
 		DisplayName: "Apache HTTP Server",
-		Description: "Detects an Apache installation and verifies its mod_status surface so the Metrics gear can consume it in Phase 4+.",
+		Description: "Detects an Apache installation and verifies its mod_status surface so the Metrics gear can consume it in Phase 7+.",
 		Version:     "1.0.0",
 		Category:    "monitoring",
 	}

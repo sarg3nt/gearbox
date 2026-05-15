@@ -113,7 +113,8 @@ func (g *Gear) Probe(ctx context.Context, deps gear.Dependencies) gear.ProbeResu
 	}
 	caps["socket_path"] = socketPath
 
-	if _, err := g.stat(socketPath); err != nil {
+	info, err := g.stat(socketPath)
+	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return gear.ProbeInaccessible(fmt.Sprintf(
 				"docker binary at %s but socket %s does not exist (dockerd not running, or socket path wrong)",
@@ -125,6 +126,18 @@ func (g *Gear) Probe(ctx context.Context, deps gear.Dependencies) gear.ProbeResu
 		return gear.ProbeInaccessible(fmt.Sprintf(
 			"docker binary at %s but cannot stat socket %s: %v",
 			binary, socketPath, err,
+		))
+	}
+	// Defence against the operator (or a bind-mount mishap) pointing
+	// us at a regular file or directory at the socket path. Without
+	// this check we'd declare Available, the Phase-4 metrics gear
+	// would fail confusingly on first dial, and the manifest would
+	// have lied. ModeSocket-flag check is the right primitive — works
+	// for any Unix-socket type regardless of permissions or owner.
+	if info.Mode()&os.ModeSocket == 0 {
+		return gear.ProbeInaccessible(fmt.Sprintf(
+			"docker binary at %s but %s exists and is not a socket (mode=%s); fix the path or the bind mount",
+			binary, socketPath, info.Mode(),
 		))
 	}
 

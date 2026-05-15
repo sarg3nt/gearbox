@@ -13,9 +13,11 @@ package probe
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
-	"strings"
+	"net/url"
 	"time"
 )
 
@@ -33,30 +35,37 @@ type HTTPResult struct {
 	Body       string
 }
 
-// HTTPGet performs a bounded GET against url. Returns the status code
-// and body (decoded as UTF-8 string, capped at maxBody bytes) on any
-// HTTP response — including 4xx/5xx, since detectors care about the
-// distinction between 403/404 (server present, surface missing or
+// HTTPGet performs a bounded GET against rawURL. Returns the status
+// code and body (decoded as UTF-8 string, capped at maxBody bytes) on
+// any HTTP response — including 4xx/5xx, since detectors care about
+// the distinction between 403/404 (server present, surface missing or
 // permissioned) and a connection error (server absent).
 //
 // Loopback TLS verification is intentionally disabled — a probe of
 // `https://127.0.0.1/...` that fronts a self-signed cert is a normal
 // shape (e.g. nginx with `ssl_certificate snakeoil.pem`). For non-
-// loopback hosts, the caller should construct their own client with
-// verification on; this helper is loopback-oriented by design.
+// loopback hosts the helper leaves verification on; the loopback
+// check parses the URL with net/url and inspects the host with
+// net.IP.IsLoopback so a userinfo-spoofed URL like
+// `https://localhost@evil.com/...` can't trick us into skipping verify
+// against `evil.com`.
 //
-// maxBody must be > 0; we cap at that many bytes to avoid pulling an
-// entire log file or large debug page into memory.
-func HTTPGet(ctx context.Context, url string, maxBody int64) (HTTPResult, error) {
+// maxBody must be > 0; passing a non-positive value returns an error
+// instead of silently truncating to nothing (which would hide
+// sentinel mismatches and look like a 200 with empty body).
+func HTTPGet(ctx context.Context, rawURL string, maxBody int64) (HTTPResult, error) {
+	if maxBody <= 0 {
+		return HTTPResult{}, fmt.Errorf("probe.HTTPGet: maxBody must be positive, got %d", maxBody)
+	}
 	client := &http.Client{
 		Timeout: DefaultTimeout,
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: isLoopback(url)}, // #nosec G402
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: isLoopback(rawURL)}, // #nosec G402
 		},
 	}
 	defer client.CloseIdleConnections()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return HTTPResult{}, err
 	}
@@ -73,14 +82,22 @@ func HTTPGet(ctx context.Context, url string, maxBody int64) (HTTPResult, error)
 	}, nil
 }
 
-// isLoopback is true when the URL points at 127.0.0.0/8 or [::1] —
-// matches the cases where TLS verification is meaningless and
-// commonly fails on self-signed local certs. Anything else returns
-// false so the helper doesn't silently disable verification on
-// public endpoints.
-func isLoopback(url string) bool {
-	url = strings.ToLower(url)
-	return strings.Contains(url, "://127.") ||
-		strings.Contains(url, "://[::1]") ||
-		strings.Contains(url, "://localhost")
+// isLoopback reports whether rawURL points at a loopback host —
+// `localhost`, anything in 127.0.0.0/8, or `[::1]`. Parses the URL
+// with net/url so userinfo (`https://localhost@evil.com`) can't fool
+// the check: url.Hostname() strips userinfo, port, and IPv6 brackets,
+// leaving just the actual target host. Returns false on parse error
+// so the safe default is "TLS verification stays on" for anything we
+// don't recognise as loopback.
+func isLoopback(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	host := u.Hostname()
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

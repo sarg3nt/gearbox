@@ -6,7 +6,7 @@ Auto-detection covers the common case with no configuration. The override env va
 
 ## Probe precedence (per source)
 
-Each detector runs the same six-step decision tree at startup:
+Each detector runs the same four-step decision tree at startup:
 
 ```text
 1. Explicit override URL configured (e.g. NGINX_STATUS_URL)?

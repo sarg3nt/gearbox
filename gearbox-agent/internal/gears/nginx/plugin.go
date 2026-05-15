@@ -30,7 +30,7 @@ func init() {
 // Well-known nginx.conf locations searched in order when neither
 // NGINX_CONFIG_FILE nor `nginx -V` reveals the path. Order matters:
 // /etc/nginx is the modern Linux default; the others handle older
-// installs and BSD-style layouts. Harmless to keep all four.
+// installs and BSD-style layouts. Harmless to keep all three.
 var wellKnownConfigPaths = []string{
 	"/etc/nginx/nginx.conf",
 	"/usr/local/nginx/conf/nginx.conf",
@@ -129,8 +129,9 @@ func (g *Gear) MetricCategories() []gear.MetricCategory {
 //     - 404 → Inaccessible (stub_status not configured).
 //     - connection refused / timeout → Inaccessible (no listener).
 //
-// The function is cheap: a single LookPath, two `nginx -V` runs (each
-// well under 100ms), and one HTTP GET with a 1s timeout. No retries.
+// The function is cheap: a single LookPath, one `nginx -v` and one
+// `nginx -V` invocation (each well under 100ms), plus one HTTP GET
+// with a 1s timeout. No retries.
 func (g *Gear) Probe(ctx context.Context, deps gear.Dependencies) gear.ProbeResult {
 	// Branch 1: operator override. Skip the synchronous probe; trust
 	// the operator. We still try to record version + binary if we

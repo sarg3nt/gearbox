@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,13 +13,18 @@ import (
 )
 
 // fakeFileInfo is a minimal os.FileInfo stand-in for the stat indirection.
-type fakeFileInfo struct{ name string }
+// mode lets each test pin the file type — ModeSocket for the happy path,
+// 0 / ModeDir to exercise the "exists but not a socket" branch.
+type fakeFileInfo struct {
+	name string
+	mode os.FileMode
+}
 
 func (f fakeFileInfo) Name() string         { return f.name }
 func (fakeFileInfo) Size() int64            { return 0 }
-func (fakeFileInfo) Mode() os.FileMode      { return 0 }
+func (f fakeFileInfo) Mode() os.FileMode    { return f.mode }
 func (fakeFileInfo) ModTime() (t time.Time) { return }
-func (fakeFileInfo) IsDir() bool            { return false }
+func (f fakeFileInfo) IsDir() bool          { return f.mode.IsDir() }
 func (fakeFileInfo) Sys() any               { return nil }
 
 // newTestGear returns a gear with stubbed-out OS dependencies so probe
@@ -27,7 +33,7 @@ func newTestGear() *Gear {
 	return &Gear{
 		lookPath:        func(string) (string, error) { return "/usr/bin/docker", nil },
 		runVersionCmd:   func(context.Context) ([]byte, error) { return []byte("Docker version 24.0.7, build afdd53b\n"), nil },
-		stat:            func(string) (os.FileInfo, error) { return fakeFileInfo{name: "docker.sock"}, nil },
+		stat:            func(string) (os.FileInfo, error) { return fakeFileInfo{name: "docker.sock", mode: os.ModeSocket}, nil },
 		systemctlActive: func(context.Context, string) bool { return true },
 	}
 }
@@ -58,6 +64,27 @@ func TestProbeReturnsInaccessibleWhenSocketMissing(t *testing.T) {
 	}
 	if res.Reason == "" {
 		t.Error("inaccessible result must carry an operator-readable reason")
+	}
+}
+
+func TestProbeReturnsInaccessibleWhenPathExistsButIsNotASocket(t *testing.T) {
+	// Bind-mount or operator typo points the socket path at a regular
+	// file (or a directory). The path exists, but it isn't actually a
+	// Unix socket the metrics gear could dial. Catching this at probe
+	// time keeps the manifest honest — without the ModeSocket check we
+	// would declare Available and the failure would surface later in
+	// confusing form.
+	g := newTestGear()
+	g.stat = func(string) (os.FileInfo, error) {
+		return fakeFileInfo{name: "docker.sock", mode: 0}, nil // regular file
+	}
+
+	res := g.Probe(context.Background(), gear.Dependencies{})
+	if res.Status != gear.ProbeStatusInaccessible {
+		t.Fatalf("status = %v, want Inaccessible (path exists but is not a socket)", res.Status)
+	}
+	if !strings.Contains(res.Reason, "not a socket") {
+		t.Errorf("reason should name the non-socket mismatch, got %q", res.Reason)
 	}
 }
 

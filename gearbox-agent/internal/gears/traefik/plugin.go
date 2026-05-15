@@ -91,7 +91,7 @@ func (g *Gear) Info() gear.Info {
 	return gear.Info{
 		Name:        "traefik",
 		DisplayName: "Traefik",
-		Description: "Detects a Traefik installation and verifies its Prometheus metrics endpoint so the Metrics gear can scrape it in Phase 4+.",
+		Description: "Detects a Traefik installation and verifies its Prometheus metrics endpoint so the Metrics gear can scrape it in Phase 7+.",
 		Version:     "1.0.0",
 		Category:    "monitoring",
 	}
@@ -135,6 +135,15 @@ func (g *Gear) Probe(ctx context.Context, deps gear.Dependencies) gear.ProbeResu
 	g.recordBinaryFacts(ctx, caps)
 	g.recordDashboardAPI(ctx, caps)
 
+	// Track the last response that wasn't a sentinel match so the
+	// inaccessible reason can distinguish three operator-actionable
+	// states: nothing-listening (all attempts errored), wrong-service-
+	// on-this-port (200 without sentinel), and non-200 status code.
+	// Without this, the message would always read "no metrics endpoint
+	// reachable" even when a perfectly happy non-Traefik server was
+	// answering on :8080 — which leads operators to debug the wrong
+	// thing.
+	var lastNonMatch string
 	for _, url := range defaultMetricsURLs {
 		res, err := g.httpGet(ctx, url)
 		if err != nil {
@@ -147,12 +156,21 @@ func (g *Gear) Probe(ctx context.Context, deps gear.Dependencies) gear.ProbeResu
 				caps,
 			)
 		}
+		if res.StatusCode == http.StatusOK {
+			lastNonMatch = fmt.Sprintf("%s returned 200 but body lacked the Traefik sentinel (likely a different service on this port)", url)
+		} else {
+			lastNonMatch = fmt.Sprintf("%s returned HTTP %d", url, res.StatusCode)
+		}
 	}
 
-	return gear.ProbeInaccessible(fmt.Sprintf(
+	reason := fmt.Sprintf(
 		"traefik binary at %s but no metrics endpoint reachable at %s — enable the Prometheus exporter under '[metrics.prometheus]' or set TRAEFIK_METRICS_URL",
 		binary, strings.Join(defaultMetricsURLs, " or "),
-	))
+	)
+	if lastNonMatch != "" {
+		reason = fmt.Sprintf("%s (last attempt: %s)", reason, lastNonMatch)
+	}
+	return gear.ProbeInaccessible(reason)
 }
 
 // recordBinaryFacts populates the version fact in caps. Best-effort.

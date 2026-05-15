@@ -117,6 +117,30 @@ func TestProbeInaccessibleWhenAllDefaultsFail(t *testing.T) {
 	}
 }
 
+func TestProbeInaccessibleSurfacesLastNonMatchingResponse(t *testing.T) {
+	// A different Prometheus exporter is listening on :8082 but it
+	// isn't Traefik. The reason field must name THAT specifically so
+	// the operator knows to debug "wrong service on this port" rather
+	// than "Traefik isn't running" — the latter sends them down a
+	// wrong-cause investigation. Same for non-200 status codes.
+	httpGet, _ := recordingHTTPGet(map[string]probe.HTTPResult{
+		"http://127.0.0.1:8082/metrics": {StatusCode: http.StatusOK, Body: "# some other exporter\nother_metric 1\n"},
+	})
+	g := newTestGear()
+	g.httpGet = httpGet
+
+	res := g.Probe(context.Background(), gear.Dependencies{})
+	if res.Status != gear.ProbeStatusInaccessible {
+		t.Fatalf("status = %v, want Inaccessible", res.Status)
+	}
+	if !strings.Contains(res.Reason, "lacked the Traefik sentinel") {
+		t.Errorf("reason should distinguish 'wrong service on this port' from 'no listener', got %q", res.Reason)
+	}
+	if !strings.Contains(res.Reason, ":8082") {
+		t.Errorf("reason should name which URL produced the last response, got %q", res.Reason)
+	}
+}
+
 func TestProbeMetricsURLOverrideShortCircuits(t *testing.T) {
 	g := newTestGear()
 	g.httpGet = func(_ context.Context, url string) (probe.HTTPResult, error) {

@@ -79,7 +79,7 @@ func (g *Gear) Info() gear.Info {
 	return gear.Info{
 		Name:        "caddy",
 		DisplayName: "Caddy",
-		Description: "Detects a Caddy installation and verifies its admin/metrics endpoint so the Metrics gear can scrape it in Phase 4+.",
+		Description: "Detects a Caddy installation and verifies its admin/metrics endpoint so the Metrics gear can scrape it in Phase 7+.",
 		Version:     "1.0.0",
 		Category:    "monitoring",
 	}
