@@ -36,16 +36,22 @@ import (
 	"github.com/sarg3nt/gearbox-agent/internal/framework/config"
 	"github.com/sarg3nt/gearbox-agent/internal/framework/crypto"
 	"github.com/sarg3nt/gearbox-agent/internal/framework/events"
-	"github.com/sarg3nt/gearbox-agent/internal/framework/middleware"
 	"github.com/sarg3nt/gearbox-agent/internal/framework/gear"
+	"github.com/sarg3nt/gearbox-agent/internal/framework/middleware"
 	"github.com/sarg3nt/gearbox-agent/internal/framework/services/sync"
 
 	// Import plugins - blank identifier triggers init() registration
+	_ "github.com/sarg3nt/gearbox-agent/internal/gears/apache"
+	_ "github.com/sarg3nt/gearbox-agent/internal/gears/caddy"
 	_ "github.com/sarg3nt/gearbox-agent/internal/gears/certs"
+	_ "github.com/sarg3nt/gearbox-agent/internal/gears/docker"
 	_ "github.com/sarg3nt/gearbox-agent/internal/gears/haproxy"
+	_ "github.com/sarg3nt/gearbox-agent/internal/gears/host"
 	_ "github.com/sarg3nt/gearbox-agent/internal/gears/logs"
 	_ "github.com/sarg3nt/gearbox-agent/internal/gears/metrics"
+	_ "github.com/sarg3nt/gearbox-agent/internal/gears/nginx"
 	_ "github.com/sarg3nt/gearbox-agent/internal/gears/security"
+	_ "github.com/sarg3nt/gearbox-agent/internal/gears/traefik"
 	_ "github.com/sarg3nt/gearbox-agent/internal/gears/traffic"
 	_ "github.com/sarg3nt/gearbox-agent/internal/gears/updates"
 )
@@ -384,6 +390,13 @@ func main() {
 		HAProxyConfigPath:    cfg.HAProxyConfigFile,
 		CertbotTimer:         cfg.CertbotTimer,
 		SourceOverrides:      buildSourceOverrides(cfg),
+		NginxStatusURL:       cfg.NginxStatusURL,
+		NginxConfigFile:      cfg.NginxConfigFile,
+		ApacheStatusURL:      cfg.ApacheStatusURL,
+		ApacheConfigFile:     cfg.ApacheConfigFile,
+		CaddyAdminURL:        cfg.CaddyAdminURL,
+		TraefikMetricsURL:    cfg.TraefikMetricsURL,
+		DockerSocket:         cfg.DockerSocket,
 	}
 
 	// Create plugin manager

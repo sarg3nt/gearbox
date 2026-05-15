@@ -424,3 +424,69 @@ func TestLoad_HTTPSourceDefaultsEmpty(t *testing.T) {
 		t.Errorf("HTTPSource = %q, want empty (auto-detect)", cfg.HTTPSource)
 	}
 }
+
+// TestLoad_PerSourceOverrides exercises the per-source env vars that
+// short-circuit each detector's default probe. The values must round-
+// trip with whitespace trimmed but case preserved — URLs are
+// case-sensitive in their path components and Linux filesystem paths
+// are case-sensitive too, so the HTTPSource trim+lowercase treatment
+// would be wrong here.
+func TestLoad_PerSourceOverrides(t *testing.T) {
+	cases := []struct {
+		envKey, envVal string
+		field          func(*Config) string
+		want           string
+	}{
+		{"NGINX_STATUS_URL", " http://127.0.0.1/Nginx_Status ", func(c *Config) string { return c.NginxStatusURL }, "http://127.0.0.1/Nginx_Status"},
+		{"NGINX_CONFIG_FILE", "/etc/nginx/Nginx.conf", func(c *Config) string { return c.NginxConfigFile }, "/etc/nginx/Nginx.conf"},
+		{"APACHE_STATUS_URL", "http://127.0.0.1/server-status?auto", func(c *Config) string { return c.ApacheStatusURL }, "http://127.0.0.1/server-status?auto"},
+		{"APACHE_CONFIG_FILE", "/etc/httpd/conf/httpd.conf", func(c *Config) string { return c.ApacheConfigFile }, "/etc/httpd/conf/httpd.conf"},
+		{"CADDY_ADMIN_URL", "http://127.0.0.1:2019/metrics", func(c *Config) string { return c.CaddyAdminURL }, "http://127.0.0.1:2019/metrics"},
+		{"TRAEFIK_METRICS_URL", "http://127.0.0.1:8082/metrics", func(c *Config) string { return c.TraefikMetricsURL }, "http://127.0.0.1:8082/metrics"},
+		{"DOCKER_SOCKET", "/var/run/docker.sock", func(c *Config) string { return c.DockerSocket }, "/var/run/docker.sock"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.envKey, func(t *testing.T) {
+			t.Setenv(tc.envKey, tc.envVal)
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if got := tc.field(cfg); got != tc.want {
+				t.Errorf("%s round-trip = %q, want %q", tc.envKey, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestLoad_PerSourceOverridesDefaultEmpty(t *testing.T) {
+	// Defaults must be empty strings — empty signals to each gear's
+	// Probe() that no override is in effect and it should walk its
+	// well-known-paths default.
+	for _, k := range []string{
+		"NGINX_STATUS_URL", "NGINX_CONFIG_FILE",
+		"APACHE_STATUS_URL", "APACHE_CONFIG_FILE",
+		"CADDY_ADMIN_URL", "TRAEFIK_METRICS_URL", "DOCKER_SOCKET",
+	} {
+		t.Setenv(k, "")
+		os.Unsetenv(k)
+	}
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	getters := map[string]string{
+		"NginxStatusURL":    cfg.NginxStatusURL,
+		"NginxConfigFile":   cfg.NginxConfigFile,
+		"ApacheStatusURL":   cfg.ApacheStatusURL,
+		"ApacheConfigFile":  cfg.ApacheConfigFile,
+		"CaddyAdminURL":     cfg.CaddyAdminURL,
+		"TraefikMetricsURL": cfg.TraefikMetricsURL,
+		"DockerSocket":      cfg.DockerSocket,
+	}
+	for name, got := range getters {
+		if got != "" {
+			t.Errorf("%s default = %q, want empty", name, got)
+		}
+	}
+}

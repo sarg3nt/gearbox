@@ -81,6 +81,26 @@ type Config struct {
 	// preference picks wrong. See [docs/source-detection.md] /
 	// issue #95.
 	HTTPSource string // GEARBOX_AGENT_HTTP_SOURCE — primary for CategoryHTTPRequests
+
+	// Per-source detection overrides. Each one short-circuits the
+	// detector's default well-known-paths/loopback-URL probe and trusts
+	// the operator-supplied surface instead. The agent does not probe
+	// these synchronously at startup — a misconfigured value will
+	// surface later when the metrics phase tries to read from it.
+	//
+	// Empty (the default) means "auto-detect" — the corresponding
+	// gear's Probe() walks its well-known paths and default loopback
+	// URL. Operators on hosts where the binary lives in a non-standard
+	// place, or whose status endpoint lives on a non-default address,
+	// reach for these as the escape hatch. See [docs/source-detection.md]
+	// / issue #95.
+	NginxStatusURL    string // NGINX_STATUS_URL    — force a specific stub_status URL
+	NginxConfigFile   string // NGINX_CONFIG_FILE   — force a specific nginx.conf path
+	ApacheStatusURL   string // APACHE_STATUS_URL   — force a specific mod_status URL
+	ApacheConfigFile  string // APACHE_CONFIG_FILE  — force a specific httpd.conf path
+	CaddyAdminURL     string // CADDY_ADMIN_URL     — force the admin/Prometheus URL
+	TraefikMetricsURL string // TRAEFIK_METRICS_URL — force the Prometheus endpoint URL
+	DockerSocket      string // DOCKER_SOCKET       — force a specific docker socket path
 }
 
 // DefaultConfig returns the default configuration.
@@ -179,6 +199,18 @@ func Load() (*Config, error) {
 	// Metric-source overrides. Lowercased + trimmed so 'HAProxy ' and
 	// 'haproxy' both match the gear's Info().Name. Empty = auto-detect.
 	cfg.HTTPSource = normaliseSourceOverride(os.Getenv("GEARBOX_AGENT_HTTP_SOURCE"))
+
+	// Per-source detection overrides. Unprefixed env vars to match the
+	// existing HAPROXY_STATS_URL style — these belong to the subject,
+	// not the agent. Trimmed but not lowercased (URLs and paths are
+	// case-sensitive on most filesystems).
+	cfg.NginxStatusURL = strings.TrimSpace(os.Getenv("NGINX_STATUS_URL"))
+	cfg.NginxConfigFile = strings.TrimSpace(os.Getenv("NGINX_CONFIG_FILE"))
+	cfg.ApacheStatusURL = strings.TrimSpace(os.Getenv("APACHE_STATUS_URL"))
+	cfg.ApacheConfigFile = strings.TrimSpace(os.Getenv("APACHE_CONFIG_FILE"))
+	cfg.CaddyAdminURL = strings.TrimSpace(os.Getenv("CADDY_ADMIN_URL"))
+	cfg.TraefikMetricsURL = strings.TrimSpace(os.Getenv("TRAEFIK_METRICS_URL"))
+	cfg.DockerSocket = strings.TrimSpace(os.Getenv("DOCKER_SOCKET"))
 
 	return cfg, nil
 }
