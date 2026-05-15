@@ -1,7 +1,6 @@
 // Package apache detects an Apache HTTP Server installation on the host
-// and reports it in the capability manifest. Phase 3 only — no metrics
-// collection yet; that lands in Phase 7 (separate issue, #95 followup)
-// and will read the mod_status surface this gear already verified.
+// and periodically scrapes its mod_status?auto surface so the
+// dashboard's Metrics gear can render Apache alongside HAProxy.
 //
 // The detector declares CategoryHTTPRequests so the agent's
 // primary-source resolver (see [gear.ResolvePrimarySources]) considers
@@ -19,8 +18,10 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
 
-	"github.com/go-chi/chi/v5"
+	"github.com/sarg3nt/gearbox-agent/internal/framework/events"
 	"github.com/sarg3nt/gearbox-agent/internal/framework/gear"
 	"github.com/sarg3nt/gearbox-agent/internal/framework/probe"
 )
@@ -68,7 +69,7 @@ var serverConfigFileRegex = regexp.MustCompile(`SERVER_CONFIG_FILE="([^"]+)"`)
 // respond no matter how the config is set up.
 const statusModuleSentinel = "status_module"
 
-// Gear is the Apache detector.
+// Gear is the Apache detector + mod_status metrics collector.
 type Gear struct {
 	gear.BaseGear
 
@@ -79,6 +80,17 @@ type Gear struct {
 	runM     func(ctx context.Context, binary string) ([]byte, error) // <bin> -M
 	stat     func(string) (os.FileInfo, error)
 	httpGet  func(ctx context.Context, url string) (probe.HTTPResult, error)
+
+	// Collector-time state. Populated by Initialize once Probe
+	// returned Available. statsMu guards the lastStats pointer so
+	// concurrent reads from the API handler and writes from the
+	// collector goroutine don't race.
+	statusURL     string
+	eventBus      *events.Bus
+	statsInterval time.Duration
+
+	statsMu   sync.RWMutex
+	lastStats *Stats
 }
 
 // New constructs an Apache gear with real OS-backed defaults.
@@ -103,7 +115,7 @@ func (g *Gear) Info() gear.Info {
 	return gear.Info{
 		Name:        "apache",
 		DisplayName: "Apache HTTP Server",
-		Description: "Detects an Apache installation and verifies its mod_status surface so the Metrics gear can consume it in Phase 7+.",
+		Description: "Detects an Apache installation, verifies its mod_status surface, and periodically scrapes it for the Metrics gear.",
 		Version:     "1.0.0",
 		Category:    "monitoring",
 	}
@@ -256,9 +268,8 @@ func resolveConfigPath(override, vOut string, stat func(string) (os.FileInfo, er
 	return ""
 }
 
-// RegisterRoutes is a no-op — Phase 3 Apache detection produces no API
-// surface. The metrics gear that reads mod_status lands in Phase 7+.
-func (g *Gear) RegisterRoutes(_ chi.Router) {}
+// RegisterRoutes and the periodic-scrape machinery live in
+// collector.go alongside the rest of the metrics code.
 
 // Ensure the gear implements the required interfaces.
 var (

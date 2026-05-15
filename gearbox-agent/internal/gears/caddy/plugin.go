@@ -22,8 +22,10 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
 
-	"github.com/go-chi/chi/v5"
+	"github.com/sarg3nt/gearbox-agent/internal/framework/events"
 	"github.com/sarg3nt/gearbox-agent/internal/framework/gear"
 	"github.com/sarg3nt/gearbox-agent/internal/framework/probe"
 )
@@ -50,7 +52,7 @@ const prometheusSentinel = "caddy_http_requests_total"
 // Tolerant of the build hash suffix; we only care about the semver.
 var versionRegex = regexp.MustCompile(`v(\d+\.\d+\.\d+)`)
 
-// Gear is the Caddy detector.
+// Gear is the Caddy detector + Prometheus metrics collector.
 type Gear struct {
 	gear.BaseGear
 
@@ -59,6 +61,15 @@ type Gear struct {
 	lookPath   func(string) (string, error)
 	runVersion func(ctx context.Context) ([]byte, error)
 	httpGet    func(ctx context.Context, url string) (probe.HTTPResult, error)
+
+	// Collector-time state. Populated by Initialize once Probe
+	// returned Available.
+	adminURL      string
+	eventBus      *events.Bus
+	statsInterval time.Duration
+
+	statsMu   sync.RWMutex
+	lastStats *Stats
 }
 
 // New constructs a Caddy gear with real OS-backed defaults.
@@ -79,7 +90,7 @@ func (g *Gear) Info() gear.Info {
 	return gear.Info{
 		Name:        "caddy",
 		DisplayName: "Caddy",
-		Description: "Detects a Caddy installation and verifies its admin/metrics endpoint so the Metrics gear can scrape it in Phase 7+.",
+		Description: "Detects a Caddy installation, verifies its admin/metrics endpoint, and periodically scrapes its Prometheus output for the Metrics gear.",
 		Version:     "1.0.0",
 		Category:    "monitoring",
 	}
@@ -170,10 +181,8 @@ func (g *Gear) recordBinaryFacts(ctx context.Context, caps map[string]string) {
 	}
 }
 
-// RegisterRoutes is a no-op — Phase 3 Caddy detection produces no API
-// surface. The metrics gear that scrapes Caddy's Prometheus output
-// lands in Phase 7+.
-func (g *Gear) RegisterRoutes(_ chi.Router) {}
+// RegisterRoutes and the periodic-scrape machinery live in
+// collector.go alongside the rest of the metrics code.
 
 // Ensure the gear implements the required interfaces.
 var (

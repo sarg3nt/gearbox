@@ -101,6 +101,17 @@ type Config struct {
 	CaddyAdminURL     string // CADDY_ADMIN_URL     — force the admin/Prometheus URL
 	TraefikMetricsURL string // TRAEFIK_METRICS_URL — force the Prometheus endpoint URL
 	DockerSocket      string // DOCKER_SOCKET       — force a specific docker socket path
+
+	// Access-log paths per source. The /api/v1/access-log/{source}/recent
+	// endpoint reads the most recent N lines from these files and parses
+	// each with the matching profile. Empty (the default) means the
+	// endpoint falls back to a well-known path; if that doesn't exist
+	// the endpoint reports "no readable log file" rather than failing
+	// the agent. See [docs/source-detection.md] / issue #91 Phase 5.
+	HAProxyAccessLog string // HAPROXY_ACCESS_LOG
+	NginxAccessLog   string // NGINX_ACCESS_LOG
+	ApacheAccessLog  string // APACHE_ACCESS_LOG
+	CaddyAccessLog   string // CADDY_ACCESS_LOG
 }
 
 // DefaultConfig returns the default configuration.
@@ -211,6 +222,13 @@ func Load() (*Config, error) {
 	cfg.CaddyAdminURL = strings.TrimSpace(os.Getenv("CADDY_ADMIN_URL"))
 	cfg.TraefikMetricsURL = strings.TrimSpace(os.Getenv("TRAEFIK_METRICS_URL"))
 	cfg.DockerSocket = strings.TrimSpace(os.Getenv("DOCKER_SOCKET"))
+
+	// Access-log path overrides — trimmed but case-preserved (paths
+	// are case-sensitive on most filesystems).
+	cfg.HAProxyAccessLog = strings.TrimSpace(os.Getenv("HAPROXY_ACCESS_LOG"))
+	cfg.NginxAccessLog = strings.TrimSpace(os.Getenv("NGINX_ACCESS_LOG"))
+	cfg.ApacheAccessLog = strings.TrimSpace(os.Getenv("APACHE_ACCESS_LOG"))
+	cfg.CaddyAccessLog = strings.TrimSpace(os.Getenv("CADDY_ACCESS_LOG"))
 
 	return cfg, nil
 }

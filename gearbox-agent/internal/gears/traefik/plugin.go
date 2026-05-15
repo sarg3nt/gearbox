@@ -23,8 +23,10 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
 
-	"github.com/go-chi/chi/v5"
+	"github.com/sarg3nt/gearbox-agent/internal/framework/events"
 	"github.com/sarg3nt/gearbox-agent/internal/framework/gear"
 	"github.com/sarg3nt/gearbox-agent/internal/framework/probe"
 )
@@ -62,7 +64,7 @@ const dashboardAPIURL = "http://127.0.0.1:8080/api/rawdata"
 // The `v` prefix is optional; older builds printed plain semver.
 var versionRegex = regexp.MustCompile(`Version:\s+v?(\d+\.\d+\.\d+)`)
 
-// Gear is the Traefik detector.
+// Gear is the Traefik detector + Prometheus metrics collector.
 type Gear struct {
 	gear.BaseGear
 
@@ -71,6 +73,15 @@ type Gear struct {
 	lookPath   func(string) (string, error)
 	runVersion func(ctx context.Context) ([]byte, error)
 	httpGet    func(ctx context.Context, url string) (probe.HTTPResult, error)
+
+	// Collector-time state. Populated by Initialize once Probe
+	// returned Available.
+	metricsURL    string
+	eventBus      *events.Bus
+	statsInterval time.Duration
+
+	statsMu   sync.RWMutex
+	lastStats *Stats
 }
 
 // New constructs a Traefik gear with real OS-backed defaults.
@@ -91,7 +102,7 @@ func (g *Gear) Info() gear.Info {
 	return gear.Info{
 		Name:        "traefik",
 		DisplayName: "Traefik",
-		Description: "Detects a Traefik installation and verifies its Prometheus metrics endpoint so the Metrics gear can scrape it in Phase 7+.",
+		Description: "Detects a Traefik installation, verifies its Prometheus metrics endpoint, and periodically scrapes it for the Metrics gear.",
 		Version:     "1.0.0",
 		Category:    "monitoring",
 	}
@@ -195,9 +206,8 @@ func (g *Gear) recordDashboardAPI(ctx context.Context, caps map[string]string) {
 	caps["dashboard_api"] = dashboardAPIURL
 }
 
-// RegisterRoutes is a no-op — Phase 3 Traefik detection produces no API
-// surface. The metrics gear lands in Phase 7+.
-func (g *Gear) RegisterRoutes(_ chi.Router) {}
+// RegisterRoutes and the periodic-scrape machinery live in
+// collector.go alongside the rest of the metrics code.
 
 // Ensure the gear implements the required interfaces.
 var (

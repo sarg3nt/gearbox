@@ -1,7 +1,6 @@
-// Package nginx detects an nginx installation on the host and reports
-// it in the capability manifest. Phase 3 only — no metrics collection
-// yet; that lands in Phase 4 (separate issue, #95 followup) and will
-// read the `stub_status` endpoint surface this gear already verified.
+// Package nginx detects an nginx installation on the host and
+// periodically scrapes its `stub_status` surface so the dashboard's
+// Metrics gear can render nginx alongside HAProxy.
 //
 // The detector declares CategoryHTTPRequests so the agent's
 // primary-source resolver (see [gear.ResolvePrimarySources]) considers
@@ -17,8 +16,10 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
 
-	"github.com/go-chi/chi/v5"
+	"github.com/sarg3nt/gearbox-agent/internal/framework/events"
 	"github.com/sarg3nt/gearbox-agent/internal/framework/gear"
 	"github.com/sarg3nt/gearbox-agent/internal/framework/probe"
 )
@@ -65,7 +66,7 @@ var confPathRegex = regexp.MustCompile(`--conf-path=([^\s]+)`)
 // over stub_status when available; Phase 3 just records the fact.
 const apiModuleSentinel = "--with-http_api_module"
 
-// Gear is the nginx detector.
+// Gear is the nginx detector + stub_status metrics collector.
 type Gear struct {
 	gear.BaseGear
 
@@ -76,6 +77,17 @@ type Gear struct {
 	runLongV  func(ctx context.Context) ([]byte, error) // nginx -V
 	stat      func(string) (os.FileInfo, error)
 	httpGet   func(ctx context.Context, url string) (probe.HTTPResult, error)
+
+	// Collector-time state, populated by Initialize() once the
+	// gear has been probed Available. Kept on the same struct so
+	// the API handler can read the most recent sample without a
+	// global; statsMu guards reads + writes of lastStats.
+	statusURL     string
+	eventBus      *events.Bus
+	statsInterval time.Duration
+
+	statsMu   sync.RWMutex
+	lastStats *Stats
 }
 
 // New constructs an nginx gear with real OS-backed defaults.
@@ -101,7 +113,7 @@ func (g *Gear) Info() gear.Info {
 	return gear.Info{
 		Name:        "nginx",
 		DisplayName: "nginx",
-		Description: "Detects an nginx installation and verifies its stub_status surface so the Metrics gear can consume it in Phase 4+.",
+		Description: "Detects an nginx installation, verifies its stub_status surface, and periodically scrapes it for the Metrics gear.",
 		Version:     "1.0.0",
 		Category:    "monitoring",
 	}
@@ -252,9 +264,8 @@ func resolveConfigPath(override, buildInfo string, stat func(string) (os.FileInf
 	return ""
 }
 
-// RegisterRoutes is a no-op — Phase 3 nginx detection produces no API
-// surface. The metrics gear that reads stub_status lands in Phase 4+.
-func (g *Gear) RegisterRoutes(_ chi.Router) {}
+// RegisterRoutes and the Collectors+publish machinery live in
+// collector.go alongside the rest of the periodic-scrape code.
 
 // Ensure the gear implements the required interfaces.
 var (
