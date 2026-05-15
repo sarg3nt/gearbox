@@ -102,6 +102,12 @@ func New(dbPath string, logger *slog.Logger) (*DB, error) {
 		return nil, fmt.Errorf("failed to initialize home schema: %w", err)
 	}
 
+	// Initialize metrics layouts (per-user, per-box GridStack
+	// positions for the metrics page — see issue #103).
+	if err := d.initMetricsLayoutsSchema(); err != nil {
+		return nil, fmt.Errorf("failed to initialize metrics layouts schema: %w", err)
+	}
+
 	// Run schema migrations AFTER all schemas are initialized
 	// (migrations may reference tables from any schema)
 	if err := d.runSchemaMigrations(); err != nil {

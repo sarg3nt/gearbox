@@ -15,19 +15,19 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	gearbox "github.com/sarg3nt/gearbox"
-	"github.com/sarg3nt/gearbox/internal/framework/collector"
-	"github.com/sarg3nt/gearbox/internal/framework/database"
 	"github.com/sarg3nt/gearbox/internal/framework/auth"
+	"github.com/sarg3nt/gearbox/internal/framework/collector"
 	"github.com/sarg3nt/gearbox/internal/framework/config"
+	"github.com/sarg3nt/gearbox/internal/framework/database"
 	"github.com/sarg3nt/gearbox/internal/framework/events"
 	"github.com/sarg3nt/gearbox/internal/framework/gear"
+	"github.com/sarg3nt/gearbox/internal/framework/handler"
+	gbmiddleware "github.com/sarg3nt/gearbox/internal/framework/middleware"
+	"github.com/sarg3nt/gearbox/internal/framework/models"
 	"github.com/sarg3nt/gearbox/internal/framework/services"
 	"github.com/sarg3nt/gearbox/internal/framework/services/alerts"
 	"github.com/sarg3nt/gearbox/internal/framework/services/crypto"
 	"github.com/sarg3nt/gearbox/internal/framework/services/email"
-	"github.com/sarg3nt/gearbox/internal/framework/handler"
-	gbmiddleware "github.com/sarg3nt/gearbox/internal/framework/middleware"
-	"github.com/sarg3nt/gearbox/internal/framework/models"
 
 	// Import gears - blank identifier triggers init() registration
 	_ "github.com/sarg3nt/gearbox/internal/gears/alerts"
@@ -383,13 +383,13 @@ func main() {
 	serverAdapter := services.NewServerAdapter(db, encryptor, servers, logger)
 
 	gearDeps := gear.Dependencies{
-		DB:             db.GetDB(), // Get the underlying *sql.DB
-		Logger:         logger,
-		EventHub:       eventsAdapter,
-		Auth:           authAdapter,
-		Servers:        serverAdapter,
-		HTTPClient:     http.DefaultClient,
-		Config:         make(map[string]any),
+		DB:         db.GetDB(), // Get the underlying *sql.DB
+		Logger:     logger,
+		EventHub:   eventsAdapter,
+		Auth:       authAdapter,
+		Servers:    serverAdapter,
+		HTTPClient: http.DefaultClient,
+		Config:     make(map[string]any),
 	}
 
 	// Create gear manager (no store for now - will add database-backed store later)
@@ -540,7 +540,7 @@ func main() {
 	r.Group(func(r chi.Router) {
 		r.Use(authManager.RequireAuth)
 		r.Use(authManager.RequirePasswordChange) // Enforce password change before any other action
-		r.Use(h.InjectIntegrationStatus) // Add integration status to context for sidebar rendering
+		r.Use(h.InjectIntegrationStatus)         // Add integration status to context for sidebar rendering
 		r.Use(middleware.Timeout(60 * time.Second))
 
 		// Logout
@@ -703,6 +703,14 @@ func main() {
 			// Phase 5 unifies log parsing across every source.
 			r.Get("/{boxID}/metrics/source/{source}/summary", h.APIMetricsSourceSummaryHandler)
 			r.Get("/{boxID}/metrics/source/{source}/log-errors", h.APIMetricsSourceLogErrorsHandler)
+
+			// Per-user, per-box layout (issue #103). GET returns
+			// the user's saved GridStack positions for this box
+			// (or 204 = "use template defaults"); PATCH upserts;
+			// DELETE drops the saved row to reset to defaults.
+			r.Get("/{boxID}/metrics/layout", h.APIMetricsLayoutGetHandler)
+			r.Patch("/{boxID}/metrics/layout", h.APIMetricsLayoutPatchHandler)
+			r.Delete("/{boxID}/metrics/layout", h.APIMetricsLayoutDeleteHandler)
 
 			// Per-box capability manifest — exposes which agent gears probed
 			// available so the metrics gear (and future source-aware UI) can

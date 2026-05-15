@@ -62,6 +62,35 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
 					</svg>
 				</button>
+
+				<!-- Reset-to-default button (issue #103). Hidden
+				     outside edit mode — appears next to the toggle
+				     once the operator starts editing so a "back to
+				     defaults" path is one click away during a drag
+				     session that went wrong. -->
+				<button
+					id="metrics-reset-layout"
+					type="button"
+					class="metrics-edit-only hidden h-[38px] px-3 py-1.5 text-sm border border-amber-300 dark:border-amber-700 rounded-lg bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors"
+					title="Reset the chart layout for this box to the default arrangement"
+					aria-label="Reset chart layout to default"
+				>
+					↺ Reset layout
+				</button>
+
+				<!-- Edit layout toggle (issue #103). Locks/unlocks
+				     the GridStack-driven chart grid for drag + resize.
+				     Mirrors Home's #home-edit-toggle UX. -->
+				<button
+					id="metrics-edit-toggle"
+					type="button"
+					class="h-[38px] px-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
+					title="Rearrange and resize the chart layout for this box"
+					aria-label="Edit chart layout"
+				>
+					<span class="metrics-edit-off-label">✏️ Edit layout</span>
+					<span class="metrics-edit-on-label hidden">✓ Done editing</span>
+				</button>
 			</div>
 		</div>
 
@@ -93,42 +122,31 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 				}
 			</div>
 
-			<div class="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-6 mb-6">
-
-				<!-- Charts Grid - 4 columns on 2xl, 3 on xl, 2 on lg, 1 on smaller -->
-				<div id="charts-grid" class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
-					<!-- Sessions & Requests -->
-					<div id="card-sessions" data-source="haproxy" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
-						<div class="flex justify-between items-center mb-2">
-							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">HAProxy:</span> Sessions & Requests</h4>
-							<button onclick="toggleFullscreen('card-sessions')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
-								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
-								</svg>
-							</button>
-						</div>
-						<div class="chart-aspect-container">
-							<canvas id="sessions-chart"></canvas>
-						</div>
-					</div>
-
-					<!-- Server Health -->
-					<div id="card-health" data-source="haproxy" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
-						<div class="flex justify-between items-center mb-2">
-							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">HAProxy:</span> Server Health</h4>
-							<button onclick="toggleFullscreen('card-health')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
-								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
-								</svg>
-							</button>
-						</div>
-						<div class="chart-aspect-container">
-							<canvas id="health-chart"></canvas>
-						</div>
-					</div>
-
-					<!-- CPU Load -->
-					<div id="card-cpu" data-source="host" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
+			<!-- Chart grid (issue #103). GridStack-driven; each card is
+			     a tile that can be dragged + resized in edit mode. The
+			     wrapper panel that used to surround the grid is gone —
+			     cards are top-level so they can flow into any layout
+			     the operator chooses. Default tile coordinates below
+			     match the layout proposed in #103:
+			       row 0  | CPU      | Memory
+			       row 1  | Network  | Response Time
+			       row 2  | Health   | Error Rates
+			       row 3  | Sessions & Requests (full width)
+			       rows 4+ | per-source cards, capability-gated
+			     Each tile defaults to gs-w=6 / gs-h=4 (half-width,
+			     four cell rows tall — matches the existing aspect-
+			     ratio container). The "Sessions & Requests" tile is
+			     gs-w=12 because it deserves the full row on its own.
+			     Per-source tiles are gs-w=6 and live in two rows
+			     below the baseline cards. -->
+			<div
+				id="charts-grid"
+				class="grid-stack"
+				data-default-rendered="false"
+			>
+				<!-- CPU Load (row 0, left) -->
+				<div class="grid-stack-item" gs-id="card-cpu" gs-x="0" gs-y="0" gs-w="6" gs-h="4">
+					<div id="card-cpu" data-source="host" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
 						<div class="flex justify-between items-center mb-2">
 							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Host:</span> CPU Load</h4>
 							<button onclick="toggleFullscreen('card-cpu')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
@@ -141,9 +159,11 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 							<canvas id="cpu-chart"></canvas>
 						</div>
 					</div>
+				</div>
 
-					<!-- Memory Usage -->
-					<div id="card-memory" data-source="host" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
+				<!-- Memory Usage (row 0, right) -->
+				<div class="grid-stack-item" gs-id="card-memory" gs-x="6" gs-y="0" gs-w="6" gs-h="4">
+					<div id="card-memory" data-source="host" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
 						<div class="flex justify-between items-center mb-2">
 							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Host:</span> Memory Usage</h4>
 							<button onclick="toggleFullscreen('card-memory')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
@@ -156,9 +176,11 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 							<canvas id="memory-chart"></canvas>
 						</div>
 					</div>
+				</div>
 
-					<!-- Network Traffic -->
-					<div id="card-network" data-source="host" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
+				<!-- Network Throughput (row 1, left) -->
+				<div class="grid-stack-item" gs-id="card-network" gs-x="0" gs-y="4" gs-w="6" gs-h="4">
+					<div id="card-network" data-source="host" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
 						<div class="flex justify-between items-center mb-2">
 							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Host:</span> Network Throughput</h4>
 							<button onclick="toggleFullscreen('card-network')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
@@ -171,9 +193,11 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 							<canvas id="network-chart"></canvas>
 						</div>
 					</div>
+				</div>
 
-					<!-- Response Times -->
-					<div id="card-response-time" data-source="haproxy" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
+				<!-- Response Times (row 1, right) -->
+				<div class="grid-stack-item" gs-id="card-response-time" gs-x="6" gs-y="4" gs-w="6" gs-h="4">
+					<div id="card-response-time" data-source="haproxy" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
 						<div class="flex justify-between items-center mb-2">
 							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">HAProxy:</span> Response Times</h4>
 							<button onclick="toggleFullscreen('card-response-time')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
@@ -186,9 +210,28 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 							<canvas id="response-time-chart"></canvas>
 						</div>
 					</div>
+				</div>
 
-					<!-- Error Rates -->
-					<div id="card-errors" data-source="haproxy" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
+				<!-- Server Health (row 2, left) -->
+				<div class="grid-stack-item" gs-id="card-health" gs-x="0" gs-y="8" gs-w="6" gs-h="4">
+					<div id="card-health" data-source="haproxy" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
+						<div class="flex justify-between items-center mb-2">
+							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">HAProxy:</span> Server Health</h4>
+							<button onclick="toggleFullscreen('card-health')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
+								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+								</svg>
+							</button>
+						</div>
+						<div class="chart-aspect-container">
+							<canvas id="health-chart"></canvas>
+						</div>
+					</div>
+				</div>
+
+				<!-- Error Rates (row 2, right) -->
+				<div class="grid-stack-item" gs-id="card-errors" gs-x="6" gs-y="8" gs-w="6" gs-h="4">
+					<div id="card-errors" data-source="haproxy" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
 						<div class="flex justify-between items-center mb-2">
 							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">HAProxy:</span> Error Rates (5xx)</h4>
 							<button onclick="toggleFullscreen('card-errors')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
@@ -201,14 +244,34 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 							<canvas id="errors-chart"></canvas>
 						</div>
 					</div>
+				</div>
 
-					<!-- Per-source request-rate cards (nginx, Apache, Caddy, Traefik).
-					     Each gets the same data-source / data-source-card
-					     hooks the host + HAProxy cards use so applyCapabilities()
-					     can hide them in one pass when the corresponding agent
-					     gear isn't Available. The render path lives in
-					     loadSourceMetrics() further below. -->
-					<div id="card-nginx" data-source="nginx" data-source-card="true" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative hidden">
+				<!-- Sessions & Requests (row 3, full width — gs-w=12) -->
+				<div class="grid-stack-item" gs-id="card-sessions" gs-x="0" gs-y="12" gs-w="12" gs-h="4">
+					<div id="card-sessions" data-source="haproxy" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
+						<div class="flex justify-between items-center mb-2">
+							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">HAProxy:</span> Sessions & Requests</h4>
+							<button onclick="toggleFullscreen('card-sessions')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
+								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+								</svg>
+							</button>
+						</div>
+						<div class="chart-aspect-container">
+							<canvas id="sessions-chart"></canvas>
+						</div>
+					</div>
+				</div>
+
+				<!-- Per-source cards (rows 4 + 5). Hidden by default
+				     via the existing applyCapabilities() pass; the
+				     GridStack-init layer also calls removeWidget()
+				     for any source whose gear isn't Available so the
+				     grid doesn't reserve slots for invisible tiles.
+				     When a source becomes Available later, makeWidget()
+				     puts the tile back at its default position. -->
+				<div class="grid-stack-item" gs-id="card-nginx" gs-x="0" gs-y="16" gs-w="6" gs-h="4">
+					<div id="card-nginx" data-source="nginx" data-source-card="true" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative hidden">
 						<div class="flex justify-between items-center mb-2">
 							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">nginx:</span> Connections &amp; Requests</h4>
 							<button onclick="toggleFullscreen('card-nginx')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
@@ -221,7 +284,9 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 							<canvas id="nginx-chart"></canvas>
 						</div>
 					</div>
-					<div id="card-apache" data-source="apache" data-source-card="true" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative hidden">
+				</div>
+				<div class="grid-stack-item" gs-id="card-apache" gs-x="6" gs-y="16" gs-w="6" gs-h="4">
+					<div id="card-apache" data-source="apache" data-source-card="true" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative hidden">
 						<div class="flex justify-between items-center mb-2">
 							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Apache:</span> Workers &amp; Requests</h4>
 							<button onclick="toggleFullscreen('card-apache')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
@@ -234,7 +299,9 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 							<canvas id="apache-chart"></canvas>
 						</div>
 					</div>
-					<div id="card-caddy" data-source="caddy" data-source-card="true" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative hidden">
+				</div>
+				<div class="grid-stack-item" gs-id="card-caddy" gs-x="0" gs-y="20" gs-w="6" gs-h="4">
+					<div id="card-caddy" data-source="caddy" data-source-card="true" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative hidden">
 						<div class="flex justify-between items-center mb-2">
 							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Caddy:</span> Requests &amp; Errors</h4>
 							<button onclick="toggleFullscreen('card-caddy')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
@@ -247,7 +314,9 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 							<canvas id="caddy-chart"></canvas>
 						</div>
 					</div>
-					<div id="card-traefik" data-source="traefik" data-source-card="true" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative hidden">
+				</div>
+				<div class="grid-stack-item" gs-id="card-traefik" gs-x="6" gs-y="20" gs-w="6" gs-h="4">
+					<div id="card-traefik" data-source="traefik" data-source-card="true" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative hidden">
 						<div class="flex justify-between items-center mb-2">
 							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Traefik:</span> Status Class</h4>
 							<button onclick="toggleFullscreen('card-traefik')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
@@ -363,7 +432,28 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 			</aside>
 		}
 
+		<!-- GridStack vendor styles (issue #103). Shared with the Home
+		     gear; loaded inline rather than via base.templ because the
+		     stylesheet only matters on the metrics page. -->
+		<link rel="stylesheet" href="/static/css/vendor/gridstack/gridstack.min.css"/>
+
 		<style>
+		/* Per-page GridStack tweaks: tighter cell height than the
+		   Home gear because chart cards want more breathing room
+		   per row. Edit-mode visual cue (dashed outline) mirrors
+		   Home's .home-grid-edit class so the affordance reads
+		   consistently across pages. */
+		#charts-grid.metrics-grid-edit .grid-stack-item-content {
+			outline: 2px dashed rgba(59, 130, 246, 0.5);
+			outline-offset: -4px;
+			cursor: move;
+		}
+		#charts-grid .grid-stack-item-content {
+			/* Inherit the chart-card's own border-radius rather than
+			   the GridStack default (which is rectangular) so the
+			   drag handle visually matches the card. */
+			overflow: visible;
+		}
 		.chart-aspect-container {
 			position: relative;
 			width: 100%;
@@ -1355,6 +1445,14 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 					updateNoHAProxyBanner(haproxyEntry);
 				}
 			}
+
+			// Notify the GridStack layer (metrics-layout.js) that the
+			// capability-driven .hidden classes have been re-applied.
+			// It listens for this event and removes/re-adds widgets
+			// from the grid so unavailable sources don't leave gaps.
+			// Decoupled via CustomEvent so the two scripts don't need
+			// to know about each other's globals.
+			window.dispatchEvent(new CustomEvent('metrics:capabilities-applied'));
 		}
 
 		// updateNoHAProxyBanner picks user-facing copy that matches the
@@ -2504,5 +2602,12 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 		});
 		observer.observe(document.documentElement, { attributes: true });
 		</script>
+
+		<!-- GridStack vendor JS (issue #103). Same bundle the Home
+		     gear uses. Loaded with defer so it doesn't block initial
+		     paint; the inline metrics-layout.js script below waits
+		     on DOMContentLoaded before initialising. -->
+		<script src="/static/js/vendor/gridstack/gridstack-all.js" defer></script>
+		<script src="/static/js/metrics-layout.js" defer></script>
 	}
 }
