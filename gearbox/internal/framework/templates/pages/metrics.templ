@@ -659,7 +659,12 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 						min: 0,
 						ticks: {
 							color: colors.text,
-							stepSize: 1,
+							// precision: 0 instead of stepSize: 1 — same
+							// integer-ticks intent without triggering
+							// Chart.js's "8000 ticks, limiting to 1000"
+							// warning on large-range series. See the same
+							// fix in static/js/charts/chart-defaults.js.
+							precision: 0,
 							callback: function(value) {
 								if (Math.floor(value) === value) {
 									return value;
