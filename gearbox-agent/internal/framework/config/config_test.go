@@ -395,16 +395,10 @@ func TestNormaliseSourceOverride(t *testing.T) {
 }
 
 func TestLoad_HTTPSourceOverride(t *testing.T) {
-	saved := os.Getenv("GEARBOX_AGENT_HTTP_SOURCE")
-	t.Cleanup(func() {
-		if saved != "" {
-			os.Setenv("GEARBOX_AGENT_HTTP_SOURCE", saved)
-		} else {
-			os.Unsetenv("GEARBOX_AGENT_HTTP_SOURCE")
-		}
-	})
-
-	os.Setenv("GEARBOX_AGENT_HTTP_SOURCE", " Nginx ")
+	// t.Setenv handles save/restore automatically and prevents
+	// parallel-test interference; the old os.Setenv + t.Cleanup pattern
+	// would leak the env var if the test panicked before Cleanup ran.
+	t.Setenv("GEARBOX_AGENT_HTTP_SOURCE", " Nginx ")
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -415,13 +409,12 @@ func TestLoad_HTTPSourceOverride(t *testing.T) {
 }
 
 func TestLoad_HTTPSourceDefaultsEmpty(t *testing.T) {
-	saved := os.Getenv("GEARBOX_AGENT_HTTP_SOURCE")
+	// Unset within the test; t.Setenv with an empty string only marks
+	// the env var for restoration but doesn't unset it, so explicit
+	// Unsetenv is the right tool when the test specifically needs the
+	// var absent.
+	t.Setenv("GEARBOX_AGENT_HTTP_SOURCE", "") // record original for restore
 	os.Unsetenv("GEARBOX_AGENT_HTTP_SOURCE")
-	t.Cleanup(func() {
-		if saved != "" {
-			os.Setenv("GEARBOX_AGENT_HTTP_SOURCE", saved)
-		}
-	})
 
 	cfg, err := Load()
 	if err != nil {

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -96,7 +97,13 @@ func (m *Manager) ProbeAll(ctx context.Context) {
 // a glance which source the dashboard will treat as authoritative.
 // Categories with no available producer are silently skipped — they're
 // just absent from this host, no log noise warranted.
+//
+// Override-validation warnings are emitted here (once per agent start)
+// rather than from inside ResolvePrimarySources, so the API endpoint
+// that calls Resolve on every request doesn't replay the same warning
+// on every dashboard poll.
 func (m *Manager) logPrimarySources() {
+	m.ValidatePrimarySourceOverrides()
 	picks := m.ResolvePrimarySources()
 	if len(picks) == 0 {
 		return
@@ -537,6 +544,16 @@ var preferenceOrder = map[MetricCategory][]string{
 	CategoryHTTPRequests: {"haproxy", "nginx", "apache", "caddy", "traefik"},
 }
 
+// categoryEnvVar names the env var that controls each metric category's
+// primary-source override. Kept as a map (rather than a switch) so
+// adding a new category requires only an entry here — and the
+// exhaustiveness test in source_test.go fails until that entry exists,
+// preventing the "(unknown category)" placeholder from ever appearing
+// in operator-facing warnings or SourceSelection.Reason strings.
+var categoryEnvVar = map[MetricCategory]string{
+	CategoryHTTPRequests: "GEARBOX_AGENT_HTTP_SOURCE",
+}
+
 // ResolvePrimarySources picks the primary metric source for each
 // defined MetricCategory based on the probe table, the built-in
 // preference order, and any operator overrides in deps.SourceOverrides.
@@ -554,11 +571,56 @@ var preferenceOrder = map[MetricCategory][]string{
 //  3. If neither path finds anything, the category is omitted.
 //
 // Overrides that name an unknown gear, a not-Available gear, or a gear
-// that doesn't produce data for this category log a warning at startup
-// and fall through to auto-detection — operators templating env files
-// across heterogeneous fleets shouldn't lose metrics because one host
-// doesn't have the override's target installed.
+// that doesn't produce data for this category fall through to auto-
+// detection — operators templating env files across heterogeneous
+// fleets shouldn't lose metrics because one host doesn't have the
+// override's target installed. Warnings about mis-targeted overrides
+// are emitted **once at startup** by ValidatePrimarySourceOverrides,
+// not here, so the API endpoint that calls Resolve on every request
+// doesn't turn dashboard polling into log spam.
+//
+// The function is side-effect-free apart from reading the probe table,
+// safe to call concurrently from the capabilities API handler.
 func (m *Manager) ResolvePrimarySources() map[MetricCategory]SourceSelection {
+	picks, _ := m.resolvePrimarySources()
+	return picks
+}
+
+// ValidatePrimarySourceOverrides re-runs the resolver and logs a
+// warning for each operator override that doesn't apply on this host
+// — unknown gear, not-Available gear, or gear that doesn't produce
+// the category in question. Called once from ProbeAll so operators
+// see actionable warnings in journalctl at startup without the
+// /api/v1/system/capabilities endpoint replaying them on every poll.
+//
+// Returns the number of override entries that failed validation,
+// purely so tests can assert without parsing log output. Production
+// callers can ignore the return value.
+func (m *Manager) ValidatePrimarySourceOverrides() int {
+	_, invalid := m.resolvePrimarySources()
+	for _, inv := range invalid {
+		m.logger.Warn(inv.message,
+			"category", inv.category,
+			"override", inv.override,
+			"env_var", categoryEnvVar[inv.category])
+	}
+	return len(invalid)
+}
+
+// overrideValidationFailure captures one mis-targeted override so
+// ValidatePrimarySourceOverrides can log it from a single place
+// (consistent slog key-set) and tests can count failures.
+type overrideValidationFailure struct {
+	category MetricCategory
+	override string
+	message  string
+}
+
+// resolvePrimarySources does the actual work shared between Resolve
+// (silent) and Validate (logs warnings). Returns the picks plus any
+// override failures the caller may want to surface. Unexported so the
+// validation-vs-resolution split stays an implementation detail.
+func (m *Manager) resolvePrimarySources() (map[MetricCategory]SourceSelection, []overrideValidationFailure) {
 	probed := m.ProbeResults()
 
 	// Build category-to-producers from the registered gears that
@@ -584,6 +646,7 @@ func (m *Manager) ResolvePrimarySources() map[MetricCategory]SourceSelection {
 	}
 
 	out := make(map[MetricCategory]SourceSelection)
+	var failures []overrideValidationFailure
 	for _, cat := range AllMetricCategories() {
 		available := producers[cat]
 		if len(available) == 0 {
@@ -597,62 +660,60 @@ func (m *Manager) ResolvePrimarySources() map[MetricCategory]SourceSelection {
 		ordered := orderByPreference(available, preferenceOrder[cat])
 
 		// Operator override: must be available AND a registered
-		// producer. Fall through with a warning otherwise.
-		override := strings.ToLower(strings.TrimSpace(deps_override(m.deps, cat)))
+		// producer. Capture validation failures for the caller to log,
+		// but fall through to auto-detect either way.
+		override := strings.ToLower(strings.TrimSpace(overrideForCategory(m.deps, cat)))
 		if override != "" {
 			if _, isProducer := registeredFor[cat][override]; !isProducer {
-				m.logger.Warn("source override names a gear that doesn't produce this metric category; falling back to auto-detect",
-					"category", cat,
-					"override", override,
-					"env_var", overrideEnvVarFor(cat))
-			} else if !containsString(ordered, override) {
-				m.logger.Warn("source override names an unavailable gear; falling back to auto-detect",
-					"category", cat,
-					"override", override,
-					"env_var", overrideEnvVarFor(cat))
+				failures = append(failures, overrideValidationFailure{
+					category: cat,
+					override: override,
+					message:  "source override names a gear that doesn't produce this metric category; falling back to auto-detect",
+				})
+			} else if !slices.Contains(ordered, override) {
+				failures = append(failures, overrideValidationFailure{
+					category: cat,
+					override: override,
+					message:  "source override names an unavailable gear; falling back to auto-detect",
+				})
 			} else {
+				// Defensive Clone+DeleteFunc — the Alternatives slice
+				// returned to callers must not share backing storage
+				// with `ordered`, which a future change to this
+				// function could mutate.
+				alts := slices.Clone(ordered)
+				alts = slices.DeleteFunc(alts, func(s string) bool { return s == override })
 				out[cat] = SourceSelection{
 					Category:     cat,
 					Source:       override,
-					Reason:       "operator override via " + overrideEnvVarFor(cat),
-					Alternatives: withoutString(ordered, override),
+					Reason:       "operator override via " + categoryEnvVar[cat],
+					Alternatives: alts,
 				}
 				continue
 			}
 		}
 
-		// Auto-detect from preference order.
+		// Auto-detect from preference order. Clone the alternatives
+		// slice for the same defensive reason as the override branch.
 		out[cat] = SourceSelection{
 			Category:     cat,
 			Source:       ordered[0],
 			Reason:       "auto-detected from preference order",
-			Alternatives: ordered[1:],
+			Alternatives: slices.Clone(ordered[1:]),
 		}
 	}
 
-	return out
+	return out, failures
 }
 
-// deps_override fetches the operator's override for a category from
-// Dependencies. Standalone (not a method) so tests that build
+// overrideForCategory fetches the operator's override for a category
+// from Dependencies. Standalone (not a method) so tests that build
 // Dependencies directly stay readable.
-func deps_override(d Dependencies, cat MetricCategory) string {
+func overrideForCategory(d Dependencies, cat MetricCategory) string {
 	if d.SourceOverrides == nil {
 		return ""
 	}
 	return d.SourceOverrides[cat]
-}
-
-// overrideEnvVarFor names the env var that controls a category. Kept
-// in one place so warning messages and docs stay aligned with what
-// operators actually set in their env files.
-func overrideEnvVarFor(cat MetricCategory) string {
-	switch cat {
-	case CategoryHTTPRequests:
-		return "GEARBOX_AGENT_HTTP_SOURCE"
-	default:
-		return "(unknown category)"
-	}
 }
 
 // orderByPreference returns the subset of `available` ordered by where
@@ -685,25 +746,6 @@ func orderByPreference(available, preferred []string) []string {
 	}
 	sort.Strings(extras)
 	out = append(out, extras...)
-	return out
-}
-
-func containsString(haystack []string, needle string) bool {
-	for _, s := range haystack {
-		if s == needle {
-			return true
-		}
-	}
-	return false
-}
-
-func withoutString(in []string, drop string) []string {
-	out := make([]string, 0, len(in))
-	for _, s := range in {
-		if s != drop {
-			out = append(out, s)
-		}
-	}
 	return out
 }
 

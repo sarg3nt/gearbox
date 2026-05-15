@@ -48,6 +48,54 @@ func newSourceGear(name string, status ProbeStatus, cats ...MetricCategory) *moc
 	return g
 }
 
+// TestEveryCategoryHasOverrideEnvVar guards against adding a new
+// MetricCategory and forgetting to map it to an env var. Without this
+// test the missing entry only surfaces as the literal string
+// "(unknown category)" leaking into operator-facing log messages and
+// SourceSelection.Reason values — exactly the placeholder Copilot
+// flagged on PR #96 review. Driving the map from this test means a
+// new category that's added to AllMetricCategories() and skipped in
+// categoryEnvVar fails CI immediately.
+func TestEveryCategoryHasOverrideEnvVar(t *testing.T) {
+	for _, cat := range AllMetricCategories() {
+		envVar, ok := categoryEnvVar[cat]
+		if !ok {
+			t.Errorf("MetricCategory %q is missing an entry in categoryEnvVar — add one to manager.go", cat)
+			continue
+		}
+		if envVar == "" {
+			t.Errorf("categoryEnvVar[%q] is empty — set the env-var name", cat)
+		}
+		if !strings.HasPrefix(envVar, "GEARBOX_AGENT_") {
+			t.Errorf("categoryEnvVar[%q] = %q; agent-wide overrides should use the GEARBOX_AGENT_ prefix", cat, envVar)
+		}
+	}
+}
+
+// TestValidatePrimarySourceOverridesCountsMisses guards the split
+// between Resolve (silent) and Validate (logs warnings). The endpoint
+// handler calls Resolve on every dashboard poll, so warnings must
+// stay in the Validate path that only runs at startup.
+func TestValidatePrimarySourceOverridesCountsMisses(t *testing.T) {
+	hap := newSourceGear("haproxy", ProbeStatusAvailable, CategoryHTTPRequests)
+	withTestRegistry(t, hap)
+
+	deps := Dependencies{
+		SourceOverrides: map[MetricCategory]string{
+			CategoryHTTPRequests: "imaginary-server",
+		},
+	}
+	m, _ := newTestManagerWithDeps(t, deps)
+	m.ProbeAll(context.Background())
+
+	// ProbeAll already invoked Validate (via logPrimarySources).
+	// A second explicit call should still report the same failure
+	// without changing Resolve's output — Validate is idempotent.
+	if got := m.ValidatePrimarySourceOverrides(); got != 1 {
+		t.Errorf("Validate count = %d, want 1 (one mis-targeted override)", got)
+	}
+}
+
 func TestResolvePrimarySources_AutoDetectPicksFirstAvailableFromPreference(t *testing.T) {
 	// HAProxy first in preferenceOrder, nginx second; both Available.
 	// Expect HAProxy to win and nginx to be listed as an alternative.
