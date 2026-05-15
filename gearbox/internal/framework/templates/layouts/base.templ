@@ -36,7 +36,7 @@ func gearLabelForPath(path string) string {
 		return ""
 	case path == "/haproxy" || strings.HasPrefix(path, "/haproxy/"):
 		return "HAProxy"
-	case path == "/history" || strings.HasPrefix(path, "/history/"):
+	case path == "/metrics" || strings.HasPrefix(path, "/metrics/"):
 		return "Metrics"
 	case path == "/logs" || strings.HasPrefix(path, "/logs/"):
 		return "Logs"
@@ -2175,7 +2175,7 @@ func integrationPath(name string) string {
 	case "haproxy":
 		return "/haproxy"
 	case "metrics":
-		return "/history"
+		return "/metrics"
 	case "logs":
 		return "/logs"
 	case "services":
@@ -2287,7 +2287,7 @@ templ OrderedIntegrationLinks(currentPath string) {
 			@SidebarLinkWithIntegration("/haproxy", "HAProxy", SidebarIconHAProxy(), currentPath, "haproxy")
 		}
 		if canViewIntegration(ctx, "metrics") {
-			@SidebarLinkWithIntegration("/history", "Metrics", SidebarIconMetrics(), currentPath, "metrics")
+			@SidebarLinkWithIntegration("/metrics", "Metrics", SidebarIconMetrics(), currentPath, "metrics")
 		}
 		if canViewIntegration(ctx, "logs") {
 			@SidebarLinkWithIntegration("/logs", "Logs", SidebarIconLogs(), currentPath, "logs")
@@ -2332,7 +2332,7 @@ templ renderIntegrationLink(name string, currentPath string) {
 		case "haproxy":
 			@SidebarLinkDraggable("/haproxy", "HAProxy", SidebarIconHAProxy(), currentPath, "haproxy")
 		case "metrics":
-			@SidebarLinkDraggable("/history", "Metrics", SidebarIconMetrics(), currentPath, "metrics")
+			@SidebarLinkDraggable("/metrics", "Metrics", SidebarIconMetrics(), currentPath, "metrics")
 		case "logs":
 			@SidebarLinkDraggable("/logs", "Logs", SidebarIconLogs(), currentPath, "logs")
 		case "services":

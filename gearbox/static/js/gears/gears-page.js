@@ -136,7 +136,7 @@ if (!sidebar) return;
 
 // Map integration names to their sidebar link hrefs
 const gearHrefs = {
-	'metrics': '/history',
+	'metrics': '/metrics',
 	'logs': '/logs',
 	'services': '/services',
 	'certificates': '/certificates',
@@ -315,7 +315,7 @@ if (card) {
 	// Plugin name to URL path mapping
 	const gearPaths = {
 		'haproxy': '/haproxy',
-		'metrics': '/history',
+		'metrics': '/metrics',
 		'logs': '/logs',
 		'services': '/services',
 		'certificates': '/certificates',

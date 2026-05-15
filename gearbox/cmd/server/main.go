@@ -452,6 +452,12 @@ func main() {
 	r.Use(gbmiddleware.SecurityHeaders)
 	// Inject asset configuration for templates (CDN vs local assets)
 	r.Use(gbmiddleware.InjectAssetConfig(cfg.UseLocalAssets))
+
+	// Themed 404 for unmatched routes. The handler is intentionally
+	// static (inline HTML, no auth/DB/templ) so a typo'd URL can't be a
+	// side channel for fingerprinting session state. See the handler's
+	// own godoc for the rationale.
+	r.NotFound(handler.NotFoundHandler)
 	// Note: Timeout middleware is applied per-route group below
 	// SSE endpoints need to bypass the timeout middleware
 
@@ -627,7 +633,7 @@ func main() {
 
 		// Gear-registered routes
 		// Gears handle: / (haproxy overview), /status-grid (haproxy), /logs (logs),
-		// /services (services), /history (metrics), /certificates (certificates),
+		// /services (services), /metrics (metrics gear), /certificates (certificates),
 		// /traffic (traffic), /alerts (alerts)
 		gearManager.RegisterRoutes(r)
 
@@ -676,10 +682,13 @@ func main() {
 			r.Get("/{boxID}/charts/error-rates", h.APIChartsErrorRatesHandler)
 			r.Get("/{boxID}/logs/{logName}", h.APILogsHandler)
 			r.Get("/{boxID}/log-sources", h.APILogSourcesHandler) // Get enabled log sources
-			// History API endpoints
-			r.Get("/{boxID}/history/stats", h.APIStatsHistoryHandler)
-			r.Get("/{boxID}/history/metrics", h.APISystemMetricsHistoryHandler)
-			r.Get("/{boxID}/history/backend/{backendName}", h.APIBackendHistoryHandler)
+			// Metrics gear — time-series endpoints (HAProxy stats,
+			// system metrics, per-backend stats). These power the
+			// charts on the /metrics page; the /metrics/* "v2"
+			// endpoints just below power the KPI band + insights.
+			r.Get("/{boxID}/metrics/stats", h.APIMetricsStatsHandler)
+			r.Get("/{boxID}/metrics/system", h.APIMetricsSystemHandler)
+			r.Get("/{boxID}/metrics/backend/{backendName}", h.APIMetricsBackendHandler)
 			r.Get("/{boxID}/incidents", h.APIIncidentsHandler)
 
 			// Metrics gear v2 — insights & drill-down endpoints
