@@ -53,6 +53,19 @@ type Dependencies struct {
 	// CategoryHTTPRequests, etc.). Names are pre-lowercased to match
 	// Info().Name lookups in the manager.
 	SourceOverrides map[MetricCategory]string
+
+	// Per-source detection overrides. Each one bypasses the default
+	// well-known-paths / loopback-URL probe for one gear and trusts the
+	// operator's value directly. Empty means "auto-detect" — the
+	// corresponding gear walks its defaults. Populated from per-source
+	// env vars at startup. See [docs/source-detection.md] / issue #95.
+	NginxStatusURL    string // NGINX_STATUS_URL
+	NginxConfigFile   string // NGINX_CONFIG_FILE
+	ApacheStatusURL   string // APACHE_STATUS_URL
+	ApacheConfigFile  string // APACHE_CONFIG_FILE
+	CaddyAdminURL     string // CADDY_ADMIN_URL
+	TraefikMetricsURL string // TRAEFIK_METRICS_URL
+	DockerSocket      string // DOCKER_SOCKET
 }
 
 // Common event types used across plugins.

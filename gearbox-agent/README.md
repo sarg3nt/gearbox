@@ -215,8 +215,8 @@ Auto-detection is the default. The override env vars below exist for the rare ed
 ```bash
 # Force a specific gear as the primary for HTTP-request metrics
 # (request volume, response codes, response times, vhost breakdowns).
-# Valid values match gear identifiers in /api/v1/system/capabilities —
-# today only "haproxy" is implemented; more land with issue #95.
+# Valid values match gear identifiers in /api/v1/system/capabilities:
+# haproxy, nginx, apache, caddy, traefik.
 GEARBOX_AGENT_HTTP_SOURCE=nginx
 ```
 
@@ -225,6 +225,26 @@ Override behaviour:
 - Names are case-insensitive and trimmed (`HAProxy` and `haproxy` both work).
 - An override pointing at a gear that didn't probe Available, or doesn't produce data for the category, logs a warning at startup and **falls back to auto-detect** — locking out HTTP metrics because the override's target isn't installed on this box would be worse than serving auto-picked data.
 - The selected primary plus the chosen reason and the alternatives that were also available appear in `/api/v1/system/capabilities` under `primary_sources` so dashboards and humans can confirm the resolution.
+
+### Source detection
+
+The agent probes the host at startup for every supported source — nginx, Apache, Caddy, Traefik, Docker, plus the always-present `host` entry — and reports each one's status in the capability manifest as `available`, `not_installed`, or `inaccessible`. **Auto-detection is the default; no configuration required for the common case.**
+
+The override env vars below exist for the rare cases where auto-detection misses or the operator wants to point the agent at a non-default surface:
+
+| Env var               | Purpose                                                          |
+|-----------------------|------------------------------------------------------------------|
+| `NGINX_STATUS_URL`    | Force a specific `stub_status` URL (skips the default probe).    |
+| `NGINX_CONFIG_FILE`   | Force a specific `nginx.conf` path.                              |
+| `APACHE_STATUS_URL`   | Force a specific `mod_status` URL (e.g. `?auto` variant).        |
+| `APACHE_CONFIG_FILE`  | Force a specific `httpd.conf` / `apache2.conf` path.             |
+| `CADDY_ADMIN_URL`     | Force the admin / Prometheus URL (default `:2019/metrics`).      |
+| `TRAEFIK_METRICS_URL` | Force the Prometheus endpoint URL.                               |
+| `DOCKER_SOCKET`       | Force a specific Docker socket path (e.g. rootless installs).    |
+
+When an override is set the agent trusts the operator and skips the synchronous detection probe for that source — a misconfigured value surfaces later when the metrics gear (Phase 4+) tries to read from it, not at startup.
+
+See [docs/source-detection.md](docs/source-detection.md) for the full probe precedence flow, per-source troubleshooting recipes, and the "multiple instances of one source" limitation.
 
 ## Authentication
 
