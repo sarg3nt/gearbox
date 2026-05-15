@@ -443,6 +443,19 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 		   per row. Edit-mode visual cue (dashed outline) mirrors
 		   Home's .home-grid-edit class so the affordance reads
 		   consistently across pages. */
+		/* Absorb GridStack's 6px outer inset (from marginLeft/Right/Top
+		   = 6) so the grid's first column/row aligns with the KPI
+		   band above and the page-content edges. Without these
+		   negative margins the chart grid floats 6px in from every
+		   outer edge while the KPI band sits flush — visually
+		   inconsistent. The -10px top compensates for the KPI's
+		   mb-4 (16px) so the gap from KPI bottom to first chart-tile
+		   visible-top is 12px, matching the inter-tile rhythm. */
+		#charts-grid {
+			margin-left: -6px;
+			margin-right: -6px;
+			margin-top: -10px;
+		}
 		#charts-grid.metrics-grid-edit .grid-stack-item-content {
 			outline: 2px dashed rgba(59, 130, 246, 0.5);
 			outline-offset: -4px;
