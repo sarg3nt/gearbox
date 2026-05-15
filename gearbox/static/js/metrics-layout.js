@@ -100,6 +100,33 @@
     return gs.save(false);
   }
 
+  /** updateContainerHeight pins the grid's min-height to the bottom
+   *  edge of the tallest tile in pixels. GridStack normally auto-
+   *  sizes the container via its own engine, but with staticGrid +
+   *  capability-driven removeWidget() calls the auto-sizing can lag
+   *  the actual layout, causing whatever section comes after the
+   *  grid to overlap the bottom tiles (issue reported in PR #104
+   *  review). Computing manually after every load/capability flip
+   *  closes the gap.
+   *
+   *  Math: GridStack positions each tile at top = y*cellHeight + margin/2
+   *  with height = h*cellHeight - margin. Bottom edge of the last
+   *  row = (y+h)*cellHeight. Adding the margin once at the end
+   *  matches GridStack's own positioning so the spacing below the
+   *  last row equals the spacing between rows. */
+  function updateContainerHeight() {
+    const ch = gs.cellHeight();
+    if (!ch) return;
+    let maxBottom = 0;
+    (gs.engine.nodes || []).forEach(function (n) {
+      const bottom = (n.y || 0) + (n.h || 0);
+      if (bottom > maxBottom) maxBottom = bottom;
+    });
+    if (maxBottom > 0) {
+      grid.style.minHeight = maxBottom * ch + "px";
+    }
+  }
+
   /** applyCapabilityHiding inspects each tile's inner card for the
    *  `.hidden` class set by the existing applyCapabilities() pass
    *  (which runs from metrics.templ's inline script). Capability-
@@ -129,6 +156,7 @@
         gs.makeWidget(item);
       }
     });
+    updateContainerHeight();
   }
 
   /* ---- Layout persistence ---- */
@@ -271,6 +299,11 @@
   /* ---- Persistence hook ---- */
 
   gs.on("change", function () {
+    // Recompute container height on every layout change so a drag
+    // that bumps a tile down doesn't leave the section below
+    // overlapping. Cheap (O(tiles)) and fires regardless of save
+    // suppression.
+    updateContainerHeight();
     if (suppressChange) return;
     saveLayout();
   });
@@ -296,7 +329,7 @@
   // back to the server.
   (async function init() {
     await loadSavedLayout();
-    applyCapabilityHiding();
+    applyCapabilityHiding(); // also calls updateContainerHeight()
     setTimeout(function () {
       suppressChange = false;
     }, 100);
