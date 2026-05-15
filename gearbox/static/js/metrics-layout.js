@@ -70,19 +70,24 @@
   // 12-column grid matches the templ's default coordinates (half-
   // width tiles are gs-w=6, the full-width Sessions tile is gs-w=12).
   //
-  // Asymmetric margins: rows need more breathing room than columns
-  // because chart axis labels live at the top/bottom of each tile,
-  // pushing the visual content edges closer together vertically
-  // than horizontally. With a symmetric 12px-each-side margin, two
-  // stacked rows looked merged. 18 top/bottom (= 36px between
-  // rows) + 12 left/right (= 24px between side-by-side neighbours)
-  // gives a comfortable read.
+  // Asymmetric margins so rows breathe more than columns: chart
+  // axis labels live at the top/bottom of each tile so adjacent
+  // rows' visible content edges approach each other faster than
+  // adjacent columns. 24 top/bottom (= 48px between rows) +
+  // 12 left/right (= 24px between side-by-side) is the ratio that
+  // reads right after multiple feedback passes on PR #104.
+  //
+  // ALSO: keep getCellHeight(false) (not cellHeight()) anywhere we
+  // need the cell height — the bare cellHeight() getter side-
+  // effects opts.cellHeight to a width-derived value, which then
+  // makes GridStack's generated top/height CSS rules drift away
+  // from the configured 80 every time we read.
   const gs = GridStack.init(
     {
       column: 12,
       cellHeight: 80,
-      marginTop: 18,
-      marginBottom: 18,
+      marginTop: 24,
+      marginBottom: 24,
       marginLeft: 12,
       marginRight: 12,
       float: false,
@@ -123,7 +128,17 @@
    *  matches GridStack's own positioning so the spacing below the
    *  last row equals the spacing between rows. */
   function updateContainerHeight() {
-    const ch = gs.cellHeight();
+    // CAREFUL: GridStack's cellHeight() — note the parens — is an
+    // implicit setter when called as a getter. It re-computes
+    // opts.cellHeight from cellWidth + (marginVertical -
+    // marginHorizontal) which silently overrides whatever value
+    // we passed to init. That breaks the row-spacing math because
+    // the styled `top` rules use opts.cellHeight, so every call
+    // here was drifting cellHeight away from 80 toward
+    // (containerWidth/12 + 12). getCellHeight(false) is the
+    // non-side-effecting getter that returns opts.cellHeight as
+    // it currently is.
+    const ch = gs.getCellHeight(false);
     if (!ch) return;
     let maxBottom = 0;
     (gs.engine.nodes || []).forEach(function (n) {
