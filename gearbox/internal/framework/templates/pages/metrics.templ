@@ -454,8 +454,12 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 		   padding-bottom trick (which was sized to viewport width
 		   and overflowed the tile). overflow:hidden clips any
 		   stragglers (legends, axis labels) that briefly extend past
-		   the bounds during GridStack resize transitions. */
-		#charts-grid .grid-stack-item-content {
+		   the bounds during GridStack resize transitions.
+		   :not(.hidden) is critical — without it this rule has
+		   higher specificity than Tailwind's .hidden (display:none)
+		   utility and wins the cascade, so capability-hidden cards
+		   stay visible. */
+		#charts-grid .grid-stack-item-content:not(.hidden) {
 			display: flex;
 			flex-direction: column;
 			height: 100%;
