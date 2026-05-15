@@ -1822,3 +1822,107 @@ func (c *Client) ConfigureUnattended(enabled, autoReboot bool) (*UnattendedConfi
 
 	return &resp, nil
 }
+
+// ==============================================================
+// Source-aware metrics endpoints (issue #91 phases 4 + 5 + 7).
+//
+// These mirror the agent's /api/v1/{nginx,apache,caddy,traefik}/stats
+// + /api/v1/access-log/{source}/recent shape. The dashboard collector
+// calls GetSourceStats once per available source per scrape; the
+// metrics-page handler calls GetAccessLogRecent when the Error
+// Insights panel asks for a different source. The agent endpoints
+// landed in PR #100 / #101; see gearbox-agent/docs/source-detection.md
+// for the per-source surface they expose.
+// ==============================================================
+
+// SourceStats is the un-typed JSON payload the agent's /api/v1/{src}/stats
+// endpoints return. Each source's Stats struct shape differs (nginx has
+// active/reading/writing/waiting; Traefik has per-status-class counters;
+// etc.), so the client surface keeps the payload as a flexible map and
+// lets the collector normalise it into the database's SourceStatsSnapshot
+// shape. This avoids re-declaring four near-identical Go types whose only
+// real purpose is JSON unmarshaling.
+type SourceStats map[string]any
+
+// GetSourceStats fetches the latest stats snapshot for one source
+// (nginx / apache / caddy / traefik). Returns 503 from the agent
+// when the gear hasn't completed its first scrape yet; we surface
+// that as an error so the collector can log + skip without
+// persisting a misleading zero row.
+//
+// `source` must be one of the four supported identifiers; the
+// agent will return 404 for anything else and we surface that too.
+func (c *Client) GetSourceStats(source string) (SourceStats, error) {
+	body, err := c.doRequest("GET", "/api/v1/"+source+"/stats", nil)
+	if err != nil {
+		return nil, err
+	}
+	var out SourceStats
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, fmt.Errorf("failed to parse %s stats response: %w", source, err)
+	}
+	return out, nil
+}
+
+// AccessLogRecord mirrors the agent's accesslog.Record shape — the
+// dashboard renders these directly in the Error Insights panel, so
+// the JSON keys here have to track the agent's. Keep alphabetical
+// by field name within each grouping so adding a new field is a
+// trivial inspection.
+type AccessLogRecord struct {
+	Profile      string  `json:"profile"`
+	Timestamp    string  `json:"timestamp,omitempty"`
+	TimestampRaw string  `json:"timestamp_raw,omitempty"`
+	SourceIP     string  `json:"source_ip,omitempty"`
+	Method       string  `json:"method,omitempty"`
+	Path         string  `json:"path,omitempty"`
+	Host         string  `json:"host,omitempty"`
+	StatusCode   int     `json:"status_code"`
+	BytesSent    int64   `json:"bytes_sent,omitempty"`
+	DurationMs   float64 `json:"duration_ms,omitempty"`
+	Backend      string  `json:"backend,omitempty"`
+	Server       string  `json:"server,omitempty"`
+	UserAgent    string  `json:"user_agent,omitempty"`
+	Referer      string  `json:"referer,omitempty"`
+	Raw          string  `json:"raw"`
+}
+
+// AccessLogResponse is the envelope the agent's
+// /api/v1/access-log/{source}/recent endpoint returns. Available=false
+// + a Reason populated means the host has no readable log for this
+// source — the dashboard renders that as a "logs unavailable" hint
+// rather than an empty panel.
+type AccessLogResponse struct {
+	Source     string            `json:"source"`
+	Profile    string            `json:"profile"`
+	Path       string            `json:"path,omitempty"`
+	Available  bool              `json:"available"`
+	Reason     string            `json:"reason,omitempty"`
+	MatchCount int               `json:"match_count"`
+	Records    []AccessLogRecord `json:"records"`
+}
+
+// GetAccessLogRecent fetches recent parsed log records from the
+// agent's access-log endpoint. statusMin defaults to 500 server-
+// side when 0 is passed (agent's own convention); limit and lines
+// are clamped server-side to [1, 10000]. Returns the envelope as-is
+// so the handler can decide whether to surface available=false
+// content versus a 4xx.
+func (c *Client) GetAccessLogRecent(source string, statusMin, limit int) (*AccessLogResponse, error) {
+	q := url.Values{}
+	if statusMin > 0 {
+		q.Set("status_min", fmt.Sprintf("%d", statusMin))
+	}
+	if limit > 0 {
+		q.Set("limit", fmt.Sprintf("%d", limit))
+	}
+	body, err := c.doRequest("GET", "/api/v1/access-log/"+source+"/recent", q)
+	if err != nil {
+		return nil, err
+	}
+	var resp AccessLogResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse access-log response: %w", err)
+	}
+	return &resp, nil
+}

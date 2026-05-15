@@ -697,6 +697,13 @@ func main() {
 			r.Get("/{boxID}/metrics/backend/{backendName}/details", h.APIMetricsBackendDetailsHandler)
 			r.Get("/{boxID}/metrics/log-errors", h.APIMetricsLogErrorsHandler)
 
+			// Per-source metrics endpoints (issue #91 phases 4/5/7).
+			// {source} ∈ {nginx, apache, caddy, traefik} for summary;
+			// the log-errors variant also accepts "haproxy" because
+			// Phase 5 unifies log parsing across every source.
+			r.Get("/{boxID}/metrics/source/{source}/summary", h.APIMetricsSourceSummaryHandler)
+			r.Get("/{boxID}/metrics/source/{source}/log-errors", h.APIMetricsSourceLogErrorsHandler)
+
 			// Per-box capability manifest — exposes which agent gears probed
 			// available so the metrics gear (and future source-aware UI) can
 			// hide cards/KPIs that don't apply to this host.

@@ -201,6 +201,65 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 							<canvas id="errors-chart"></canvas>
 						</div>
 					</div>
+
+					<!-- Per-source request-rate cards (nginx, Apache, Caddy, Traefik).
+					     Each gets the same data-source / data-source-card
+					     hooks the host + HAProxy cards use so applyCapabilities()
+					     can hide them in one pass when the corresponding agent
+					     gear isn't Available. The render path lives in
+					     loadSourceMetrics() further below. -->
+					<div id="card-nginx" data-source="nginx" data-source-card="true" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative hidden">
+						<div class="flex justify-between items-center mb-2">
+							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">nginx:</span> Connections &amp; Requests</h4>
+							<button onclick="toggleFullscreen('card-nginx')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
+								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+								</svg>
+							</button>
+						</div>
+						<div class="chart-aspect-container">
+							<canvas id="nginx-chart"></canvas>
+						</div>
+					</div>
+					<div id="card-apache" data-source="apache" data-source-card="true" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative hidden">
+						<div class="flex justify-between items-center mb-2">
+							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Apache:</span> Workers &amp; Requests</h4>
+							<button onclick="toggleFullscreen('card-apache')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
+								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+								</svg>
+							</button>
+						</div>
+						<div class="chart-aspect-container">
+							<canvas id="apache-chart"></canvas>
+						</div>
+					</div>
+					<div id="card-caddy" data-source="caddy" data-source-card="true" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative hidden">
+						<div class="flex justify-between items-center mb-2">
+							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Caddy:</span> Requests &amp; Errors</h4>
+							<button onclick="toggleFullscreen('card-caddy')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
+								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+								</svg>
+							</button>
+						</div>
+						<div class="chart-aspect-container">
+							<canvas id="caddy-chart"></canvas>
+						</div>
+					</div>
+					<div id="card-traefik" data-source="traefik" data-source-card="true" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative hidden">
+						<div class="flex justify-between items-center mb-2">
+							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Traefik:</span> Status Class</h4>
+							<button onclick="toggleFullscreen('card-traefik')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
+								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+								</svg>
+							</button>
+						</div>
+						<div class="chart-aspect-container">
+							<canvas id="traefik-chart"></canvas>
+						</div>
+					</div>
 				</div>
 			</div>
 
@@ -233,6 +292,36 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
 					</svg>
 					<p class="text-gray-600 dark:text-gray-400 text-sm">No 4xx/5xx responses in this window. Everything's green.</p>
+				</div>
+			</div>
+
+			<!-- Per-Source Recent Errors — Phase 6 of issue #91. One
+			     block per detected non-HAProxy source (nginx, Apache,
+			     Caddy), rendered into the per-source containers below.
+			     Each block fetches /metrics/source/{source}/log-errors
+			     (which proxies to the agent's structured access-log
+			     endpoint) and renders a compact table of recent 5xx
+			     records. Hidden entirely on hosts where no non-HAProxy
+			     source is Available — the existing HAProxy Error
+			     Insights panel above is the only thing on this page
+			     then. -->
+			<div id="source-errors-section" class="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-6 mb-6 hidden">
+				<div class="flex items-center justify-between mb-4">
+					<div>
+						<h3 class="text-xl font-semibold text-gray-800 dark:text-gray-100">Per-Source Recent Errors</h3>
+						<p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+							Recent error responses parsed from each source's access log. The agent does the parsing; the dashboard renders. Sources whose log file isn't readable on the host show a hint instead.
+						</p>
+					</div>
+					<button
+						id="source-errors-refresh"
+						class="text-sm px-2 py-1 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+						title="Refresh per-source error tables"
+						onclick="loadSourceErrors()"
+					>↻</button>
+				</div>
+				<div id="source-errors-blocks" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+					<!-- Populated by loadSourceErrors(). One block per Available source. -->
 				</div>
 			</div>
 
@@ -870,10 +959,214 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 				// Kick off insights loads (don't block charts on these).
 				loadKPISummary();
 				loadErrorInsights();
+				loadSourceMetrics(serverID);
+				loadSourceErrors();
 
 			} catch (error) {
 				console.error('Failed to load history data:', error);
 			}
+		}
+
+		// loadSourceMetrics fetches /metrics/source/{source}/summary
+		// for every non-HAProxy source the capability table marked
+		// Available, and paints its chart card. Each source has its
+		// own card structure; we render whatever shape makes sense
+		// for that source rather than forcing a common chart type:
+		//   - nginx  → connection state stacked area (reading / writing / waiting)
+		//   - apache → workers stacked bars (busy + idle)
+		//   - caddy  → requests vs errors (two-line)
+		//   - traefik → status-class stacked area
+		async function loadSourceMetrics(serverID) {
+			const sources = ['nginx', 'apache', 'caddy', 'traefik'];
+			const available = window._availableSources || {};
+			for (const src of sources) {
+				if (!available[src]) continue;
+				try {
+					const res = await fetch('/api/' + serverID + '/metrics/source/' + src + '/summary');
+					if (!res.ok) continue;
+					const data = await res.json();
+					renderSourceCard(src, data);
+				} catch (err) {
+					console.debug('source metrics fetch failed', src, err);
+				}
+			}
+		}
+
+		// renderSourceCard paints one per-source chart card from the
+		// summary endpoint's response. Kept as a single switch
+		// (rather than four separate render* functions) so adding a
+		// new source is a single readable case in one file.
+		function renderSourceCard(source, data) {
+			const canvasID = source + '-chart';
+			const canvas = document.getElementById(canvasID);
+			if (!canvas) return;
+
+			// Drop any previous chart instance so re-renders don't
+			// stack tooltips / event handlers.
+			if (window._sourceCharts && window._sourceCharts[source]) {
+				window._sourceCharts[source].destroy();
+			}
+			window._sourceCharts = window._sourceCharts || {};
+
+			const history = (data && data.history) || [];
+			const labels = history.map(h => new Date(h.collected_at));
+
+			let datasets = [];
+			switch (source) {
+				case 'nginx': {
+					const get = (h, k) => Number((h.extra && h.extra[k]) || 0);
+					datasets = [
+						{ label: 'Reading', data: history.map(h => get(h, 'reading')), borderColor: '#22c55e', backgroundColor: 'rgba(34, 197, 94, 0.2)', fill: true, tension: 0.3 },
+						{ label: 'Writing', data: history.map(h => get(h, 'writing')), borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.2)', fill: true, tension: 0.3 },
+						{ label: 'Waiting', data: history.map(h => get(h, 'waiting')), borderColor: '#a3a3a3', backgroundColor: 'rgba(163, 163, 163, 0.2)', fill: true, tension: 0.3 },
+					];
+					break;
+				}
+				case 'apache': {
+					const idle = (h) => Number((h.extra && h.extra.idle_workers) || 0);
+					datasets = [
+						{ label: 'Busy workers', data: history.map(h => h.active_connections), borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.2)', fill: true, tension: 0.3 },
+						{ label: 'Idle workers', data: history.map(h => idle(h)), borderColor: '#a3a3a3', backgroundColor: 'rgba(163, 163, 163, 0.2)', fill: true, tension: 0.3 },
+					];
+					break;
+				}
+				case 'caddy': {
+					const errs = (h) => Number((h.extra && h.extra.request_errors_total) || 0);
+					datasets = [
+						{ label: 'Requests', data: history.map(h => h.requests_total), borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.2)', fill: true, tension: 0.3 },
+						{ label: 'Errors', data: history.map(h => errs(h)), borderColor: '#ef4444', backgroundColor: 'rgba(239, 68, 68, 0.2)', fill: true, tension: 0.3 },
+					];
+					break;
+				}
+				case 'traefik': {
+					datasets = [
+						{ label: '2xx', data: history.map(h => h.response_2xx), borderColor: '#22c55e', backgroundColor: 'rgba(34, 197, 94, 0.2)', fill: true, tension: 0.3 },
+						{ label: '3xx', data: history.map(h => h.response_3xx), borderColor: '#a3a3a3', backgroundColor: 'rgba(163, 163, 163, 0.2)', fill: true, tension: 0.3 },
+						{ label: '4xx', data: history.map(h => h.response_4xx), borderColor: '#f59e0b', backgroundColor: 'rgba(245, 158, 11, 0.2)', fill: true, tension: 0.3 },
+						{ label: '5xx', data: history.map(h => h.response_5xx), borderColor: '#ef4444', backgroundColor: 'rgba(239, 68, 68, 0.2)', fill: true, tension: 0.3 },
+					];
+					break;
+				}
+			}
+
+			window._sourceCharts[source] = new Chart(canvas.getContext('2d'), {
+				type: 'line',
+				data: { labels: labels, datasets: datasets },
+				options: {
+					...chartDefaults(),
+					scales: {
+						x: { type: 'time', time: { tooltipFormat: 'PPpp' } },
+						y: { beginAtZero: true, stacked: source === 'nginx' || source === 'traefik' },
+					},
+					plugins: { ...((chartDefaults().plugins) || {}), legend: { display: true, position: 'bottom' } },
+				},
+			});
+		}
+
+		// loadSourceErrors paints the per-source recent-errors
+		// section. One block per Available source — each block fetches
+		// the agent's /access-log/{source}/recent via the dashboard's
+		// proxy endpoint and shows a compact table of recent 5xx
+		// records. DOM-built (not innerHTML-with-strings) so the
+		// agent-supplied path / timestamp / method fields stay safe
+		// against XSS without leaning on string escaping.
+		async function loadSourceErrors() {
+			const container = document.getElementById('source-errors-blocks');
+			if (!container) return;
+			const serverID = getServerID();
+			if (!serverID) return;
+			const sources = ['nginx', 'apache', 'caddy'];
+			const available = window._availableSources || {};
+
+			// Build into a DocumentFragment first so the section
+			// doesn't flicker through "empty → populated" on slow
+			// agents — single commit at the end.
+			const frag = document.createDocumentFragment();
+			let rendered = 0;
+			for (const src of sources) {
+				if (!available[src]) continue;
+				let data = null;
+				try {
+					const res = await fetch('/api/' + serverID + '/metrics/source/' + src + '/log-errors?status_min=500&limit=20');
+					if (res.ok) data = await res.json();
+				} catch (err) {
+					data = { available: false, reason: String(err) };
+				}
+				frag.appendChild(buildSourceErrorsBlock(src, data));
+				rendered++;
+			}
+			// Clear without innerHTML so we don't trip the XSS
+			// guard that flags innerHTML assignments.
+			while (container.firstChild) container.removeChild(container.firstChild);
+			if (rendered === 0) return;
+			container.appendChild(frag);
+		}
+
+		// buildSourceErrorsBlock returns one DOM block for the
+		// Per-Source Recent Errors section. Built via createElement
+		// + textContent so agent-supplied fields can't inject HTML.
+		function buildSourceErrorsBlock(source, data) {
+			const label = source.charAt(0).toUpperCase() + source.slice(1);
+
+			const block = document.createElement('div');
+			block.className = 'rounded border border-gray-200 dark:border-slate-700 p-3';
+
+			const heading = document.createElement('h4');
+			heading.className = 'text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2';
+			heading.textContent = label;
+			block.appendChild(heading);
+
+			if (!data || data.available === false) {
+				const hint = document.createElement('p');
+				hint.className = 'text-xs text-gray-500 dark:text-gray-400';
+				hint.textContent = (data && data.reason) ? String(data.reason) : 'logs unavailable on this host';
+				block.appendChild(hint);
+				return block;
+			}
+
+			const records = data.records || [];
+			if (records.length === 0) {
+				const ok = document.createElement('p');
+				ok.className = 'text-xs text-gray-500 dark:text-gray-400';
+				ok.textContent = "No 5xx responses in the recent window.";
+				block.appendChild(ok);
+				return block;
+			}
+
+			const table = document.createElement('table');
+			table.className = 'w-full text-xs';
+			const tbody = document.createElement('tbody');
+			records.slice(0, 10).forEach(function(r) {
+				const tr = document.createElement('tr');
+				tr.className = 'border-t border-gray-100 dark:border-slate-700';
+
+				const tdTime = document.createElement('td');
+				tdTime.className = 'px-2 py-1 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap';
+				tdTime.textContent = r.timestamp || r.timestamp_raw || '';
+				tr.appendChild(tdTime);
+
+				const tdStatus = document.createElement('td');
+				tdStatus.className = 'px-2 py-1 text-xs font-mono text-red-600 dark:text-red-400';
+				tdStatus.textContent = String(r.status_code);
+				tr.appendChild(tdStatus);
+
+				const tdReq = document.createElement('td');
+				tdReq.className = 'px-2 py-1 text-xs text-gray-700 dark:text-gray-300';
+				tdReq.textContent = (r.method || '') + ' ' + (r.path || '');
+				tr.appendChild(tdReq);
+
+				tbody.appendChild(tr);
+			});
+			table.appendChild(tbody);
+			block.appendChild(table);
+
+			if (records.length > 10) {
+				const more = document.createElement('p');
+				more.className = 'text-xs text-gray-500 dark:text-gray-400 mt-2';
+				more.textContent = '… plus ' + (records.length - 10) + ' more';
+				block.appendChild(more);
+			}
+			return block;
 		}
 
 		// applyCapabilities fetches the per-box probe table and toggles
@@ -882,13 +1175,22 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 		// fail open: the dashboard reverts to "HAProxy assumed present"
 		// rather than locking the user out of cards they may need.
 		async function applyCapabilities(serverID) {
+			// Tracks which non-HAProxy sources are Available on this
+			// host so loadSourceMetrics() / loadSourceErrors() can
+			// skip the missing ones rather than 404-spamming the
+			// agent. Surfaced on window for the loaders that run
+			// after this returns.
+			window._availableSources = window._availableSources || {};
+
 			let haproxyAvailable = true;
 			let haproxyEntry = null;
+			let gears = {};
 			try {
 				const res = await fetch('/api/' + serverID + '/capabilities');
 				if (res.ok) {
 					const data = await res.json();
-					haproxyEntry = data && data.gears && data.gears.haproxy;
+					gears = (data && data.gears) || {};
+					haproxyEntry = gears.haproxy;
 					if (haproxyEntry) {
 						haproxyAvailable = haproxyEntry.status === 'available';
 					}
@@ -902,6 +1204,32 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 			document.querySelectorAll('[data-source="haproxy"]').forEach(function(el) {
 				el.classList.toggle('hidden', !haproxyAvailable);
 			});
+
+			// Gate the per-source chart cards (nginx, apache, caddy,
+			// traefik) on each source's probe verdict. Sources whose
+			// gear is absent / inaccessible stay hidden — there's no
+			// data to render and showing an empty card would look
+			// like a regression. data-source-card distinguishes the
+			// per-source cards from the existing host/haproxy ones
+			// so we don't accidentally hide the latter when toggling.
+			const sourceCards = ['nginx', 'apache', 'caddy', 'traefik'];
+			for (const src of sourceCards) {
+				const entry = gears[src];
+				const available = entry && entry.status === 'available';
+				window._availableSources[src] = !!available;
+				document.querySelectorAll('[data-source="' + src + '"][data-source-card]').forEach(function(el) {
+					el.classList.toggle('hidden', !available);
+				});
+			}
+
+			// Show the per-source errors section only when at least
+			// one non-HAProxy source is Available — otherwise the
+			// section would render as an empty container.
+			const anyNonHAProxy = sourceCards.some(s => window._availableSources[s]);
+			const sourceErrorsSection = document.getElementById('source-errors-section');
+			if (sourceErrorsSection) {
+				sourceErrorsSection.classList.toggle('hidden', !anyNonHAProxy);
+			}
 
 			const banner = document.getElementById('no-haproxy-banner');
 			if (banner) {
