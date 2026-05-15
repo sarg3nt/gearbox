@@ -45,6 +45,14 @@ type Dependencies struct {
 
 	// CertbotTimer is the name of the certbot systemd timer.
 	CertbotTimer string
+
+	// SourceOverrides maps metric categories to an operator-chosen
+	// primary gear name, bypassing auto-detection for that category.
+	// Empty map (or missing key) means auto-detect. Sourced from
+	// per-category env vars at startup (GEARBOX_AGENT_HTTP_SOURCE for
+	// CategoryHTTPRequests, etc.). Names are pre-lowercased to match
+	// Info().Name lookups in the manager.
+	SourceOverrides map[MetricCategory]string
 }
 
 // Common event types used across plugins.

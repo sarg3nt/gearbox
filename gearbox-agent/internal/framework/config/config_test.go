@@ -375,3 +375,52 @@ func TestGetEnvDurationSecondsOrDefault(t *testing.T) {
 		})
 	}
 }
+
+func TestNormaliseSourceOverride(t *testing.T) {
+	cases := []struct {
+		in, want string
+	}{
+		{"", ""},
+		{"   ", ""},
+		{"haproxy", "haproxy"},
+		{"HAProxy", "haproxy"},
+		{" HAPROXY ", "haproxy"},
+		{"  Nginx  ", "nginx"},
+	}
+	for _, tc := range cases {
+		if got := normaliseSourceOverride(tc.in); got != tc.want {
+			t.Errorf("normaliseSourceOverride(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestLoad_HTTPSourceOverride(t *testing.T) {
+	// t.Setenv handles save/restore automatically and prevents
+	// parallel-test interference; the old os.Setenv + t.Cleanup pattern
+	// would leak the env var if the test panicked before Cleanup ran.
+	t.Setenv("GEARBOX_AGENT_HTTP_SOURCE", " Nginx ")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.HTTPSource != "nginx" {
+		t.Errorf("HTTPSource = %q, want %q (trimmed + lowercased)", cfg.HTTPSource, "nginx")
+	}
+}
+
+func TestLoad_HTTPSourceDefaultsEmpty(t *testing.T) {
+	// Unset within the test; t.Setenv with an empty string only marks
+	// the env var for restoration but doesn't unset it, so explicit
+	// Unsetenv is the right tool when the test specifically needs the
+	// var absent.
+	t.Setenv("GEARBOX_AGENT_HTTP_SOURCE", "") // record original for restore
+	os.Unsetenv("GEARBOX_AGENT_HTTP_SOURCE")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.HTTPSource != "" {
+		t.Errorf("HTTPSource = %q, want empty (auto-detect)", cfg.HTTPSource)
+	}
+}

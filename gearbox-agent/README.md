@@ -206,6 +206,26 @@ HAPROXY_STATS_USER=admin
 HAPROXY_STATS_PASSWORD=secret
 ```
 
+### Metric-source overrides
+
+Most hosts have one obvious producer per metric category. Where two coexist — for example HAProxy fronting nginx, with both genuinely serving HTTP — the agent auto-picks a primary using a built-in preference list and surfaces it in the capability manifest. Operators can override that pick when auto-detection chooses wrong on their host.
+
+Auto-detection is the default. The override env vars below exist for the rare edge cases.
+
+```bash
+# Force a specific gear as the primary for HTTP-request metrics
+# (request volume, response codes, response times, vhost breakdowns).
+# Valid values match gear identifiers in /api/v1/system/capabilities —
+# today only "haproxy" is implemented; more land with issue #95.
+GEARBOX_AGENT_HTTP_SOURCE=nginx
+```
+
+Override behaviour:
+
+- Names are case-insensitive and trimmed (`HAProxy` and `haproxy` both work).
+- An override pointing at a gear that didn't probe Available, or doesn't produce data for the category, logs a warning at startup and **falls back to auto-detect** — locking out HTTP metrics because the override's target isn't installed on this box would be worse than serving auto-picked data.
+- The selected primary plus the chosen reason and the alternatives that were also available appear in `/api/v1/system/capabilities` under `primary_sources` so dashboards and humans can confirm the resolution.
+
 ## Authentication
 
 ### API Key
