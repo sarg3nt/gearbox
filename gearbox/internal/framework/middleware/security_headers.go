@@ -173,6 +173,19 @@ func buildCSP() string {
 			// Home gear app catalog hosts SVG icons on jsDelivr (selfh.st/icons).
 			"img-src 'self' data: blob: https://cdn.jsdelivr.net",
 			"font-src 'self' data:",
+			// connect-src deliberately stays restricted even though
+			// script-src / style-src trust the same CDN origins.
+			// Defense-in-depth: if a CDN script is ever compromised
+			// (typosquat, account takeover, mirror desync), it can
+			// already run in our origin via script-src, but it can't
+			// exfiltrate data to the CDN via fetch/XHR/EventSource
+			// because connect-src blocks those calls. The browser
+			// tries to fetch .map sourcemaps for the .min.js files
+			// when DevTools is open — those requests show as CSP
+			// violations in the DevTools console; that's the only
+			// cost and only operators with DevTools open ever see
+			// them. Use USE_LOCAL_ASSETS=true in development to
+			// silence them entirely (everything served same-origin).
 			"connect-src 'self' ws: wss:",
 			"frame-ancestors 'none'",
 			"base-uri 'self'",

@@ -659,7 +659,12 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 						min: 0,
 						ticks: {
 							color: colors.text,
-							stepSize: 1,
+							// precision: 0 instead of stepSize: 1 — same
+							// integer-ticks intent without triggering
+							// Chart.js's "8000 ticks, limiting to 1000"
+							// warning on large-range series. See the same
+							// fix in static/js/charts/chart-defaults.js.
+							precision: 0,
 							callback: function(value) {
 								if (Math.floor(value) === value) {
 									return value;
@@ -982,7 +987,6 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 			eventSource.addEventListener('stats.updated', function(e) {
 				try {
 					const data = JSON.parse(e.data);
-					console.log('stats.updated event:', data);
 					if (data.server_id === serverID) {
 						// Add new data point to cache and re-render
 						appendStatsData(data);
@@ -995,7 +999,6 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 			eventSource.addEventListener('metrics.updated', function(e) {
 				try {
 					const data = JSON.parse(e.data);
-					console.log('metrics.updated event:', data);
 					if (data.server_id === serverID) {
 						// Add new data point to cache and re-render
 						appendMetricsData(data);
@@ -1039,9 +1042,6 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 			const frontends = stats.frontends || [];
 			const backends = stats.backends || [];
 
-			console.log('appendStatsData - eventData:', eventData);
-			console.log('appendStatsData - frontends:', frontends.length, 'backends:', backends.length);
-
 			// Aggregate stats from frontends and backends
 			let totalSessions = 0;
 			let totalRequests = 0;
@@ -1084,9 +1084,10 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 				total_5xx_errors: total5xxErrors
 			};
 
-			// Skip if no backends/frontends were found (empty stats)
+			// Skip if no backends/frontends were found (empty stats).
+			// Quietly — this fires on every empty payload and was noisy
+			// at console.log level.
 			if (frontends.length === 0 && backends.length === 0) {
-				console.log('Skipping empty stats data point');
 				return;
 			}
 
@@ -1129,9 +1130,6 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 			// The SSE event structure is: { type, server_id, timestamp, data: { metrics: {...} } }
 			const eventData = newData.data || {};
 			const metrics = eventData.metrics || {};
-
-			console.log('appendMetricsData - eventData:', eventData);
-			console.log('appendMetricsData - metrics:', metrics);
 			const point = {
 				collected_at: new Date().toISOString(),
 				// Database uses snake_case, match that format
@@ -1143,10 +1141,11 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 				network_tx_bytes: metrics.network_tx_bytes || 0
 			};
 
-			// Skip if all values are zero (no real data)
+			// Skip if all values are zero (no real data). Quietly —
+			// this fires on every empty payload and was noisy at
+			// console.log level.
 			if (point.load_average_1 === 0 && point.load_average_5 === 0 &&
 				point.memory_usage_percent === 0 && point.network_rx_bytes === 0) {
-				console.log('Skipping empty metrics data point');
 				return;
 			}
 

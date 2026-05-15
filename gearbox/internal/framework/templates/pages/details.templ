@@ -471,7 +471,12 @@ templ BackendDetail(user *models.User, backendName string, stats *models.HAProxy
 							min: 0
 						};
 						if (integerTicks) {
-							yConfig.ticks.stepSize = 1;
+							// precision: 0 alone gives integer-only ticks
+							// while letting Chart.js auto-pick the step.
+							// stepSize: 1 here would force a 1-tick-per-
+							// unit grid on series whose range can climb
+							// into the thousands, triggering the
+							// "limiting to 1000 ticks" console warning.
 							yConfig.ticks.precision = 0;
 						}
 						return {

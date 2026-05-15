@@ -107,7 +107,17 @@
 					min: 0,
 					ticks: {
 						color: colors.text,
-						stepSize: 1,
+						// precision: 0 lets Chart.js auto-pick the step size
+						// but forces the result to integer values. Avoids the
+						// `scales.y.ticks.stepSize: 1 would result generating
+						// up to N ticks. Limiting to 1000.` console warning
+						// that fires when stepSize: 1 meets a data range in
+						// the thousands (HAProxy request counters routinely
+						// hit ~8K req/window, and Chart.js can't draw 8K
+						// ticks). The callback below stays as a belt-and-
+						// braces filter in case a fractional value still
+						// slips through.
+						precision: 0,
 						callback: function(value) {
 							if (Math.floor(value) === value) {
 								return value;
