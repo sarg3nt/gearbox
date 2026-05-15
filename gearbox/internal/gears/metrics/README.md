@@ -93,7 +93,7 @@ The new endpoints sit on top of existing tables — no new collection runs
 on the agent. Specifically:
 
 - KPI summary aggregates `stats_history` (per-snapshot HAProxy stats — table
-  name unchanged from the pre-rename schema; the records IS historical) and
+  name unchanged from the pre-rename schema; the records are historical) and
   `traffic_flows` (per-minute response-code buckets from the Traffic gear's
   collector).
 - Error Insights and backend details query `traffic_flows` exclusively —
