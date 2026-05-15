@@ -25,6 +25,7 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -40,20 +41,77 @@ import (
 // dashboard PATCH endpoints accept.
 const maxLayoutBytes = 16 * 1024
 
-// layoutTile is the minimum shape we require each entry in the
-// posted layout array to carry. GridStack's `save()` includes
-// these four fields for every node; the `id` is the stable DOM id
-// of the tile (e.g. "card-cpu"). We don't enforce the id's value
-// against the known set of cards — the dashboard renders cards by
-// id and ignores anything it doesn't recognise, so an unknown id
-// in the saved layout is a no-op at render time rather than a
-// failure mode worth rejecting here.
+// maxTilesPerLayout caps the per-PATCH tile count. The page has 11
+// known cards today (7 baseline + 4 per-source); 64 is a comfortable
+// ceiling that survives future growth without letting a misbehaving
+// client commit a thousand-tile blob.
+const maxTilesPerLayout = 64
+
+// maxCoord / maxDim bound the GridStack coordinate space. The grid
+// renders at 12 columns wide; the metrics page typically reaches
+// y ~ 24 on the default layout. Caps a couple of orders of magnitude
+// higher so a wide future layout still fits while a "garbage value"
+// like `x: 9_999_999` gets rejected.
+const (
+	maxCoord = 1000
+	maxDim   = 100
+)
+
+// layoutTile is the shape we require each entry in the posted
+// layout array to carry. GridStack's `save()` includes these four
+// fields for every node; the `id` is the stable DOM id of the tile
+// (e.g. "card-cpu"). We don't enforce the id's value against the
+// known set of cards — the dashboard renders cards by id and
+// ignores anything it doesn't recognise, so an unknown id in the
+// saved layout is a no-op at render time rather than a failure
+// mode worth rejecting here.
 type layoutTile struct {
 	ID string `json:"id"`
 	X  int    `json:"x"`
 	Y  int    `json:"y"`
 	W  int    `json:"w"`
 	H  int    `json:"h"`
+}
+
+// validateLayoutTiles enforces the per-tile invariants we need to
+// trust the stored blob on read-back: non-empty IDs, non-negative
+// coordinates, positive dimensions, bounded values, unique IDs.
+// Without this a misbehaving client could persist tiles with
+// negative coords / zero dimensions / duplicate IDs that would
+// surface as confusing render bugs later. Returns the first
+// problem found rather than aggregating — one good error is more
+// actionable than a list when the source is a misbehaving JS
+// caller, not a hand-edited file.
+func validateLayoutTiles(tiles []layoutTile) error {
+	if len(tiles) == 0 {
+		return errors.New("layout must contain at least one tile")
+	}
+	if len(tiles) > maxTilesPerLayout {
+		return fmt.Errorf("layout has %d tiles; maximum %d", len(tiles), maxTilesPerLayout)
+	}
+	seen := make(map[string]struct{}, len(tiles))
+	for i, t := range tiles {
+		if t.ID == "" {
+			return fmt.Errorf("tile %d: id is empty", i)
+		}
+		if _, dup := seen[t.ID]; dup {
+			return fmt.Errorf("tile %d: duplicate id %q", i, t.ID)
+		}
+		seen[t.ID] = struct{}{}
+		if t.X < 0 || t.Y < 0 {
+			return fmt.Errorf("tile %q: x/y must be non-negative (got x=%d, y=%d)", t.ID, t.X, t.Y)
+		}
+		if t.X > maxCoord || t.Y > maxCoord {
+			return fmt.Errorf("tile %q: x/y exceed %d (got x=%d, y=%d)", t.ID, maxCoord, t.X, t.Y)
+		}
+		if t.W <= 0 || t.H <= 0 {
+			return fmt.Errorf("tile %q: w/h must be positive (got w=%d, h=%d)", t.ID, t.W, t.H)
+		}
+		if t.W > maxDim || t.H > maxDim {
+			return fmt.Errorf("tile %q: w/h exceed %d (got w=%d, h=%d)", t.ID, maxDim, t.W, t.H)
+		}
+	}
+	return nil
 }
 
 // APIMetricsLayoutGetHandler returns the user's saved metrics
@@ -136,8 +194,8 @@ func (h *Handler) APIMetricsLayoutPatchHandler(w http.ResponseWriter, r *http.Re
 		http.Error(w, "Invalid layout JSON: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if len(tiles) == 0 {
-		http.Error(w, "Layout must contain at least one tile", http.StatusBadRequest)
+	if err := validateLayoutTiles(tiles); err != nil {
+		http.Error(w, "Invalid layout: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 

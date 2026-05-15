@@ -52,26 +52,31 @@
     "card-traefik",
   ];
 
-  /** getServerID reads the currently-selected box from the global
-   *  server selector. Falls back to the URL when there's no
-   *  selector on the page (shouldn't happen, but defensive). */
+  /** getServerID matches metrics.templ's inline helper of the same
+   *  name: prefer #server-select (multi-server mode), fall back to
+   *  #default-server-id (single-server mode), then to the URL.
+   *  Missing this single-server fallback meant the layout endpoints
+   *  silently no-op'd on single-box installs — see review on PR #104.
+   */
   function getServerID() {
     const sel = document.getElementById("server-select");
     if (sel && sel.value) return sel.value;
+    const fallback = document.getElementById("default-server-id");
+    if (fallback && fallback.value) return fallback.value;
     const match = window.location.pathname.match(/^\/servers\/([^/]+)/);
     return match ? match[1] : "";
   }
 
   // 12-column grid matches the templ's default coordinates (half-
   // width tiles are gs-w=6, the full-width Sessions tile is gs-w=12).
-  // Margin matches the page's existing gap-4 (16px) so the GridStack
-  // layout reads identically to the prior flex grid when no edits
-  // have been made.
+  // Margin 16 matches Tailwind's gap-4 (the prior flex grid's gap)
+  // and the Home gear's gridstack init — keeps spacing consistent
+  // when GridStack takes over.
   const gs = GridStack.init(
     {
       column: 12,
       cellHeight: 80,
-      margin: 8,
+      margin: 16,
       float: false,
       staticGrid: true, // read-only until edit mode toggles
       acceptWidgets: false,
@@ -148,32 +153,66 @@
     }
   }
 
-  /** saveLayout PATCHes the current grid state. Called from the
-   *  GridStack change handler (debounced) and on edit-mode exit. */
+  /** saveLayout PATCHes the current grid state. Two call sites:
+   *  - drag/resize during edit mode → debounced 400 ms so a
+   *    multi-tile drag flushes once, not N times.
+   *  - edit-mode exit → flush=true to bypass the debounce; without
+   *    this a fast close-tab right after "Done editing" could drop
+   *    the layout the user just confirmed.
+   *
+   *  saveTimer is module-scoped so resetLayout() can cancel it
+   *  before issuing the DELETE — otherwise a pending PATCH could
+   *  fire after the reset and re-create the row the user just
+   *  threw away. */
   let saveTimer = null;
-  function saveLayout() {
-    if (saveTimer) clearTimeout(saveTimer);
-    saveTimer = setTimeout(async function () {
-      const serverID = getServerID();
-      if (!serverID) return;
-      try {
-        await fetch(`/api/${serverID}/metrics/layout`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(captureLayout()),
-        });
-      } catch (err) {
-        console.warn("metrics layout save failed", err);
-      }
+  let savesSuppressed = false;
+
+  async function patchLayout() {
+    const serverID = getServerID();
+    if (!serverID) return;
+    try {
+      await fetch(`/api/${serverID}/metrics/layout`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(captureLayout()),
+      });
+    } catch (err) {
+      console.warn("metrics layout save failed", err);
+    }
+  }
+
+  function saveLayout(opts) {
+    if (savesSuppressed) return;
+    const flush = !!(opts && opts.flush);
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
+    if (flush) {
+      // Don't await — caller (edit-mode exit handler) is
+      // synchronous; the PATCH fires immediately and any
+      // failure surfaces in the console.
+      void patchLayout();
+      return;
+    }
+    saveTimer = setTimeout(function () {
+      saveTimer = null;
+      void patchLayout();
     }, 400);
   }
 
   /** resetLayout DELETEs the saved row and reloads the page so the
-   *  template defaults take effect. Used by the Reset button in the
-   *  edit-mode toolbar. */
+   *  template defaults take effect. Suppresses further saves +
+   *  cancels any in-flight debounce before issuing the DELETE so a
+   *  pending PATCH can't race the reset and resurrect the row. */
   async function resetLayout() {
     const serverID = getServerID();
     if (!serverID) return;
+    savesSuppressed = true;
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
     try {
       await fetch(`/api/${serverID}/metrics/layout`, { method: "DELETE" });
     } catch (err) {
@@ -209,9 +248,11 @@
         el.classList.toggle("hidden", !enteringEdit);
       });
 
-      // Persist on exit. Entering edit mode is a no-op for
-      // persistence — only the resulting layout matters.
-      if (!enteringEdit) saveLayout();
+      // Persist on exit. Flush bypasses the debounce so a close-
+      // tab right after clicking "Done editing" can't drop the
+      // layout. Entering edit mode is a no-op for persistence —
+      // only the resulting layout matters.
+      if (!enteringEdit) saveLayout({ flush: true });
     });
   }
 
