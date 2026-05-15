@@ -173,7 +173,15 @@ func buildCSP() string {
 			// Home gear app catalog hosts SVG icons on jsDelivr (selfh.st/icons).
 			"img-src 'self' data: blob: https://cdn.jsdelivr.net",
 			"font-src 'self' data:",
-			"connect-src 'self' ws: wss:",
+			// connect-src also covers sourcemap fetches the browser
+			// initiates when DevTools is open — chart.js / tabulator /
+			// hammerjs reference .map files alongside the .min.js we
+			// already allow under script-src. Without these origins
+			// listed here, DevTools spams CSP-violation errors that
+			// drown the real console output. The hosts are the same
+			// ones already trusted by script-src / style-src, so this
+			// is consistent rather than expanding trust.
+			"connect-src 'self' ws: wss: https://unpkg.com https://cdn.jsdelivr.net",
 			"frame-ancestors 'none'",
 			"base-uri 'self'",
 			"form-action 'self'",
