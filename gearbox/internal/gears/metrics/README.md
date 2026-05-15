@@ -1,8 +1,13 @@
 # Metrics Gear
 
-The Metrics gear surfaces historical metrics for HAProxy and the underlying
-host. It's the place users land when they want to answer *"how busy was the
-proxy, and what went wrong?"*
+The Metrics gear surfaces time-series metrics for HAProxy and the underlying
+host at the dashboard's `/metrics` URL. It's the place users land when they
+want to answer *"how busy was the proxy, and what went wrong?"*
+
+> The page used to live at `/history` and was internally referred to as the
+> "history" gear; issue #97 renamed it to `/metrics` to keep "history"
+> reserved for genuinely distinct concepts (OS-update apt/zypper history,
+> HAProxy config change history).
 
 ## Layout
 
@@ -44,7 +49,7 @@ The page has four stacked sections:
 
 | Permission          | Description                |
 |---------------------|----------------------------|
-| `metrics:view`      | View metrics and history   |
+| `metrics:view`      | View the Metrics page      |
 | `metrics:configure` | Configure metrics settings |
 
 The drill-down drawer's *Recent 5xx log lines* section additionally
@@ -53,21 +58,21 @@ shows a "logs unavailable" hint instead of failing.
 
 ## Routes
 
-| Method | Path       | Description               |
-|--------|------------|---------------------------|
-| GET    | `/history` | Main history/metrics page |
+| Method | Path       | Description       |
+|--------|------------|-------------------|
+| GET    | `/metrics` | Main Metrics page |
 
 ## API endpoints (main handler)
 
-Existing endpoints kept for backwards compatibility:
+Time-series endpoints (chart data):
 
-| Method | Path                                            | Description                   |
-|--------|-------------------------------------------------|-------------------------------|
-| GET    | `/api/{serverID}/history/stats`                 | Get historical HAProxy stats  |
-| GET    | `/api/{serverID}/history/metrics`               | Get historical system metrics |
-| GET    | `/api/{serverID}/history/backend/{backendName}` | Get backend-specific history  |
-| GET    | `/api/{serverID}/metrics/storage-stats`         | Get storage statistics        |
-| POST   | `/api/{serverID}/metrics/clear`                 | Clear metrics data            |
+| Method | Path                                            | Description                                   |
+|--------|-------------------------------------------------|-----------------------------------------------|
+| GET    | `/api/{serverID}/metrics/stats`                 | Time-series HAProxy stats (per-snapshot rows) |
+| GET    | `/api/{serverID}/metrics/system`                | Time-series host metrics (CPU/mem/disk/net)   |
+| GET    | `/api/{serverID}/metrics/backend/{backendName}` | Time-series per-backend stats                 |
+| GET    | `/api/{serverID}/metrics/storage-stats`         | Storage statistics                            |
+| POST   | `/api/{serverID}/metrics/clear`                 | Clear metrics data                            |
 
 New in v2 ("insights" surface — see `api_metrics_insights.go`):
 
@@ -87,7 +92,8 @@ default 2000) and an optional `backend` filter.
 The new endpoints sit on top of existing tables — no new collection runs
 on the agent. Specifically:
 
-- KPI summary aggregates `stats_history` (per-snapshot HAProxy stats) and
+- KPI summary aggregates `stats_history` (per-snapshot HAProxy stats — table
+  name unchanged from the pre-rename schema; the records IS historical) and
   `traffic_flows` (per-minute response-code buckets from the Traffic gear's
   collector).
 - Error Insights and backend details query `traffic_flows` exclusively —
@@ -100,8 +106,8 @@ on the agent. Specifically:
 
 ```text
 internal/gears/metrics/
-├── plugin.go             # Gear registration
-├── handlers.go           # HTTP handler (/history page)
+├── plugin.go             # Gear registration (/metrics route)
+├── handlers.go           # MetricsPage handler
 ├── partials.templ        # CPU / memory / disk / etc. widget partials
 ├── chart_partials.templ  # Reusable chart components for the home gear
 ├── icons.go              # Sidebar icon
@@ -109,7 +115,8 @@ internal/gears/metrics/
 └── README.md             # This file
 
 internal/framework/handler/
-├── api_stats.go                       # Existing /history/* endpoints
+├── api_stats.go                       # Time-series endpoints
+│                                      # (/api/{boxID}/metrics/{stats,system,backend/*})
 ├── api_metrics_insights.go            # KPI / error breakdown / drill-down / log-errors
 └── api_metrics_insights_helpers.go    # KPI math, sparkline downsampling
 
@@ -121,7 +128,7 @@ internal/framework/database/
 ## Development
 
 The gear is automatically included in the build via its `init()` function.
-After editing `history.templ`, run:
+After editing `metrics.templ`, run:
 
 ```bash
 make templ-generate && make build

@@ -4,8 +4,8 @@ import "github.com/sarg3nt/gearbox/internal/framework/models"
 import "github.com/sarg3nt/gearbox/internal/framework/templates/layouts"
 import "github.com/sarg3nt/gearbox/internal/framework/templates/components"
 
-templ History(user *models.User, servers []models.BoxConfig) {
-	@layouts.Base("Metrics", user, "/history") {
+templ Metrics(user *models.User, servers []models.BoxConfig) {
+	@layouts.Base("Metrics", user, "/metrics") {
 		<!-- Hidden container for page header content. Title + box selector
 		     live in the global header breadcrumb + chip. -->
 		<div id="page-header-source" class="hidden">
@@ -843,12 +843,12 @@ templ History(user *models.User, servers []models.BoxConfig) {
 			await applyCapabilities(serverID);
 
 			try {
-				// Fetch stats history
-				const statsResponse = await fetch(`/api/${serverID}/history/stats?hours=${hours}`);
+				// Fetch HAProxy stats time series
+				const statsResponse = await fetch(`/api/${serverID}/metrics/stats?hours=${hours}`);
 				const statsData = await statsResponse.json();
 
-				// Fetch system metrics history
-				const metricsResponse = await fetch(`/api/${serverID}/history/metrics?hours=${hours}`);
+				// Fetch system-metrics time series
+				const metricsResponse = await fetch(`/api/${serverID}/metrics/system?hours=${hours}`);
 				const metricsData = await metricsResponse.json();
 
 				// Cache the data for fullscreen toggle

@@ -714,7 +714,7 @@ templ BackendDetail(user *models.User, backendName string, stats *models.HAProxy
 					function loadBackendHistory() {
 						updateResolutionLabel();
 						var hours = document.getElementById('hours-select').value;
-						fetch('/api/' + backendServerID + '/history/backend/' + encodeURIComponent(backendNameVar) + '?hours=' + hours)
+						fetch('/api/' + backendServerID + '/metrics/backend/' + encodeURIComponent(backendNameVar) + '?hours=' + hours)
 							.then(function(response) { return response.json(); })
 							.then(function(result) {
 								cachedBackendData = result.data || [];

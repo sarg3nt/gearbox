@@ -15,7 +15,7 @@ import (
 // - OverviewPage -> plugins/haproxy
 // - StatusGridPage -> plugins/haproxy
 // - LogsPage -> plugins/logs
-// - HistoryPage -> plugins/metrics
+// - MetricsPage -> plugins/metrics
 // - ServicesPage -> plugins/services
 // - CertificatesPage -> plugins/certificates
 // - TrafficPage -> plugins/traffic

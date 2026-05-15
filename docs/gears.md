@@ -138,7 +138,7 @@ Client gears run in the **gearbox** web application (the monitoring client) and 
 - `traffic` - Traffic analysis and visualization page
 - `alerts` - Alert management page
 - `services` - Service status and control page
-- `metrics` - System metrics and history page
+- `metrics` - Time-series system + HAProxy metrics page (`/metrics`)
 
 ### Gear Scope: Box vs System
 

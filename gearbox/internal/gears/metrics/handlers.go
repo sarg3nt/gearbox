@@ -19,8 +19,9 @@ func NewHandlers(deps gear.Dependencies) *Handlers {
 	return &Handlers{deps: deps}
 }
 
-// HistoryPage renders the history/metrics page.
-func (h *Handlers) HistoryPage(w http.ResponseWriter, r *http.Request) {
+// MetricsPage renders the Metrics gear's main page (charts, KPI band,
+// error insights). Served at /metrics on the dashboard.
+func (h *Handlers) MetricsPage(w http.ResponseWriter, r *http.Request) {
 	// Check permission
 	if !h.deps.Auth.HasPermission(r, "metrics", "view") {
 		http.Error(w, "Forbidden: insufficient permissions to view metrics", http.StatusForbidden)
@@ -43,10 +44,10 @@ func (h *Handlers) HistoryPage(w http.ResponseWriter, r *http.Request) {
 	}
 	servers := serverAdapter.GetEnabledServersAsModels()
 
-	// Render the history page
-	component := pages.History(user, servers)
+	// Render the Metrics page
+	component := pages.Metrics(user, servers)
 	if err := component.Render(r.Context(), w); err != nil {
-		h.deps.Logger.Error("failed to render history page", "error", err)
+		h.deps.Logger.Error("failed to render metrics page", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 	}
 }

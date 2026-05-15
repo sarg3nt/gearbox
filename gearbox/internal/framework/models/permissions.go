@@ -335,7 +335,7 @@ func GetAvailablePermissionsForComponent(c Component) []Permission {
 		}
 	case ComponentMetrics:
 		return []Permission{
-			PermissionView,      // View metrics/history page and data
+			PermissionView,      // View the Metrics page and its data
 			PermissionConfigure, // Configure metrics storage settings
 		}
 	case ComponentGears:

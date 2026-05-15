@@ -28,7 +28,7 @@ script initSessionsRequestsChart(boxID string, hours int, limit int) {
 		var canvasId = 'chart-sessions-requests-' + boxID;
 
 		function loadChart() {
-			fetch('/api/' + boxID + '/history/stats?hours=' + hours + '&limit=' + limit)
+			fetch('/api/' + boxID + '/metrics/stats?hours=' + hours + '&limit=' + limit)
 				.then(function(r) { return r.json(); })
 				.then(function(json) {
 					var data = json.data || [];
@@ -84,7 +84,7 @@ script initServerHealthChart(boxID string, hours int, limit int) {
 		var canvasId = 'chart-server-health-' + boxID;
 
 		function loadChart() {
-			fetch('/api/' + boxID + '/history/stats?hours=' + hours + '&limit=' + limit)
+			fetch('/api/' + boxID + '/metrics/stats?hours=' + hours + '&limit=' + limit)
 				.then(function(r) { return r.json(); })
 				.then(function(json) {
 					var data = json.data || [];
@@ -140,7 +140,7 @@ script initCPULoadChart(boxID string, hours int, limit int) {
 		var canvasId = 'chart-cpu-load-' + boxID;
 
 		function loadChart() {
-			fetch('/api/' + boxID + '/history/metrics?hours=' + hours + '&limit=' + limit)
+			fetch('/api/' + boxID + '/metrics/system?hours=' + hours + '&limit=' + limit)
 				.then(function(r) { return r.json(); })
 				.then(function(json) {
 					var data = json.data || [];
@@ -197,7 +197,7 @@ script initMemoryUsageChart(boxID string, hours int, limit int) {
 		var canvasId = 'chart-memory-usage-' + boxID;
 
 		function loadChart() {
-			fetch('/api/' + boxID + '/history/metrics?hours=' + hours + '&limit=' + limit)
+			fetch('/api/' + boxID + '/metrics/system?hours=' + hours + '&limit=' + limit)
 				.then(function(r) { return r.json(); })
 				.then(function(json) {
 					var data = json.data || [];
@@ -252,7 +252,7 @@ script initNetworkThroughputChart(boxID string, hours int, limit int) {
 		var canvasId = 'chart-network-throughput-' + boxID;
 
 		function loadChart() {
-			fetch('/api/' + boxID + '/history/metrics?hours=' + hours + '&limit=' + limit)
+			fetch('/api/' + boxID + '/metrics/system?hours=' + hours + '&limit=' + limit)
 				.then(function(r) { return r.json(); })
 				.then(function(json) {
 					var data = json.data || [];
@@ -328,7 +328,7 @@ script initResponseTimesChart(boxID string, hours int, limit int) {
 		var canvasId = 'chart-response-times-' + boxID;
 
 		function loadChart() {
-			fetch('/api/' + boxID + '/history/stats?hours=' + hours + '&limit=' + limit)
+			fetch('/api/' + boxID + '/metrics/stats?hours=' + hours + '&limit=' + limit)
 				.then(function(r) { return r.json(); })
 				.then(function(json) {
 					var data = json.data || [];
@@ -383,7 +383,7 @@ script initErrorRatesChart(boxID string, hours int, limit int) {
 		var canvasId = 'chart-error-rates-' + boxID;
 
 		function loadChart() {
-			fetch('/api/' + boxID + '/history/stats?hours=' + hours + '&limit=' + limit)
+			fetch('/api/' + boxID + '/metrics/stats?hours=' + hours + '&limit=' + limit)
 				.then(function(r) { return r.json(); })
 				.then(function(json) {
 					var data = json.data || [];

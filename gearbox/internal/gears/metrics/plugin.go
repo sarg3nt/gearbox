@@ -1,5 +1,8 @@
-// Package metrics provides historical metrics and charts for HAProxy monitoring.
-// This plugin shows historical stats, system metrics, and graphs.
+// Package metrics provides the dashboard's Metrics gear: time-series
+// stats, system metrics, KPI band, and error insights, served at
+// /metrics. (Earlier revisions of this package called the page
+// "/history" — issue #97 renamed it; "history" now refers only to
+// distinct concepts like OS-update apt history.)
 package metrics
 
 import (
@@ -14,7 +17,7 @@ func init() {
 	gear.Register(&Gear{})
 }
 
-// Plugin implements the metrics/history functionality.
+// Gear implements the Metrics dashboard page.
 type Gear struct {
 	gear.BaseGear
 	handlers *Handlers
@@ -24,8 +27,8 @@ type Gear struct {
 func (p *Gear) Info() gear.Info {
 	return gear.Info{
 		Name:        "metrics",
-		DisplayName: "Metrics & History",
-		Description: "View historical stats, system metrics, and performance graphs",
+		DisplayName: "Metrics",
+		Description: "Time-series stats, system metrics, KPIs, and error insights",
 		Version:     "1.0.0",
 		Icon:        "chart-bar",
 		Category:    "monitoring",
@@ -45,20 +48,20 @@ func (p *Gear) Initialize(ctx context.Context, deps gear.Dependencies) error {
 }
 
 // RegisterRoutes registers HTTP routes for the metrics gear.
-// When mounted at /history, provides:
-//   - GET /history/ - Main history/metrics page
+// When mounted at /metrics, provides:
+//   - GET /metrics/ — main Metrics page
 //
-// Note: API endpoints (/api/{serverID}/history/*, /api/{serverID}/metrics-history,
-// /api/{serverID}/stats-history) remain in the main handler.
+// Per-box API endpoints live in the framework handler under
+// /api/{boxID}/metrics/* (see cmd/server/main.go).
 func (p *Gear) RegisterRoutes(r chi.Router) {
 	// Main page
-	r.Get("/", p.handlers.HistoryPage)
+	r.Get("/", p.handlers.MetricsPage)
 }
 
 // SidebarItem returns the sidebar configuration.
 func (p *Gear) SidebarItem() *gear.SidebarConfig {
 	return &gear.SidebarConfig{
-		Path:               "/history",
+		Path:               "/metrics",
 		Icon:               MetricsIcon(),
 		DefaultOrder:       30,
 		RequiresPermission: "metrics:view",
