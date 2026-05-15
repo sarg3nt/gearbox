@@ -69,14 +69,16 @@
 
   // 12-column grid matches the templ's default coordinates (half-
   // width tiles are gs-w=6, the full-width Sessions tile is gs-w=12).
-  // Margin 16 matches Tailwind's gap-4 (the prior flex grid's gap)
-  // and the Home gear's gridstack init — keeps spacing consistent
-  // when GridStack takes over.
+  // margin: 16 felt too tight vertically — adjacent rows visibly
+  // butted up against each other in dark mode where the inner
+  // card backgrounds blur into the page background. Bumped to 24
+  // (12px around every tile → 24px between neighbours) so rows
+  // breathe without spreading the grid too wide.
   const gs = GridStack.init(
     {
       column: 12,
       cellHeight: 80,
-      margin: 16,
+      margin: 24,
       float: false,
       staticGrid: true, // read-only until edit mode toggles
       acceptWidgets: false,
