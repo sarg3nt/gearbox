@@ -385,13 +385,44 @@ func (h *Handler) hostKPICards(boxID string, since, until, prevSince time.Time) 
 
 // Source identifiers + display labels. Defined as constants so handlers
 // and templates stay aligned and a typo doesn't silently drop a card from
-// the filtered view.
+// the filtered view. New sources land here once the agent's detection +
+// metrics pair is in place; the dashboard collector also references the
+// list in collector.SupportedSources().
 const (
 	sourceHAProxy      = "haproxy"
 	sourceLabelHAProxy = "HAProxy"
 	sourceHost         = "host"
 	sourceLabelHost    = "Host"
+	sourceNginx        = "nginx"
+	sourceLabelNginx   = "nginx"
+	sourceApache       = "apache"
+	sourceLabelApache  = "Apache"
+	sourceCaddy        = "caddy"
+	sourceLabelCaddy   = "Caddy"
+	sourceTraefik      = "traefik"
+	sourceLabelTraefik = "Traefik"
 )
+
+// sourceLabel returns the human-readable label for a source ID. Used
+// by the source-aware handlers to render badges/titles without
+// re-typing the same switch in every caller.
+func sourceLabel(source string) string {
+	switch source {
+	case sourceHAProxy:
+		return sourceLabelHAProxy
+	case sourceHost:
+		return sourceLabelHost
+	case sourceNginx:
+		return sourceLabelNginx
+	case sourceApache:
+		return sourceLabelApache
+	case sourceCaddy:
+		return sourceLabelCaddy
+	case sourceTraefik:
+		return sourceLabelTraefik
+	}
+	return source
+}
 
 // APIMetricsErrorBreakdownHandler powers the "Error Insights" panel: a
 // three-column view of top-N backends, source IPs, and countries

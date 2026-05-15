@@ -39,7 +39,8 @@ type Manager struct {
 	metadataCollector MetadataCollectorInterface
 	systemCollector   SystemCollectorInterface
 	logCollector      LogCollectorInterface
-	agentClient       *agent.Client // Direct access to agent client for security operations
+	sourceCollector   *SourceStatsCollector // per-source nginx/apache/caddy/traefik
+	agentClient       *agent.Client         // Direct access to agent client for security operations
 	logger            *slog.Logger
 	db                *database.DB
 	stopCh            chan struct{}
@@ -60,6 +61,7 @@ func NewManager(
 	metadataCollector := NewAgentMetadataCollector(agentClient)
 	systemCollector := NewAgentSystemCollector(agentClient)
 	logCollector := NewAgentLogCollector(agentClient)
+	sourceCollector := NewSourceStatsCollector(serverID, agentClient, db, logger)
 
 	return &Manager{
 		serverID:          serverID,
@@ -68,6 +70,7 @@ func NewManager(
 		metadataCollector: metadataCollector,
 		systemCollector:   systemCollector,
 		logCollector:      logCollector,
+		sourceCollector:   sourceCollector,
 		agentClient:       agentClient,
 		logger:            logger,
 		db:                db,
@@ -244,6 +247,14 @@ func (m *Manager) persistHistory() {
 				"server_id", m.serverID,
 				"error", err)
 		}
+	}
+
+	// Scrape and save per-source metrics (nginx, apache, caddy,
+	// traefik). The collector silently skips sources whose gears
+	// haven't probed Available on this host, so this is a no-op on
+	// hosts that only run HAProxy.
+	if m.sourceCollector != nil {
+		m.sourceCollector.Run()
 	}
 }
 
