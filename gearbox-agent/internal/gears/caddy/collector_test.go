@@ -30,25 +30,21 @@ func TestParsePrometheusOutputSumsCounters(t *testing.T) {
 	want := Stats{
 		RequestsTotal:      59, // 42 + 17
 		RequestErrorsTotal: 3,
-		AdminRunning:       true,
 	}
 	if got != want {
 		t.Errorf("Stats = %+v, want %+v", got, want)
 	}
 }
 
-func TestParsePrometheusOutputHandlesMissingAdminMetric(t *testing.T) {
-	// Admin endpoint disabled (admin off in Caddyfile) — the
-	// `caddy_admin_*` metric won't appear; AdminRunning must be
-	// false even though the rest of the scrape is fine.
-	body := `caddy_http_requests_total{server="srv0"} 7
-`
-	got := ParsePrometheusOutput(body)
-	if got.AdminRunning {
-		t.Error("AdminRunning should be false when admin metric is absent")
-	}
-	if got.RequestsTotal != 7 {
-		t.Errorf("RequestsTotal = %d, want 7", got.RequestsTotal)
+func TestParsePrometheusOutputBackgroundEmptyBody(t *testing.T) {
+	// A scrape that returns 200 with no recognisable Caddy metric
+	// must parse cleanly to zero counters (NOT an error). The
+	// "admin reachable" question is answered by whether a scrape
+	// succeeded at all, which the handler conveys via 503 — not by
+	// any field on the returned Stats.
+	got := ParsePrometheusOutput("")
+	if got.RequestsTotal != 0 || got.RequestErrorsTotal != 0 {
+		t.Errorf("empty body should yield zero-valued counters, got %+v", got)
 	}
 }
 

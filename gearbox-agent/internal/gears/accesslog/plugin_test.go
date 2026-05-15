@@ -247,6 +247,122 @@ func TestHandleRecentSurfacesTailFailure(t *testing.T) {
 	}
 }
 
+func TestHandleRecentApacheFallsBackToCommonLogFormat(t *testing.T) {
+	// RHEL-style Apache emits CLF by default (no Referer/UA). Our
+	// primary apache profile is combined; the gear must fall back
+	// to ApacheCommon for any line the combined regex rejects so
+	// the dashboard sees records on those hosts instead of an empty
+	// envelope.
+	g := newTestGear()
+	g.stat = statExisting("/var/log/apache2/access.log")
+	g.tail = staticTail([]string{
+		// CLF line — no trailing quoted fields. ApacheCombined
+		// rejects this; ApacheCommon must catch it.
+		`192.168.1.10 - - [01/Jan/2026:00:00:00 +0000] "GET /clf-route HTTP/1.1" 500 1234`,
+		// Combined line — both profiles would accept; primary wins.
+		`192.168.1.11 - - [01/Jan/2026:00:00:01 +0000] "GET /combined-route HTTP/1.1" 503 100 "-" "curl/8.0"`,
+	})
+
+	r := chi.NewRouter()
+	g.RegisterRoutes(r)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/access-log/apache/recent?status_min=500", nil)
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	var resp Response
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.MatchCount != 2 {
+		t.Fatalf("MatchCount = %d, want 2 (combined + CLF fallback)", resp.MatchCount)
+	}
+	// Newest-first ordering: combined line is the second tail
+	// entry (index 1, newer). The records carry their actual
+	// profile so the dashboard can tell which parser matched —
+	// CLF lines come back tagged ProfileApacheCommon, combined as
+	// ProfileApacheCombined.
+	if resp.Records[0].Profile != accesslog.ProfileApacheCombined {
+		t.Errorf("first record profile = %q, want %q (combined wins for that line)", resp.Records[0].Profile, accesslog.ProfileApacheCombined)
+	}
+	if resp.Records[1].Profile != accesslog.ProfileApacheCommon {
+		t.Errorf("second record profile = %q, want %q (CLF fallback)", resp.Records[1].Profile, accesslog.ProfileApacheCommon)
+	}
+}
+
+func TestHandleRecentStatusMinZeroDisablesFilter(t *testing.T) {
+	// Explicit status_min=0 must return EVERY parsed record,
+	// including 2xx. The previous clamp at 100 silently coerced 0
+	// up to 100, which is correct for HTTP statuses but blocked the
+	// "give me everything" use case the dashboard wants for
+	// general-purpose log browsing.
+	g := newTestGear()
+	g.stat = statExisting("/var/log/nginx/access.log")
+	g.tail = staticTail([]string{
+		`1.1.1.1 - - [01/Jan/2026:00:00:00 +0000] "GET /a HTTP/1.1" 200 100 "-" "-"`,
+		`1.1.1.1 - - [01/Jan/2026:00:00:01 +0000] "GET /b HTTP/1.1" 304 0 "-" "-"`,
+		`1.1.1.1 - - [01/Jan/2026:00:00:02 +0000] "GET /c HTTP/1.1" 500 100 "-" "-"`,
+	})
+
+	r := chi.NewRouter()
+	g.RegisterRoutes(r)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/access-log/nginx/recent?status_min=0", nil)
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	var resp Response
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.MatchCount != 3 {
+		t.Errorf("MatchCount = %d with status_min=0, want 3 (all records)", resp.MatchCount)
+	}
+}
+
+func TestHandleRecentStatusMinDefaultIs500(t *testing.T) {
+	// No status_min param → defaults to 500 (the dashboard's main
+	// use case). Locks in the documented default so a future tweak
+	// to parseIntDefault doesn't quietly change behaviour for
+	// existing callers.
+	g := newTestGear()
+	g.stat = statExisting("/var/log/nginx/access.log")
+	g.tail = staticTail([]string{
+		`1.1.1.1 - - [01/Jan/2026:00:00:00 +0000] "GET /a HTTP/1.1" 200 100 "-" "-"`,
+		`1.1.1.1 - - [01/Jan/2026:00:00:01 +0000] "GET /b HTTP/1.1" 500 100 "-" "-"`,
+	})
+	r := chi.NewRouter()
+	g.RegisterRoutes(r)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/access-log/nginx/recent", nil)
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	var resp Response
+	_ = json.NewDecoder(rr.Body).Decode(&resp)
+	if resp.MatchCount != 1 {
+		t.Errorf("MatchCount without explicit status_min = %d, want 1 (default 500 keeps only the 500-line)", resp.MatchCount)
+	}
+}
+
+func TestParseWithFallbackTriesPrimaryFirst(t *testing.T) {
+	// Direct test of the helper to keep the contract pinned even
+	// if the handler rewires which sources use which fallback.
+	primary := accesslog.NginxCombinedProfile{}
+	fallback := accesslog.ApacheCommonProfile{}
+
+	combinedLine := `1.1.1.1 - - [01/Jan/2026:00:00:00 +0000] "GET /x HTTP/1.1" 200 100 "-" "curl/8.0"`
+	clfLine := `1.1.1.1 - - [01/Jan/2026:00:00:00 +0000] "GET /x HTTP/1.1" 200 100`
+
+	if got := parseWithFallback(primary, fallback, combinedLine); got == nil || got.Profile != accesslog.ProfileNginxCombined {
+		t.Errorf("combined line should match primary; got %+v", got)
+	}
+	if got := parseWithFallback(primary, fallback, clfLine); got == nil || got.Profile != accesslog.ProfileApacheCommon {
+		t.Errorf("CLF line should fall through to fallback; got %+v", got)
+	}
+	// No fallback registered → only primary attempted.
+	if got := parseWithFallback(primary, nil, clfLine); got != nil {
+		t.Errorf("nil fallback should not match CLF line; got %+v", got)
+	}
+}
+
 func TestParseIntDefaultClamps(t *testing.T) {
 	cases := []struct {
 		name                string

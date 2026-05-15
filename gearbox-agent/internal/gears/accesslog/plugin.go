@@ -58,15 +58,26 @@ var defaultLogPaths = map[string]string{
 // "did we try multiple paths?" logic explicit at the call site.
 const apacheFallbackPath = "/var/log/httpd/access_log"
 
-// sourceProfile maps a source identifier to the parser profile the
-// endpoint applies to each line. Apache lines are tried as
-// "combined" first (most operators run that format); ApacheCommon
-// is the fallback handled inside the per-record retry.
+// sourceProfile maps a source identifier to the primary parser
+// profile the endpoint tries first. Apache uniquely also has a
+// fallback profile (CLF without Referer / User-Agent) tried when
+// the primary returns nil — see sourceFallbackProfile and
+// parseWithFallback.
 var sourceProfile = map[string]string{
 	"haproxy": accesslog.ProfileHAProxy,
 	"nginx":   accesslog.ProfileNginxCombined,
 	"apache":  accesslog.ProfileApacheCombined,
 	"caddy":   accesslog.ProfileCaddyJSON,
+}
+
+// sourceFallbackProfile names the second profile tried when the
+// primary returns nil for a line. Today only Apache has one: many
+// RHEL-style installs ship CLF (no Referer / User-Agent) by
+// default, so we try ApacheCombined first (covers the Debian
+// default + custom combined-format ops) and fall back to
+// ApacheCommon. Lines that match neither stay rejected as noise.
+var sourceFallbackProfile = map[string]string{
+	"apache": accesslog.ProfileApacheCommon,
 }
 
 // maxLimit caps the per-request `limit` parameter so a buggy
@@ -205,8 +216,17 @@ func (g *Gear) handleRecent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no parser registered for source "+source, http.StatusInternalServerError)
 		return
 	}
+	// fallback may be nil — most sources have a single profile.
+	// parseWithFallback handles the nil case as "no second try".
+	fallback := accesslog.ProfileByName(sourceFallbackProfile[source])
 
-	statusMin := parseIntDefault(r.URL.Query().Get("status_min"), 0, 100, 599, 500)
+	// status_min defaults to 500 (the dashboard's primary use case
+	// is 5xx insights) but lets callers pass an explicit 0 to
+	// disable the filter entirely. Min clamp is 0 (not 100) so
+	// "explicitly disable" works; the gating logic compares with
+	// rec.StatusCode < statusMin, which is a no-op when statusMin
+	// is 0.
+	statusMin := parseIntDefault(r.URL.Query().Get("status_min"), 500, 0, 599, 500)
 	limit := parseIntDefault(r.URL.Query().Get("limit"), defaultLimit, 1, maxLimit, defaultLimit)
 	lines := parseIntDefault(r.URL.Query().Get("lines"), defaultLines, 1, maxLines, defaultLines)
 
@@ -230,7 +250,7 @@ func (g *Gear) handleRecent(w http.ResponseWriter, r *http.Request) {
 	// the slice in reverse.
 	matches := make([]accesslog.Record, 0, limit)
 	for i := len(raw) - 1; i >= 0; i-- {
-		rec := parser.Parse(raw[i])
+		rec := parseWithFallback(parser, fallback, raw[i])
 		if rec == nil {
 			continue
 		}
@@ -247,6 +267,22 @@ func (g *Gear) handleRecent(w http.ResponseWriter, r *http.Request) {
 	resp.Records = matches
 	resp.MatchCount = len(matches)
 	writeJSON(w, resp)
+}
+
+// parseWithFallback tries primary first; if primary returns nil and
+// a fallback parser was registered for this source, it tries the
+// fallback. Returns nil only when both reject the line. The Apache
+// source uses this to handle both combined (default Debian) and
+// CLF (default RHEL) without the caller needing to pre-detect
+// which format the operator's running.
+func parseWithFallback(primary, fallback accesslog.Parser, raw string) *accesslog.Record {
+	if rec := primary.Parse(raw); rec != nil {
+		return rec
+	}
+	if fallback == nil {
+		return nil
+	}
+	return fallback.Parse(raw)
 }
 
 // resolveLogPath returns the access-log path for src: the operator

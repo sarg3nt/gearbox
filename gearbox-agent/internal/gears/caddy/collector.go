@@ -37,17 +37,23 @@ type Stats struct {
 	// double-counting.
 	RequestErrorsTotal int64 `json:"request_errors_total"`
 
-	// AdminRunning is 1 when Caddy's admin endpoint reports itself
-	// alive, 0 otherwise. Lets the dashboard surface "Caddy
-	// running but admin disconnected" without a second probe.
-	AdminRunning bool `json:"admin_running"`
-
 	// CollectedAt is when the agent scraped, in RFC3339.
 	CollectedAt string `json:"collected_at"`
 }
 
 // ParsePrometheusOutput extracts a Stats struct from raw Caddy
 // `:2019/metrics` Prometheus output. Exported for unit testing.
+//
+// We deliberately do NOT report a separate "admin reachable"
+// boolean here: the scrape itself goes against the admin endpoint
+// (default `:2019/metrics`), so a Stats record landing in the
+// dashboard's cache already proves admin is reachable. Surfacing it
+// as a field would either always be true (redundant) or depend on
+// request-driven metrics like `caddy_admin_http_requests_total`,
+// which a freshly-started Caddy with admin enabled but no admin
+// traffic yet would not emit — confusing the dashboard with a false
+// "admin disconnected" reading. The 503 response from the handler
+// before the first scrape covers the "not reachable" state.
 func ParsePrometheusOutput(body string) Stats {
 	samples := promtext.Parse(body)
 	stats := Stats{CollectedAt: time.Now().UTC().Format(time.RFC3339)}
@@ -55,12 +61,6 @@ func ParsePrometheusOutput(body string) Stats {
 	stats.RequestsTotal = int64(promtext.SumByName(samples, "caddy_http_requests_total"))
 	stats.RequestErrorsTotal = int64(promtext.SumByName(samples, "caddy_http_request_errors_total"))
 
-	if s := promtext.FirstByName(samples, "caddy_admin_http_requests_total"); s != nil {
-		// admin_http_requests_total existing at all means the
-		// admin endpoint is up — the metric is only registered
-		// when admin is enabled.
-		stats.AdminRunning = true
-	}
 	return stats
 }
 
