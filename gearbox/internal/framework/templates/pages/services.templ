@@ -28,26 +28,10 @@ templ Services(user *models.User, servers []models.BoxConfig) {
 					<option value="active">Active Only</option>
 					<option value="inactive">Inactive Only</option>
 				</select>
-				<!-- Text filter -->
-				<div class="relative">
-					<input
-						type="text"
-						id="service-filter"
-						placeholder="Filter services..."
-						class="h-[38px] w-48 px-3 py-1.5 pr-8 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-						oninput="applyFilters()"
-					/>
-					<button
-						type="button"
-						id="filter-clear"
-						class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hidden"
-						onclick="clearFilter()"
-					>
-						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-						</svg>
-					</button>
-				</div>
+				<!-- Text filter moved to the global HeaderSearch
+				     (issue #92). applyFilters() now reads from a
+				     JS-managed __serviceFilterQuery updated by the
+				     window.gearbox.filter registration below. -->
 				<!-- Refresh button with SSE status indicator (color changes based on connection) -->
 				<button
 					id="refresh-btn"
@@ -549,18 +533,14 @@ templ Services(user *models.User, servers []models.BoxConfig) {
 			}
 		}
 
-		// Apply filters
+		// Text filter is driven by the global HeaderSearch (issue #92).
+		// __serviceFilterQuery is updated by a window.gearbox.filter
+		// registration in DOMContentLoaded; the status dropdown still
+		// lives in the per-page toolbar.
+		let __serviceFilterQuery = '';
 		function applyFilters() {
-			const textFilter = document.getElementById('service-filter').value.toLowerCase();
+			const textFilter = __serviceFilterQuery;
 			const statusFilter = document.getElementById('status-filter').value;
-			const clearBtn = document.getElementById('filter-clear');
-
-			// Show/hide clear button
-			if (textFilter.length > 0) {
-				clearBtn.classList.remove('hidden');
-			} else {
-				clearBtn.classList.add('hidden');
-			}
 
 			document.querySelectorAll('.service-card').forEach(function(card) {
 				const name = card.getAttribute('data-service-name').toLowerCase();
@@ -580,11 +560,8 @@ templ Services(user *models.User, servers []models.BoxConfig) {
 		}
 
 		function clearFilter() {
-			var input = document.getElementById('service-filter');
-			input.value = '';
-			document.getElementById('filter-clear').classList.add('hidden');
+			__serviceFilterQuery = '';
 			applyFilters();
-			input.focus();
 		}
 
 		function manualRefresh() {
@@ -633,6 +610,42 @@ templ Services(user *models.User, servers []models.BoxConfig) {
 
 			loadServices();
 			initSSE();
+
+			// HeaderSearch + command palette wiring (issue #92).
+			if (window.gearbox && window.gearbox.filter) {
+				window.gearbox.filter.register({
+					placeholder: 'Filter services…',
+					onInput: function (q) {
+						__serviceFilterQuery = (q || '').toLowerCase();
+						applyFilters();
+					},
+					onClear: function () { __serviceFilterQuery = ''; applyFilters(); },
+				});
+			}
+			if (window.gearbox && window.gearbox.commands) {
+				const cmds = window.gearbox.commands;
+				const statusSel = document.getElementById('status-filter');
+				if (statusSel) {
+					Array.from(statusSel.options).forEach(function (opt) {
+						cmds.register({
+							id: 'services.status.' + opt.value,
+							label: 'Show: ' + opt.text,
+							subtitle: 'Filter services by status',
+							group: 'Services',
+							run: function () {
+								statusSel.value = opt.value;
+								applyFilters();
+							},
+						});
+					});
+				}
+				cmds.register({
+					id: 'services.refresh',
+					label: 'Refresh services',
+					group: 'Services',
+					run: function () { manualRefresh(); },
+				});
+			}
 		});
 
 		// Clean up SSE on page unload

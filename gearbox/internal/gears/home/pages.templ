@@ -138,42 +138,11 @@ templ IndexPage(d IndexPageData) {
 				</div>
 			</div>
 
-			<!-- Center: search bar. Takes the remaining horizontal space and
-			     caps at max-w-xl so it doesn't dominate wide viewports.
-			     Press '/' anywhere to focus; bookmark-search on Enter when
-			     the query matches a tile name.
-
-			     Placeholder is a pseudo-overlay (not the native
-			     `placeholder` attribute) so we can render a real <kbd>
-			     keycap inside it, GitHub-style: "Type / to search". The
-			     input has `peer` + a single-space placeholder; the
-			     overlay sibling shows only while the input is empty
-			     (`peer-placeholder-shown`) and not focused (`peer-focus:`
-			     hides it). pointer-events-none on the overlay so clicks
-			     pass through to the input. -->
-			<form id="home-search" action="https://duckduckgo.com/" method="get" target="_blank" class="flex-1 mx-4 min-w-0">
-				<div class="relative max-w-xl mx-auto">
-					<svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 z-10 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-					</svg>
-					<input
-						id="home-search-input"
-						name="q"
-						type="text"
-						placeholder=" "
-						class="peer w-full pl-9 pr-3 h-[34px] rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-						autocomplete="off"
-					/>
-					<div
-						aria-hidden="true"
-						class="absolute left-9 top-1/2 -translate-y-1/2 flex items-center gap-1.5 text-sm text-gray-400 dark:text-gray-500 pointer-events-none opacity-0 peer-placeholder-shown:opacity-100 peer-focus:opacity-0 transition-opacity"
-					>
-						<span>Type</span>
-						<kbd class="inline-flex items-center justify-center min-w-[1.25rem] h-[1.25rem] px-1 rounded border border-gray-300 dark:border-slate-500 bg-gray-50 dark:bg-slate-800 text-[0.7rem] font-sans font-medium text-gray-600 dark:text-gray-300 shadow-sm">/</kbd>
-						<span>to search</span>
-					</div>
-				</div>
-			</form>
+			<!-- Search box is now the global HeaderSearch in the page chrome
+			     (issue #92). Home registers a filter via
+			     window.gearbox.filter.register in home.js: every keystroke
+			     hides non-matching tiles, and Enter either opens a matching
+			     tile or falls back to DuckDuckGo. -->
 
 			<!-- Right: management controls. Buttons with .home-edit-only are
 			     hidden until the user enters edit mode (home.js toggles). -->

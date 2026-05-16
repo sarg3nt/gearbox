@@ -259,6 +259,48 @@
     // Expose for the inline onchange="" handler.
     window.bxOnViewFilterChange = applyViewFilter;
 
+    // HeaderSearch + palette wiring (issue #92). #bx-search is hidden;
+    // we proxy the global search keystrokes to it so the existing
+    // datagrid filter pipeline keeps working unchanged.
+    if (window.gearbox && window.gearbox.filter) {
+        const bxSearch = document.getElementById('bx-search');
+        window.gearbox.filter.register({
+            placeholder: 'Search boxes…',
+            onInput: function (q) {
+                if (!bxSearch) return;
+                bxSearch.value = q || '';
+                bxSearch.dispatchEvent(new Event('input', { bubbles: true }));
+            },
+            onClear: function () {
+                if (!bxSearch) return;
+                bxSearch.value = '';
+                bxSearch.dispatchEvent(new Event('input', { bubbles: true }));
+            },
+        });
+    }
+    if (window.gearbox && window.gearbox.commands) {
+        const cmds = window.gearbox.commands;
+        const viewSel = document.getElementById('bx-view-filter');
+        if (viewSel) {
+            Array.from(viewSel.options).forEach(function (opt) {
+                cmds.register({
+                    id: 'bx.view.' + opt.value,
+                    label: 'View: ' + opt.text,
+                    subtitle: 'Filter boxes by status',
+                    group: 'Bx',
+                    run: function () { viewSel.value = opt.value; applyViewFilter(opt.value); },
+                });
+            });
+        }
+        cmds.register({
+            id: 'bx.add',
+            label: 'Add box…',
+            subtitle: 'Open the new-box dialog',
+            group: 'Bx',
+            run: function () { window.location.assign('/settings/boxes/new'); },
+        });
+    }
+
     /* -------------------------------------------------------------- *
      * Live status updates via SSE
      * -------------------------------------------------------------- */

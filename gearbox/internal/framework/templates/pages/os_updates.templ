@@ -200,18 +200,15 @@ templ OSUpdatesPage(data OSUpdatesPageData) {
 										</button>
 									}
 								}
-								<span class="datagrid-search-wrap">
-									<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z"></path>
-									</svg>
-									<input
-										type="search"
-										id="pkg-search"
-										placeholder="Search packages..."
-										class="h-[38px] pr-3 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 w-56"
-										autocomplete="off"
-									/>
-								</span>
+								<!-- #pkg-search moved to the global HeaderSearch
+								     (issue #92). The element is kept here as a
+								     hidden input so the Tabulator-backed
+								     datagrid (createDataGrid({searchInput:
+								     '#pkg-search'})) can still latch onto it;
+								     a window.gearbox.filter registration in
+								     os-updates-page.js writes to .value and
+								     dispatches 'input' on every keystroke. -->
+								<input type="search" id="pkg-search" class="hidden" autocomplete="off"/>
 								<select
 									id="pkg-view-filter"
 									onchange="onPkgViewFilterChange(this.value)"

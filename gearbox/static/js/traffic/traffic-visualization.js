@@ -2440,3 +2440,33 @@ const zoomOutBtn = document.getElementById('zoom-out-btn');
 if (zoomOutBtn) {
 	zoomOutBtn.addEventListener('click', zoomOut);
 }
+
+// Command palette wiring (issue #92). Traffic has no text filter — the
+// existing #viz-filter dropdown stays — but every dropdown option and
+// every action button gets a palette entry so keyboard-only operators
+// can drive the page via Cmd+K → `>`.
+if (window.gearbox && window.gearbox.commands) {
+	const cmds = window.gearbox.commands;
+	if (vizFilterSelect) {
+		Array.from(vizFilterSelect.options).forEach(function (opt) {
+			cmds.register({
+				id: 'traffic.view.' + opt.value,
+				label: 'View: ' + opt.text,
+				subtitle: 'Filter the topology by traffic class',
+				group: 'Traffic',
+				run: function () {
+					vizFilterSelect.value = opt.value;
+					if (typeof changeVizFilter === 'function') changeVizFilter(opt.value);
+				},
+			});
+		});
+	}
+	cmds.register({ id: 'traffic.reset',   label: 'Reset visualization',  group: 'Traffic',
+		subtitle: 'Re-center and re-fit the network graph',
+		run: function () { if (typeof resetVisualization === 'function') resetVisualization(); }});
+	cmds.register({ id: 'traffic.physics', label: 'Toggle physics',       group: 'Traffic',
+		subtitle: 'Stop or resume the force-directed layout',
+		run: function () { if (typeof togglePhysics === 'function') togglePhysics(); }});
+	cmds.register({ id: 'traffic.refresh', label: 'Refresh traffic data', group: 'Traffic',
+		run: function () { if (typeof refreshTrafficData === 'function') refreshTrafficData(true); }});
+}

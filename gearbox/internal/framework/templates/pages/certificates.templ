@@ -532,6 +532,16 @@ templ Certificates(user *models.User, servers []models.BoxConfig, perms *models.
 			setupPageHeader();
 			loadCertificates();
 			initSSE();
+
+			// Command palette wiring (issue #92).
+			if (window.gearbox && window.gearbox.commands) {
+				window.gearbox.commands.register({
+					id: 'certificates.refresh',
+					label: 'Refresh certificate list',
+					group: 'Certificates',
+					run: function () { if (typeof loadCertificates === 'function') loadCertificates(); },
+				});
+			}
 		});
 
 		// Cleanup on page unload

@@ -11,7 +11,14 @@ templ Logs(user *models.User, servers []models.BoxConfig) {
 
 		<!-- Hidden container for page header content - will be moved to main header via JS.
 		     Title + box selector are now in the global header breadcrumb +
-		     chip; this slot only carries page-specific controls. -->
+		     chip; this slot only carries page-specific controls.
+
+		     The filter input itself has moved to the global HeaderSearch
+		     (issue #92); this template still renders the source / lines /
+		     severity selects and the action buttons. Logs registers its
+		     own filter + commands via window.gearbox in the page script
+		     below so the search bar drives filterLogs() and the palette
+		     drives every other toolbar action. -->
 		<div id="page-header-source" class="hidden">
 			<!-- Right side spacer pushes controls to the far right of the header -->
 			<div class="flex-1"></div>
@@ -39,26 +46,8 @@ templ Logs(user *models.User, servers []models.BoxConfig) {
 					</select>
 				}
 
-				<!-- Filter input and severity -->
-				<div class="relative">
-					<input
-						type="text"
-						id="filter-input"
-						placeholder="Filter..."
-						class="h-[38px] w-32 px-3 py-1.5 pr-8 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-						oninput="filterLogs()"
-					/>
-					<button
-						type="button"
-						id="filter-clear"
-						class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hidden"
-						onclick="clearLogFilter()"
-					>
-						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-						</svg>
-					</button>
-				</div>
+				<!-- Severity select (kept here; filterLogs() also reads it).
+				     The text filter input moved to the global HeaderSearch. -->
 				<select
 					id="severity-filter"
 					class="h-[38px] px-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -457,10 +446,14 @@ templ Logs(user *models.User, servers []models.BoxConfig) {
 			}
 		}
 
-		// Filter a single line element
+		// Filter state. The text filter used to live in a #filter-input
+		// element on this page; it's now driven by the global
+		// HeaderSearch (issue #92). __logFilterQuery is updated by the
+		// gear-registered filter callback in DOMContentLoaded below, and
+		// filterLogs() / filterSingleLine() read from it instead.
+		let __logFilterQuery = '';
 		function filterSingleLine(lineEl) {
-			const input = document.getElementById('filter-input');
-			const filter = input ? input.value.toLowerCase() : '';
+			const filter = __logFilterQuery;
 			const severityFilter = document.getElementById('severity-filter');
 			const severityValue = severityFilter ? severityFilter.value : 'all';
 
@@ -752,19 +745,14 @@ templ Logs(user *models.User, servers []models.BoxConfig) {
 		}
 
 		function filterLogs() {
-			const input = document.getElementById('filter-input');
-			const filter = input.value.toLowerCase();
+			// __logFilterQuery is maintained by the HeaderSearch
+			// filter registration in DOMContentLoaded (lower-cased on
+			// write). filterSingleLine() reads both that and the
+			// severity dropdown.
+			const filter = __logFilterQuery;
 			const severityFilter = document.getElementById('severity-filter').value;
 			const container = document.getElementById('log-container');
 			const lines = container.getElementsByClassName('log-line');
-			const clearBtn = document.getElementById('filter-clear');
-
-			// Show/hide clear button
-			if (filter.length > 0) {
-				clearBtn.classList.remove('hidden');
-			} else {
-				clearBtn.classList.add('hidden');
-			}
 
 			for (let line of lines) {
 				const textMatch = filter === '' || line.textContent.toLowerCase().includes(filter);
@@ -786,11 +774,11 @@ templ Logs(user *models.User, servers []models.BoxConfig) {
 		}
 
 		function clearLogFilter() {
-			const input = document.getElementById('filter-input');
-			input.value = '';
-			document.getElementById('filter-clear').classList.add('hidden');
+			// Programmatic-clear path. The HeaderSearch's own clear
+			// button calls this through the filter registration's
+			// onClear handler.
+			__logFilterQuery = '';
 			filterLogs();
-			input.focus();
 		}
 
 		function escapeHtml(text) {
@@ -1053,6 +1041,87 @@ templ Logs(user *models.User, servers []models.BoxConfig) {
 
 			// Initialize SSE for real-time log streaming
 			initSSE();
+
+			// Register with the unified HeaderSearch + command palette
+			// (issue #92). Each keystroke in search mode updates the
+			// internal __logFilterQuery and re-runs filterLogs(); the
+			// command palette gets entries for every toolbar button so
+			// they're all reachable via Cmd+K → ">" → fuzzy search.
+			if (window.gearbox && window.gearbox.filter) {
+				window.gearbox.filter.register({
+					placeholder: 'Filter log lines…',
+					onInput: function (q) {
+						__logFilterQuery = (q || '').toLowerCase();
+						filterLogs();
+					},
+					onClear: function () {
+						__logFilterQuery = '';
+						filterLogs();
+					},
+				});
+			}
+			if (window.gearbox && window.gearbox.commands) {
+				const cmds = window.gearbox.commands;
+				// Log source — one entry per server-side option. If
+				// the user adds a third log type in the future this
+				// loop picks it up automatically.
+				const logSel = document.getElementById('log-select');
+				if (logSel) {
+					Array.from(logSel.options).forEach(function (opt) {
+						cmds.register({
+							id: 'logs.source.' + opt.value,
+							label: 'Log source: ' + opt.text,
+							subtitle: 'Switch the log feed to ' + opt.text.toLowerCase(),
+							group: 'Logs',
+							run: function () {
+								logSel.value = opt.value;
+								if (typeof onLogSourceChange === 'function') onLogSourceChange();
+							},
+						});
+					});
+				}
+				// Line counts — exposed as palette entries so the user
+				// can keyboard-pick "200" without opening the dropdown.
+				const linesSel = document.getElementById('lines-select');
+				if (linesSel) {
+					Array.from(linesSel.options).forEach(function (opt) {
+						cmds.register({
+							id: 'logs.lines.' + opt.value,
+							label: 'Show ' + opt.text + ' lines',
+							subtitle: 'Fetch the last ' + opt.text + ' log lines',
+							group: 'Logs',
+							run: function () {
+								linesSel.value = opt.value;
+								if (typeof loadLogs === 'function') loadLogs();
+							},
+						});
+					});
+				}
+				// Severity — same pattern.
+				const sevSel = document.getElementById('severity-filter');
+				if (sevSel) {
+					Array.from(sevSel.options).forEach(function (opt) {
+						cmds.register({
+							id: 'logs.severity.' + opt.value,
+							label: 'Severity: ' + opt.text,
+							subtitle: 'Show only ' + opt.text.toLowerCase() + ' lines',
+							group: 'Logs',
+							run: function () {
+								sevSel.value = opt.value;
+								if (typeof filterLogs === 'function') filterLogs();
+							},
+						});
+					});
+				}
+				cmds.register({ id: 'logs.refresh',    label: 'Refresh logs',      group: 'Logs',
+					subtitle: 'Re-fetch the log feed', run: function () { if (typeof manualRefresh === 'function') manualRefresh(); }});
+				cmds.register({ id: 'logs.copy',       label: 'Copy logs',          group: 'Logs',
+					subtitle: 'Copy currently-visible lines to the clipboard', run: function () { if (typeof copyLogs === 'function') copyLogs(); }});
+				cmds.register({ id: 'logs.download',   label: 'Download logs',      group: 'Logs',
+					subtitle: 'Save visible lines as a .log file', run: function () { if (typeof downloadLogs === 'function') downloadLogs(); }});
+				cmds.register({ id: 'logs.fullscreen', label: 'Toggle fullscreen',  group: 'Logs',
+					subtitle: 'Cycle: normal → browser fullscreen → true fullscreen', run: function () { if (typeof toggleFullscreen === 'function') toggleFullscreen(); }});
+			}
 		});
 
 		// Clean up SSE on page unload
