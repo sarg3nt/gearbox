@@ -2375,19 +2375,16 @@ templ Header(currentPath string) {
 	     HeaderSearch in the visual center, per-page controls on the
 	     right. The auto-sized middle is also the viewport center. -->
 	<header class="fixed top-0 inset-x-0 bg-white dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700 z-50">
-		<!-- Grid: the auto-sized center column sizes to its IDLE content
-		     (icon + input + hint chips), giving the search bar a default
-		     width that matches its contents. To prevent the box from
-		     shrinking when entering palette mode, header-search.js
-		     uses `visibility: hidden` (not display:none) on the icon
-		     and hint chips so they keep their layout space.
-		     On narrower viewports the chips drop out via the
-		     `hidden lg:flex` responsive rule on #header-search-hint,
-		     which IS a real display:none — the box then shrinks
-		     intentionally per the user request to "shrink some as the
-		     window gets more narrow, even if it does mean we lose some
-		     of our helper text". -->
-		<div class="grid grid-cols-[1fr_auto_1fr] items-center px-3 h-[55px] gap-3">
+		<!-- Grid: left column absorbs all the slack (`minmax(0, 1fr)`)
+		     so the right toolbar never has to clip while the left
+		     side sits there with wasted empty space (issue #92
+		     follow-up). The right column is `minmax(max-content, 1fr)`
+		     — its full natural width is the floor, so it always fits;
+		     beyond that it shares free space evenly with the left so
+		     the search stays visually centered when there's room.
+		     The auto-sized center column carries the search box and
+		     stays at its content width across modes. -->
+		<div class="grid grid-cols-[minmax(0,1fr)_auto_minmax(max-content,1fr)] items-center px-3 h-[55px] gap-3">
 			<!-- LEFT: gearbox identity + box context.
 			     The logo + sidebar collapse toggle live here now (they
 			     used to be in the sidebar's own header bar). Keeps the
