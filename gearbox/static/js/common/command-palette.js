@@ -390,13 +390,28 @@
         const wrap = document.getElementById('header-search');
         if (!p || !wrap) return;
         const rect = wrap.getBoundingClientRect();
-        // Center the panel on the search input. Width tracks the search
-        // box but is clamped to a 640px max so it remains readable on
-        // wide monitors.
-        const width = Math.min(rect.width, 640);
-        p.style.left = (rect.left + rect.width / 2 - width / 2) + 'px';
+
+        // Width: at least MIN_W so the list stays readable, at most
+        // MAX_W so it doesn't dominate wide monitors, and never wider
+        // than the viewport. Decoupled from the search wrap's own
+        // width, which on narrow viewports collapses to a 34px
+        // magnifying-glass button (issue #92 follow-up: the palette
+        // used to inherit that 34px and become an unusable strip).
+        const MIN_W = 360;
+        const MAX_W = 640;
+        const margin = 16;                       // 8px gutter each side
+        const available = window.innerWidth - margin;
+        const width = Math.min(MAX_W, Math.max(MIN_W, rect.width), available);
+
+        // Anchor centered on the search input, then clamp so the panel
+        // stays inside the viewport (relevant when the input is a tiny
+        // compact button sitting near the right edge on a phone).
+        let left = rect.left + rect.width / 2 - width / 2;
+        left = Math.max(margin / 2, Math.min(left, window.innerWidth - width - margin / 2));
+
+        p.style.left  = left + 'px';
         p.style.width = width + 'px';
-        p.style.top = (rect.bottom + 6) + 'px';
+        p.style.top   = (rect.bottom + 6) + 'px';
     }
 
     function isOpen() {
