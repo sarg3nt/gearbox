@@ -475,6 +475,28 @@ templ Base(title string, user *models.User, currentPath ...string) {
 			     contain only an <svg> child after my own padding rules
 			     normalize them; CSS just packs naturally-sized buttons
 			     together with flex-wrap. */
+			/* HeaderSearch compact-expanded overlay (below md). The
+			   #header-search-row is `hidden md:flex` in markup; when the
+			   user taps the magnifying-glass compact button on a phone,
+			   header-search.js adds .header-search-expanded which uses
+			   ID+class specificity to override `display:none` and pin
+			   the row below the header as a full-width sheet. */
+			@media (max-width: 767px) {
+				#header-search-row.header-search-expanded {
+					display: flex !important;
+					position: fixed;
+					top: 55px;
+					left: 4rem;
+					right: 0.5rem;
+					margin: 0.5rem;
+					z-index: 41;
+					box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+				}
+				.dark #header-search-row.header-search-expanded {
+					box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+				}
+			}
+
 			@media (max-width: 767px) {
 				#header-page-content.filters-open {
 					display: flex;
@@ -2353,12 +2375,19 @@ templ Header(currentPath string) {
 	     HeaderSearch in the visual center, per-page controls on the
 	     right. The auto-sized middle is also the viewport center. -->
 	<header class="fixed top-0 inset-x-0 bg-white dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700 z-50">
-		<!-- Grid: center column has a guaranteed min/max width so the
-		     HeaderSearch box does NOT shrink based on its content. Without
-		     this, entering palette mode (which hides the hint chips)
-		     would make the auto-sized column shrink and the input would
-		     visually narrow — the user explicitly called that out. -->
-		<div class="grid grid-cols-[1fr_minmax(320px,_640px)_1fr] items-center px-3 h-[55px] gap-3">
+		<!-- Grid: the auto-sized center column sizes to its IDLE content
+		     (icon + input + hint chips), giving the search bar a default
+		     width that matches its contents. To prevent the box from
+		     shrinking when entering palette mode, header-search.js
+		     uses `visibility: hidden` (not display:none) on the icon
+		     and hint chips so they keep their layout space.
+		     On narrower viewports the chips drop out via the
+		     `hidden lg:flex` responsive rule on #header-search-hint,
+		     which IS a real display:none — the box then shrinks
+		     intentionally per the user request to "shrink some as the
+		     window gets more narrow, even if it does mean we lose some
+		     of our helper text". -->
+		<div class="grid grid-cols-[1fr_auto_1fr] items-center px-3 h-[55px] gap-3">
 			<!-- LEFT: gearbox identity + box context.
 			     The logo + sidebar collapse toggle live here now (they
 			     used to be in the sidebar's own header bar). Keeps the
@@ -2492,7 +2521,7 @@ templ HeaderSearch() {
 			<input
 				id="header-search-input"
 				type="text"
-				class="flex-1 min-w-0 bg-transparent text-sm text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none border-0"
+				class="flex-1 min-w-[7rem] bg-transparent text-sm text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none border-0"
 				placeholder=" "
 				autocomplete="off"
 				aria-label="Search, filter, or run a command"
@@ -2504,11 +2533,20 @@ templ HeaderSearch() {
 			     do" — visible whenever the input is empty AND in search
 			     mode (no `>` prefix). Gear-specific placeholders were
 			     removed per the issue: the box reads identically on
-			     every page. -->
+			     every page.
+
+			     `hidden lg:flex` is the responsive shrink rule: below
+			     1024px the chips are display:none (not just hidden)
+			     so the auto-sized grid column shrinks and the search
+			     box becomes smaller, freeing room for the page's right-
+			     side toolbar. Above lg the chips are flex, and palette
+			     mode hides them with `invisible` (via header-search.js)
+			     so they keep their layout space and the box width
+			     doesn't change between modes. -->
 			<div
 				id="header-search-hint"
 				aria-hidden="true"
-				class="hidden sm:flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500 pointer-events-none flex-shrink-0"
+				class="hidden lg:flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500 pointer-events-none flex-shrink-0"
 			>
 				<kbd class="inline-flex items-center justify-center min-w-[1.25rem] h-[1.25rem] px-1 rounded border border-gray-300 dark:border-slate-500 bg-gray-50 dark:bg-slate-900 text-[0.7rem] font-sans font-medium text-gray-600 dark:text-gray-300">/</kbd>
 				<span>to search</span>
@@ -2519,7 +2557,7 @@ templ HeaderSearch() {
 			<button
 				id="header-search-clear"
 				type="button"
-				class="hidden text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 flex-shrink-0"
+				class="invisible text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 flex-shrink-0"
 				title="Clear"
 				aria-label="Clear search"
 			>

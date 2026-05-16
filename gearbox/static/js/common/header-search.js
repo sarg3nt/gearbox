@@ -107,15 +107,24 @@
      * Search mode (no `>` prefix):
      *   - Magnifier icon visible.
      *   - Hint chips ("/ to search · Cmd K for palette") visible while
-     *     the input is empty, regardless of focus.
+     *     the input is empty, regardless of focus (and only at lg+
+     *     viewports — the templ class `hidden lg:flex` is the
+     *     responsive shrink rule).
      *   - Clear button visible while the input has content.
      *
      * Palette mode (leading `>`):
-     *   - No icon at all: the `>` character in the input IS the
-     *     affordance, an extra glyph would be redundant. Magnifier
-     *     comes back the moment the user backspaces over the `>`.
-     *   - No hint chips.
-     *   - Clear button still visible while there's content.
+     *   - No icon, no hint chips — but they're hidden via
+     *     `visibility: hidden` (Tailwind `invisible`), NOT
+     *     `display: none`. That preserves their layout space so the
+     *     grid auto-column stays the same width across modes, which
+     *     is what the user asked for after the first cut shipped.
+     *   - The `>` character in the input is the only affordance.
+     *
+     * Search-mode typing (input non-empty, no `>` prefix):
+     *   - Hint chips are also `invisible` (space-preserved). Without
+     *     this, an `auto`-sized grid column would shrink as soon as
+     *     the chips left the flow, and the box would change width
+     *     mid-keystroke.
      *
      * The wrapper deliberately has no focus ring so the box width
      * never changes between modes.
@@ -126,20 +135,25 @@
         const empty = input.value.length === 0;
 
         if (iconSearch) {
-            if (mode === 'palette') iconSearch.classList.add('hidden');
-            else iconSearch.classList.remove('hidden');
+            // Magnifier visible in search mode, hidden (but space-
+            // preserved) in palette mode.
+            iconSearch.classList.toggle('invisible', mode === 'palette');
         }
 
         if (hint) {
-            // Empty + search-mode → show the affordance. Either typing
-            // or entering palette mode hides it.
+            // Visible only when empty + search mode. Typing or palette
+            // mode hides it without removing it from layout.
             const showHint = empty && mode === 'search';
-            hint.style.display = showHint ? '' : 'none';
+            hint.classList.toggle('invisible', !showHint);
         }
 
         if (clearBtn) {
-            if (empty) clearBtn.classList.add('hidden');
-            else clearBtn.classList.remove('hidden');
+            // Reserve layout space at all times: the clear button
+            // appearing when content is typed used to widen the row
+            // by ~24px, which made the box visibly grow on first
+            // keystroke. `invisible` keeps the slot.
+            clearBtn.classList.remove('hidden');
+            clearBtn.classList.toggle('invisible', empty);
         }
 
         input.setAttribute('aria-expanded', mode === 'palette' ? 'true' : 'false');
@@ -248,17 +262,26 @@
 
     /* -------------------------------------------------------------- *
      * Mobile compact / expanded toggle.
+     *
+     * Below md (<768px) the row is `hidden md:flex` in markup, so it's
+     * display:none by default and only the magnifying-glass compact
+     * button shows. expandCompact()/collapseCompact() flip a single
+     * marker class — `header-search-expanded` — that pairs with a CSS
+     * rule below (in base.templ <style>) to override `hidden` and
+     * surface the row as an overlay sheet under the header.
+     *
+     * Earlier versions toggled `flex`/`hidden` directly, but that
+     * overrode the responsive `md:flex` and stuck the row visible
+     * even when the viewport widened back above md.
      * -------------------------------------------------------------- */
     function expandCompact() {
         if (!row) return;
-        row.classList.remove('hidden');
-        row.classList.add('flex', 'header-search-expanded');
+        row.classList.add('header-search-expanded');
     }
     function collapseCompact() {
         if (!row) return;
         if (!window.matchMedia('(max-width: 767px)').matches) return;
-        row.classList.add('hidden');
-        row.classList.remove('flex', 'header-search-expanded');
+        row.classList.remove('header-search-expanded');
     }
 
     /* -------------------------------------------------------------- *
@@ -352,11 +375,11 @@
         });
         window.addEventListener('resize', function () {
             if (window.matchMedia('(min-width: 768px)').matches) {
-                // md+ always shows the row; clear the compact override.
-                if (row) {
-                    row.classList.remove('hidden');
-                    row.classList.add('flex');
-                }
+                // md+ always shows the row via the `hidden md:flex`
+                // responsive rule — no JS toggling needed. We just
+                // clear the compact-overlay marker so a fresh narrow→
+                // wide transition leaves the row in its normal slot.
+                if (row) row.classList.remove('header-search-expanded');
             } else if (document.activeElement !== input) {
                 collapseCompact();
             }
