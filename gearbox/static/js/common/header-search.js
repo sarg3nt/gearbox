@@ -55,7 +55,6 @@
      * DOM references (resolved on init).
      * -------------------------------------------------------------- */
     let input = null;
-    let hint = null;
     let clearBtn = null;
     let iconSearch = null;
     let compactBtn = null;
@@ -104,30 +103,23 @@
     /* -------------------------------------------------------------- *
      * Visual mode swap.
      *
-     * Search mode (no `>` prefix):
-     *   - Magnifier icon visible.
-     *   - Hint chips ("/ to search · Cmd K for palette") visible while
-     *     the input is empty, regardless of focus (and only at lg+
-     *     viewports — the templ class `hidden lg:flex` is the
-     *     responsive shrink rule).
-     *   - Clear button visible while the input has content.
+     * The hint chips overlay the input via absolute positioning and
+     * use Tailwind's `peer-placeholder-shown:opacity-100 peer-focus:
+     * opacity-0` to drive their own visibility — they appear only
+     * when the input is empty AND not focused. No JS needed for them.
      *
-     * Palette mode (leading `>`):
-     *   - No icon, no hint chips — but they're hidden via
-     *     `visibility: hidden` (Tailwind `invisible`), NOT
-     *     `display: none`. That preserves their layout space so the
-     *     grid auto-column stays the same width across modes, which
-     *     is what the user asked for after the first cut shipped.
-     *   - The `>` character in the input is the only affordance.
+     * What this function still owns:
+     *   - Magnifier icon: hidden (visibility:hidden) in palette mode
+     *     so the `>` character is the only affordance, but
+     *     space-preserved so the row width doesn't change.
+     *   - Clear button: visible iff the input has content; uses
+     *     `invisible` not `hidden` so its slot is always reserved
+     *     (otherwise the row would grow by ~24px on first keystroke).
+     *   - aria-expanded mirror for the palette panel.
+     *   - mode-change notifications for the palette controller.
      *
-     * Search-mode typing (input non-empty, no `>` prefix):
-     *   - Hint chips are also `invisible` (space-preserved). Without
-     *     this, an `auto`-sized grid column would shrink as soon as
-     *     the chips left the flow, and the box would change width
-     *     mid-keystroke.
-     *
-     * The wrapper deliberately has no focus ring so the box width
-     * never changes between modes.
+     * The wrapper has no focus ring, so the box looks identical
+     * across idle / focused / typing / palette states.
      * -------------------------------------------------------------- */
     function repaint() {
         if (!input) return;
@@ -135,31 +127,15 @@
         const empty = input.value.length === 0;
 
         if (iconSearch) {
-            // Magnifier visible in search mode, hidden (but space-
-            // preserved) in palette mode.
             iconSearch.classList.toggle('invisible', mode === 'palette');
         }
 
-        if (hint) {
-            // Visible only when empty + search mode. Typing or palette
-            // mode hides it without removing it from layout.
-            const showHint = empty && mode === 'search';
-            hint.classList.toggle('invisible', !showHint);
-        }
-
         if (clearBtn) {
-            // Reserve layout space at all times: the clear button
-            // appearing when content is typed used to widen the row
-            // by ~24px, which made the box visibly grow on first
-            // keystroke. `invisible` keeps the slot.
             clearBtn.classList.remove('hidden');
             clearBtn.classList.toggle('invisible', empty);
         }
 
         input.setAttribute('aria-expanded', mode === 'palette' ? 'true' : 'false');
-        // No placeholder swap — the box reads the same on every page
-        // and in every mode. Hint chips serve as the visual placeholder
-        // when empty; otherwise the user's own text fills the box.
 
         if (mode !== lastMode) {
             lastMode = mode;
@@ -289,7 +265,6 @@
      * -------------------------------------------------------------- */
     function init() {
         input       = document.getElementById('header-search-input');
-        hint        = document.getElementById('header-search-hint');
         clearBtn    = document.getElementById('header-search-clear');
         iconSearch  = document.getElementById('header-search-icon-search');
         compactBtn  = document.getElementById('header-search-compact');

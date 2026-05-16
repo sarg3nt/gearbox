@@ -2512,47 +2512,52 @@ templ HeaderSearch() {
 		     whether the input is empty, focused, or in palette mode —
 		     only the inner content (icon + hint chips vs. `>` text)
 		     changes. No focus ring on the wrapper since that was
-		     adding 2px of perceived width on focus and the user wants
-		     visual consistency. -->
+		     adding 2px of perceived width on focus.
+
+		     Hint chips overlay the input via absolute positioning
+		     inside the input wrapper, so when the user clicks/focuses
+		     the box, the chips fade out and the full input width is
+		     available for typing — they're not a separate flex slot
+		     to the right of the input anymore. -->
 		<div id="header-search-row" class="hidden md:flex items-center gap-2 px-3 h-[34px] rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800">
 			<svg id="header-search-icon-search" class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" aria-hidden="true">
 				<path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z"></path>
 			</svg>
-			<input
-				id="header-search-input"
-				type="text"
-				class="flex-1 min-w-[7rem] bg-transparent text-sm text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none border-0"
-				placeholder=" "
-				autocomplete="off"
-				aria-label="Search, filter, or run a command"
-				aria-haspopup="listbox"
-				aria-expanded="false"
-				aria-controls="header-search-panel"
-			/>
-			<!-- Hint chips. The only affordance for "what does this box
-			     do" — visible whenever the input is empty AND in search
-			     mode (no `>` prefix). Gear-specific placeholders were
-			     removed per the issue: the box reads identically on
-			     every page.
-
-			     `hidden lg:flex` is the responsive shrink rule: below
-			     1024px the chips are display:none (not just hidden)
-			     so the auto-sized grid column shrinks and the search
-			     box becomes smaller, freeing room for the page's right-
-			     side toolbar. Above lg the chips are flex, and palette
-			     mode hides them with `invisible` (via header-search.js)
-			     so they keep their layout space and the box width
-			     doesn't change between modes. -->
-			<div
-				id="header-search-hint"
-				aria-hidden="true"
-				class="hidden lg:flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500 pointer-events-none flex-shrink-0"
-			>
-				<kbd class="inline-flex items-center justify-center min-w-[1.25rem] h-[1.25rem] px-1 rounded border border-gray-300 dark:border-slate-500 bg-gray-50 dark:bg-slate-900 text-[0.7rem] font-sans font-medium text-gray-600 dark:text-gray-300">/</kbd>
-				<span>to search</span>
-				<span class="text-gray-300 dark:text-gray-600">·</span>
-				<kbd class="inline-flex items-center justify-center h-[1.25rem] px-1.5 rounded border border-gray-300 dark:border-slate-500 bg-gray-50 dark:bg-slate-900 text-[0.7rem] font-sans font-medium text-gray-600 dark:text-gray-300">Cmd K</kbd>
-				<span>{ "for" } palette</span>
+			<!-- Input + overlay wrapper. min-w sizes the row at lg+ so
+			     the hint chips fit inside the input area cleanly
+			     (~10px gap between the magnifier and the chips); at
+			     md the wrapper shrinks since the chips are display:none
+			     and the box doesn't need to be as wide. -->
+			<div class="relative flex-1 min-w-[8rem] lg:min-w-[13rem]">
+				<input
+					id="header-search-input"
+					type="text"
+					class="peer w-full bg-transparent text-sm text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none border-0"
+					placeholder=" "
+					autocomplete="off"
+					aria-label="Search, filter, or run a command"
+					aria-haspopup="listbox"
+					aria-expanded="false"
+					aria-controls="header-search-panel"
+				/>
+				<!-- Hint chips overlay. Absolute positioned at the
+				     right edge of the input wrapper, so they appear
+				     visually INSIDE the input. CSS-only visibility:
+				     `peer-placeholder-shown:opacity-100 peer-focus:opacity-0`
+				     means visible iff the input is empty AND not
+				     focused. Hidden below lg via `hidden lg:flex`
+				     so the box shrinks on narrow viewports. -->
+				<div
+					id="header-search-hint"
+					aria-hidden="true"
+					class="hidden lg:flex absolute inset-y-0 right-0 items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500 pointer-events-none opacity-0 peer-placeholder-shown:opacity-100 peer-focus:opacity-0 transition-opacity"
+				>
+					<kbd class="inline-flex items-center justify-center min-w-[1.25rem] h-[1.25rem] px-1 rounded border border-gray-300 dark:border-slate-500 bg-gray-50 dark:bg-slate-900 text-[0.7rem] font-sans font-medium text-gray-600 dark:text-gray-300">/</kbd>
+					<span>to search</span>
+					<span class="text-gray-300 dark:text-gray-600">·</span>
+					<kbd class="inline-flex items-center justify-center h-[1.25rem] px-1.5 rounded border border-gray-300 dark:border-slate-500 bg-gray-50 dark:bg-slate-900 text-[0.7rem] font-sans font-medium text-gray-600 dark:text-gray-300">Cmd K</kbd>
+					<span>{ "for" } palette</span>
+				</div>
 			</div>
 			<button
 				id="header-search-clear"
