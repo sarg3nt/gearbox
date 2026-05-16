@@ -178,7 +178,18 @@ HAPROXY_AGENT_LOG_LEVEL=info  # debug, info, warn, error
 # TLS (optional - uses self-signed if not set)
 HAPROXY_AGENT_TLS_CERT=/etc/haproxy/certs/sarg3.net.fullchain.crt
 HAPROXY_AGENT_TLS_KEY=/etc/haproxy/certs/sarg3.net.key
+
+# Extra SANs for the auto-generated self-signed cert. Comma-separated list
+# of hostnames and/or IPs that clients will use to reach this agent. Ignored
+# when a custom cert is configured above. Loopback (localhost / 127.0.0.1 /
+# ::1) is always covered automatically.
+HAPROXY_AGENT_TLS_HOSTS=mjolnir,172.16.2.3,agent.example.com
 ```
+
+> [!NOTE]
+> The agent regenerates the self-signed cert automatically when
+> `HAPROXY_AGENT_TLS_HOSTS` changes (adding a SAN that the existing cert
+> does not cover). No manual cleanup required.
 
 ### Git Sync
 

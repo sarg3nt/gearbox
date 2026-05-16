@@ -1,6 +1,9 @@
 package crypto
 
 import (
+	"crypto/x509"
+	"encoding/pem"
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -386,8 +389,111 @@ func TestGenerateSelfSignedCert_IncludesHosts(t *testing.T) {
 		t.Fatalf("LoadOrCreateTLSCert() error = %v", err)
 	}
 
-	// Verify the cert can be parsed (basic validation)
-	if err := verifyCertReadable(certPath); err != nil {
-		t.Errorf("Generated cert is not readable: %v", err)
+	cert := loadCertForTest(t, certPath)
+
+	// Requested SANs must be present.
+	if !containsString(cert.DNSNames, "example.com") {
+		t.Errorf("cert DNSNames missing example.com: %v", cert.DNSNames)
 	}
+	if !containsIPString(cert.IPAddresses, "192.168.1.1") {
+		t.Errorf("cert IPAddresses missing 192.168.1.1: %v", cert.IPAddresses)
+	}
+
+	// Loopback SANs are always added.
+	if !containsString(cert.DNSNames, "localhost") {
+		t.Errorf("cert DNSNames missing localhost: %v", cert.DNSNames)
+	}
+	if !containsIPString(cert.IPAddresses, "127.0.0.1") {
+		t.Errorf("cert IPAddresses missing 127.0.0.1: %v", cert.IPAddresses)
+	}
+	if !containsIPString(cert.IPAddresses, "::1") {
+		t.Errorf("cert IPAddresses missing ::1: %v", cert.IPAddresses)
+	}
+}
+
+// TestLoadOrCreateTLSCert_RegenOnMissingSAN verifies that a previously
+// generated cert is regenerated when LoadOrCreateTLSCert is called with a
+// host that the existing cert does not cover. Without this behaviour an
+// operator who adds a new entry to HAPROXY_AGENT_TLS_HOSTS would have to
+// manually wipe the cert file before the change takes effect.
+func TestLoadOrCreateTLSCert_RegenOnMissingSAN(t *testing.T) {
+	tmpDir := t.TempDir()
+	certPath := filepath.Join(tmpDir, "server.crt")
+	keyPath := filepath.Join(tmpDir, "server.key")
+
+	// Initial cert covers example.com only.
+	_, isNew, err := LoadOrCreateTLSCert(certPath, keyPath, []string{"example.com"})
+	if err != nil {
+		t.Fatalf("initial LoadOrCreateTLSCert() error = %v", err)
+	}
+	if !isNew {
+		t.Fatal("initial call should report isNew = true")
+	}
+	originalSerial := loadCertForTest(t, certPath).SerialNumber.String()
+
+	// Same hosts → reuse, no regen.
+	_, isNew, err = LoadOrCreateTLSCert(certPath, keyPath, []string{"example.com"})
+	if err != nil {
+		t.Fatalf("second LoadOrCreateTLSCert() error = %v", err)
+	}
+	if isNew {
+		t.Error("call with same hosts should report isNew = false")
+	}
+	if loadCertForTest(t, certPath).SerialNumber.String() != originalSerial {
+		t.Error("cert serial changed despite same hosts (unexpected regeneration)")
+	}
+
+	// New host added → regenerate.
+	_, isNew, err = LoadOrCreateTLSCert(certPath, keyPath, []string{"example.com", "172.16.2.3"})
+	if err != nil {
+		t.Fatalf("third LoadOrCreateTLSCert() error = %v", err)
+	}
+	if !isNew {
+		t.Fatal("call with added host should report isNew = true")
+	}
+	regenerated := loadCertForTest(t, certPath)
+	if regenerated.SerialNumber.String() == originalSerial {
+		t.Error("cert serial unchanged after adding new host (regeneration did not happen)")
+	}
+	if !containsIPString(regenerated.IPAddresses, "172.16.2.3") {
+		t.Errorf("regenerated cert missing 172.16.2.3 SAN: %v", regenerated.IPAddresses)
+	}
+	if !containsString(regenerated.DNSNames, "example.com") {
+		t.Errorf("regenerated cert lost example.com SAN: %v", regenerated.DNSNames)
+	}
+}
+
+func loadCertForTest(t *testing.T, certPath string) *x509.Certificate {
+	t.Helper()
+	data, err := os.ReadFile(certPath)
+	if err != nil {
+		t.Fatalf("read cert: %v", err)
+	}
+	block, _ := pem.Decode(data)
+	if block == nil {
+		t.Fatal("failed to decode cert PEM")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatalf("parse cert: %v", err)
+	}
+	return cert
+}
+
+func containsString(haystack []string, needle string) bool {
+	for _, v := range haystack {
+		if v == needle {
+			return true
+		}
+	}
+	return false
+}
+
+func containsIPString(haystack []net.IP, needle string) bool {
+	for _, ip := range haystack {
+		if ip.String() == needle {
+			return true
+		}
+	}
+	return false
 }

@@ -18,6 +18,19 @@ type Config struct {
 	TLSKey     string
 	TLSCustom  bool // True if user provided custom TLS cert paths
 
+	// TLSHosts are additional hostnames / IPs to include as SANs in the
+	// auto-generated self-signed certificate. Ignored when TLSCustom is
+	// true (the user-provided cert is used verbatim).
+	//
+	// The agent already includes "localhost", "127.0.0.1", "::1", and the
+	// container's os.Hostname() — TLSHosts is for the address the operator
+	// will actually point clients at (e.g. a static container IP, an FQDN
+	// behind a reverse proxy, or both).
+	//
+	// Parsed from HAPROXY_AGENT_TLS_HOSTS as a comma-separated list;
+	// whitespace around each entry is trimmed, empty entries are dropped.
+	TLSHosts []string
+
 	// API key settings
 	APIKeyPath string
 
@@ -155,6 +168,7 @@ func Load() (*Config, error) {
 	} else {
 		cfg.TLSKey = cfg.DataDir + "/tls/server.key"
 	}
+	cfg.TLSHosts = parseCommaList(os.Getenv("HAPROXY_AGENT_TLS_HOSTS"))
 	cfg.APIKeyPath = getEnvOrDefault("HAPROXY_AGENT_API_KEY_PATH", cfg.DataDir+"/api-key")
 
 	// Logging
@@ -276,6 +290,26 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
+}
+
+// parseCommaList splits a comma-separated env value into a clean slice:
+// each entry is trimmed of surrounding whitespace and empty entries are
+// dropped. Returns nil for an empty/whitespace-only input.
+func parseCommaList(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if v := strings.TrimSpace(p); v != "" {
+			out = append(out, v)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func getEnvOrDefault(key, defaultValue string) string {

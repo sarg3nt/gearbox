@@ -220,6 +220,55 @@ func TestLoad_CustomTLS(t *testing.T) {
 	}
 }
 
+func TestLoad_TLSHosts(t *testing.T) {
+	tests := []struct {
+		name     string
+		envValue string
+		want     []string
+	}{
+		{"unset", "", nil},
+		{"whitespace only", "   ", nil},
+		{"single host", "mjolnir", []string{"mjolnir"}},
+		{"comma separated", "mjolnir,10.0.0.1,agent.local", []string{"mjolnir", "10.0.0.1", "agent.local"}},
+		{"trims surrounding whitespace", " mjolnir , 10.0.0.1 ", []string{"mjolnir", "10.0.0.1"}},
+		{"drops empty entries", "mjolnir,,10.0.0.1,", []string{"mjolnir", "10.0.0.1"}},
+	}
+
+	saved := os.Getenv("HAPROXY_AGENT_TLS_HOSTS")
+	defer func() {
+		if saved != "" {
+			os.Setenv("HAPROXY_AGENT_TLS_HOSTS", saved)
+		} else {
+			os.Unsetenv("HAPROXY_AGENT_TLS_HOSTS")
+		}
+	}()
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.envValue == "" {
+				os.Unsetenv("HAPROXY_AGENT_TLS_HOSTS")
+			} else {
+				os.Setenv("HAPROXY_AGENT_TLS_HOSTS", tt.envValue)
+			}
+
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+
+			if len(cfg.TLSHosts) != len(tt.want) {
+				t.Fatalf("TLSHosts = %v (len %d), want %v (len %d)",
+					cfg.TLSHosts, len(cfg.TLSHosts), tt.want, len(tt.want))
+			}
+			for i, v := range tt.want {
+				if cfg.TLSHosts[i] != v {
+					t.Errorf("TLSHosts[%d] = %q, want %q", i, cfg.TLSHosts[i], v)
+				}
+			}
+		})
+	}
+}
+
 func TestValidate(t *testing.T) {
 	tests := []struct {
 		name    string

@@ -49,14 +49,22 @@ func LoadTLSCert(certPath, keyPath string) (*TLSConfig, error) {
 
 // LoadOrCreateTLSCert loads existing TLS certificates or generates self-signed ones.
 // Returns paths to cert and key files, and a boolean indicating if new certs were created.
+//
+// A cert is considered still valid (and reused) when it exists, parses, is not
+// near expiry, AND covers every host in `hosts` as a SAN. If a previously
+// generated cert is missing a host (e.g. the operator added a new entry to
+// HAPROXY_AGENT_TLS_HOSTS) it is regenerated — otherwise the new env value
+// would silently never take effect.
 func LoadOrCreateTLSCert(certPath, keyPath string, hosts []string) (*TLSConfig, bool, error) {
 	// Check if both files exist and are valid
 	if fileExists(certPath) && fileExists(keyPath) {
-		// Verify the cert is still valid
 		if err := verifyCert(certPath); err == nil {
-			return &TLSConfig{CertPath: certPath, KeyPath: keyPath}, false, nil
+			if err := verifyCertCoversHosts(certPath, hosts); err == nil {
+				return &TLSConfig{CertPath: certPath, KeyPath: keyPath}, false, nil
+			}
+			// SAN coverage gap — fall through to regenerate.
 		}
-		// Cert is expired or invalid, regenerate
+		// Cert is expired, invalid, or missing required SANs — regenerate.
 	}
 
 	// Generate new self-signed certificate
@@ -116,6 +124,46 @@ func verifyCert(certPath string) error {
 		return fmt.Errorf("certificate expires soon or is expired")
 	}
 
+	return nil
+}
+
+// verifyCertCoversHosts loads the cert at certPath and confirms every entry
+// in `hosts` is present as a SAN (DNS name for hostnames, IPAddresses entry
+// for IPs). Returns nil if all hosts are covered.
+func verifyCertCoversHosts(certPath string, hosts []string) error {
+	data, err := os.ReadFile(certPath)
+	if err != nil {
+		return fmt.Errorf("failed to read certificate file: %w", err)
+	}
+	block, _ := pem.Decode(data)
+	if block == nil {
+		return fmt.Errorf("failed to decode PEM block")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return fmt.Errorf("failed to parse certificate: %w", err)
+	}
+
+	dnsSet := make(map[string]struct{}, len(cert.DNSNames))
+	for _, d := range cert.DNSNames {
+		dnsSet[d] = struct{}{}
+	}
+	ipSet := make(map[string]struct{}, len(cert.IPAddresses))
+	for _, ip := range cert.IPAddresses {
+		ipSet[ip.String()] = struct{}{}
+	}
+
+	for _, h := range hosts {
+		if ip := net.ParseIP(h); ip != nil {
+			if _, ok := ipSet[ip.String()]; !ok {
+				return fmt.Errorf("certificate missing IP SAN %s", ip.String())
+			}
+			continue
+		}
+		if _, ok := dnsSet[h]; !ok {
+			return fmt.Errorf("certificate missing DNS SAN %s", h)
+		}
+	}
 	return nil
 }
 
