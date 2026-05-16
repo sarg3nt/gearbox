@@ -112,11 +112,11 @@ templ AlertRulesPage(user *models.User, serverID string, serverName string, serv
 		</div>
 
 		<!-- Add/Edit Rule Modal -->
-		<div id="add-rule-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+		<div id="add-rule-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
 			<div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
 				<div class="p-4 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
 					<h3 id="modal-title" class="text-lg font-semibold text-gray-800 dark:text-gray-200">Add Alert Rule</h3>
-					<button onclick="hideAddRuleModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+					<button onclick="hideAddRuleModal()" aria-label="Close" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
 						<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
 						</svg>

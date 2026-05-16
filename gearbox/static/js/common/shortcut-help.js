@@ -21,7 +21,7 @@
         { keys: ['Cmd/Ctrl', 'K'],        label: 'Open command palette',                              join: '+' },
         { keys: ['g', 'b'],               label: 'Switch box (palette)',                              join: 'then' },
         { keys: ['/'],                    label: 'Focus the page search input' },
-        { keys: ['Esc'],                  label: 'Close dialog · or blur input · or go back' },
+        { keys: ['Esc'],                  label: 'Close dialog · exit edit mode · blur input · go back' },
         { keys: ['↑', '↓'],               label: 'Navigate dialog items',                             join: '/' },
         { keys: ['↵'],                    label: 'Select highlighted item' },
         { keys: ['Tab'],                  label: 'Cycle focus within a dialog' },
@@ -110,55 +110,132 @@
             }
         });
 
-        // `Esc` — universal "back out" key.
-        //   1. If a focusable control (input/select/textarea/contenteditable)
-        //      has focus, blur it. This is the primary motivator: a user
-        //      who pressed `/` and typed a filter can hit Esc to leave the
-        //      input, freeing `?` / `Cmd+K` / `/` to work again.
-        //   2. If nothing is focused and no overlay/dialog is open, fall
-        //      back to `history.back()`. Lets the user `/`→type→Esc→Esc
-        //      to bounce back to the previous gear without reaching for
-        //      the mouse. Skips when an overlay is up (those have their
-        //      own Esc handlers that close them).
+        // `Esc` — universal "back out" key. Priority order, top wins:
+        //   1. A per-modal handler already called preventDefault — bail.
+        //      (cmdk input, shortcuts-help overlay, etc.)
+        //   2. A dialog is open — close the topmost one. Catches the
+        //      pre-existing list (cmdk/help/confirm/prompt/alert) plus
+        //      every `[role="dialog"]` that lacks its own Esc handler.
+        //   3. A gear is in edit mode (a `.gear-cog-btn` is pressed) —
+        //      click the cog to exit. Home, Metrics, and future gears.
+        //   4. A focusable control has focus — blur it. Lets the user
+        //      `/`→type→Esc→Esc to bounce back to the previous gear.
+        //   5. Fall through to `history.back()` as a last resort.
         //
-        // The browsers stopped doing Esc-as-back natively because of
-        // accidental form-data loss; we sidestep that by requiring the
-        // page to be in a clean state (no focused input) first.
-        function anyOverlayOpen() {
-            const ids = [
-                'cmdk-overlay', 'shortcuts-help-overlay',
-                'confirm-dialog', 'prompt-dialog', 'alert-dialog',
-            ];
-            for (let i = 0; i < ids.length; i++) {
-                const el = document.getElementById(ids[i]);
-                if (el && !el.classList.contains('hidden')) return true;
-            }
-            // Narrow-viewport Filters sheet popped out under the header
-            // (`.filters-open` on #header-page-content). Treat as an
-            // overlay so pressing Esc to close it doesn't fall through
-            // to history.back().
-            const headerContent = document.getElementById('header-page-content');
-            if (headerContent && headerContent.classList.contains('filters-open')) {
-                return true;
-            }
-            // Right-click "Reorder gears" context menu on the sidebar.
-            const ctxMenu = document.getElementById('sidebar-context-menu');
-            if (ctxMenu && !ctxMenu.classList.contains('hidden')) {
-                return true;
-            }
-            return false;
-        }
+        // Browsers dropped native Esc-as-back because of accidental
+        // form-data loss; the priority chain above mirrors that intent
+        // by handling every "back out of something on the page" case
+        // before nav is even considered.
         function isBlurrableTarget(el) {
             if (!el) return false;
             const tag = el.tagName;
             if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
             return !!el.isContentEditable;
         }
+        function isVisible(el) {
+            if (!el) return false;
+            if (el.classList.contains('hidden')) return false;
+            if (el.hasAttribute('hidden')) return false;
+            const style = window.getComputedStyle(el);
+            if (style.display === 'none' || style.visibility === 'hidden') return false;
+            return true;
+        }
+        function visibleDialogs() {
+            // Anything tagged as a dialog/modal by ARIA. Backstops:
+            // a couple of legacy overlays that don't carry role yet
+            // (#cmdk-overlay does carry it; the narrow-viewport
+            // Filters sheet and the sidebar context menu don't).
+            const out = [];
+            document.querySelectorAll('[role="dialog"], [aria-modal="true"]').forEach(function (el) {
+                if (isVisible(el)) out.push(el);
+            });
+            const headerContent = document.getElementById('header-page-content');
+            if (headerContent && headerContent.classList.contains('filters-open')) {
+                out.push(headerContent);
+            }
+            const ctxMenu = document.getElementById('sidebar-context-menu');
+            if (ctxMenu && isVisible(ctxMenu)) out.push(ctxMenu);
+            return out;
+        }
+        function pickTopDialog(list) {
+            // Highest z-index wins; ties broken by DOM order (later =
+            // on top in the painting model). Crude but good enough —
+            // we just need to avoid closing a dialog underneath an
+            // open one.
+            let top = null;
+            let topZ = -Infinity;
+            let topIdx = -1;
+            for (let i = 0; i < list.length; i++) {
+                const z = parseInt(window.getComputedStyle(list[i]).zIndex, 10);
+                const zVal = isNaN(z) ? 0 : z;
+                if (zVal > topZ || (zVal === topZ && i > topIdx)) {
+                    top = list[i];
+                    topZ = zVal;
+                    topIdx = i;
+                }
+            }
+            return top;
+        }
+        function clickCloseButton(dialog) {
+            // Try to invoke any existing close button so per-modal
+            // cleanup (state resets, focus restoration, persistence)
+            // runs. Selector list covers every close-button convention
+            // I found in the templates: aria-label, generic data-*,
+            // and the per-modal `data-<name>-close|dismiss` flavour.
+            const buttons = dialog.querySelectorAll('button, [role="button"], a');
+            for (let i = 0; i < buttons.length; i++) {
+                const btn = buttons[i];
+                if (btn.disabled) continue;
+                const label = (btn.getAttribute('aria-label') || '').toLowerCase();
+                if (label === 'close' || label === 'dismiss' || label === 'cancel') {
+                    btn.click();
+                    return true;
+                }
+                const attrs = btn.attributes;
+                for (let j = 0; j < attrs.length; j++) {
+                    const name = attrs[j].name;
+                    if (!name.startsWith('data-')) continue;
+                    if (name === 'data-close' || name === 'data-dismiss' ||
+                        name.endsWith('-close') || name.endsWith('-dismiss')) {
+                        btn.click();
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+        function closeTopmostDialog() {
+            const list = visibleDialogs();
+            if (list.length === 0) return false;
+            const top = pickTopDialog(list);
+            if (!top) return false;
+            // Special-case the narrow-viewport Filters sheet: it has
+            // a dedicated toggler that also flips header layout state.
+            if (top.id === 'header-page-content' &&
+                typeof window.toggleHeaderFilters === 'function') {
+                window.toggleHeaderFilters();
+                return true;
+            }
+            if (clickCloseButton(top)) return true;
+            // Last resort: just hide it. Better than letting Esc fall
+            // through to history.back() with a modal still on screen.
+            top.classList.add('hidden');
+            return true;
+        }
+        function exitGearEditMode() {
+            const btn = document.querySelector('.gear-cog-btn[aria-pressed="true"]');
+            if (!btn) return false;
+            btn.click();
+            return true;
+        }
         document.addEventListener('keydown', function (e) {
             if (e.key !== 'Escape') return;
             if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
-            // Let dialogs handle their own Esc.
-            if (anyOverlayOpen()) return;
+            // A per-modal handler already consumed it (cmdk, help,
+            // icon-picker, etc. all call preventDefault).
+            if (e.defaultPrevented) return;
+            if (closeTopmostDialog()) { e.preventDefault(); return; }
+            if (exitGearEditMode())   { e.preventDefault(); return; }
             const el = document.activeElement;
             if (isBlurrableTarget(el)) {
                 el.blur();

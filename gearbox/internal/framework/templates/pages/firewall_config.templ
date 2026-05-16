@@ -144,7 +144,7 @@ templ FirewallConfigPage(user *models.User, server *database.BoxDB, config *agen
 		<!-- Validation Error Modal — shown when Save & Apply runs into errors.
 		     Real-time errors stay inline on the editor lines; this modal is
 		     specifically for the "you tried to save invalid config" case. -->
-		<div id="firewall-error-modal" class="hidden fixed inset-0 z-50 overflow-y-auto">
+		<div id="firewall-error-modal" role="dialog" aria-modal="true" aria-label="Configuration error" class="hidden fixed inset-0 z-50 overflow-y-auto">
 			<div class="flex items-center justify-center min-h-screen px-4">
 				<div class="fixed inset-0 bg-black bg-opacity-50" data-firewall-error-dismiss></div>
 				<div class="relative bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-2xl w-full">
@@ -171,7 +171,7 @@ templ FirewallConfigPage(user *models.User, server *database.BoxDB, config *agen
 		</div>
 
 		<!-- Snippets Modal — curated nftables patterns the user can insert. -->
-		<div id="firewall-snippets-modal" class="hidden fixed inset-0 z-50 overflow-y-auto">
+		<div id="firewall-snippets-modal" role="dialog" aria-modal="true" aria-label="Insert nftables snippet" class="hidden fixed inset-0 z-50 overflow-y-auto">
 			<div class="flex items-center justify-center min-h-screen px-4">
 				<div class="fixed inset-0 bg-black bg-opacity-50" data-firewall-snippets-dismiss></div>
 				<div class="relative bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[85vh] flex flex-col">
@@ -207,7 +207,7 @@ templ FirewallConfigPage(user *models.User, server *database.BoxDB, config *agen
 		</div>
 
 		<!-- Backups Modal (kept simple; matches the existing site pattern) -->
-		<div id="firewall-backups-modal" class="hidden fixed inset-0 z-50 overflow-y-auto">
+		<div id="firewall-backups-modal" role="dialog" aria-modal="true" aria-label="Configuration backups" class="hidden fixed inset-0 z-50 overflow-y-auto">
 			<div class="flex items-center justify-center min-h-screen px-4">
 				<div class="fixed inset-0 bg-black bg-opacity-50" data-firewall-modal-dismiss></div>
 				<div class="relative bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-2xl w-full p-6">

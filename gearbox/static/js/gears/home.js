@@ -402,9 +402,12 @@
     });
   }
   // Escape closes the picker (without closing the underlying add-tile modal).
+  // preventDefault + stopImmediatePropagation so the global Esc handler in
+  // shortcut-help.js doesn't also close the parent modal in the same press.
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape" && iconPicker && !iconPicker.classList.contains("hidden")) {
-      ev.stopPropagation();
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
       closeIconPicker();
     }
   });

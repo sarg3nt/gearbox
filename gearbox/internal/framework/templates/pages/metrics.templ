@@ -156,7 +156,10 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 				<div class="grid-stack-item" gs-id="card-cpu" gs-x="0" gs-y="0" gs-w="6" gs-h="4">
 					<div id="card-cpu" data-source="host" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
 						<div class="flex justify-between items-center mb-2">
-							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Host:</span> CPU Load</h4>
+							<div class="flex items-baseline gap-3 min-w-0">
+								<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Host:</span> CPU Load</h4>
+								<span id="cpu-live" class="chart-live-value"></span>
+							</div>
 							<button onclick="toggleFullscreen('card-cpu')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
 								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
@@ -173,7 +176,10 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 				<div class="grid-stack-item" gs-id="card-memory" gs-x="6" gs-y="0" gs-w="6" gs-h="4">
 					<div id="card-memory" data-source="host" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
 						<div class="flex justify-between items-center mb-2">
-							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Host:</span> Memory Usage</h4>
+							<div class="flex items-baseline gap-3 min-w-0">
+								<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Host:</span> Memory Usage</h4>
+								<span id="memory-live" class="chart-live-value"></span>
+							</div>
 							<button onclick="toggleFullscreen('card-memory')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
 								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
@@ -190,7 +196,10 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 				<div class="grid-stack-item" gs-id="card-network" gs-x="0" gs-y="4" gs-w="6" gs-h="4">
 					<div id="card-network" data-source="host" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
 						<div class="flex justify-between items-center mb-2">
-							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Host:</span> Network Throughput</h4>
+							<div class="flex items-baseline gap-3 min-w-0">
+								<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Host:</span> Network Throughput</h4>
+								<span id="network-live" class="chart-live-value"></span>
+							</div>
 							<button onclick="toggleFullscreen('card-network')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
 								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
@@ -207,7 +216,10 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 				<div class="grid-stack-item" gs-id="card-response-time" gs-x="6" gs-y="4" gs-w="6" gs-h="4">
 					<div id="card-response-time" data-source="haproxy" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
 						<div class="flex justify-between items-center mb-2">
-							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">HAProxy:</span> Response Times</h4>
+							<div class="flex items-baseline gap-3 min-w-0">
+								<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">HAProxy:</span> Response Times</h4>
+								<span id="response-time-live" class="chart-live-value"></span>
+							</div>
 							<button onclick="toggleFullscreen('card-response-time')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
 								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
@@ -224,7 +236,10 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 				<div class="grid-stack-item" gs-id="card-health" gs-x="0" gs-y="8" gs-w="6" gs-h="4">
 					<div id="card-health" data-source="haproxy" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
 						<div class="flex justify-between items-center mb-2">
-							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">HAProxy:</span> Server Health</h4>
+							<div class="flex items-baseline gap-3 min-w-0">
+								<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">HAProxy:</span> Server Health</h4>
+								<span id="health-live" class="chart-live-value"></span>
+							</div>
 							<button onclick="toggleFullscreen('card-health')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
 								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
@@ -241,7 +256,10 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 				<div class="grid-stack-item" gs-id="card-errors" gs-x="6" gs-y="8" gs-w="6" gs-h="4">
 					<div id="card-errors" data-source="haproxy" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
 						<div class="flex justify-between items-center mb-2">
-							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">HAProxy:</span> Error Rates (5xx)</h4>
+							<div class="flex items-baseline gap-3 min-w-0">
+								<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">HAProxy:</span> Error Rates (5xx)</h4>
+								<span id="errors-live" class="chart-live-value"></span>
+							</div>
 							<button onclick="toggleFullscreen('card-errors')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
 								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
@@ -258,7 +276,10 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 				<div class="grid-stack-item" gs-id="card-sessions" gs-x="0" gs-y="12" gs-w="12" gs-h="4">
 					<div id="card-sessions" data-source="haproxy" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
 						<div class="flex justify-between items-center mb-2">
-							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">HAProxy:</span> Sessions & Requests</h4>
+							<div class="flex items-baseline gap-3 min-w-0">
+								<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">HAProxy:</span> Sessions & Requests</h4>
+								<span id="sessions-live" class="chart-live-value"></span>
+							</div>
 							<button onclick="toggleFullscreen('card-sessions')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
 								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
@@ -427,7 +448,7 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 							target="_blank"
 							rel="noopener"
 						>View logs →</a>
-						<button onclick="closeDrillDown()" class="p-1 rounded hover:bg-gray-100 dark:hover:bg-slate-700" title="Close (Esc)">
+						<button onclick="closeDrillDown()" aria-label="Close" class="p-1 rounded hover:bg-gray-100 dark:hover:bg-slate-700" title="Close (Esc)">
 							<svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
 							</svg>
@@ -569,8 +590,37 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 			text-transform: uppercase;
 			letter-spacing: 0.04em;
 			font-weight: 500;
+			display: flex;
+			align-items: center;
+			gap: 0.35rem;
 		}
 		.dark .kpi-label { color: #94a3b8; }
+		/* Small "?" affordance next to the KPI title. Surfaces the
+		   existing description tooltip (already on the card) with a
+		   visible cue so users don't have to know to hover the card
+		   body. cursor:help renders the native tooltip on hover. */
+		.kpi-help {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			width: 14px;
+			height: 14px;
+			border-radius: 9999px;
+			border: 1px solid currentColor;
+			background: transparent;
+			color: #94a3b8;
+			font-size: 9px;
+			font-weight: 700;
+			line-height: 1;
+			padding: 0;
+			cursor: help;
+			flex-shrink: 0;
+			text-transform: none;
+			letter-spacing: 0;
+		}
+		.kpi-help:hover, .kpi-help:focus-visible { color: #4338ca; outline: none; }
+		.dark .kpi-help { color: #64748b; }
+		.dark .kpi-help:hover, .dark .kpi-help:focus-visible { color: #a5b4fc; }
 		.kpi-value {
 			font-size: 1.5rem;
 			font-weight: 600;
@@ -611,6 +661,21 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 			vertical-align: 0.15em;
 		}
 		.dark .source-tag { background: rgba(99, 102, 241, 0.15); color: #a5b4fc; }
+		/* Live readout shown to the right of each chart title — gives
+		   a glanceable "current value" so a flat-looking chart (e.g.
+		   memory parked at 3%) still tells the user what the number
+		   actually is. Mono + tabular-nums keeps digits from jittering
+		   as values change. */
+		.chart-live-value {
+			font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+			font-variant-numeric: tabular-nums;
+			font-size: 0.85rem;
+			font-weight: 500;
+			color: #475569;
+			white-space: nowrap;
+		}
+		.dark .chart-live-value { color: #cbd5e1; }
+		.chart-live-value:empty { display: none; }
 		.kpi-source-badge {
 			position: absolute;
 			top: 0.5rem;
@@ -1063,6 +1128,8 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 			renderNetworkChart(cachedMetricsData);
 			renderResponseTimeChart(cachedStatsData);
 			renderErrorsChart(cachedStatsData);
+			updateHostLiveValues(cachedMetricsData);
+			updateHaproxyLiveValues(cachedStatsData);
 		}
 
 		// Get current server ID - handles both multi-server (select) and single-server (hidden input) modes
@@ -1715,10 +1782,12 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 				]);
 			}
 			if (charts.errors) {
+				// Per-interval delta — see renderErrorsChart for why.
 				updateChartData(charts.errors, sampledData, [
-					sampledData.map(d => d.total_5xx_errors)
+					counterDeltas(sampledData, d => d.total_5xx_errors)
 				]);
 			}
+			updateHaproxyLiveValues(cachedStatsData);
 		}
 
 		function appendMetricsData(newData) {
@@ -1771,8 +1840,101 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 				// Network needs special handling for rate calculation
 				updateNetworkChart(sampledData);
 			}
+			updateHostLiveValues(cachedMetricsData);
 		}
 
+		// ──────────────────────────────────────────────────────────────
+		// Live chart-title readouts. Each formatter takes the latest
+		// data point(s) and returns the short string shown next to the
+		// chart title. The point is to make flat-looking charts (e.g.
+		// memory parked at 3% on a 0–100 axis) still answer "what's the
+		// number right now?" without the user reading axis ticks.
+		// ──────────────────────────────────────────────────────────────
+		function setLiveValue(id, text) {
+			const el = document.getElementById(id);
+			if (el) el.textContent = text || '';
+		}
+		function fmtPercent(v) {
+			if (v == null || isNaN(v)) return '';
+			// 1 decimal under 10 (where it actually matters), integer
+			// above — keeps the readout from being "12.7%" when "13%"
+			// reads cleaner.
+			return v < 10 ? v.toFixed(1) + '%' : Math.round(v) + '%';
+		}
+		function fmtLoad(v) {
+			if (v == null || isNaN(v)) return '0.00';
+			return v.toFixed(2);
+		}
+		function fmtMs(v) {
+			if (v == null || isNaN(v)) return '';
+			if (v >= 1000) return (v / 1000).toFixed(1) + ' s';
+			return Math.round(v) + ' ms';
+		}
+		function fmtMbps(v) {
+			if (v == null || isNaN(v)) return '0';
+			if (v >= 100) return Math.round(v).toString();
+			if (v >= 10)  return v.toFixed(1);
+			return v.toFixed(2);
+		}
+		function fmtCount(v) {
+			if (v == null || isNaN(v)) return '0';
+			if (v >= 1e6) return (v / 1e6).toFixed(1) + 'M';
+			if (v >= 1e3) return (v / 1e3).toFixed(1) + 'k';
+			return Math.round(v).toString();
+		}
+		function updateHostLiveValues(history) {
+			if (!history || history.length === 0) {
+				setLiveValue('cpu-live', '');
+				setLiveValue('memory-live', '');
+				setLiveValue('network-live', '');
+				return;
+			}
+			const last = history[history.length - 1];
+			setLiveValue('cpu-live',
+				fmtLoad(last.load_average_1) + ' / ' +
+				fmtLoad(last.load_average_5) + ' / ' +
+				fmtLoad(last.load_average_15));
+			setLiveValue('memory-live', fmtPercent(last.memory_usage_percent));
+			// Network rate needs two consecutive points; same delta
+			// math the chart uses internally.
+			if (history.length >= 2) {
+				const prev = history[history.length - 2];
+				const dt = (new Date(last.collected_at) - new Date(prev.collected_at)) / 1000;
+				if (dt > 0) {
+					const rxDiff = last.network_rx_bytes - prev.network_rx_bytes;
+					const txDiff = last.network_tx_bytes - prev.network_tx_bytes;
+					const rxMbps = rxDiff >= 0 ? (rxDiff * 8 / 1e6) / dt : 0;
+					const txMbps = txDiff >= 0 ? (txDiff * 8 / 1e6) / dt : 0;
+					setLiveValue('network-live', '↓' + fmtMbps(rxMbps) + ' ↑' + fmtMbps(txMbps) + ' Mbps');
+					return;
+				}
+			}
+			setLiveValue('network-live', '');
+		}
+		function updateHaproxyLiveValues(history) {
+			if (!history || history.length === 0) {
+				setLiveValue('sessions-live', '');
+				setLiveValue('health-live', '');
+				setLiveValue('response-time-live', '');
+				setLiveValue('errors-live', '');
+				return;
+			}
+			const last = history[history.length - 1];
+			const healthy = last.healthy_servers || 0;
+			const total = last.total_servers || 0;
+			setLiveValue('health-live', healthy + ' / ' + total + ' healthy');
+			setLiveValue('response-time-live', fmtMs(last.avg_response_time));
+			// total_5xx_errors is a cumulative counter (see renderErrorsChart).
+			// Show the window-total — (last - first), clamped on resets —
+			// so the readout agrees with the KPI band's "5xx Errors" card.
+			let inWindow5xx = 0;
+			if (history.length >= 2) {
+				const delta = (last.total_5xx_errors || 0) - (history[0].total_5xx_errors || 0);
+				if (delta > 0) inWindow5xx = delta;
+			}
+			setLiveValue('errors-live', fmtCount(inWindow5xx) + ' in window');
+			setLiveValue('sessions-live', fmtCount(last.total_sessions) + ' active');
+		}
 		function getDownsampleFactor() {
 			const slider = document.getElementById('resolution-slider');
 			// Invert: slider 10 (highest res) = factor 1 (no downsampling)
@@ -2091,12 +2253,20 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 			const sampledData = downsampleData(data, factor);
 			const colors = getChartColors();
 
+			// total_5xx_errors is a sum of HAProxy's monotonic hrsp_5xx
+			// counters across all frontends/backends — i.e. cumulative
+			// since the haproxy process started. Plotting it raw made
+			// the chart climb forever and diverge from the KPI band
+			// (which reports per-window counts from the database).
+			// Diff to a per-bucket count instead so the line answers
+			// "when did 5xxs happen and how many" — same framing as
+			// the Caddy/Traefik response-class charts.
 			charts.errors = new Chart(ctx.getContext('2d'), {
 				type: 'line',
 				data: {
 					labels: sampledData.map(d => formatTime(d.collected_at)),
 					datasets: [
-						makeAreaDataset('5xx Errors', sampledData.map(d => d.total_5xx_errors), colors.danger)
+						makeAreaDataset('5xx / interval', counterDeltas(sampledData, d => d.total_5xx_errors), colors.danger)
 					]
 				},
 				options: createIntegerYAxisOptions()
@@ -2138,10 +2308,17 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 				const sourceBadge = c.source_label
 					? '<span class="kpi-source-badge" title="Reported by ' + escapeAttr(c.source_label) + '">' + escapeHtml(c.source_label) + '</span>'
 					: '';
+				// Small "?" affordance — the card already has the
+				// description as a `title=` tooltip, but most users
+				// won't think to hover the card body. The button
+				// advertises that help is available.
+				const help = c.description
+					? '<button type="button" class="kpi-help" tabindex="0" aria-label="About this metric" title="' + escapeAttr(c.description) + '">?</button>'
+					: '';
 				return ''
 					+ '<div class="kpi-card status-' + (c.status || 'good') + '" data-source="' + escapeAttr(c.source || '') + '" title="' + escapeAttr(c.description || '') + '">'
 					+   sourceBadge
-					+   '<div class="kpi-label">' + escapeHtml(c.label) + '</div>'
+					+   '<div class="kpi-label">' + escapeHtml(c.label) + help + '</div>'
 					+   '<div class="kpi-value">' + valueText + '</div>'
 					+   '<div class="kpi-delta-row mt-1">' + deltaHTML + '</div>'
 					+   '<canvas class="kpi-sparkline" data-spark="' + escapeAttr(JSON.stringify(c.sparkline || [])) + '"'
@@ -2184,7 +2361,17 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 				return '<span class="kpi-delta neutral">live</span>';
 			}
 			const d = c.delta_pct || 0;
-			if (!isFinite(d) || (c.prev_value === 0 && c.value === 0)) {
+			// Both windows are zero — there's data, it's just all
+			// quiet. "—" is the honest summary; the old "no prior
+			// data" label was misleading because we *do* have prior
+			// data, it's just also zero.
+			if (c.prev_value === 0 && c.value === 0) {
+				return '<span class="kpi-delta neutral">—</span>';
+			}
+			// True absence of comparison data (delta couldn't be
+			// computed) — keep the explicit label so it's not
+			// confused with the both-zero case above.
+			if (!isFinite(d)) {
 				return '<span class="kpi-delta neutral">no prior data</span>';
 			}
 			let cls = 'neutral';
@@ -2376,6 +2563,9 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 
 		document.addEventListener('keydown', function(e) {
 			if (e.key === 'Escape' && document.getElementById('drilldown-drawer').classList.contains('open')) {
+				// preventDefault so the global Esc handler doesn't also
+				// run on the same press (e.g. fall through to history.back).
+				e.preventDefault();
 				closeDrillDown();
 			}
 		});

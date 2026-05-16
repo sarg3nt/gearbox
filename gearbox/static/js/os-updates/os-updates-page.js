@@ -191,6 +191,8 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // Central Escape key handler — closes whichever modal is currently visible.
+// preventDefault stops the global Esc handler in shortcut-help.js from then
+// trying to close another dialog or navigating back in the same keypress.
 document.addEventListener('keydown', function(e) {
 	if (e.key !== 'Escape') return;
 	const modals = [
@@ -206,6 +208,7 @@ document.addEventListener('keydown', function(e) {
 	for (const m of modals) {
 		const el = document.getElementById(m.id);
 		if (el && !el.classList.contains('hidden')) {
+			e.preventDefault();
 			m.hide();
 			break;
 		}

@@ -162,11 +162,11 @@ templ AlertsPage(user *models.User, servers []models.BoxConfig, perms *models.Us
 			</div>
 
 			<!-- Alert Detail Modal -->
-			<div id="alert-detail-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+			<div id="alert-detail-modal" role="dialog" aria-modal="true" aria-labelledby="alert-detail-modal-title" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
 				<div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
 					<div class="p-4 border-b border-gray-200 dark:border-slate-700 flex justify-between items-center">
-						<h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">Alert Details</h3>
-						<button onclick="hideAlertDetailModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+						<h3 id="alert-detail-modal-title" class="text-lg font-semibold text-gray-800 dark:text-gray-100">Alert Details</h3>
+						<button onclick="hideAlertDetailModal()" aria-label="Close" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
 							<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
 							</svg>
@@ -251,11 +251,11 @@ templ AlertsPage(user *models.User, servers []models.BoxConfig, perms *models.Us
 			</div>
 
 			<!-- Bulk Action Prompt Modal -->
-			<div id="bulk-action-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+			<div id="bulk-action-modal" role="dialog" aria-modal="true" aria-labelledby="bulk-action-title" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
 				<div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-md w-full mx-4">
 					<div class="p-4 border-b border-gray-200 dark:border-slate-700 flex justify-between items-center">
 						<h3 id="bulk-action-title" class="text-lg font-semibold text-gray-800 dark:text-gray-100">Bulk Action</h3>
-						<button onclick="closeBulkActionModal(false)" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+						<button onclick="closeBulkActionModal(false)" aria-label="Close" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
 							<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
 							</svg>
