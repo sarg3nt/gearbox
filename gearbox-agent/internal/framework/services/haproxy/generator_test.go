@@ -322,15 +322,15 @@ func TestGenerator_GenerateBackendConfig_NoCheck(t *testing.T) {
 func TestGenerator_GenerateBackendConfig_TCPMode(t *testing.T) {
 	backends := []compose.BackendConfig{
 		{
-			BackendName: "tcp_backend",
-			Hostname:    "tcp.example.com",
-			Server:      "tcp-server:3306",
-			Mode:        "tcp",
-			Balance:     "leastconn",
-			Check:       true,
+			BackendName:   "tcp_backend",
+			Hostname:      "tcp.example.com",
+			Server:        "tcp-server:3306",
+			Mode:          "tcp",
+			Balance:       "leastconn",
+			Check:         true,
 			CheckInterval: "10s",
-			CheckFall:   "2",
-			CheckRise:   "3",
+			CheckFall:     "2",
+			CheckRise:     "3",
 		},
 	}
 
@@ -457,5 +457,26 @@ func TestGenerator_GenerateBackendConfig_SSLWithRequiredVerify(t *testing.T) {
 
 	if !strings.Contains(config, "verify required") {
 		t.Error("GenerateBackendConfig() missing 'verify required' option")
+	}
+}
+
+func TestGenerator_GenerateBackendConfig_HTTPKeepAlive(t *testing.T) {
+	backends := []compose.BackendConfig{
+		{
+			BackendName:   "keepalive_backend",
+			Hostname:      "idrac.example.com",
+			Server:        "10.0.0.6:443",
+			Mode:          "http",
+			Balance:       "roundrobin",
+			HTTPKeepAlive: true,
+			BackendSSL:    true,
+		},
+	}
+
+	gen := NewGenerator(backends)
+	config := gen.GenerateBackendConfig()
+
+	if !strings.Contains(config, "option http-keep-alive") {
+		t.Error("GenerateBackendConfig() missing 'option http-keep-alive' directive")
 	}
 }

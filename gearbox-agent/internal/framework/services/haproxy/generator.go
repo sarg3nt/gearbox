@@ -120,6 +120,9 @@ func (g *Generator) GenerateBackendConfig() string {
 		lines = append(lines, fmt.Sprintf("backend %s", backend.BackendName))
 		lines = append(lines, fmt.Sprintf("  mode %s", backend.Mode))
 		lines = append(lines, fmt.Sprintf("  balance %s", backend.Balance))
+		if backend.HTTPKeepAlive {
+			lines = append(lines, "  option http-keep-alive")
+		}
 
 		// Build server options
 		var serverOpts []string
