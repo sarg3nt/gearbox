@@ -284,12 +284,10 @@
       grid.classList.toggle("metrics-grid-edit", enteringEdit);
       gs.setStatic(!enteringEdit);
 
-      const offLabel = editBtn.querySelector(".metrics-edit-off-label");
-      const onLabel = editBtn.querySelector(".metrics-edit-on-label");
-      if (offLabel && onLabel) {
-        offLabel.classList.toggle("hidden", enteringEdit);
-        onLabel.classList.toggle("hidden", !enteringEdit);
-      }
+      // aria-pressed drives the cog button's visual state via the
+      // .gear-cog-btn[aria-pressed="true"] CSS rule — shared with
+      // Home's edit toggle so the affordance reads consistently.
+      editBtn.setAttribute("aria-pressed", enteringEdit ? "true" : "false");
 
       // Reveal/hide edit-only controls (Reset button, future
       // affordances). Mirrors the Home gear's .home-edit-only
