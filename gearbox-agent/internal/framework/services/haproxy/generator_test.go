@@ -469,7 +469,6 @@ func TestGenerator_GenerateBackendConfig_HTTPKeepAlive(t *testing.T) {
 			Mode:          "http",
 			Balance:       "roundrobin",
 			HTTPKeepAlive: true,
-			BackendSSL:    true,
 		},
 	}
 
@@ -478,5 +477,25 @@ func TestGenerator_GenerateBackendConfig_HTTPKeepAlive(t *testing.T) {
 
 	if !strings.Contains(config, "option http-keep-alive") {
 		t.Error("GenerateBackendConfig() missing 'option http-keep-alive' directive")
+	}
+}
+
+func TestGenerator_GenerateBackendConfig_HTTPKeepAlive_TCPModeSkipped(t *testing.T) {
+	backends := []compose.BackendConfig{
+		{
+			BackendName:   "keepalive_tcp_backend",
+			Hostname:      "tcp.example.com",
+			Server:        "10.0.0.7:3306",
+			Mode:          "tcp",
+			Balance:       "roundrobin",
+			HTTPKeepAlive: true,
+		},
+	}
+
+	gen := NewGenerator(backends)
+	config := gen.GenerateBackendConfig()
+
+	if strings.Contains(config, "option http-keep-alive") {
+		t.Error("GenerateBackendConfig() emitted 'option http-keep-alive' for tcp-mode backend")
 	}
 }
