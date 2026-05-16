@@ -892,10 +892,20 @@ templ Base(title string, user *models.User, currentPath ...string) {
 				// Header now spans full viewport width and lives ABOVE the
 				// sidebar (issue #92), so it no longer tracks sidebar width.
 				// We only flip the sidebar/main-content classes here.
+				// Two pairs of icon elements need to be kept in sync:
+				//   - `sidebar-icon-{collapse,expand}` — hidden shim
+				//     inside the sidebar, kept so legacy lookups still
+				//     resolve to something.
+				//   - `sidebar-icon-{collapse,expand}-header` — the
+				//     VISIBLE icons inside the new header toggle.
+				// Updating only the shim left the visible icon stuck
+				// (Copilot review).
 				const sidebar = document.getElementById('sidebar');
 				const mainContent = document.getElementById('main-content');
 				const iconCollapse = document.getElementById('sidebar-icon-collapse');
 				const iconExpand = document.getElementById('sidebar-icon-expand');
+				const iconCollapseHeader = document.getElementById('sidebar-icon-collapse-header');
+				const iconExpandHeader = document.getElementById('sidebar-icon-expand-header');
 				const isCollapsed = sidebar.classList.contains('sidebar-collapsed');
 
 				if (isCollapsed) {
@@ -903,16 +913,20 @@ templ Base(title string, user *models.User, currentPath ...string) {
 					sidebar.classList.add('sidebar-expanded');
 					mainContent.classList.remove('ml-16');
 					mainContent.classList.add('ml-64');
-					if (iconCollapse) iconCollapse.classList.remove('hidden');
-					if (iconExpand) iconExpand.classList.add('hidden');
+					if (iconCollapse)       iconCollapse.classList.remove('hidden');
+					if (iconExpand)         iconExpand.classList.add('hidden');
+					if (iconCollapseHeader) iconCollapseHeader.classList.remove('hidden');
+					if (iconExpandHeader)   iconExpandHeader.classList.add('hidden');
 					localStorage.setItem('sidebarCollapsed', 'false');
 				} else {
 					sidebar.classList.add('sidebar-collapsed');
 					sidebar.classList.remove('sidebar-expanded');
 					mainContent.classList.add('ml-16');
 					mainContent.classList.remove('ml-64');
-					if (iconCollapse) iconCollapse.classList.add('hidden');
-					if (iconExpand) iconExpand.classList.remove('hidden');
+					if (iconCollapse)       iconCollapse.classList.add('hidden');
+					if (iconExpand)         iconExpand.classList.remove('hidden');
+					if (iconCollapseHeader) iconCollapseHeader.classList.add('hidden');
+					if (iconExpandHeader)   iconExpandHeader.classList.remove('hidden');
 					localStorage.setItem('sidebarCollapsed', 'true');
 				}
 			}
@@ -923,6 +937,10 @@ templ Base(title string, user *models.User, currentPath ...string) {
 				const mainContent = document.getElementById('main-content');
 				const iconCollapse = document.getElementById('sidebar-icon-collapse');
 				const iconExpand = document.getElementById('sidebar-icon-expand');
+				// Visible header-button icons — see toggleSidebar()
+				// for context on why both pairs are tracked.
+				const iconCollapseHeader = document.getElementById('sidebar-icon-collapse-header');
+				const iconExpandHeader = document.getElementById('sidebar-icon-expand-header');
 
 				// IMPORTANT: apply the correct sidebar/main-content classes
 				// BEFORE removing the .sidebar-initially-collapsed pin from
@@ -945,15 +963,19 @@ templ Base(title string, user *models.User, currentPath ...string) {
 						sidebar.classList.remove('sidebar-expanded');
 						mainContent.classList.add('ml-16');
 						mainContent.classList.remove('ml-64');
-						if (iconCollapse) iconCollapse.classList.add('hidden');
-						if (iconExpand) iconExpand.classList.remove('hidden');
+						if (iconCollapse)       iconCollapse.classList.add('hidden');
+						if (iconExpand)         iconExpand.classList.remove('hidden');
+						if (iconCollapseHeader) iconCollapseHeader.classList.add('hidden');
+						if (iconExpandHeader)   iconExpandHeader.classList.remove('hidden');
 					} else {
 						sidebar.classList.remove('sidebar-collapsed');
 						sidebar.classList.add('sidebar-expanded');
 						mainContent.classList.remove('ml-16');
 						mainContent.classList.add('ml-64');
-						if (iconCollapse) iconCollapse.classList.remove('hidden');
-						if (iconExpand) iconExpand.classList.add('hidden');
+						if (iconCollapse)       iconCollapse.classList.remove('hidden');
+						if (iconExpand)         iconExpand.classList.add('hidden');
+						if (iconCollapseHeader) iconCollapseHeader.classList.remove('hidden');
+						if (iconExpandHeader)   iconExpandHeader.classList.add('hidden');
 					}
 				}
 
@@ -2473,12 +2495,13 @@ templ Header(currentPath string) {
 
 // HeaderSearch is the unified search / filter / command-palette input.
 // One text input drives three behaviours, chosen by what the user types:
-//   - empty / search mode: hint reads "Type / to search · Cmd+K for palette".
-//     Per-gear pages can register a filter callback via window.gearbox.filter
-//     (see common/gear-commands.js); when active, the placeholder switches
-//     to whatever the page asked for and each keystroke calls the callback.
-//     With no filter callback registered, Enter falls back to a DuckDuckGo
-//     web search.
+//   - empty / search mode: the same hint chips appear on every page —
+//     "/ to search · Cmd+K for palette" — overlaid on the input. There
+//     is no per-gear placeholder; gears that want to react to keystrokes
+//     register a filter callback via window.gearbox.filter (see
+//     common/gear-commands.js) and the controller dispatches each input
+//     event to it. With no filter callback registered, Enter falls back
+//     to a DuckDuckGo web search.
 //   - leading `>` (typed manually or inserted by Cmd+K): palette mode.
 //     The slide-down `#header-search-panel` opens just below the input and
 //     ranks boxes / gears / settings pages / global actions / per-gear

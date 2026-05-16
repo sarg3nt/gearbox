@@ -181,14 +181,6 @@
         clear();
     }
 
-    function dispatchClear() {
-        const filter = window.gearbox && window.gearbox.filter && window.gearbox.filter.current();
-        if (filter && typeof filter.onClear === 'function') {
-            try { filter.onClear(); }
-            catch (e) { console.error('filter.onClear threw', e); }
-        }
-    }
-
     /* -------------------------------------------------------------- *
      * Public mode / value mutators
      * -------------------------------------------------------------- */
@@ -218,8 +210,22 @@
         if (!input) return;
         input.value = '';
         repaint();
-        dispatchSearchInput();
-        dispatchClear();
+        // Fire exactly one filter callback. Earlier this called both
+        // dispatchSearchInput() (→ filter.onInput('')) AND
+        // dispatchClear() (→ filter.onClear()), so most gears
+        // re-filtered twice and any side-effectful onClear would
+        // run alongside the empty-query path (Copilot review).
+        // Prefer onClear if the gear registered one; otherwise fall
+        // back to the standard empty-query dispatch.
+        notify(queryListeners, '');
+        const filter = window.gearbox && window.gearbox.filter && window.gearbox.filter.current();
+        if (filter && typeof filter.onClear === 'function') {
+            try { filter.onClear(); }
+            catch (e) { console.error('filter.onClear threw', e); }
+        } else if (filter && typeof filter.onInput === 'function') {
+            try { filter.onInput(''); }
+            catch (e) { console.error('filter.onInput threw', e); }
+        }
     }
 
     function focus(selectAll) {
@@ -339,9 +345,15 @@
         }
 
         // Compact-mode: clicking outside the search collapses the row.
+        // Check the .header-search-expanded marker rather than the
+        // `hidden` class — the row's templ markup is `hidden md:flex`,
+        // so it ALWAYS carries `hidden` and the old check effectively
+        // disabled the outside-click collapse (Copilot review). The
+        // overlay state is driven by the marker class, not by toggling
+        // `hidden` directly.
         document.addEventListener('click', function (e) {
             if (!window.matchMedia('(max-width: 767px)').matches) return;
-            if (!row || row.classList.contains('hidden')) return;
+            if (!row || !row.classList.contains('header-search-expanded')) return;
             if (wrap && wrap.contains(e.target)) return;
             // Don't collapse while the palette panel is the click target.
             const panel = document.getElementById('header-search-panel');

@@ -77,16 +77,37 @@
         });
     }
 
+    let returnFocusEl = null;
+
     function open() {
         const overlay = document.getElementById('shortcuts-help-overlay');
         if (!overlay) return;
         renderShortcuts();
+        // Remember whoever had focus so we can hand it back on close.
+        returnFocusEl = document.activeElement;
         overlay.classList.remove('hidden');
+        // The overlay is role="dialog" aria-modal="true"; move focus
+        // into it so the dialog is announced by screen readers and
+        // subsequent Tab/Esc keystrokes land here, not on the page
+        // behind. The overlay has no interactive controls (clicking
+        // anywhere closes), so a single focusable container is enough
+        // — no formal trap needed (Copilot a11y review).
+        overlay.setAttribute('tabindex', '-1');
+        try { overlay.focus({ preventScroll: true }); }
+        catch (_) { overlay.focus(); }
     }
     function close() {
         const overlay = document.getElementById('shortcuts-help-overlay');
         if (!overlay) return;
         overlay.classList.add('hidden');
+        // Restore focus to whatever opened the overlay (typically the
+        // page body or a button), so keyboard users don't get dumped
+        // back at the top of the document.
+        if (returnFocusEl && typeof returnFocusEl.focus === 'function') {
+            try { returnFocusEl.focus({ preventScroll: true }); }
+            catch (_) { returnFocusEl.focus(); }
+        }
+        returnFocusEl = null;
     }
 
     function init() {
