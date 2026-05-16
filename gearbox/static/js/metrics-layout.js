@@ -309,9 +309,16 @@
   const resetBtn = document.getElementById("metrics-reset-layout");
   if (resetBtn) {
     resetBtn.addEventListener("click", async function () {
-      // Inline confirm rather than a modal — this is destructive
-      // but trivially recoverable (just rearrange tiles again).
-      if (!window.confirm("Reset the metrics layout for this box to defaults?")) return;
+      // Use the app's standard confirm dialog (base.templ) rather
+      // than the browser's native window.confirm — keeps the look
+      // consistent with the rest of the app and respects dark mode.
+      const ok = await window.showConfirmDialog({
+        title: "Reset metrics layout",
+        message: "Reset the metrics layout for this box to defaults? Your custom arrangement will be lost.",
+        confirmText: "Reset",
+        type: "warning",
+      });
+      if (!ok) return;
       await resetLayout();
     });
   }

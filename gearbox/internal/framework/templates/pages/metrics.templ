@@ -595,32 +595,6 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 			gap: 0.35rem;
 		}
 		.dark .kpi-label { color: #94a3b8; }
-		/* Small "?" affordance next to the KPI title. Surfaces the
-		   existing description tooltip (already on the card) with a
-		   visible cue so users don't have to know to hover the card
-		   body. cursor:help renders the native tooltip on hover. */
-		.kpi-help {
-			display: inline-flex;
-			align-items: center;
-			justify-content: center;
-			width: 14px;
-			height: 14px;
-			border-radius: 9999px;
-			border: 1px solid currentColor;
-			background: transparent;
-			color: #94a3b8;
-			font-size: 9px;
-			font-weight: 700;
-			line-height: 1;
-			padding: 0;
-			cursor: help;
-			flex-shrink: 0;
-			text-transform: none;
-			letter-spacing: 0;
-		}
-		.kpi-help:hover, .kpi-help:focus-visible { color: #4338ca; outline: none; }
-		.dark .kpi-help { color: #64748b; }
-		.dark .kpi-help:hover, .dark .kpi-help:focus-visible { color: #a5b4fc; }
 		.kpi-value {
 			font-size: 1.5rem;
 			font-weight: 600;
@@ -2299,6 +2273,12 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 			const band = document.getElementById('kpi-band');
 			if (!band) return;
 
+			// Build the band as a string first, then append the
+			// canonical info-tooltip nodes via createInfoTooltip()
+			// (window helper from /static/js/common/info-tooltip.js).
+			// Keeping the tooltip out of the innerHTML string means
+			// description text never needs HTML-escaping and matches
+			// the HAProxy overview tooltip behaviour exactly.
 			band.innerHTML = cards.map(function(c) {
 				const valueText = formatKPIValue(c);
 				const deltaHTML = formatKPIDelta(c);
@@ -2308,23 +2288,29 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 				const sourceBadge = c.source_label
 					? '<span class="kpi-source-badge" title="Reported by ' + escapeAttr(c.source_label) + '">' + escapeHtml(c.source_label) + '</span>'
 					: '';
-				// Small "?" affordance — the card already has the
-				// description as a `title=` tooltip, but most users
-				// won't think to hover the card body. The button
-				// advertises that help is available.
-				const help = c.description
-					? '<button type="button" class="kpi-help" tabindex="0" aria-label="About this metric" title="' + escapeAttr(c.description) + '">?</button>'
-					: '';
 				return ''
-					+ '<div class="kpi-card status-' + (c.status || 'good') + '" data-source="' + escapeAttr(c.source || '') + '" title="' + escapeAttr(c.description || '') + '">'
+					+ '<div class="kpi-card status-' + (c.status || 'good') + '" data-source="' + escapeAttr(c.source || '') + '" data-kpi-key="' + escapeAttr(c.key || '') + '">'
 					+   sourceBadge
-					+   '<div class="kpi-label">' + escapeHtml(c.label) + help + '</div>'
+					+   '<div class="kpi-label"><span class="kpi-label-text">' + escapeHtml(c.label) + '</span><span class="kpi-info-slot"></span></div>'
 					+   '<div class="kpi-value">' + valueText + '</div>'
 					+   '<div class="kpi-delta-row mt-1">' + deltaHTML + '</div>'
 					+   '<canvas class="kpi-sparkline" data-spark="' + escapeAttr(JSON.stringify(c.sparkline || [])) + '"'
 					+     ' data-status="' + (c.status || 'good') + '"></canvas>'
 					+ '</div>';
 			}).join('');
+
+			// Attach the canonical info tooltip (matches the HAProxy
+			// dashboard widget byte-for-byte) to each card whose
+			// description is non-empty.
+			cards.forEach(function(c) {
+				if (!c.description) return;
+				const card = band.querySelector('.kpi-card[data-kpi-key="' + (c.key || '').replace(/"/g, '\\"') + '"]');
+				if (!card) return;
+				const slot = card.querySelector('.kpi-info-slot');
+				if (slot && typeof window.appendInfoTooltipTo === 'function') {
+					window.appendInfoTooltipTo(slot, c.description);
+				}
+			});
 
 			// Render sparklines.
 			band.querySelectorAll('canvas.kpi-sparkline').forEach(function(canvas) {
