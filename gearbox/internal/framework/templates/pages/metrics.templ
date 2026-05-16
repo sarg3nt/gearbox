@@ -300,7 +300,7 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 				     When a source becomes Available later, makeWidget()
 				     puts the tile back at its default position. -->
 				<div class="grid-stack-item" gs-id="card-nginx" gs-x="0" gs-y="16" gs-w="6" gs-h="4">
-					<div id="card-nginx" data-source="nginx" data-source-card="true" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative hidden">
+					<div id="card-nginx" data-source="nginx" data-source-card="true" data-cap-hidden="true" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative hidden">
 						<div class="flex justify-between items-center mb-2">
 							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">nginx:</span> Connections &amp; Requests</h4>
 							<button onclick="toggleFullscreen('card-nginx')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
@@ -315,7 +315,7 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 					</div>
 				</div>
 				<div class="grid-stack-item" gs-id="card-apache" gs-x="6" gs-y="16" gs-w="6" gs-h="4">
-					<div id="card-apache" data-source="apache" data-source-card="true" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative hidden">
+					<div id="card-apache" data-source="apache" data-source-card="true" data-cap-hidden="true" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative hidden">
 						<div class="flex justify-between items-center mb-2">
 							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Apache:</span> Workers &amp; Requests</h4>
 							<button onclick="toggleFullscreen('card-apache')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
@@ -330,7 +330,7 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 					</div>
 				</div>
 				<div class="grid-stack-item" gs-id="card-caddy" gs-x="0" gs-y="20" gs-w="6" gs-h="4">
-					<div id="card-caddy" data-source="caddy" data-source-card="true" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative hidden">
+					<div id="card-caddy" data-source="caddy" data-source-card="true" data-cap-hidden="true" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative hidden">
 						<div class="flex justify-between items-center mb-2">
 							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Caddy:</span> Requests &amp; Errors</h4>
 							<button onclick="toggleFullscreen('card-caddy')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
@@ -345,7 +345,7 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 					</div>
 				</div>
 				<div class="grid-stack-item" gs-id="card-traefik" gs-x="6" gs-y="20" gs-w="6" gs-h="4">
-					<div id="card-traefik" data-source="traefik" data-source-card="true" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative hidden">
+					<div id="card-traefik" data-source="traefik" data-source-card="true" data-cap-hidden="true" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative hidden">
 						<div class="flex justify-between items-center mb-2">
 							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Traefik:</span> Status Class</h4>
 							<button onclick="toggleFullscreen('card-traefik')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
@@ -1086,9 +1086,13 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 			return mapping[cardId];
 		}
 
-		// Handle Escape key to exit fullscreen
+		// Handle Escape key to exit fullscreen. preventDefault so the
+		// global Esc handler in shortcut-help.js doesn't also fire on
+		// the same press (it falls through to history.back() when
+		// nothing else consumes Esc).
 		document.addEventListener('keydown', function(e) {
 			if (e.key === 'Escape' && currentFullscreenCard) {
+				e.preventDefault();
 				toggleFullscreen(currentFullscreenCard);
 			}
 		});
@@ -1498,9 +1502,16 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 			}
 
 			// Toggle every element tagged data-source="haproxy". Includes
-			// the chart cards plus the Error Insights panel.
+			// the chart cards plus the Error Insights panel. We set
+			// both `.hidden` (for the visual hide) and
+			// `data-cap-hidden` (the dedicated marker metrics-layout.js
+			// reads so it can tell capability-driven hides apart from
+			// fullscreen-driven `.hidden`s on neighbouring cards).
 			document.querySelectorAll('[data-source="haproxy"]').forEach(function(el) {
 				el.classList.toggle('hidden', !haproxyAvailable);
+				if (el.classList.contains('chart-card')) {
+					el.dataset.capHidden = haproxyAvailable ? 'false' : 'true';
+				}
 			});
 
 			// Gate the per-source chart cards on each source's probe
@@ -1516,6 +1527,7 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 				window._availableSources[src] = !!available;
 				document.querySelectorAll('[data-source="' + src + '"][data-source-card]').forEach(function(el) {
 					el.classList.toggle('hidden', !available);
+					el.dataset.capHidden = available ? 'false' : 'true';
 				});
 			}
 
@@ -2833,8 +2845,11 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 
 		<!-- GridStack vendor JS (issue #103). Same bundle the Home
 		     gear uses. Loaded with defer so it doesn't block initial
-		     paint; the inline metrics-layout.js script below waits
-		     on DOMContentLoaded before initialising. -->
+		     paint; defer also guarantees both scripts run after the
+		     DOM is parsed, in source order — so metrics-layout.js
+		     can rely on GridStack being defined and on its target
+		     #charts-grid element existing the moment its top-level
+		     IIFE executes (no extra DOMContentLoaded gate needed). -->
 		<script src="/static/js/vendor/gridstack/gridstack-all.js" defer></script>
 		<script src="/static/js/metrics-layout.js" defer></script>
 	}

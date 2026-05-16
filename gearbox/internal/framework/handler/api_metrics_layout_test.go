@@ -21,6 +21,28 @@ func TestValidateLayoutTiles(t *testing.T) {
 		t.Errorf("good tiles rejected: %v", err)
 	}
 
+	// GridStack.save() omits w/h when they're at their default of 1,
+	// so a 1×N or N×1 tile arrives with W or H decoded as the Go
+	// zero value. validateLayoutTiles must normalise those to 1 and
+	// accept the tile rather than reject with "w/h must be positive".
+	omitted := []layoutTile{
+		{ID: "card-cpu", X: 0, Y: 0}, // W and H both omitted (=> 0)
+		{ID: "card-mem", X: 1, Y: 0, W: 0, H: 2},
+		{ID: "card-net", X: 2, Y: 0, W: 2, H: 0},
+	}
+	if err := validateLayoutTiles(omitted); err != nil {
+		t.Errorf("tiles with omitted w/h rejected: %v", err)
+	}
+	if omitted[0].W != 1 || omitted[0].H != 1 {
+		t.Errorf("expected omitted w/h normalised to 1, got w=%d h=%d", omitted[0].W, omitted[0].H)
+	}
+	if omitted[1].W != 1 {
+		t.Errorf("expected W=0 normalised to 1, got w=%d", omitted[1].W)
+	}
+	if omitted[2].H != 1 {
+		t.Errorf("expected H=0 normalised to 1, got h=%d", omitted[2].H)
+	}
+
 	cases := []struct {
 		name      string
 		tiles     []layoutTile
@@ -60,11 +82,6 @@ func TestValidateLayoutTiles(t *testing.T) {
 			wantMatch: "exceed",
 		},
 		{
-			name:      "zero width",
-			tiles:     []layoutTile{{ID: "card-cpu", X: 0, Y: 0, W: 0, H: 1}},
-			wantMatch: "w/h must be positive",
-		},
-		{
 			name:      "negative height",
 			tiles:     []layoutTile{{ID: "card-cpu", X: 0, Y: 0, W: 1, H: -1}},
 			wantMatch: "w/h must be positive",
@@ -73,6 +90,16 @@ func TestValidateLayoutTiles(t *testing.T) {
 			name:      "w exceeds bound",
 			tiles:     []layoutTile{{ID: "card-cpu", X: 0, Y: 0, W: maxDim + 1, H: 1}},
 			wantMatch: "w/h exceed",
+		},
+		{
+			name:      "x at column boundary",
+			tiles:     []layoutTile{{ID: "card-cpu", X: gridColumns, Y: 0, W: 1, H: 1}},
+			wantMatch: "x must be <",
+		},
+		{
+			name:      "x+w overflows columns",
+			tiles:     []layoutTile{{ID: "card-cpu", X: 8, Y: 0, W: 6, H: 1}},
+			wantMatch: "x+w exceeds",
 		},
 		{
 			name:      "too many tiles",

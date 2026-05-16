@@ -104,12 +104,32 @@
   // both files sees the same idiom.
   let suppressChange = true;
 
+  // capHiddenSnapshots remembers the (x, y, w, h) of each tile we
+  // pulled out of the grid because its source went unavailable. When
+  // captureLayout() serialises the grid, those tiles aren't in the
+  // engine (so gs.save() omits them) — but we still want their last-
+  // known positions to ride along in the persisted blob so that a
+  // capability flip back to Available a week later restores the
+  // user's chosen position instead of dropping the tile at its templ
+  // default coords.
+  const capHiddenSnapshots = {};
+
   /** captureLayout returns the current grid state in the same shape
    *  the PATCH endpoint expects — array of {id, x, y, w, h}. We use
    *  gs.save(false) (no node data, just positions); the dashboard
-   *  doesn't need the full GridStack node objects. */
+   *  doesn't need the full GridStack node objects. Capability-hidden
+   *  tiles aren't in the engine so we merge in their snapshots
+   *  before returning, otherwise the saved blob loses them. */
   function captureLayout() {
-    return gs.save(false);
+    const out = gs.save(false) || [];
+    const present = new Set(out.map(function (t) { return t.id; }));
+    Object.keys(capHiddenSnapshots).forEach(function (id) {
+      if (!present.has(id)) {
+        const s = capHiddenSnapshots[id];
+        out.push({ id: id, x: s.x, y: s.y, w: s.w, h: s.h });
+      }
+    });
+    return out;
   }
 
   /** updateContainerHeight pins the grid's min-height to the bottom
@@ -123,9 +143,10 @@
    *
    *  Math: GridStack positions each tile at top = y*cellHeight + margin/2
    *  with height = h*cellHeight - margin. Bottom edge of the last
-   *  row = (y+h)*cellHeight. Adding the margin once at the end
-   *  matches GridStack's own positioning so the spacing below the
-   *  last row equals the spacing between rows. */
+   *  row at index (y+h) sits at (y+h)*cellHeight. We use that bottom
+   *  edge as min-height directly — GridStack already paints the
+   *  marginBottom inside the cellHeight allowance, so adding it
+   *  again would over-pad the section below the grid. */
   function updateContainerHeight() {
     // CAREFUL: GridStack's cellHeight() — note the parens — is an
     // implicit setter when called as a getter. It re-computes
@@ -166,16 +187,25 @@
       const card = item.querySelector(`#${id}`);
       if (!card) return;
 
-      // The inner card carries `.hidden` when capability gating
-      // says the source isn't Available. Pull the surrounding
-      // grid-stack-item out of the engine to free its slot.
-      const isCapHidden = card.classList.contains("hidden");
+      // The capability marker is a dedicated `data-cap-hidden`
+      // attribute set by applyCapabilities() in metrics.templ — we
+      // intentionally do NOT key off `.hidden`, because chart-
+      // fullscreen.js also adds `.hidden` to every non-focused card
+      // while one is fullscreened. Reading `.hidden` here would
+      // remove the entire grid mid-fullscreen and never re-add it.
+      const isCapHidden = card.dataset.capHidden === "true";
       const isInGrid = !!item.gridstackNode;
 
       if (isCapHidden && isInGrid) {
+        // Snapshot the position before removing so captureLayout()
+        // can persist it. Without this the user's chosen position
+        // is lost the moment a source goes unavailable.
+        const n = item.gridstackNode;
+        capHiddenSnapshots[id] = { x: n.x || 0, y: n.y || 0, w: n.w || 1, h: n.h || 1 };
         gs.removeWidget(item, false); // keep DOM, drop slot
       } else if (!isCapHidden && !isInGrid) {
         gs.makeWidget(item);
+        delete capHiddenSnapshots[id];
       }
     });
     updateContainerHeight();
@@ -197,7 +227,13 @@
       if (res.status === 204 || !res.ok) return; // use template defaults
       const layout = await res.json();
       if (!Array.isArray(layout) || layout.length === 0) return;
-      gs.load(layout);
+      // addRemove:false — without it, gs.load() would yank any
+      // grid-stack-item DOM nodes whose gs-id isn't in the loaded
+      // array (capability-hidden tiles that were captured into
+      // capHiddenSnapshots but not currently in the engine). We
+      // intentionally keep those DOM nodes around so makeWidget()
+      // can re-attach them later when their source goes Available.
+      gs.load(layout, false);
     } catch (err) {
       console.debug("metrics layout load failed; using defaults", err);
     }
@@ -221,11 +257,22 @@
     const serverID = getServerID();
     if (!serverID) return;
     try {
-      await fetch(`/api/${serverID}/metrics/layout`, {
+      const res = await fetch(`/api/${serverID}/metrics/layout`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(captureLayout()),
       });
+      // fetch() doesn't throw on HTTP 4xx/5xx — surface non-2xx so a
+      // 401/403/413/500 doesn't silently swallow the user's layout
+      // edit. console.warn keeps it visible in devtools without
+      // popping a dialog mid-edit.
+      if (!res.ok) {
+        console.warn(
+          "metrics layout save returned non-2xx",
+          res.status,
+          res.statusText,
+        );
+      }
     } catch (err) {
       console.warn("metrics layout save failed", err);
     }

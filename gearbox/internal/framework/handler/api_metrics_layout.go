@@ -55,6 +55,12 @@ const maxTilesPerLayout = 64
 const (
 	maxCoord = 1000
 	maxDim   = 100
+	// gridColumns mirrors the GridStack init in static/js/metrics-layout.js
+	// (column: 12). Persisted x+w must fit inside this column count or
+	// the saved tile would silently collide / clamp on next render,
+	// which surfaces as "my layout didn't stick" confusion. Keep this
+	// value in sync with the JS side if the column count ever changes.
+	gridColumns = 12
 )
 
 // layoutTile is the shape we require each entry in the posted
@@ -90,7 +96,20 @@ func validateLayoutTiles(tiles []layoutTile) error {
 		return fmt.Errorf("layout has %d tiles; maximum %d", len(tiles), maxTilesPerLayout)
 	}
 	seen := make(map[string]struct{}, len(tiles))
-	for i, t := range tiles {
+	for i := range tiles {
+		t := &tiles[i]
+		// Normalise omitted w/h. GridStack.save() drops fields that
+		// equal their defaults — including w=1 and h=1 — so a 1×N or
+		// N×1 tile arrives with W or H as the Go zero value. Treat
+		// those as the GridStack default of 1 rather than rejecting
+		// the whole payload (the user resizing a tile to 1 col wide
+		// would otherwise silently fail to persist).
+		if t.W == 0 {
+			t.W = 1
+		}
+		if t.H == 0 {
+			t.H = 1
+		}
 		if t.ID == "" {
 			return fmt.Errorf("tile %d: id is empty", i)
 		}
@@ -109,6 +128,17 @@ func validateLayoutTiles(tiles []layoutTile) error {
 		}
 		if t.W > maxDim || t.H > maxDim {
 			return fmt.Errorf("tile %q: w/h exceed %d (got w=%d, h=%d)", t.ID, maxDim, t.W, t.H)
+		}
+		// Column-count check: a saved x/w pair that overflows the
+		// 12-column grid can never render as-saved. Without this
+		// check the payload would persist successfully, then load,
+		// then silently get clamped by GridStack — and the user
+		// would see "my layout didn't stick" with no diagnostic.
+		if t.X >= gridColumns {
+			return fmt.Errorf("tile %q: x must be < %d columns (got x=%d)", t.ID, gridColumns, t.X)
+		}
+		if t.X+t.W > gridColumns {
+			return fmt.Errorf("tile %q: x+w exceeds %d columns (got x=%d, w=%d)", t.ID, gridColumns, t.X, t.W)
 		}
 	}
 	return nil
