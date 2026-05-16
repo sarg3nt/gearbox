@@ -74,28 +74,27 @@ func TestParseFile_AllLabels(t *testing.T) {
 		t.Fatalf("Failed to create app dir: %v", err)
 	}
 
-	composeContent := `
-services:
-  api:
-    image: api:latest
-    labels:
-      haproxy.enable: "true"
-      haproxy.hostname: "api.example.com"
-      haproxy.backend.server: "api:3000"
-      haproxy.backend.name: "custom_backend"
-      haproxy.backend.mode: "http"
-      haproxy.backend.balance: "leastconn"
-      haproxy.backend.check: "true"
-      haproxy.backend.check.interval: "10s"
-      haproxy.backend.check.fall: "5"
-      haproxy.backend.check.rise: "3"
-      haproxy.ssl.redirect: "true"
-      haproxy.public: "true"
-      haproxy.rate_limit: "200"
-      haproxy.acl.ip: "10.0.0.0/8"
-      haproxy.backend.ssl: "true"
-      haproxy.backend.ssl.verify: "required"
-`
+	composeContent := "services:\n" +
+		"  api:\n" +
+		"    image: api:latest\n" +
+		"    labels:\n" +
+		"      haproxy.enable: \"true\"\n" +
+		"      haproxy.hostname: \"api.example.com\"\n" +
+		"      haproxy.backend.server: \"api:3000\"\n" +
+		"      haproxy.backend.name: \"custom_backend\"\n" +
+		"      haproxy.backend.mode: \"http\"\n" +
+		"      haproxy.backend.balance: \"leastconn\"\n" +
+		"      haproxy.backend.check: \"true\"\n" +
+		"      haproxy.backend.check.interval: \"10s\"\n" +
+		"      haproxy.backend.check.fall: \"5\"\n" +
+		"      haproxy.backend.check.rise: \"3\"\n" +
+		"      haproxy.ssl.redirect: \"true\"\n" +
+		"      haproxy.public: \"true\"\n" +
+		"      haproxy.rate_limit: \"200\"\n" +
+		"      haproxy.acl.ip: \"10.0.0.0/8\"\n" +
+		"      haproxy.backend.ssl: \"true\"\n" +
+		"      haproxy.backend.ssl.verify: \"required\"\n" +
+		"      haproxy.backend.http_keep_alive: \"true\"\n"
 	composePath := filepath.Join(appDir, "docker-compose.yml")
 	if err := os.WriteFile(composePath, []byte(composeContent), 0644); err != nil {
 		t.Fatalf("Failed to write compose file: %v", err)
@@ -150,6 +149,9 @@ services:
 	}
 	if b.BackendSSLVerify != "required" {
 		t.Errorf("BackendSSLVerify = %q, want %q", b.BackendSSLVerify, "required")
+	}
+	if !b.HTTPKeepAlive {
+		t.Error("HTTPKeepAlive should be true")
 	}
 }
 
@@ -516,9 +518,9 @@ func TestGetOrDefault(t *testing.T) {
 	}
 
 	tests := []struct {
-		key      string
-		defVal   string
-		want     string
+		key    string
+		defVal string
+		want   string
 	}{
 		{"key1", "default", "value1"},
 		{"key2", "default", "default"}, // Empty string uses default

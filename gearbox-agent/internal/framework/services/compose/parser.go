@@ -124,6 +124,7 @@ type BackendConfig struct {
 	ACLIP            string      `json:"acl_ip,omitempty"`
 	BackendSSL       bool        `json:"backend_ssl"`
 	BackendSSLVerify string      `json:"backend_ssl_verify"`
+	HTTPKeepAlive    bool        `json:"http_keep_alive"`
 }
 
 // Container represents a container in a Docker Compose service.
@@ -142,7 +143,7 @@ type ComposeFile struct {
 // Service represents a service in a docker-compose.yml file.
 type Service struct {
 	Labels      any            `yaml:"labels"`
-	NetworkMode string                 `yaml:"network_mode"`
+	NetworkMode string         `yaml:"network_mode"`
 	DependsOn   any            `yaml:"depends_on"`
 	Other       map[string]any `yaml:",inline"`
 }
@@ -378,6 +379,7 @@ func (p *Parser) extractBackendConfig(labels map[string]string, appName, service
 		ACLIP:            aclIP,
 		BackendSSL:       labels[LabelPrefix+"backend.ssl"] == "true",
 		BackendSSLVerify: sslVerify,
+		HTTPKeepAlive:    labels[LabelPrefix+"backend.http_keep_alive"] == "true",
 	}
 
 	return config
