@@ -58,7 +58,6 @@
     let hint = null;
     let clearBtn = null;
     let iconSearch = null;
-    let iconChevron = null;
     let compactBtn = null;
     let row = null;
     let wrap = null;
@@ -91,52 +90,51 @@
     }
 
     /* -------------------------------------------------------------- *
-     * Filter registration → placeholder text wiring.
+     * Filter registration. Gear-specific placeholders were removed per
+     * issue #92 follow-up: the input reads identically on every page
+     * (magnifier + hint chips), so registrations only matter for the
+     * onInput/onSubmit/onClear callbacks. We still call repaint() so
+     * the active-filter state can drive future visual cues.
      * -------------------------------------------------------------- */
-    function applyFilterRegistration(filter) {
-        // Only updates the placeholder; the input event always dispatches
-        // to whatever filter is current at the moment of the keystroke.
+    function applyFilterRegistration(_filter) {
         if (!input) return;
-        if (filter && filter.placeholder) {
-            input.dataset.searchPlaceholder = filter.placeholder;
-        } else {
-            // Default placeholder: empty, hint chips provide the affordance.
-            input.dataset.searchPlaceholder = '';
-        }
-        repaintPlaceholder();
-    }
-
-    function repaintPlaceholder() {
-        if (!input) return;
-        if (currentMode() === 'palette') {
-            input.placeholder = 'Type a command, box, or gear…';
-        } else {
-            input.placeholder = input.dataset.searchPlaceholder || ' ';
-        }
+        repaint();
     }
 
     /* -------------------------------------------------------------- *
-     * Visual mode swap (magnifier ↔ chevron, hint visibility).
+     * Visual mode swap.
+     *
+     * Search mode (no `>` prefix):
+     *   - Magnifier icon visible.
+     *   - Hint chips ("/ to search · Cmd K for palette") visible while
+     *     the input is empty, regardless of focus.
+     *   - Clear button visible while the input has content.
+     *
+     * Palette mode (leading `>`):
+     *   - No icon at all: the `>` character in the input IS the
+     *     affordance, an extra glyph would be redundant. Magnifier
+     *     comes back the moment the user backspaces over the `>`.
+     *   - No hint chips.
+     *   - Clear button still visible while there's content.
+     *
+     * The wrapper deliberately has no focus ring so the box width
+     * never changes between modes.
      * -------------------------------------------------------------- */
     function repaint() {
         if (!input) return;
         const mode = currentMode();
         const empty = input.value.length === 0;
 
-        if (iconSearch && iconChevron) {
-            if (mode === 'palette') {
-                iconSearch.classList.add('hidden');
-                iconChevron.classList.remove('hidden');
-            } else {
-                iconSearch.classList.remove('hidden');
-                iconChevron.classList.add('hidden');
-            }
+        if (iconSearch) {
+            if (mode === 'palette') iconSearch.classList.add('hidden');
+            else iconSearch.classList.remove('hidden');
         }
 
         if (hint) {
-            // Hint is visible only when the input is empty AND not focused.
-            const focused = document.activeElement === input;
-            hint.style.display = (empty && !focused) ? '' : 'none';
+            // Empty + search-mode → show the affordance. Either typing
+            // or entering palette mode hides it.
+            const showHint = empty && mode === 'search';
+            hint.style.display = showHint ? '' : 'none';
         }
 
         if (clearBtn) {
@@ -145,7 +143,9 @@
         }
 
         input.setAttribute('aria-expanded', mode === 'palette' ? 'true' : 'false');
-        repaintPlaceholder();
+        // No placeholder swap — the box reads the same on every page
+        // and in every mode. Hint chips serve as the visual placeholder
+        // when empty; otherwise the user's own text fills the box.
 
         if (mode !== lastMode) {
             lastMode = mode;
@@ -269,7 +269,6 @@
         hint        = document.getElementById('header-search-hint');
         clearBtn    = document.getElementById('header-search-clear');
         iconSearch  = document.getElementById('header-search-icon-search');
-        iconChevron = document.getElementById('header-search-icon-chevron');
         compactBtn  = document.getElementById('header-search-compact');
         row         = document.getElementById('header-search-row');
         wrap        = document.getElementById('header-search');

@@ -2353,7 +2353,12 @@ templ Header(currentPath string) {
 	     HeaderSearch in the visual center, per-page controls on the
 	     right. The auto-sized middle is also the viewport center. -->
 	<header class="fixed top-0 inset-x-0 bg-white dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700 z-50">
-		<div class="grid grid-cols-[1fr_auto_1fr] items-center px-3 h-[55px] gap-3">
+		<!-- Grid: center column has a guaranteed min/max width so the
+		     HeaderSearch box does NOT shrink based on its content. Without
+		     this, entering palette mode (which hides the hint chips)
+		     would make the auto-sized column shrink and the input would
+		     visually narrow — the user explicitly called that out. -->
+		<div class="grid grid-cols-[1fr_minmax(320px,_640px)_1fr] items-center px-3 h-[55px] gap-3">
 			<!-- LEFT: gearbox identity + box context.
 			     The logo + sidebar collapse toggle live here now (they
 			     used to be in the sidebar's own header bar). Keeps the
@@ -2458,7 +2463,7 @@ templ Header(currentPath string) {
 // glass button anchored to the right; clicking it expands the input as a
 // full-row overlay below the header. Keyboard `/` always focuses regardless.
 templ HeaderSearch() {
-	<div id="header-search" class="w-full max-w-[640px] mx-auto relative">
+	<div id="header-search" class="w-full relative">
 		<!-- Compact magnifying-glass trigger shown below md (the input
 		     itself is hidden at narrow widths). Tapping it un-collapses
 		     the input into an overlay row beneath the header. -->
@@ -2474,15 +2479,15 @@ templ HeaderSearch() {
 			</svg>
 		</button>
 
-		<!-- The full input row. Hidden below md by default; .expanded
-		     (added by header-search.js when the compact trigger fires)
-		     pops it open as an overlay below the header. -->
-		<div id="header-search-row" class="hidden md:flex items-center gap-2 px-3 h-[34px] rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 transition-colors">
+		<!-- The full input row. Visual style is deliberately identical
+		     whether the input is empty, focused, or in palette mode —
+		     only the inner content (icon + hint chips vs. `>` text)
+		     changes. No focus ring on the wrapper since that was
+		     adding 2px of perceived width on focus and the user wants
+		     visual consistency. -->
+		<div id="header-search-row" class="hidden md:flex items-center gap-2 px-3 h-[34px] rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800">
 			<svg id="header-search-icon-search" class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" aria-hidden="true">
 				<path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z"></path>
-			</svg>
-			<svg id="header-search-icon-chevron" class="w-4 h-4 text-blue-500 dark:text-blue-400 flex-shrink-0 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" aria-hidden="true" title="Command palette mode">
-				<path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"></path>
 			</svg>
 			<input
 				id="header-search-input"
@@ -2495,11 +2500,11 @@ templ HeaderSearch() {
 				aria-expanded="false"
 				aria-controls="header-search-panel"
 			/>
-			<!-- Hint overlay shown only while the input is empty. Real
-			     `<kbd>` chips inside the placeholder so the affordance
-			     stays legible (GitHub pattern). header-search.js owns
-			     the visibility toggle: hidden once the input has any
-			     characters or is focused. -->
+			<!-- Hint chips. The only affordance for "what does this box
+			     do" — visible whenever the input is empty AND in search
+			     mode (no `>` prefix). Gear-specific placeholders were
+			     removed per the issue: the box reads identically on
+			     every page. -->
 			<div
 				id="header-search-hint"
 				aria-hidden="true"
