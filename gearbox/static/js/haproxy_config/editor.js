@@ -1569,6 +1569,10 @@ May your configs be valid and your uptime eternal. 🙏`
 
 		document.addEventListener('keydown', function(e) {
 			if (e.key === 'Escape' && fullscreenState === 1) {
+				// preventDefault so the global Esc handler doesn't
+				// then try to close a dialog or fall through to
+				// history.back() in the same keypress.
+				e.preventDefault();
 				exitBrowserFullscreen();
 			}
 		});
@@ -1644,7 +1648,9 @@ May your configs be valid and your uptime eternal. 🙏`
 				});
 			}
 
-			// Escape key closes any open modal
+			// Escape key closes any open modal. preventDefault stops
+			// the global handler from also closing something or
+			// navigating back.
 			document.addEventListener('keydown', function(e) {
 				if (e.key !== 'Escape') return;
 				const modals = [
@@ -1657,6 +1663,7 @@ May your configs be valid and your uptime eternal. 🙏`
 				for (const m of modals) {
 					const el = document.getElementById(m.id);
 					if (el && !el.classList.contains('hidden')) {
+						e.preventDefault();
 						m.hide();
 						break;
 					}

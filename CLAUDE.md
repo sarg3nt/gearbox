@@ -175,6 +175,41 @@ await showAlertDialog({
 
 Existing reference usages: [user-pages/admin-user-detail.js](static/js/user-pages/admin-user-detail.js), [user-pages/profile-management.js](static/js/user-pages/profile-management.js), [haproxy_config/editor.js](static/js/haproxy_config/editor.js).
 
+**When editing any JS or templ file, grep for stray native popups before committing:**
+
+```bash
+rg -n '\b(window\.)?(alert|confirm|prompt)\(' gearbox/static/js gearbox/internal --type-add 'templ:*.templ' --type js --type templ
+```
+
+Treat any hit (outside `static/js/vendor/`) as a bug — replace with the dialog API above. The native primitives strip styling, dark mode, focus traps, and the Esc-handling chain we depend on.
+
+### Info tooltips — always use the shared `InfoTooltip` widget
+
+Any "what is this?" hover affordance — KPI labels, table column headers, settings rows with a non-obvious effect, etc. — must use the shared widget. The canonical look (filled info-circle "i" icon, dark hover bubble, no cursor change, no transition delay) is defined in two places that are kept in lock-step:
+
+- **Server-rendered (templ):** [`@components.InfoTooltip(text)`](gearbox/internal/framework/templates/components/info_tooltip.templ).
+- **Client-built (JS):** `window.createInfoTooltip(text)` / `window.appendInfoTooltipTo(parentEl, text)` from [info-tooltip.js](gearbox/static/js/common/info-tooltip.js), already wired into [base.templ](gearbox/internal/framework/templates/layouts/base.templ) so every page has them.
+
+```templ
+import "github.com/sarg3nt/gearbox/internal/framework/templates/components"
+
+<span class="font-medium">Error Rate</span>
+@components.InfoTooltip("Percentage of requests with 4xx or 5xx status in the selected window.")
+```
+
+```javascript
+// In a JS-built widget (e.g. a chart card or KPI band):
+const labelEl = card.querySelector('.kpi-label');
+window.appendInfoTooltipTo(labelEl, c.description);
+```
+
+**Rules of thumb:**
+
+- **Do not** roll your own `?`-button, `title=`-only tooltips, or `cursor: help` affordances — they look inconsistent with the HAProxy overview pattern, which is the visual reference for every other gear.
+- **Do not** put the rich tooltip text in a `title=` attribute on a card-body — users don't know to hover invisible regions. The widget is the visible cue.
+- If the text needs structure (bold lead-in + body paragraph, multiple paragraphs), drop the same wrapper markup inline rather than extending the component — see the "VPN Gateway Architecture" usage in [overview.templ](gearbox/internal/framework/templates/pages/overview.templ) for the pattern.
+- The widget is pure CSS — no JS event wiring needed and no cursor change. If you find yourself adding `onclick` or `cursor: help`, you've drifted from the standard.
+
 ### Toggle switches — never use a bare `<input type="checkbox">` in templates
 
 For every boolean input in a `.templ` file — feature opt-ins, settings, "enable this gear", "show all", per-row enable/disable — use the shared slider component in [internal/framework/ui/toggle.templ](gearbox/internal/framework/ui/toggle.templ):

@@ -62,6 +62,43 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
 					</svg>
 				</button>
+
+				<!-- Reset-to-default button (issue #103). Hidden
+				     outside edit mode — appears next to the toggle
+				     once the operator starts editing so a "back to
+				     defaults" path is one click away during a drag
+				     session that went wrong. -->
+				<button
+					id="metrics-reset-layout"
+					type="button"
+					class="metrics-edit-only hidden h-[38px] px-3 py-1.5 text-sm border border-amber-300 dark:border-amber-700 rounded-lg bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors"
+					title="Reset the chart layout for this box to the default arrangement"
+					aria-label="Reset chart layout to default"
+				>
+					↺ Reset layout
+				</button>
+
+				<!-- Edit-layout toggle (issue #103). Standardised
+				     "gear cog" affordance shared with the Home gear
+				     and intended to be reused by future gears; same
+				     SVG path as the main sidebar Settings icon so the
+				     visual vocabulary stays consistent. Icon-only;
+				     aria-pressed conveys edit state. The colour
+				     shifts to the accent blue while pressed so the
+				     edit-mode state is glanceable. -->
+				<button
+					id="metrics-edit-toggle"
+					type="button"
+					class="gear-cog-btn h-[38px] w-[38px] inline-flex items-center justify-center rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
+					title="Edit chart layout"
+					aria-label="Edit chart layout"
+					aria-pressed="false"
+				>
+					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+					</svg>
+				</button>
 			</div>
 		</div>
 
@@ -93,44 +130,36 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 				}
 			</div>
 
-			<div class="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-6 mb-6">
-
-				<!-- Charts Grid - 4 columns on 2xl, 3 on xl, 2 on lg, 1 on smaller -->
-				<div id="charts-grid" class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
-					<!-- Sessions & Requests -->
-					<div id="card-sessions" data-source="haproxy" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
+			<!-- Chart grid (issue #103). GridStack-driven; each card is
+			     a tile that can be dragged + resized in edit mode. The
+			     wrapper panel that used to surround the grid is gone —
+			     cards are top-level so they can flow into any layout
+			     the operator chooses. Default tile coordinates below
+			     match the layout proposed in #103:
+			       row 0  | CPU      | Memory
+			       row 1  | Network  | Response Time
+			       row 2  | Health   | Error Rates
+			       row 3  | Sessions & Requests (full width)
+			       rows 4+ | per-source cards, capability-gated
+			     Each tile defaults to gs-w=6 / gs-h=4 (half-width,
+			     four cell rows tall — matches the existing aspect-
+			     ratio container). The "Sessions & Requests" tile is
+			     gs-w=12 because it deserves the full row on its own.
+			     Per-source tiles are gs-w=6 and live in two rows
+			     below the baseline cards. -->
+			<div
+				id="charts-grid"
+				class="grid-stack mb-6"
+				data-default-rendered="false"
+			>
+				<!-- CPU Load (row 0, left) -->
+				<div class="grid-stack-item" gs-id="card-cpu" gs-x="0" gs-y="0" gs-w="6" gs-h="4">
+					<div id="card-cpu" data-source="host" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
 						<div class="flex justify-between items-center mb-2">
-							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">HAProxy:</span> Sessions & Requests</h4>
-							<button onclick="toggleFullscreen('card-sessions')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
-								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
-								</svg>
-							</button>
-						</div>
-						<div class="chart-aspect-container">
-							<canvas id="sessions-chart"></canvas>
-						</div>
-					</div>
-
-					<!-- Server Health -->
-					<div id="card-health" data-source="haproxy" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
-						<div class="flex justify-between items-center mb-2">
-							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">HAProxy:</span> Server Health</h4>
-							<button onclick="toggleFullscreen('card-health')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
-								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
-								</svg>
-							</button>
-						</div>
-						<div class="chart-aspect-container">
-							<canvas id="health-chart"></canvas>
-						</div>
-					</div>
-
-					<!-- CPU Load -->
-					<div id="card-cpu" data-source="host" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
-						<div class="flex justify-between items-center mb-2">
-							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Host:</span> CPU Load</h4>
+							<div class="flex items-baseline gap-3 min-w-0">
+								<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Host:</span> CPU Load</h4>
+								<span id="cpu-live" class="chart-live-value"></span>
+							</div>
 							<button onclick="toggleFullscreen('card-cpu')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
 								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
@@ -141,11 +170,16 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 							<canvas id="cpu-chart"></canvas>
 						</div>
 					</div>
+				</div>
 
-					<!-- Memory Usage -->
-					<div id="card-memory" data-source="host" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
+				<!-- Memory Usage (row 0, right) -->
+				<div class="grid-stack-item" gs-id="card-memory" gs-x="6" gs-y="0" gs-w="6" gs-h="4">
+					<div id="card-memory" data-source="host" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
 						<div class="flex justify-between items-center mb-2">
-							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Host:</span> Memory Usage</h4>
+							<div class="flex items-baseline gap-3 min-w-0">
+								<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Host:</span> Memory Usage</h4>
+								<span id="memory-live" class="chart-live-value"></span>
+							</div>
 							<button onclick="toggleFullscreen('card-memory')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
 								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
@@ -156,11 +190,16 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 							<canvas id="memory-chart"></canvas>
 						</div>
 					</div>
+				</div>
 
-					<!-- Network Traffic -->
-					<div id="card-network" data-source="host" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
+				<!-- Network Throughput (row 1, left) -->
+				<div class="grid-stack-item" gs-id="card-network" gs-x="0" gs-y="4" gs-w="6" gs-h="4">
+					<div id="card-network" data-source="host" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
 						<div class="flex justify-between items-center mb-2">
-							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Host:</span> Network Throughput</h4>
+							<div class="flex items-baseline gap-3 min-w-0">
+								<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Host:</span> Network Throughput</h4>
+								<span id="network-live" class="chart-live-value"></span>
+							</div>
 							<button onclick="toggleFullscreen('card-network')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
 								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
@@ -171,11 +210,16 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 							<canvas id="network-chart"></canvas>
 						</div>
 					</div>
+				</div>
 
-					<!-- Response Times -->
-					<div id="card-response-time" data-source="haproxy" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
+				<!-- Response Times (row 1, right) -->
+				<div class="grid-stack-item" gs-id="card-response-time" gs-x="6" gs-y="4" gs-w="6" gs-h="4">
+					<div id="card-response-time" data-source="haproxy" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
 						<div class="flex justify-between items-center mb-2">
-							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">HAProxy:</span> Response Times</h4>
+							<div class="flex items-baseline gap-3 min-w-0">
+								<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">HAProxy:</span> Response Times</h4>
+								<span id="response-time-live" class="chart-live-value"></span>
+							</div>
 							<button onclick="toggleFullscreen('card-response-time')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
 								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
@@ -186,11 +230,36 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 							<canvas id="response-time-chart"></canvas>
 						</div>
 					</div>
+				</div>
 
-					<!-- Error Rates -->
-					<div id="card-errors" data-source="haproxy" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
+				<!-- Server Health (row 2, left) -->
+				<div class="grid-stack-item" gs-id="card-health" gs-x="0" gs-y="8" gs-w="6" gs-h="4">
+					<div id="card-health" data-source="haproxy" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
 						<div class="flex justify-between items-center mb-2">
-							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">HAProxy:</span> Error Rates (5xx)</h4>
+							<div class="flex items-baseline gap-3 min-w-0">
+								<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">HAProxy:</span> Server Health</h4>
+								<span id="health-live" class="chart-live-value"></span>
+							</div>
+							<button onclick="toggleFullscreen('card-health')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
+								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+								</svg>
+							</button>
+						</div>
+						<div class="chart-aspect-container">
+							<canvas id="health-chart"></canvas>
+						</div>
+					</div>
+				</div>
+
+				<!-- Error Rates (row 2, right) -->
+				<div class="grid-stack-item" gs-id="card-errors" gs-x="6" gs-y="8" gs-w="6" gs-h="4">
+					<div id="card-errors" data-source="haproxy" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
+						<div class="flex justify-between items-center mb-2">
+							<div class="flex items-baseline gap-3 min-w-0">
+								<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">HAProxy:</span> Error Rates (5xx)</h4>
+								<span id="errors-live" class="chart-live-value"></span>
+							</div>
 							<button onclick="toggleFullscreen('card-errors')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
 								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
@@ -201,14 +270,37 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 							<canvas id="errors-chart"></canvas>
 						</div>
 					</div>
+				</div>
 
-					<!-- Per-source request-rate cards (nginx, Apache, Caddy, Traefik).
-					     Each gets the same data-source / data-source-card
-					     hooks the host + HAProxy cards use so applyCapabilities()
-					     can hide them in one pass when the corresponding agent
-					     gear isn't Available. The render path lives in
-					     loadSourceMetrics() further below. -->
-					<div id="card-nginx" data-source="nginx" data-source-card="true" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative hidden">
+				<!-- Sessions & Requests (row 3, full width — gs-w=12) -->
+				<div class="grid-stack-item" gs-id="card-sessions" gs-x="0" gs-y="12" gs-w="12" gs-h="4">
+					<div id="card-sessions" data-source="haproxy" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
+						<div class="flex justify-between items-center mb-2">
+							<div class="flex items-baseline gap-3 min-w-0">
+								<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">HAProxy:</span> Sessions & Requests</h4>
+								<span id="sessions-live" class="chart-live-value"></span>
+							</div>
+							<button onclick="toggleFullscreen('card-sessions')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
+								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+								</svg>
+							</button>
+						</div>
+						<div class="chart-aspect-container">
+							<canvas id="sessions-chart"></canvas>
+						</div>
+					</div>
+				</div>
+
+				<!-- Per-source cards (rows 4 + 5). Hidden by default
+				     via the existing applyCapabilities() pass; the
+				     GridStack-init layer also calls removeWidget()
+				     for any source whose gear isn't Available so the
+				     grid doesn't reserve slots for invisible tiles.
+				     When a source becomes Available later, makeWidget()
+				     puts the tile back at its default position. -->
+				<div class="grid-stack-item" gs-id="card-nginx" gs-x="0" gs-y="16" gs-w="6" gs-h="4">
+					<div id="card-nginx" data-source="nginx" data-source-card="true" data-cap-hidden="true" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative hidden">
 						<div class="flex justify-between items-center mb-2">
 							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">nginx:</span> Connections &amp; Requests</h4>
 							<button onclick="toggleFullscreen('card-nginx')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
@@ -221,7 +313,9 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 							<canvas id="nginx-chart"></canvas>
 						</div>
 					</div>
-					<div id="card-apache" data-source="apache" data-source-card="true" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative hidden">
+				</div>
+				<div class="grid-stack-item" gs-id="card-apache" gs-x="6" gs-y="16" gs-w="6" gs-h="4">
+					<div id="card-apache" data-source="apache" data-source-card="true" data-cap-hidden="true" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative hidden">
 						<div class="flex justify-between items-center mb-2">
 							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Apache:</span> Workers &amp; Requests</h4>
 							<button onclick="toggleFullscreen('card-apache')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
@@ -234,7 +328,9 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 							<canvas id="apache-chart"></canvas>
 						</div>
 					</div>
-					<div id="card-caddy" data-source="caddy" data-source-card="true" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative hidden">
+				</div>
+				<div class="grid-stack-item" gs-id="card-caddy" gs-x="0" gs-y="20" gs-w="6" gs-h="4">
+					<div id="card-caddy" data-source="caddy" data-source-card="true" data-cap-hidden="true" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative hidden">
 						<div class="flex justify-between items-center mb-2">
 							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Caddy:</span> Requests &amp; Errors</h4>
 							<button onclick="toggleFullscreen('card-caddy')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
@@ -247,7 +343,9 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 							<canvas id="caddy-chart"></canvas>
 						</div>
 					</div>
-					<div id="card-traefik" data-source="traefik" data-source-card="true" class="chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative hidden">
+				</div>
+				<div class="grid-stack-item" gs-id="card-traefik" gs-x="6" gs-y="20" gs-w="6" gs-h="4">
+					<div id="card-traefik" data-source="traefik" data-source-card="true" data-cap-hidden="true" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative hidden">
 						<div class="flex justify-between items-center mb-2">
 							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Traefik:</span> Status Class</h4>
 							<button onclick="toggleFullscreen('card-traefik')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
@@ -350,7 +448,7 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 							target="_blank"
 							rel="noopener"
 						>View logs →</a>
-						<button onclick="closeDrillDown()" class="p-1 rounded hover:bg-gray-100 dark:hover:bg-slate-700" title="Close (Esc)">
+						<button onclick="closeDrillDown()" aria-label="Close" class="p-1 rounded hover:bg-gray-100 dark:hover:bg-slate-700" title="Close (Esc)">
 							<svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
 							</svg>
@@ -363,7 +461,72 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 			</aside>
 		}
 
+		<!-- GridStack vendor styles (issue #103). Shared with the Home
+		     gear; loaded inline rather than via base.templ because the
+		     stylesheet only matters on the metrics page. -->
+		<link rel="stylesheet" href="/static/css/vendor/gridstack/gridstack.min.css"/>
+
 		<style>
+		/* Per-page GridStack tweaks: tighter cell height than the
+		   Home gear because chart cards want more breathing room
+		   per row. Edit-mode visual cue (dashed outline) mirrors
+		   Home's .home-grid-edit class so the affordance reads
+		   consistently across pages. */
+		/* Absorb GridStack's 6px outer inset (from marginLeft/Right/Top
+		   = 6) so the grid's first column/row aligns with the KPI
+		   band above and the page-content edges. Without these
+		   negative margins the chart grid floats 6px in from every
+		   outer edge while the KPI band sits flush — visually
+		   inconsistent. The -10px top compensates for the KPI's
+		   mb-4 (16px) so the gap from KPI bottom to first chart-tile
+		   visible-top is 12px, matching the inter-tile rhythm. */
+		#charts-grid {
+			margin-left: -6px;
+			margin-right: -6px;
+			margin-top: -10px;
+		}
+		#charts-grid.metrics-grid-edit .grid-stack-item-content {
+			outline: 2px dashed rgba(59, 130, 246, 0.5);
+			outline-offset: -4px;
+			cursor: move;
+		}
+		/* Make each tile a flex column so the chart container can
+		   flex to fill the GridStack-controlled vertical space
+		   (between top:marginTop and bottom:marginBottom set
+		   inline by GridStack). overflow:hidden clips any
+		   stragglers (legends, axis labels) that briefly extend
+		   past the bounds during GridStack resize transitions.
+		   :not(.hidden) keeps Tailwind's .hidden (display:none)
+		   winning the cascade for capability-hidden cards.
+		   IMPORTANT: do NOT set `height: 100%` here — GridStack's
+		   own inline `top` + `bottom` positioning already sizes
+		   the absolute-positioned inner content. height: 100%
+		   would over-constrain (height + top + bottom all set →
+		   height wins per CSS spec), making the inner extend
+		   marginBottom px past the outer's bottom and visually
+		   eat the vertical gap between rows. */
+		#charts-grid .grid-stack-item-content:not(.hidden) {
+			display: flex;
+			flex-direction: column;
+			overflow: hidden;
+		}
+		/* Inside a GridStack tile, drop the percent-of-width
+		   aspect-ratio trick — the tile's height comes from gs-h *
+		   cellHeight, and the canvas should fill what's left after
+		   the header row. min-height: 0 is the flex-child idiom
+		   that lets the container shrink below its content's
+		   intrinsic size (without it, the chart's reported size
+		   refuses to go below ~432px and overflows). */
+		#charts-grid .chart-aspect-container {
+			position: relative;
+			flex: 1 1 auto;
+			min-height: 0;
+			width: 100%;
+			height: auto;
+			padding-bottom: 0;
+		}
+		/* Original aspect-ratio rule preserved for any usages
+		   outside the metrics grid (drill-down drawer, etc.). */
 		.chart-aspect-container {
 			position: relative;
 			width: 100%;
@@ -427,6 +590,9 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 			text-transform: uppercase;
 			letter-spacing: 0.04em;
 			font-weight: 500;
+			display: flex;
+			align-items: center;
+			gap: 0.35rem;
 		}
 		.dark .kpi-label { color: #94a3b8; }
 		.kpi-value {
@@ -469,6 +635,21 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 			vertical-align: 0.15em;
 		}
 		.dark .source-tag { background: rgba(99, 102, 241, 0.15); color: #a5b4fc; }
+		/* Live readout shown to the right of each chart title — gives
+		   a glanceable "current value" so a flat-looking chart (e.g.
+		   memory parked at 3%) still tells the user what the number
+		   actually is. Mono + tabular-nums keeps digits from jittering
+		   as values change. */
+		.chart-live-value {
+			font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+			font-variant-numeric: tabular-nums;
+			font-size: 0.85rem;
+			font-weight: 500;
+			color: #475569;
+			white-space: nowrap;
+		}
+		.dark .chart-live-value { color: #cbd5e1; }
+		.chart-live-value:empty { display: none; }
 		.kpi-source-badge {
 			position: absolute;
 			top: 0.5rem;
@@ -905,9 +1086,13 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 			return mapping[cardId];
 		}
 
-		// Handle Escape key to exit fullscreen
+		// Handle Escape key to exit fullscreen. preventDefault so the
+		// global Esc handler in shortcut-help.js doesn't also fire on
+		// the same press (it falls through to history.back() when
+		// nothing else consumes Esc).
 		document.addEventListener('keydown', function(e) {
 			if (e.key === 'Escape' && currentFullscreenCard) {
+				e.preventDefault();
 				toggleFullscreen(currentFullscreenCard);
 			}
 		});
@@ -921,6 +1106,8 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 			renderNetworkChart(cachedMetricsData);
 			renderResponseTimeChart(cachedStatsData);
 			renderErrorsChart(cachedStatsData);
+			updateHostLiveValues(cachedMetricsData);
+			updateHaproxyLiveValues(cachedStatsData);
 		}
 
 		// Get current server ID - handles both multi-server (select) and single-server (hidden input) modes
@@ -1315,9 +1502,16 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 			}
 
 			// Toggle every element tagged data-source="haproxy". Includes
-			// the chart cards plus the Error Insights panel.
+			// the chart cards plus the Error Insights panel. We set
+			// both `.hidden` (for the visual hide) and
+			// `data-cap-hidden` (the dedicated marker metrics-layout.js
+			// reads so it can tell capability-driven hides apart from
+			// fullscreen-driven `.hidden`s on neighbouring cards).
 			document.querySelectorAll('[data-source="haproxy"]').forEach(function(el) {
 				el.classList.toggle('hidden', !haproxyAvailable);
+				if (el.classList.contains('chart-card')) {
+					el.dataset.capHidden = haproxyAvailable ? 'false' : 'true';
+				}
 			});
 
 			// Gate the per-source chart cards on each source's probe
@@ -1333,6 +1527,7 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 				window._availableSources[src] = !!available;
 				document.querySelectorAll('[data-source="' + src + '"][data-source-card]').forEach(function(el) {
 					el.classList.toggle('hidden', !available);
+					el.dataset.capHidden = available ? 'false' : 'true';
 				});
 			}
 
@@ -1355,6 +1550,14 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 					updateNoHAProxyBanner(haproxyEntry);
 				}
 			}
+
+			// Notify the GridStack layer (metrics-layout.js) that the
+			// capability-driven .hidden classes have been re-applied.
+			// It listens for this event and removes/re-adds widgets
+			// from the grid so unavailable sources don't leave gaps.
+			// Decoupled via CustomEvent so the two scripts don't need
+			// to know about each other's globals.
+			window.dispatchEvent(new CustomEvent('metrics:capabilities-applied'));
 		}
 
 		// updateNoHAProxyBanner picks user-facing copy that matches the
@@ -1565,10 +1768,12 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 				]);
 			}
 			if (charts.errors) {
+				// Per-interval delta — see renderErrorsChart for why.
 				updateChartData(charts.errors, sampledData, [
-					sampledData.map(d => d.total_5xx_errors)
+					counterDeltas(sampledData, d => d.total_5xx_errors)
 				]);
 			}
+			updateHaproxyLiveValues(cachedStatsData);
 		}
 
 		function appendMetricsData(newData) {
@@ -1621,8 +1826,101 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 				// Network needs special handling for rate calculation
 				updateNetworkChart(sampledData);
 			}
+			updateHostLiveValues(cachedMetricsData);
 		}
 
+		// ──────────────────────────────────────────────────────────────
+		// Live chart-title readouts. Each formatter takes the latest
+		// data point(s) and returns the short string shown next to the
+		// chart title. The point is to make flat-looking charts (e.g.
+		// memory parked at 3% on a 0–100 axis) still answer "what's the
+		// number right now?" without the user reading axis ticks.
+		// ──────────────────────────────────────────────────────────────
+		function setLiveValue(id, text) {
+			const el = document.getElementById(id);
+			if (el) el.textContent = text || '';
+		}
+		function fmtPercent(v) {
+			if (v == null || isNaN(v)) return '';
+			// 1 decimal under 10 (where it actually matters), integer
+			// above — keeps the readout from being "12.7%" when "13%"
+			// reads cleaner.
+			return v < 10 ? v.toFixed(1) + '%' : Math.round(v) + '%';
+		}
+		function fmtLoad(v) {
+			if (v == null || isNaN(v)) return '0.00';
+			return v.toFixed(2);
+		}
+		function fmtMs(v) {
+			if (v == null || isNaN(v)) return '';
+			if (v >= 1000) return (v / 1000).toFixed(1) + ' s';
+			return Math.round(v) + ' ms';
+		}
+		function fmtMbps(v) {
+			if (v == null || isNaN(v)) return '0';
+			if (v >= 100) return Math.round(v).toString();
+			if (v >= 10)  return v.toFixed(1);
+			return v.toFixed(2);
+		}
+		function fmtCount(v) {
+			if (v == null || isNaN(v)) return '0';
+			if (v >= 1e6) return (v / 1e6).toFixed(1) + 'M';
+			if (v >= 1e3) return (v / 1e3).toFixed(1) + 'k';
+			return Math.round(v).toString();
+		}
+		function updateHostLiveValues(history) {
+			if (!history || history.length === 0) {
+				setLiveValue('cpu-live', '');
+				setLiveValue('memory-live', '');
+				setLiveValue('network-live', '');
+				return;
+			}
+			const last = history[history.length - 1];
+			setLiveValue('cpu-live',
+				fmtLoad(last.load_average_1) + ' / ' +
+				fmtLoad(last.load_average_5) + ' / ' +
+				fmtLoad(last.load_average_15));
+			setLiveValue('memory-live', fmtPercent(last.memory_usage_percent));
+			// Network rate needs two consecutive points; same delta
+			// math the chart uses internally.
+			if (history.length >= 2) {
+				const prev = history[history.length - 2];
+				const dt = (new Date(last.collected_at) - new Date(prev.collected_at)) / 1000;
+				if (dt > 0) {
+					const rxDiff = last.network_rx_bytes - prev.network_rx_bytes;
+					const txDiff = last.network_tx_bytes - prev.network_tx_bytes;
+					const rxMbps = rxDiff >= 0 ? (rxDiff * 8 / 1e6) / dt : 0;
+					const txMbps = txDiff >= 0 ? (txDiff * 8 / 1e6) / dt : 0;
+					setLiveValue('network-live', '↓' + fmtMbps(rxMbps) + ' ↑' + fmtMbps(txMbps) + ' Mbps');
+					return;
+				}
+			}
+			setLiveValue('network-live', '');
+		}
+		function updateHaproxyLiveValues(history) {
+			if (!history || history.length === 0) {
+				setLiveValue('sessions-live', '');
+				setLiveValue('health-live', '');
+				setLiveValue('response-time-live', '');
+				setLiveValue('errors-live', '');
+				return;
+			}
+			const last = history[history.length - 1];
+			const healthy = last.healthy_servers || 0;
+			const total = last.total_servers || 0;
+			setLiveValue('health-live', healthy + ' / ' + total + ' healthy');
+			setLiveValue('response-time-live', fmtMs(last.avg_response_time));
+			// total_5xx_errors is a cumulative counter (see renderErrorsChart).
+			// Show the window-total — (last - first), clamped on resets —
+			// so the readout agrees with the KPI band's "5xx Errors" card.
+			let inWindow5xx = 0;
+			if (history.length >= 2) {
+				const delta = (last.total_5xx_errors || 0) - (history[0].total_5xx_errors || 0);
+				if (delta > 0) inWindow5xx = delta;
+			}
+			setLiveValue('errors-live', fmtCount(inWindow5xx) + ' in window');
+			setLiveValue('sessions-live', fmtCount(last.total_sessions) + ' active');
+		}
 		function getDownsampleFactor() {
 			const slider = document.getElementById('resolution-slider');
 			// Invert: slider 10 (highest res) = factor 1 (no downsampling)
@@ -1941,12 +2239,20 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 			const sampledData = downsampleData(data, factor);
 			const colors = getChartColors();
 
+			// total_5xx_errors is a sum of HAProxy's monotonic hrsp_5xx
+			// counters across all frontends/backends — i.e. cumulative
+			// since the haproxy process started. Plotting it raw made
+			// the chart climb forever and diverge from the KPI band
+			// (which reports per-window counts from the database).
+			// Diff to a per-bucket count instead so the line answers
+			// "when did 5xxs happen and how many" — same framing as
+			// the Caddy/Traefik response-class charts.
 			charts.errors = new Chart(ctx.getContext('2d'), {
 				type: 'line',
 				data: {
 					labels: sampledData.map(d => formatTime(d.collected_at)),
 					datasets: [
-						makeAreaDataset('5xx Errors', sampledData.map(d => d.total_5xx_errors), colors.danger)
+						makeAreaDataset('5xx / interval', counterDeltas(sampledData, d => d.total_5xx_errors), colors.danger)
 					]
 				},
 				options: createIntegerYAxisOptions()
@@ -1979,6 +2285,12 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 			const band = document.getElementById('kpi-band');
 			if (!band) return;
 
+			// Build the band as a string first, then append the
+			// canonical info-tooltip nodes via createInfoTooltip()
+			// (window helper from /static/js/common/info-tooltip.js).
+			// Keeping the tooltip out of the innerHTML string means
+			// description text never needs HTML-escaping and matches
+			// the HAProxy overview tooltip behaviour exactly.
 			band.innerHTML = cards.map(function(c) {
 				const valueText = formatKPIValue(c);
 				const deltaHTML = formatKPIDelta(c);
@@ -1989,15 +2301,28 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 					? '<span class="kpi-source-badge" title="Reported by ' + escapeAttr(c.source_label) + '">' + escapeHtml(c.source_label) + '</span>'
 					: '';
 				return ''
-					+ '<div class="kpi-card status-' + (c.status || 'good') + '" data-source="' + escapeAttr(c.source || '') + '" title="' + escapeAttr(c.description || '') + '">'
+					+ '<div class="kpi-card status-' + (c.status || 'good') + '" data-source="' + escapeAttr(c.source || '') + '" data-kpi-key="' + escapeAttr(c.key || '') + '">'
 					+   sourceBadge
-					+   '<div class="kpi-label">' + escapeHtml(c.label) + '</div>'
+					+   '<div class="kpi-label"><span class="kpi-label-text">' + escapeHtml(c.label) + '</span><span class="kpi-info-slot"></span></div>'
 					+   '<div class="kpi-value">' + valueText + '</div>'
 					+   '<div class="kpi-delta-row mt-1">' + deltaHTML + '</div>'
 					+   '<canvas class="kpi-sparkline" data-spark="' + escapeAttr(JSON.stringify(c.sparkline || [])) + '"'
 					+     ' data-status="' + (c.status || 'good') + '"></canvas>'
 					+ '</div>';
 			}).join('');
+
+			// Attach the canonical info tooltip (matches the HAProxy
+			// dashboard widget byte-for-byte) to each card whose
+			// description is non-empty.
+			cards.forEach(function(c) {
+				if (!c.description) return;
+				const card = band.querySelector('.kpi-card[data-kpi-key="' + (c.key || '').replace(/"/g, '\\"') + '"]');
+				if (!card) return;
+				const slot = card.querySelector('.kpi-info-slot');
+				if (slot && typeof window.appendInfoTooltipTo === 'function') {
+					window.appendInfoTooltipTo(slot, c.description);
+				}
+			});
 
 			// Render sparklines.
 			band.querySelectorAll('canvas.kpi-sparkline').forEach(function(canvas) {
@@ -2034,7 +2359,17 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 				return '<span class="kpi-delta neutral">live</span>';
 			}
 			const d = c.delta_pct || 0;
-			if (!isFinite(d) || (c.prev_value === 0 && c.value === 0)) {
+			// Both windows are zero — there's data, it's just all
+			// quiet. "—" is the honest summary; the old "no prior
+			// data" label was misleading because we *do* have prior
+			// data, it's just also zero.
+			if (c.prev_value === 0 && c.value === 0) {
+				return '<span class="kpi-delta neutral">—</span>';
+			}
+			// True absence of comparison data (delta couldn't be
+			// computed) — keep the explicit label so it's not
+			// confused with the both-zero case above.
+			if (!isFinite(d)) {
 				return '<span class="kpi-delta neutral">no prior data</span>';
 			}
 			let cls = 'neutral';
@@ -2226,6 +2561,9 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 
 		document.addEventListener('keydown', function(e) {
 			if (e.key === 'Escape' && document.getElementById('drilldown-drawer').classList.contains('open')) {
+				// preventDefault so the global Esc handler doesn't also
+				// run on the same press (e.g. fall through to history.back).
+				e.preventDefault();
 				closeDrillDown();
 			}
 		});
@@ -2504,5 +2842,15 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 		});
 		observer.observe(document.documentElement, { attributes: true });
 		</script>
+
+		<!-- GridStack vendor JS (issue #103). Same bundle the Home
+		     gear uses. Loaded with defer so it doesn't block initial
+		     paint; defer also guarantees both scripts run after the
+		     DOM is parsed, in source order — so metrics-layout.js
+		     can rely on GridStack being defined and on its target
+		     #charts-grid element existing the moment its top-level
+		     IIFE executes (no extra DOMContentLoaded gate needed). -->
+		<script src="/static/js/vendor/gridstack/gridstack-all.js" defer></script>
+		<script src="/static/js/metrics-layout.js" defer></script>
 	}
 }

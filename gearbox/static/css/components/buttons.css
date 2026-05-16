@@ -103,3 +103,35 @@
     background: inherit;
     border-radius: inherit;
 }
+
+/*
+ * Gear-cog button — standardised settings/edit affordance shared
+ * across gears (Home, Metrics, and any future gear that needs a
+ * page-level "enter edit mode" entry point). Same SVG path as the
+ * main sidebar Settings cog so the visual vocabulary stays
+ * consistent.
+ *
+ * Default state matches a neutral icon button. aria-pressed="true"
+ * (driven from JS when edit mode is on) tints the button blue so
+ * the active state is glanceable at a glance.
+ *
+ * Plain CSS rather than @apply so the rule survives the Tailwind
+ * CDN runtime (issue #99) without depending on the build pipeline.
+ */
+/* !important because the buttons carry Tailwind dark:bg-slate-*
+ * etc. utility classes — under the Tailwind v4 Play CDN those
+ * compile to rules that win the cascade against plain selectors of
+ * the same logical specificity, regardless of source order. The
+ * explicit !important here is the lowest-friction way to make the
+ * pressed-state palette deterministic without stripping the
+ * utility classes off the buttons. */
+.gear-cog-btn[aria-pressed="true"] {
+    background-color: rgb(219, 234, 254) !important;
+    color: rgb(29, 78, 216) !important;
+    border-color: rgb(147, 197, 253) !important;
+}
+.dark .gear-cog-btn[aria-pressed="true"] {
+    background-color: rgba(30, 58, 138, 0.4) !important;
+    color: rgb(147, 197, 253) !important;
+    border-color: rgba(96, 165, 250, 0.5) !important;
+}

@@ -210,6 +210,13 @@
     editBtn.addEventListener("click", () => {
       const isStatic = grid.classList.toggle("home-grid-edit") === false;
       gs.setStatic(isStatic);
+      // aria-pressed drives the cog button's blue-tinted "pressed"
+      // appearance via the .gear-cog-btn[aria-pressed="true"] rule
+      // in components/buttons.css — shared with the Metrics gear.
+      editBtn.setAttribute("aria-pressed", isStatic ? "false" : "true");
+      // Legacy text-label spans (.home-edit-on-label / -off-label)
+      // were removed when the button became icon-only, but keep the
+      // guarded toggle in case a downstream variant re-adds them.
       const onLabel = editBtn.querySelector(".home-edit-on-label");
       const offLabel = editBtn.querySelector(".home-edit-off-label");
       if (onLabel && offLabel) {
@@ -395,9 +402,12 @@
     });
   }
   // Escape closes the picker (without closing the underlying add-tile modal).
+  // preventDefault + stopImmediatePropagation so the global Esc handler in
+  // shortcut-help.js doesn't also close the parent modal in the same press.
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape" && iconPicker && !iconPicker.classList.contains("hidden")) {
-      ev.stopPropagation();
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
       closeIconPicker();
     }
   });

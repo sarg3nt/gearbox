@@ -1,0 +1,29 @@
+package components
+
+// InfoTooltip renders the canonical "info-circle + hover tooltip" widget
+// used across the app — small grey filled-circle "i" icon that, on hover,
+// reveals a short tooltip bubble. Behaviour matches the HAProxy overview
+// pattern verbatim: pure CSS via Tailwind `group` / `group-hover:visible`
+// (no JS), no cursor change (cursor stays as the default arrow), no
+// transition delay.
+//
+// Use this anywhere you want to attach a short explanation to a label,
+// table column header, KPI title, etc. For richer multi-paragraph
+// content (the "VPN Gateway Architecture" style with a bold title +
+// body), drop the same wrapper markup inline so the tooltip can hold
+// arbitrary HTML; this component is the simple text-only variant.
+//
+// Width defaults to w-64 (16rem). Anchor is left-0 / top-6 — the
+// tooltip extends down-and-right from the icon, which keeps it inside
+// content cards whose icons sit near the left edge.
+templ InfoTooltip(text string) {
+	<span class="relative group inline-flex items-center">
+		<svg class="w-4 h-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+			<path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
+		</svg>
+		<span class="invisible group-hover:visible absolute left-0 top-6 w-64 p-3 bg-gray-900 dark:bg-gray-800 text-white text-xs rounded-lg shadow-lg z-50 normal-case tracking-normal font-normal">
+			{ text }
+			<span class="absolute -top-1 left-2 w-2 h-2 bg-gray-900 dark:bg-gray-800 transform rotate-45"></span>
+		</span>
+	</span>
+}
