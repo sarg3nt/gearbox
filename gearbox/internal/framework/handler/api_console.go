@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -13,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/websocket"
 
+	"github.com/sarg3nt/gearbox/internal/framework/agent"
 	"github.com/sarg3nt/gearbox/internal/framework/models"
 )
 
@@ -50,6 +50,19 @@ func (h *Handler) APIConsoleCapabilities(w http.ResponseWriter, r *http.Request)
 	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		http.Error(w, "Box not found", http.StatusNotFound)
+		return
+	}
+	// Per-box opt-in (#89 Phase 2c). Both this and the agent's
+	// HAPROXY_AGENT_CONSOLE_ENABLED must be true for a session to
+	// open. Returning the same envelope shape the agent uses for
+	// "disabled" so the dashboard JS branches identically.
+	if !server.ConsoleEnabled {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"enabled": false,
+			"reason":  "console not enabled for this box (toggle on the box settings page)",
+		})
 		return
 	}
 	client, err := h.getAgentClient(server)
@@ -108,6 +121,13 @@ func (h *Handler) APIConsoleWS(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Box not found", http.StatusNotFound)
 		return
 	}
+	// Per-box opt-in (#89 Phase 2c). Refuse before even reaching the
+	// agent so a misconfigured box doesn't leak the agent's token
+	// endpoint to the audit log on every refused click.
+	if !server.ConsoleEnabled {
+		http.Error(w, "Console disabled for this box", http.StatusForbidden)
+		return
+	}
 	client, err := h.getAgentClient(server)
 	if err != nil {
 		h.logger.Error("console proxy: agent client", "box", boxID, "error", err)
@@ -136,17 +156,15 @@ func (h *Handler) APIConsoleWS(w http.ResponseWriter, r *http.Request) {
 	}
 	upstreamURL := scheme + "://" + wsBase.Host + "/api/v1/console/ws?token=" + url.QueryEscape(tokenResp.Token)
 
-	// Dial the agent. Reuse a permissive TLS config to match the
-	// HTTP client — the agent client already does cert pinning at
-	// HTTP layer; for the WebSocket dial we accept self-signed in
-	// the same way the HTTP transport does. If the operator has
-	// configured AGENT_CA_CERT_PATH that would tighten this, but
-	// for Phase 1c we lean on the API-key + token model.
+	// Dial the agent. Share the same TLS trust policy as the HTTP
+	// client (AGENT_CA_CERT_PATH for pinning, GEARBOX_INSECURE_TLS
+	// for explicit opt-out, system pool otherwise) so a deployment
+	// that hardens REST against MITM gets the WebSocket dial
+	// hardened too — no quiet "REST is pinned, WS isn't" gap.
+	// See #89 follow-up.
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true, //nolint:gosec // see comment above
-		},
+		TLSClientConfig:  agent.BuildTLSConfig(),
 	}
 	upstream, upstreamResp, err := dialer.Dial(upstreamURL, nil)
 	if err != nil {
