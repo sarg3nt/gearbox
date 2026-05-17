@@ -81,6 +81,18 @@ type Handler struct {
 	// 4 KiB is a sensible default for character-at-a-time interactive
 	// traffic — a single screen redraw fits in two or three frames.
 	ReadBufBytes int
+
+	// RecordSessions, when true, writes an NDJSON transcript of every
+	// session under DataDir/console-sessions/<box>-<ts>-<sid>.ndjson
+	// (mode 0600, parent dir 0700). Off by default — recording shells
+	// is sensitive and the user shouldn't be surprised by it.
+	// Operators opt in via HAPROXY_AGENT_CONSOLE_RECORD=true.
+	RecordSessions bool
+
+	// DataDir is where session recordings live. Sourced from
+	// HAPROXY_AGENT_DATA_DIR via main wiring; passed in explicitly
+	// so this package stays independent of the config package.
+	DataDir string
 }
 
 // NewHandler constructs a Handler with sensible defaults. Pass the
@@ -149,6 +161,17 @@ func NewHandler(bus *events.Bus, logger *slog.Logger) *Handler {
 	}
 	if v := os.Getenv("HAPROXY_AGENT_CONSOLE_RUN_AS"); v != "" {
 		h.RunAsUID = v
+	}
+	if os.Getenv("HAPROXY_AGENT_CONSOLE_RECORD") == "true" {
+		h.RecordSessions = true
+		h.DataDir = os.Getenv("HAPROXY_AGENT_DATA_DIR")
+		if h.DataDir == "" {
+			h.DataDir = "/var/lib/gearbox-agent"
+		}
+		if logger != nil {
+			logger.Warn("Console session recording ENABLED — transcripts written to "+h.DataDir+"/console-sessions",
+				"format", "ndjson", "perms", "0600")
+		}
 	}
 	return h
 }
@@ -363,13 +386,38 @@ func (h *Handler) HandleWS(w http.ResponseWriter, r *http.Request) {
 		)
 	}
 
+	// Optional NDJSON transcript. Open lazily so a recorder failure
+	// (disk full, perms wrong on the data dir) doesn't block the
+	// session — we log the open error and keep going. The session
+	// audit record on the bus is always written regardless.
+	var recorder *Recorder
+	if h.RecordSessions && h.DataDir != "" {
+		// Box-name isn't known to the agent (the dashboard is the
+		// thing that knows boxes); use the remote IP as the
+		// per-file disambiguator. Operators correlate file → box
+		// via the matching audit event on the dashboard side.
+		rec, err := OpenRecorder(h.DataDir, r.RemoteAddr, sessionID)
+		if err != nil {
+			if h.Logger != nil {
+				h.Logger.Warn("console: recorder open failed; session continues unrecorded", "error", err)
+			}
+		} else {
+			recorder = rec
+			recorder.LogOpen(sessionID, mode, uid)
+		}
+	}
+
 	var bytesIn, bytesOut atomic.Int64
 	var reason string
 	var exitCode int
 	if h.Spawner != nil {
-		reason, exitCode = h.ptyLoop(r.Context(), conn, &bytesIn, &bytesOut)
+		reason, exitCode = h.ptyLoop(r.Context(), conn, &bytesIn, &bytesOut, recorder)
 	} else {
-		reason = h.echoLoop(conn, &bytesIn, &bytesOut)
+		reason = h.echoLoop(conn, &bytesIn, &bytesOut, recorder)
+	}
+
+	if recorder != nil {
+		_ = recorder.Close(reason, exitCode)
 	}
 
 	emitSessionEnd(h.Audit, sessionID, reason, bytesIn.Load(), bytesOut.Load(), time.Since(startedAt), exitCode)
@@ -392,7 +440,7 @@ func (h *Handler) HandleWS(w http.ResponseWriter, r *http.Request) {
 //
 // Returns (reason, exitCode). exitCode is the child's exit status
 // when reason == "exit"; -1 otherwise.
-func (h *Handler) ptyLoop(parentCtx context.Context, conn *websocket.Conn, bytesIn, bytesOut *atomic.Int64) (string, int) {
+func (h *Handler) ptyLoop(parentCtx context.Context, conn *websocket.Conn, bytesIn, bytesOut *atomic.Int64, rec *Recorder) (string, int) {
 	conn.SetReadLimit(int64(h.MaxFrameBytes) * 2)
 	_ = conn.SetReadDeadline(time.Now().Add(h.IdleTimeout))
 	conn.SetPongHandler(func(string) error {
@@ -443,6 +491,9 @@ func (h *Handler) ptyLoop(parentCtx context.Context, conn *websocket.Conn, bytes
 					return
 				}
 				bytesOut.Add(int64(n))
+				if rec != nil {
+					rec.LogOut(buf[:n])
+				}
 			}
 			if err != nil {
 				if errors.Is(err, io.EOF) {
@@ -482,7 +533,7 @@ func (h *Handler) ptyLoop(parentCtx context.Context, conn *websocket.Conn, bytes
 
 	// WS → PTY pump (this goroutine, since we need to block until
 	// some terminal condition).
-	wsReason := h.pumpWStoPTY(conn, sess, bytesIn)
+	wsReason := h.pumpWStoPTY(conn, sess, bytesIn, rec)
 	// The PTY-side goroutine writes its reason to reasonCh *before*
 	// it closes the WS conn. So if the WS pump just returned because
 	// of a conn close initiated by the PTY pump, reasonCh already
@@ -507,7 +558,7 @@ func (h *Handler) ptyLoop(parentCtx context.Context, conn *websocket.Conn, bytes
 // pumpWStoPTY reads frames from the WS and dispatches them to the
 // PTY. Returns the close reason, or "" if the WS pump terminated
 // without owning the close (PTY-side goroutine got there first).
-func (h *Handler) pumpWStoPTY(conn *websocket.Conn, sess pty.Session, bytesIn *atomic.Int64) string {
+func (h *Handler) pumpWStoPTY(conn *websocket.Conn, sess pty.Session, bytesIn *atomic.Int64, rec *Recorder) string {
 	for {
 		_, raw, err := conn.ReadMessage()
 		if err != nil {
@@ -536,9 +587,15 @@ func (h *Handler) pumpWStoPTY(conn *websocket.Conn, sess pty.Session, bytesIn *a
 				return "pty_write_error"
 			}
 			bytesIn.Add(int64(len(payload)))
+			if rec != nil {
+				rec.LogIn(payload)
+			}
 		case FrameTypeResize:
 			if f.Cols > 0 && f.Rows > 0 && f.Cols < 1<<16 && f.Rows < 1<<16 {
 				_ = sess.Resize(uint16(f.Cols), uint16(f.Rows))
+				if rec != nil {
+					rec.LogResize(f.Cols, f.Rows)
+				}
 			}
 		case FrameTypeSignal:
 			if f.Signal != "" {
@@ -563,7 +620,7 @@ func (h *Handler) pumpWStoPTY(conn *websocket.Conn, sess pty.Session, bytesIn *a
 //   - no message arrives within IdleTimeout (reason "idle_timeout"),
 //   - a malformed frame arrives (reason "protocol_violation"),
 //   - a write fails (reason "write_error").
-func (h *Handler) echoLoop(conn *websocket.Conn, bytesIn, bytesOut *atomic.Int64) string {
+func (h *Handler) echoLoop(conn *websocket.Conn, bytesIn, bytesOut *atomic.Int64, rec *Recorder) string {
 	conn.SetReadLimit(int64(h.MaxFrameBytes) * 2)
 	deadline := time.Now().Add(h.IdleTimeout)
 	_ = conn.SetReadDeadline(deadline)
@@ -620,11 +677,17 @@ func (h *Handler) echoLoop(conn *websocket.Conn, bytesIn, bytesOut *atomic.Int64
 				return "protocol_violation"
 			}
 			bytesIn.Add(int64(len(payload)))
+			if rec != nil {
+				rec.LogIn(payload)
+			}
 			out := Frame{Type: FrameTypeData, Data: f.Data}
 			if err := h.writeFrame(conn, out); err != nil {
 				return "write_error"
 			}
 			bytesOut.Add(int64(len(payload)))
+			if rec != nil {
+				rec.LogOut(payload)
+			}
 		case FrameTypePing:
 			if err := h.writeFrame(conn, Frame{Type: FrameTypePong}); err != nil {
 				return "write_error"
