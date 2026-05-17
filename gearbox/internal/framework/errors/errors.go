@@ -26,6 +26,7 @@ package errors
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -168,6 +169,15 @@ func IgnoreNotFound(err error) error {
 }
 
 // WriteHTTPError writes an AppError to an HTTP response and logs it.
+//
+// The wire format is a JSON envelope: `{"success": false, "message": "..."}`
+// with `Content-Type: application/json`. This matches the shape produced by
+// Handler.jsonError() and lets the frontend `response.json()` parse error
+// responses just like success responses — historically this used
+// `http.Error` (plain text), which caused JS callers that unconditionally
+// `JSON.parse` the body to throw `Unexpected token 'F', "Failed to "...`
+// (see issue #112 for the user-visible symptom on the Logs and Services
+// pages).
 func WriteHTTPError(w http.ResponseWriter, logger *slog.Logger, err error) {
 	var appErr *AppError
 
@@ -194,8 +204,19 @@ func WriteHTTPError(w http.ResponseWriter, logger *slog.Logger, err error) {
 
 	logger.LogAttrs(context.Background(), slog.LevelError, "HTTP error", logAttrs...)
 
-	// Write sanitized error to client
-	http.Error(w, appErr.UserMessage, appErr.Code)
+	// Write sanitized error to client as a JSON envelope so JS callers can
+	// `response.json()` it without throwing on plain-text bodies.
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(appErr.Code)
+	if encErr := json.NewEncoder(w).Encode(map[string]any{
+		"success": false,
+		"message": appErr.UserMessage,
+	}); encErr != nil {
+		// Encoding can fail only if the writer is broken — the header is
+		// already on the wire so we can't recover the response, just log.
+		logger.LogAttrs(context.Background(), slog.LevelError, "encode error envelope failed",
+			slog.String("error", encErr.Error()))
+	}
 }
 
 // SanitizeError converts any error to a user-safe message.
