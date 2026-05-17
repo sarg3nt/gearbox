@@ -118,9 +118,17 @@ func (h *Handler) APILogSourcesHandler(w http.ResponseWriter, r *http.Request) {
 //   - `system` is offered only when the `logs` gear is available, since
 //     system journal access requires journalctl/tail.
 //
-// Fail-open: if capabilities aren't reachable (agent down, no API key,
-// older agent that pre-dates probing) the legacy pair is returned so
-// existing deployments continue to work through transient outages.
+// Fail-open posture (matches filterGearsByAgentCapabilities):
+//   - Capabilities unreachable (agent down, no API key) → legacy pair.
+//   - Agent didn't surface BOTH gears (older agent that pre-dates
+//     access-log/logs probing) → legacy pair. We distinguish "the
+//     agent didn't tell us about this gear" (caps.Has == false) from
+//     "the agent said this gear is unavailable" (caps.Has == true,
+//     IsAvailable == false) so a forward-compatibility gap doesn't
+//     silently strip the source list.
+//   - Agent surfaced both gears and reported both unavailable → empty
+//     list. This is the only case the JS renders an empty dropdown
+//     and skips the immediate fetch — better than 5xx storming.
 func (h *Handler) defaultLogSourcesForBox(boxID string) []map[string]string {
 	legacy := []map[string]string{
 		{"name": "haproxy", "display_name": "HAProxy"},
@@ -131,14 +139,16 @@ func (h *Handler) defaultLogSourcesForBox(boxID string) []map[string]string {
 		return legacy
 	}
 
-	hasAccessLog := caps.IsAvailable("access-log")
-	hasLogs := caps.IsAvailable("logs")
-	if !hasAccessLog && !hasLogs {
-		// Agent surfaces a probe table but neither log gear is available.
-		// Returning the empty list lets the JS render an empty dropdown
-		// and skip the immediate fetch — better than 5xx storming.
-		return []map[string]string{}
+	knowsAccessLog := caps.Has("access-log")
+	knowsLogs := caps.Has("logs")
+	if !knowsAccessLog && !knowsLogs {
+		// Agent doesn't surface either gear name yet — likely an older
+		// agent that pre-dates this probe. Fail open.
+		return legacy
 	}
+
+	hasAccessLog := knowsAccessLog && caps.IsAvailable("access-log")
+	hasLogs := knowsLogs && caps.IsAvailable("logs")
 
 	out := make([]map[string]string, 0, 2)
 	if hasAccessLog || hasLogs {
@@ -147,5 +157,8 @@ func (h *Handler) defaultLogSourcesForBox(boxID string) []map[string]string {
 	if hasLogs {
 		out = append(out, map[string]string{"name": "system", "display_name": "System"})
 	}
+	// Result may be empty here — agent explicitly reported both gears
+	// unavailable. JS renders an empty dropdown rather than 5xx-storming
+	// fetches for sources the agent can't serve.
 	return out
 }
