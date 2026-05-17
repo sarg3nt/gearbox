@@ -48,7 +48,22 @@ func (h *Handler) APILogsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // APILogSourcesHandler returns the enabled log sources for a server.
-// If no explicit settings exist, it fetches available sources from the agent.
+//
+// Source resolution precedence (issue #112):
+//  1. Explicit per-box settings in the database — operator opted in.
+//  2. Defaults derived from the agent's probe table — only offer sources
+//     the agent can actually serve. `haproxy` requires the agent's
+//     `access-log` or `logs` gear; `system` requires `logs`.
+//  3. Fail-open: if the agent is unreachable, fall back to the legacy
+//     `[haproxy, system]` pair so an existing deployment still works
+//     through a transient outage.
+//
+// Historically this method returned the legacy pair unconditionally
+// when no settings existed, which caused the Logs page on a box without
+// a `logs` / `access-log` gear (e.g. the mjolnir agent in a distroless
+// container) to immediately ask for haproxy logs the agent couldn't
+// serve, producing the "Failed to..." JSON parse error the page used
+// to render.
 func (h *Handler) APILogSourcesHandler(w http.ResponseWriter, r *http.Request) {
 	boxID := chi.URLParam(r, "boxID")
 	if boxID == "" {
@@ -64,14 +79,13 @@ func (h *Handler) APILogSourcesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If no explicit settings, return default sources (haproxy, system)
+	// If no explicit settings, derive defaults from the agent's probe
+	// table so a Logs page on a box without those gears doesn't immediately
+	// ask for sources the agent can't serve.
 	if len(sources) == 0 {
 		h.writeJSON(w, map[string]interface{}{
-			"server_id": boxID,
-			"sources": []map[string]string{
-				{"name": "haproxy", "display_name": "HAProxy"},
-				{"name": "system", "display_name": "System"},
-			},
+			"server_id":    boxID,
+			"sources":      h.defaultLogSourcesForBox(boxID),
 			"has_settings": false,
 		})
 		return
@@ -91,4 +105,60 @@ func (h *Handler) APILogSourcesHandler(w http.ResponseWriter, r *http.Request) {
 		"sources":      sourcesResp,
 		"has_settings": true,
 	})
+}
+
+// defaultLogSourcesForBox returns the default Logs-page source picker
+// entries for a box, derived from the agent's probe table. Used when
+// the operator hasn't saved explicit log-source settings.
+//
+// Heuristic:
+//   - `haproxy` is offered when EITHER access-log OR logs gear is
+//     available. access-log streams the HAProxy access log directly;
+//     logs streams it via journalctl/file when journalctl is present.
+//   - `system` is offered only when the `logs` gear is available, since
+//     system journal access requires journalctl/tail.
+//
+// Fail-open posture (matches filterGearsByAgentCapabilities):
+//   - Capabilities unreachable (agent down, no API key) → legacy pair.
+//   - Agent didn't surface BOTH gears (older agent that pre-dates
+//     access-log/logs probing) → legacy pair. We distinguish "the
+//     agent didn't tell us about this gear" (caps.Has == false) from
+//     "the agent said this gear is unavailable" (caps.Has == true,
+//     IsAvailable == false) so a forward-compatibility gap doesn't
+//     silently strip the source list.
+//   - Agent surfaced both gears and reported both unavailable → empty
+//     list. This is the only case the JS renders an empty dropdown
+//     and skips the immediate fetch — better than 5xx storming.
+func (h *Handler) defaultLogSourcesForBox(boxID string) []map[string]string {
+	legacy := []map[string]string{
+		{"name": "haproxy", "display_name": "HAProxy"},
+		{"name": "system", "display_name": "System"},
+	}
+	caps, ok := h.getBoxCapabilities(boxID)
+	if !ok {
+		return legacy
+	}
+
+	knowsAccessLog := caps.Has("access-log")
+	knowsLogs := caps.Has("logs")
+	if !knowsAccessLog && !knowsLogs {
+		// Agent doesn't surface either gear name yet — likely an older
+		// agent that pre-dates this probe. Fail open.
+		return legacy
+	}
+
+	hasAccessLog := knowsAccessLog && caps.IsAvailable("access-log")
+	hasLogs := knowsLogs && caps.IsAvailable("logs")
+
+	out := make([]map[string]string, 0, 2)
+	if hasAccessLog || hasLogs {
+		out = append(out, map[string]string{"name": "haproxy", "display_name": "HAProxy"})
+	}
+	if hasLogs {
+		out = append(out, map[string]string{"name": "system", "display_name": "System"})
+	}
+	// Result may be empty here — agent explicitly reported both gears
+	// unavailable. JS renders an empty dropdown rather than 5xx-storming
+	// fetches for sources the agent can't serve.
+	return out
 }
