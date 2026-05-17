@@ -120,11 +120,14 @@ func (d *DB) SetBoxPrimaryKey(boxID int64, kid string) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// Demote current primary.
+	// Demote current primary. Use a Go-side UTC timestamp instead of
+	// SQLite's CURRENT_TIMESTAMP to avoid timezone-parsing differences
+	// between drivers (modernc.org/sqlite scans bare DATETIMEs as
+	// local, which compares wrong against a UTC time.Now() in Go).
 	if _, err := tx.Exec(`
-		UPDATE box_agent_keys SET role = 'secondary', retired_at = CURRENT_TIMESTAMP
+		UPDATE box_agent_keys SET role = 'secondary', retired_at = ?
 		WHERE box_id = ? AND role = 'primary'
-	`, boxID); err != nil {
+	`, time.Now().UTC(), boxID); err != nil {
 		return fmt.Errorf("demote primary: %w", err)
 	}
 
