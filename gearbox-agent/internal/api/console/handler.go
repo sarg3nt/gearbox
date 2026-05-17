@@ -167,6 +167,33 @@ func NewHandler(bus *events.Bus, logger *slog.Logger) *Handler {
 	if v := os.Getenv("HAPROXY_AGENT_CONSOLE_RUN_AS"); v != "" {
 		h.RunAsUID = v
 	}
+	// HAPROXY_AGENT_CONSOLE_IDLE_TIMEOUT lets operators override the
+	// 15-minute default. Format is a Go duration string ("30m", "2h",
+	// "168h" to effectively disable for a week). Invalid values fall
+	// back to the default with a warning so a typo doesn't silently
+	// leave sessions vulnerable. We don't accept "0" — a zero deadline
+	// would cause every read to fail immediately; if you need
+	// no-effective-timeout, set a very large duration.
+	if v := os.Getenv("HAPROXY_AGENT_CONSOLE_IDLE_TIMEOUT"); v != "" {
+		d, err := time.ParseDuration(v)
+		switch {
+		case err != nil:
+			if logger != nil {
+				logger.Warn("console: invalid HAPROXY_AGENT_CONSOLE_IDLE_TIMEOUT, falling back to default",
+					"value", v, "default", h.IdleTimeout, "error", err)
+			}
+		case d <= 0:
+			if logger != nil {
+				logger.Warn("console: HAPROXY_AGENT_CONSOLE_IDLE_TIMEOUT must be positive, falling back to default",
+					"value", v, "default", h.IdleTimeout)
+			}
+		default:
+			h.IdleTimeout = d
+			if logger != nil {
+				logger.Info("console: idle timeout overridden", "value", d)
+			}
+		}
+	}
 	if os.Getenv("HAPROXY_AGENT_CONSOLE_RECORD") == "true" {
 		h.RecordSessions = true
 		h.DataDir = os.Getenv("HAPROXY_AGENT_DATA_DIR")
