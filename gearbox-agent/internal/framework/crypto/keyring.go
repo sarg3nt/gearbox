@@ -212,6 +212,14 @@ func (kr *KeyRing) Primary() *KeyRingEntry {
 // header), but leaking which ones an agent currently accepts via
 // timing makes rotation-history enumeration cheap, which we'd rather
 // not.
+//
+// Note: subtle.ConstantTimeCompare returns 0 (without timing-uniform
+// comparison) when the two slices differ in length. The kid compare
+// is therefore length-dependent — which is fine because every kid in
+// the system is the same length (kidLength = 6 hex chars; the legacy
+// kid "legacy" is also 6 chars by deliberate convention). Custom
+// kids that don't match that length will hash-mismatch on lookup,
+// which is the intended failure mode.
 func (kr *KeyRing) MatchToken(token string) (*KeyRingEntry, error) {
 	if strings.HasPrefix(token, tokenPrefix) {
 		// Prefixed: gbx_<kid>_<b64secret>
