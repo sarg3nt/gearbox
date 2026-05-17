@@ -49,6 +49,28 @@ func (b *BoxCapabilities) Entry(gearName string) (CapabilityEntry, bool) {
 	return e, ok
 }
 
+// Resource returns the named structured resource published by the gear,
+// if both the gear and the resource key are present. Issue #112 Phase 2.
+//
+// The agent publishes resources as `map[string]any` so each gear can
+// pick its own shape; the dashboard reads each gear's known keys
+// explicitly. Typical use is the Logs page reading
+// caps.Resource("access-log", "log_sources") to populate its source
+// dropdown without inferring sources from gear-availability flags.
+//
+// The third return distinguishes "the gear isn't surfaced" (false)
+// from "the gear is surfaced but didn't publish this resource" (also
+// false). Callers that need to fail-open on the older-agent case
+// should pair this with caps.Has(gearName).
+func (b *BoxCapabilities) Resource(gearName, resourceKey string) (any, bool) {
+	entry, ok := b.Entry(gearName)
+	if !ok {
+		return nil, false
+	}
+	v, ok := entry.Resources[resourceKey]
+	return v, ok
+}
+
 // CapabilitiesCache memoises agent capability fetches per (box, agent
 // URL) pair. Dashboard pages call into this on every render that needs
 // to decide what to surface; without the cache, that's one synchronous

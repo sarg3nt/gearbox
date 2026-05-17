@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/sarg3nt/gearbox/internal/framework/agent"
 	apperrors "github.com/sarg3nt/gearbox/internal/framework/errors"
 	"github.com/sarg3nt/gearbox/internal/framework/models"
 )
@@ -111,24 +112,30 @@ func (h *Handler) APILogSourcesHandler(w http.ResponseWriter, r *http.Request) {
 // entries for a box, derived from the agent's probe table. Used when
 // the operator hasn't saved explicit log-source settings.
 //
-// Heuristic:
-//   - `haproxy` is offered when EITHER access-log OR logs gear is
-//     available. access-log streams the HAProxy access log directly;
-//     logs streams it via journalctl/file when journalctl is present.
-//   - `system` is offered only when the `logs` gear is available, since
-//     system journal access requires journalctl/tail.
+// Resolution chain (issue #112 Phase 2):
 //
-// Fail-open posture (matches filterGearsByAgentCapabilities):
-//   - Capabilities unreachable (agent down, no API key) → legacy pair.
-//   - Agent didn't surface BOTH gears (older agent that pre-dates
-//     access-log/logs probing) → legacy pair. We distinguish "the
-//     agent didn't tell us about this gear" (caps.Has == false) from
-//     "the agent said this gear is unavailable" (caps.Has == true,
-//     IsAvailable == false) so a forward-compatibility gap doesn't
-//     silently strip the source list.
-//   - Agent surfaced both gears and reported both unavailable → empty
-//     list. This is the only case the JS renders an empty dropdown
-//     and skips the immediate fetch — better than 5xx storming.
+//  1. **Structured resources**: when the access-log gear publishes
+//     `log_sources` in its agent-side Resources map (one entry per
+//     discovered web-server access log, with name + display_name +
+//     path), the dashboard surfaces that list verbatim. The agent is
+//     the single source of truth for which sources exist and what
+//     they're called.
+//  2. **Capability heuristic** (legacy fallback for pre-Phase-2
+//     agents): if the agent doesn't publish a `log_sources` resource,
+//     derive defaults from gear availability flags:
+//       - `haproxy` is offered when EITHER access-log OR logs gear is
+//         available
+//       - `system` is offered only when the `logs` gear is available
+//  3. **Fail-open** to the legacy `[haproxy, system]` pair when
+//     capabilities are unreachable (agent down, no API key) OR the
+//     agent doesn't surface either gear at all (older agent). Per
+//     the #116 fix we distinguish caps.Has() == false ("the agent
+//     doesn't know about this gear yet") from
+//     caps.IsAvailable() == false ("the agent says it's unavailable")
+//     so a forward-compat gap doesn't silently strip the dropdown.
+//  4. **Empty list**: only when the agent explicitly reports both
+//     gears unavailable. The JS renders an empty dropdown instead
+//     of 5xx-storming fetches.
 func (h *Handler) defaultLogSourcesForBox(boxID string) []map[string]string {
 	legacy := []map[string]string{
 		{"name": "haproxy", "display_name": "HAProxy"},
@@ -137,6 +144,11 @@ func (h *Handler) defaultLogSourcesForBox(boxID string) []map[string]string {
 	caps, ok := h.getBoxCapabilities(boxID)
 	if !ok {
 		return legacy
+	}
+
+	// Phase 2 preferred path: agent advertises its log sources directly.
+	if sources, ok := logSourcesFromResources(caps); ok {
+		return sources
 	}
 
 	knowsAccessLog := caps.Has("access-log")
@@ -161,4 +173,70 @@ func (h *Handler) defaultLogSourcesForBox(boxID string) []map[string]string {
 	// unavailable. JS renders an empty dropdown rather than 5xx-storming
 	// fetches for sources the agent can't serve.
 	return out
+}
+
+// logSourcesFromResources extracts the access-log gear's `log_sources`
+// resource (issue #112 Phase 2) and reshapes it into the dropdown
+// envelope the Logs page expects: `[{name, display_name}, …]`. The
+// `path` the agent publishes is intentionally dropped at this layer
+// because the dashboard doesn't expose log paths to the browser.
+//
+// Returns (nil, false) when:
+//   - the access-log gear isn't surfaced by the agent;
+//   - the `log_sources` key is missing from its Resources map;
+//   - the resource isn't shaped as the expected JSON array of objects.
+//
+// Returning false in those cases lets defaultLogSourcesForBox fall
+// through to the older capability heuristic instead of producing an
+// empty dropdown.
+//
+// JSON-decoding note: encoding/json decodes a JSON array as []any
+// where each member object is map[string]any. We also tolerate the
+// Go-typed []map[string]string shape so tests can build the
+// CapabilitiesResponse with concrete types without coercing through
+// json.Marshal/Unmarshal.
+func logSourcesFromResources(caps *agent.BoxCapabilities) ([]map[string]string, bool) {
+	raw, ok := caps.Resource("access-log", "log_sources")
+	if !ok {
+		return nil, false
+	}
+
+	var entries []map[string]string
+	switch v := raw.(type) {
+	case []any:
+		entries = make([]map[string]string, 0, len(v))
+		for _, item := range v {
+			obj, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			name, _ := obj["name"].(string)
+			display, _ := obj["display_name"].(string)
+			if name == "" || display == "" {
+				continue
+			}
+			entries = append(entries, map[string]string{
+				"name":         name,
+				"display_name": display,
+			})
+		}
+	case []map[string]string:
+		entries = make([]map[string]string, 0, len(v))
+		for _, item := range v {
+			if item["name"] == "" || item["display_name"] == "" {
+				continue
+			}
+			entries = append(entries, map[string]string{
+				"name":         item["name"],
+				"display_name": item["display_name"],
+			})
+		}
+	default:
+		return nil, false
+	}
+
+	if len(entries) == 0 {
+		return nil, false
+	}
+	return entries, true
 }
