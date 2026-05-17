@@ -20,10 +20,10 @@ type BoxDB struct {
 	Enabled         bool
 	AutoDiscovery   bool
 	// ConsoleEnabled is the per-box opt-in for the remote console
-	// feature (see #89). Default 0 — operator flips it on per box from
-	// the box settings UI. Belt-and-suspenders with the agent-side
-	// HAPROXY_AGENT_CONSOLE_ENABLED env var: both must be true for the
-	// proxy to open a session, so revoking either kills access.
+	// feature (see #89). Default 0 — operator flips it on per box
+	// from the box settings UI. This is the sole gate on the
+	// dashboard's console proxy path; flipping it off revokes
+	// access immediately.
 	ConsoleEnabled bool
 	CreatedAt      time.Time
 	UpdatedAt      time.Time

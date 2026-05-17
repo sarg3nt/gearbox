@@ -84,10 +84,15 @@ The new endpoints and how they're gated:
 
 ### Stolen agent API key
 
-- Without the WS token (which requires the API key to issue), no
-  console session can open. Possessing both the API key AND knowing
-  which box has console enabled raises the cost of a stolen key.
-- Tokens are single-use and 60s — even a stolen token cannot be
+- The agent unconditionally mounts the console surface. A caller
+  holding the API key can directly open a session against the
+  agent — the dashboard's per-box `console_enabled` toggle gates
+  only the *dashboard's* proxy path, not direct API-key callers.
+  This matches the existing trust model: the API key already
+  grants effectively full administrative control of the box
+  (logs, services, restart, package management). Granting shell
+  access too just makes the equivalent capability more direct.
+- Tokens are single-use and 60s — even a stolen *token* cannot be
   replayed.
 - Operators are encouraged to rotate API keys (`gearbox-agent
   --rotate-api-key`) periodically.
@@ -188,19 +193,18 @@ The new endpoints and how they're gated:
 1. **A user with `box_console:connect` is effectively a root operator
    on the boxes they can reach.** This is by design — a shell is the
    maximum-impact thing. Treat the permission like sudo.
-2. **Session recordings (when enabled) capture credentials typed at
+2. **The agent unconditionally exposes the console surface.** Anyone
+   holding the agent's API key can open a session directly without
+   going through the dashboard, bypassing the per-box
+   `console_enabled` toggle. The toggle is a *dashboard-side* gate
+   only. The API key already grants full administrative capability
+   on the box (logs, systemd, restarts, package management), so the
+   marginal exposure is small — but operators should treat the API
+   key accordingly.
+3. **Session recordings (when enabled) capture credentials typed at
    the prompt.** No automated redaction. Operators who enable
    recording for compliance should also enable encryption-at-rest on
    the data dir and restrict who can read the recordings directory.
-3. **The dashboard's WS proxy uses `InsecureSkipVerify: true` for the
-   upstream TLS dial.** The HTTP agent client validates certs at the
-   HTTP layer; the WebSocket dial relies on the operator-controlled
-   trust path (LAN, mTLS, etc.) and the agent's own API-key + token
-   gate. A follow-up is to wire the WS dialer to honor
-   `AGENT_CA_CERT_PATH` the same way the HTTP client does.
-4. **Idle timeout is currently fixed at 15 minutes.** Operators who
-   want a longer/shorter cap have to patch the Handler field; no env
-   knob today. Follow-up.
 
 ## Deployment posture summary
 

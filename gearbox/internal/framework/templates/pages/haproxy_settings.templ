@@ -484,9 +484,8 @@ templ haProxyBoxForm(user *models.User, server *database.BoxDB, isEdit bool, err
 							<span class="ml-2 text-sm text-gray-700 dark:text-gray-300">Remote console</span>
 						</label>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							Allow opening a shell on this box from the dashboard.
-							Off by default. Requires <code class="px-1 rounded bg-gray-100 dark:bg-slate-700 text-xs">HAPROXY_AGENT_CONSOLE_ENABLED=true</code> on the agent and
-							<code class="px-1 rounded bg-gray-100 dark:bg-slate-700 text-xs">box_console:connect</code> on the user. See <a href="https://github.com/sarg3nt/gearbox/issues/89" class="text-blue-600 dark:text-blue-400 hover:underline">#89</a>.
+							Allow opening a shell on this box from the dashboard. Off by default.
+							Non-admin users also need the <code class="px-1 rounded bg-gray-100 dark:bg-slate-700 text-xs">box_console:connect</code> permission. See <a href="https://github.com/sarg3nt/gearbox/issues/89" class="text-blue-600 dark:text-blue-400 hover:underline">#89</a>.
 						</p>
 					</div>
 					<div>
