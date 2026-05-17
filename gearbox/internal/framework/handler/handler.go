@@ -287,7 +287,11 @@ func (h *Handler) getDefaultServerID() string {
 }
 
 // resolveBoxIDFromRequest picks the box ID to operate on, in priority:
-//  1. `?server=<id>` query param — explicit per-link override.
+//  1. `?server=<id>` or `?box_id=<id>` query param — explicit per-link
+//     override. Both names accepted as synonyms so handlers can use
+//     whichever convention the surrounding code prefers; the middleware
+//     in InjectIntegrationStatus uses `?box_id=` for URL-persisted
+//     pill switches, while older gear-settings links use `?server=`.
 //  2. `gearbox_active_box` cookie — the header pill's selection.
 //  3. The first enabled server — first-login fallback.
 //
@@ -295,9 +299,15 @@ func (h *Handler) getDefaultServerID() string {
 // straight through to the first server when it was missing, which made the
 // page show the first box's gears even while the header pill was on a
 // different box (issue #71 item 1). Reading the cookie aligns these
-// handlers with the pill that's actually visible to the user.
+// handlers with the pill that's actually visible to the user. Recognizing
+// `?box_id=` as a synonym keeps the box-resolver consistent across the
+// dashboard's handler / middleware / gear-plugin layers (issue #112
+// Phase 4).
 func (h *Handler) resolveBoxIDFromRequest(r *http.Request) string {
 	if id := r.URL.Query().Get("server"); id != "" {
+		return id
+	}
+	if id := r.URL.Query().Get("box_id"); id != "" {
 		return id
 	}
 	if c, err := r.Cookie(activeBoxCookieName); err == nil && c.Value != "" {
@@ -310,6 +320,38 @@ func (h *Handler) resolveBoxIDFromRequest(r *http.Request) string {
 		}
 	}
 	return h.getDefaultServerID()
+}
+
+// resolveActiveBox returns the full BoxConfig for the box the request is
+// acting on, using resolveBoxIDFromRequest for resolution. Returns
+// (nil, false) when:
+//
+//   - There are no servers configured at all (resolveBoxIDFromRequest's
+//     getDefaultServerID fallback has nothing to return), OR
+//   - The resolved ID doesn't match any entry in the static
+//     h.servers list or the database — e.g. a stale link with
+//     ?server=<deleted-box-id>.
+//
+// Note: this does NOT return (nil, false) for an "all-boxes
+// dashboard context". When at least one server is configured,
+// resolveBoxIDFromRequest falls back to the first enabled box, and
+// getServerConfig accepts entries from the static h.servers list
+// whether or not they're DB-enabled, so any time at least one
+// server exists this helper resolves to one. Handlers that need to
+// distinguish "no active box" from "first enabled box" should
+// consult the auth-context active-box set by
+// InjectIntegrationStatus, not call this helper.
+//
+// Handlers that need an agent client, an agent URL, or other
+// BoxConfig fields should prefer this over resolveBoxIDFromRequest +
+// a separate getServerConfig call: it folds the existence check
+// into one call site (issue #112 Phase 4).
+func (h *Handler) resolveActiveBox(r *http.Request) (*models.BoxConfig, bool) {
+	boxID := h.resolveBoxIDFromRequest(r)
+	if boxID == "" {
+		return nil, false
+	}
+	return h.getServerConfig(boxID)
 }
 
 // activeBoxCookieName is the cookie key that persists the user's selected
