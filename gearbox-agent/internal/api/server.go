@@ -17,6 +17,7 @@ import (
 
 	_ "github.com/sarg3nt/gearbox-agent/docs" // Swagger docs
 	"github.com/sarg3nt/gearbox-agent/internal/api/console"
+	"github.com/sarg3nt/gearbox-agent/internal/framework/crypto"
 	"github.com/sarg3nt/gearbox-agent/internal/framework/events"
 	frameworkmiddleware "github.com/sarg3nt/gearbox-agent/internal/framework/middleware"
 )
@@ -26,7 +27,7 @@ type Server struct {
 	httpServer *http.Server
 	router     chi.Router
 	logger     *slog.Logger
-	apiKey     string
+	keyring    *crypto.KeyRingPointer
 	certFile   string
 	keyFile    string
 }
@@ -34,7 +35,7 @@ type Server struct {
 // ServerConfig holds configuration for the API server.
 type ServerConfig struct {
 	ListenAddr       string
-	APIKey           string
+	KeyRing          *crypto.KeyRingPointer
 	CertFile         string
 	KeyFile          string
 	Version          string
@@ -147,7 +148,7 @@ func NewServer(cfg ServerConfig) *Server {
 	// Protected API routes (require API key auth)
 	r.Group(func(r chi.Router) {
 		r.Use(frameworkmiddleware.RateLimitMiddleware(rateLimiter))
-		r.Use(frameworkmiddleware.APIKeyAuth(cfg.APIKey, cfg.Logger, authBackoff))
+		r.Use(frameworkmiddleware.APIKeyAuth(cfg.KeyRing, cfg.Logger, authBackoff))
 
 		// Core endpoints (not handled by plugins)
 		r.Get("/api/v1/metadata", handlers.Metadata)
@@ -193,7 +194,7 @@ func NewServer(cfg ServerConfig) *Server {
 		},
 		router:   r,
 		logger:   cfg.Logger,
-		apiKey:   cfg.APIKey,
+		keyring:  cfg.KeyRing,
 		certFile: cfg.CertFile,
 		keyFile:  cfg.KeyFile,
 	}
@@ -204,9 +205,10 @@ func (s *Server) Router() chi.Router {
 	return s.router
 }
 
-// APIKey returns the server's API key for middleware configuration.
-func (s *Server) APIKey() string {
-	return s.apiKey
+// KeyRing returns the server's keyring pointer for middleware
+// configuration on plugin routes registered after server construction.
+func (s *Server) KeyRing() *crypto.KeyRingPointer {
+	return s.keyring
 }
 
 // Logger returns the server's logger.

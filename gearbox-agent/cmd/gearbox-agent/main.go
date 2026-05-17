@@ -113,29 +113,64 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Handle API key commands
+	// Handle API key commands.
+	//
+	// Both flags read/write the agent's keyring (issue #72), falling back
+	// to the legacy api-key file when no keyring is present yet. The
+	// printed key is the keyring's primary entry, in the
+	// `gbx_<kid>_<base64url>` wire format the dashboard accepts.
 	if *showAPIKey {
-		key, err := crypto.ReadAPIKey(cfg.APIKeyPath)
+		kr, _, err := crypto.LoadOrCreateKeyRing(cfg.KeyRingPath, cfg.APIKeyPath)
 		if err != nil {
-			logger.Error("Failed to read API key", "error", err)
+			logger.Error("Failed to read keyring", "error", err)
 			os.Exit(1)
 		}
-		fmt.Println(key)
+		primary := kr.Primary()
+		if primary == nil {
+			fmt.Fprintln(os.Stderr, "no primary key found in keyring")
+			os.Exit(1)
+		}
+		fmt.Println(crypto.FormatToken(primary.KID, primary.Secret))
 		os.Exit(0)
 	}
 
 	if *rotateAPIKey {
-		key, err := crypto.GenerateAPIKey()
+		// Generates a fresh primary key and writes it to the keyring,
+		// replacing whatever was primary before. The agent reads the
+		// keyring on startup so the new key takes effect after restart.
+		// (Phase 2 will add a hot-reload endpoint that avoids restart.)
+		kr, _, err := crypto.LoadOrCreateKeyRing(cfg.KeyRingPath, cfg.APIKeyPath)
 		if err != nil {
-			logger.Error("Failed to generate API key", "error", err)
+			logger.Error("Failed to load keyring", "error", err)
 			os.Exit(1)
 		}
-		if err := crypto.WriteAPIKey(cfg.APIKeyPath, key); err != nil {
-			logger.Error("Failed to write API key", "error", err)
+		// Replace all entries with a single fresh primary. CLI rotate is
+		// the operator escape hatch — it's intentionally not the same as
+		// the controller-driven three-phase rotation; rather, it wipes
+		// the slate so a fresh dashboard pairing can take over.
+		kid, kerr := crypto.NewKID()
+		if kerr != nil {
+			logger.Error("Failed to generate key id", "error", kerr)
+			os.Exit(1)
+		}
+		secret, serr := crypto.NewSecret()
+		if serr != nil {
+			logger.Error("Failed to generate secret", "error", serr)
+			os.Exit(1)
+		}
+		fresh := crypto.KeyRingEntry{
+			KID:       kid,
+			Secret:    secret,
+			Role:      "primary",
+			CreatedAt: time.Now().UTC(),
+		}
+		kr.Entries = []crypto.KeyRingEntry{fresh}
+		if err := crypto.SaveKeyRing(cfg.KeyRingPath, kr); err != nil {
+			logger.Error("Failed to write keyring", "error", err)
 			os.Exit(1)
 		}
 		fmt.Println("New API key generated:")
-		fmt.Println(key)
+		fmt.Println(crypto.FormatToken(fresh.KID, fresh.Secret))
 		fmt.Println("\nRestart the service for the new key to take effect.")
 		os.Exit(0)
 	}
@@ -244,19 +279,33 @@ func main() {
 			"to enable AES-256-GCM encryption-at-rest.")
 	}
 
-	// Load or create API key
-	apiKey, isNewKey, err := crypto.LoadOrCreateAPIKey(cfg.APIKeyPath)
+	// Load or create the keyring. Issue #72 replaced the single-key model
+	// with an N-entry keyring to support zero-downtime rotation. Existing
+	// installs that still have an api-key file (no keyring.json yet) are
+	// migrated transparently: the on-disk hex key becomes the keyring's
+	// primary entry with kid="legacy", and the file is left in place as
+	// a read-only fallback for one release cycle.
+	keyring, isNewKey, err := crypto.LoadOrCreateKeyRing(cfg.KeyRingPath, cfg.APIKeyPath)
 	if err != nil {
-		logger.Error("Failed to initialize API key", "error", err)
+		logger.Error("Failed to initialize keyring", "error", err)
 		os.Exit(1)
 	}
+	keyringPtr := crypto.NewKeyRingPointer(keyring)
 	if isNewKey {
-		logger.Warn("NEW API KEY GENERATED - Save this key, it will not be shown again!")
-		// Print to stdout (not logger) so it doesn't appear in system logs
-		fmt.Printf("API Key: %s\n", apiKey)
-		logger.Info("API key saved", "path", cfg.APIKeyPath)
+		primary := keyring.Primary()
+		if primary != nil {
+			logger.Warn("NEW API KEY GENERATED - Save this key, it will not be shown again!")
+			// Print to stdout (not logger) so it doesn't appear in system logs
+			fmt.Printf("API Key: %s\n", crypto.FormatToken(primary.KID, primary.Secret))
+			logger.Info("Keyring saved", "path", cfg.KeyRingPath, "kid", primary.KID)
+		}
 	} else {
-		logger.Info("API key loaded from file")
+		primary := keyring.Primary()
+		kid := "<none>"
+		if primary != nil {
+			kid = primary.KID
+		}
+		logger.Info("Keyring loaded", "path", cfg.KeyRingPath, "entries", len(keyring.Entries), "primary_kid", kid)
 	}
 
 	// Load or create TLS certificates
@@ -398,7 +447,7 @@ func main() {
 	// Create and start API server
 	serverCfg := api.ServerConfig{
 		ListenAddr:     cfg.ListenAddr,
-		APIKey:         apiKey,
+		KeyRing:        keyringPtr,
 		CertFile:       tlsCfg.CertPath,
 		KeyFile:        tlsCfg.KeyPath,
 		Version:        Version,
@@ -493,12 +542,14 @@ func main() {
 	// backoff layered on top — see 2026-05 audit P1-7).
 	rateLimiter := middleware.DefaultRateLimiter(logger)
 	authBackoff := middleware.DefaultBackoffTracker(logger)
+	keyRingHandler := api.NewKeyRingHandler(server.KeyRing(), logger)
 	pluginRouter := server.Router().Group(func(r chi.Router) {
 		r.Use(middleware.RateLimitMiddleware(rateLimiter))
-		r.Use(middleware.APIKeyAuth(server.APIKey(), logger, authBackoff))
+		r.Use(middleware.APIKeyAuth(server.KeyRing(), logger, authBackoff))
 	})
 	gearManager.RegisterRoutes(pluginRouter)
 	gearManager.RegisterSystemRoutes(pluginRouter)
+	keyRingHandler.RegisterRoutes(pluginRouter)
 
 	logger.Info("Plugin system initialized",
 		"plugins", gear.Names(),
