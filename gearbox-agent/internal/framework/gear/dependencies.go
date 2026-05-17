@@ -45,6 +45,36 @@ type Dependencies struct {
 
 	// CertbotTimer is the name of the certbot systemd timer.
 	CertbotTimer string
+
+	// SourceOverrides maps metric categories to an operator-chosen
+	// primary gear name, bypassing auto-detection for that category.
+	// Empty map (or missing key) means auto-detect. Sourced from
+	// per-category env vars at startup (GEARBOX_AGENT_HTTP_SOURCE for
+	// CategoryHTTPRequests, etc.). Names are pre-lowercased to match
+	// Info().Name lookups in the manager.
+	SourceOverrides map[MetricCategory]string
+
+	// Per-source detection overrides. Each one bypasses the default
+	// well-known-paths / loopback-URL probe for one gear and trusts the
+	// operator's value directly. Empty means "auto-detect" — the
+	// corresponding gear walks its defaults. Populated from per-source
+	// env vars at startup. See [docs/source-detection.md] / issue #95.
+	NginxStatusURL    string // NGINX_STATUS_URL
+	NginxConfigFile   string // NGINX_CONFIG_FILE
+	ApacheStatusURL   string // APACHE_STATUS_URL
+	ApacheConfigFile  string // APACHE_CONFIG_FILE
+	CaddyAdminURL     string // CADDY_ADMIN_URL
+	TraefikMetricsURL string // TRAEFIK_METRICS_URL
+	DockerSocket      string // DOCKER_SOCKET
+
+	// Per-source access-log paths. Empty means "fall back to the
+	// gear's well-known default"; an explicit value bypasses the
+	// fallback (and a non-existent path then surfaces as
+	// "log file not readable" through the access-log endpoint).
+	HAProxyAccessLog string // HAPROXY_ACCESS_LOG
+	NginxAccessLog   string // NGINX_ACCESS_LOG
+	ApacheAccessLog  string // APACHE_ACCESS_LOG
+	CaddyAccessLog   string // CADDY_ACCESS_LOG
 }
 
 // Common event types used across plugins.

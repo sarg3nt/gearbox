@@ -138,7 +138,7 @@ Client gears run in the **gearbox** web application (the monitoring client) and 
 - `traffic` - Traffic analysis and visualization page
 - `alerts` - Alert management page
 - `services` - Service status and control page
-- `metrics` - System metrics and history page
+- `metrics` - Time-series system + HAProxy metrics page (`/metrics`)
 
 ### Gear Scope: Box vs System
 
@@ -350,6 +350,56 @@ type Gear interface {
 }
 ```
 
+### Probe Phase (ProbeableGear)
+
+The agent runs on hosts with very different software stacks. A gear can optionally implement `ProbeableGear` to declare whether its prerequisites are present on this host. Gears that probe non-`available` are skipped for the rest of the lifecycle — no `Initialize`, no `Start`, no routes, no collectors, no streamers.
+
+```go
+type ProbeableGear interface {
+    Gear
+
+    // Probe runs before Initialize. It must be side-effect-free and fast.
+    Probe(ctx context.Context, deps Dependencies) ProbeResult
+}
+
+type ProbeStatus string
+
+const (
+    ProbeStatusAvailable    ProbeStatus = "available"
+    ProbeStatusNotInstalled ProbeStatus = "not_installed"
+    ProbeStatusInaccessible ProbeStatus = "inaccessible"
+    ProbeStatusDisabled     ProbeStatus = "disabled"
+)
+```
+
+Gears that do **not** implement `ProbeableGear` are treated as always-available, so adoption is incremental.
+
+The lifecycle becomes:
+
+```text
+Probe → Initialize → Start → (later) Stop
+```
+
+After all gears are probed, the manager writes a single human-readable summary table to the journal so an operator can see at startup which gears apply on this box:
+
+```text
+Gear probe summary:
+
+  GEAR          STATUS    REASON
+  certificates  enabled
+  haproxy       enabled
+  logs          enabled
+  metrics       enabled
+  security      disabled  neither fail2ban-client nor nft found on PATH
+  traffic       enabled
+  updates       enabled
+```
+
+The full reference — status semantics, per-gear contracts, container-mode considerations, and the rules for writing a good `Probe()` — lives in [gearbox-agent/docs/gear-probes.md](../gearbox-agent/docs/gear-probes.md).
+
+> [!IMPORTANT]
+> "Skipped" means the gear's `Initialize` and `Start` are not called, so its collectors, streamers, and HTTP routes do not run. The compiled binary still contains the gear's code (gears are linked in via blank imports in `cmd/gearbox-agent/main.go`); Go does not support module unloading. The wins are runtime CPU/IO and heap allocations, not binary size.
+
 ### Collector Gear
 
 Gears that collect data periodically also implement `CollectorGear`:
@@ -408,6 +458,15 @@ func (g *Gear) Info() gear.Info {
 ### Initialization and Lifecycle
 
 ```go
+// Probe is optional. Implement it if your gear can be skipped on hosts
+// that lack its prerequisites; see the "Probe Phase" section above.
+func (g *Gear) Probe(ctx context.Context, deps gear.Dependencies) gear.ProbeResult {
+    if _, err := exec.LookPath("mytool"); err != nil {
+        return gear.ProbeNotInstalled("mytool not found on PATH")
+    }
+    return gear.ProbeAvailable("mytool found", nil)
+}
+
 func (g *Gear) Initialize(ctx context.Context, deps gear.Dependencies) error {
     if err := g.BaseGear.Initialize(ctx, deps); err != nil {
         return err

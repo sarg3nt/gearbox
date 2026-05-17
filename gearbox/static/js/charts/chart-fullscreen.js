@@ -81,6 +81,9 @@ export function exitFullscreen(onResize) {
 export function setupFullscreenKeyHandler(onResize) {
 	document.addEventListener('keydown', function(e) {
 		if (e.key === 'Escape' && currentFullscreenCard) {
+			// preventDefault so the global Esc handler in
+			// shortcut-help.js doesn't fall through to history.back().
+			e.preventDefault();
 			exitFullscreen(onResize);
 		}
 	});

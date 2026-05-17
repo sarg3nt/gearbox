@@ -74,28 +74,27 @@ func TestParseFile_AllLabels(t *testing.T) {
 		t.Fatalf("Failed to create app dir: %v", err)
 	}
 
-	composeContent := `
-services:
-  api:
-    image: api:latest
-    labels:
-      haproxy.enable: "true"
-      haproxy.hostname: "api.example.com"
-      haproxy.backend.server: "api:3000"
-      haproxy.backend.name: "custom_backend"
-      haproxy.backend.mode: "http"
-      haproxy.backend.balance: "leastconn"
-      haproxy.backend.check: "true"
-      haproxy.backend.check.interval: "10s"
-      haproxy.backend.check.fall: "5"
-      haproxy.backend.check.rise: "3"
-      haproxy.ssl.redirect: "true"
-      haproxy.public: "true"
-      haproxy.rate_limit: "200"
-      haproxy.acl.ip: "10.0.0.0/8"
-      haproxy.backend.ssl: "true"
-      haproxy.backend.ssl.verify: "required"
-`
+	composeContent := "services:\n" +
+		"  api:\n" +
+		"    image: api:latest\n" +
+		"    labels:\n" +
+		"      haproxy.enable: \"true\"\n" +
+		"      haproxy.hostname: \"api.example.com\"\n" +
+		"      haproxy.backend.server: \"api:3000\"\n" +
+		"      haproxy.backend.name: \"custom_backend\"\n" +
+		"      haproxy.backend.mode: \"http\"\n" +
+		"      haproxy.backend.balance: \"leastconn\"\n" +
+		"      haproxy.backend.check: \"true\"\n" +
+		"      haproxy.backend.check.interval: \"10s\"\n" +
+		"      haproxy.backend.check.fall: \"5\"\n" +
+		"      haproxy.backend.check.rise: \"3\"\n" +
+		"      haproxy.ssl.redirect: \"true\"\n" +
+		"      haproxy.public: \"true\"\n" +
+		"      haproxy.rate_limit: \"200\"\n" +
+		"      haproxy.acl.ip: \"10.0.0.0/8\"\n" +
+		"      haproxy.backend.ssl: \"true\"\n" +
+		"      haproxy.backend.ssl.verify: \"required\"\n" +
+		"      haproxy.backend.http_keep_alive: \"true\"\n"
 	composePath := filepath.Join(appDir, "docker-compose.yml")
 	if err := os.WriteFile(composePath, []byte(composeContent), 0644); err != nil {
 		t.Fatalf("Failed to write compose file: %v", err)
@@ -150,6 +149,9 @@ services:
 	}
 	if b.BackendSSLVerify != "required" {
 		t.Errorf("BackendSSLVerify = %q, want %q", b.BackendSSLVerify, "required")
+	}
+	if !b.HTTPKeepAlive {
+		t.Error("HTTPKeepAlive should be true")
 	}
 }
 
@@ -516,9 +518,9 @@ func TestGetOrDefault(t *testing.T) {
 	}
 
 	tests := []struct {
-		key      string
-		defVal   string
-		want     string
+		key    string
+		defVal string
+		want   string
 	}{
 		{"key1", "default", "value1"},
 		{"key2", "default", "default"}, // Empty string uses default
@@ -627,5 +629,234 @@ func TestValidationPatterns(t *testing.T) {
 	}
 	if validBalance.MatchString("invalid") {
 		t.Error("validBalance should not match invalid")
+	}
+
+	// Test validBackendName (2026-05 audit P0-1).
+	validBackendNames := []string{
+		"myapp_backend", "web-app", "a", "backend.1", "x9-y8.z7",
+	}
+	invalidBackendNames := []string{
+		"",
+		"-leading-hyphen",
+		".leading-dot",
+		"name with space",
+		"name\nwith-newline",
+		"name\twith-tab",
+		"name;with-semicolon",
+		"backend\n  lua-load /tmp/x.lua", // The actual P0-1 exploit payload
+	}
+	for _, n := range validBackendNames {
+		if !validBackendName.MatchString(n) {
+			t.Errorf("validBackendName should match %q", n)
+		}
+	}
+	for _, n := range invalidBackendNames {
+		if validBackendName.MatchString(n) {
+			t.Errorf("validBackendName should NOT match %q (would allow HAProxy directive injection)", n)
+		}
+	}
+}
+
+func TestValidateACLIPList(t *testing.T) {
+	// 2026-05 audit P0-2: haproxy.acl.ip must reject anything that isn't a
+	// strict comma-separated IP/CIDR list, to prevent injection of additional
+	// HAProxy directives into the generated config.
+	tests := []struct {
+		name  string
+		input string
+		ok    bool
+	}{
+		{"empty", "", true},
+		{"single-ip", "10.0.0.1", true},
+		{"single-cidr", "10.0.0.0/8", true},
+		{"mixed-list", "10.0.0.0/8, 192.168.1.0/24, 172.16.0.5", true},
+		{"newline-injection", "10.0.0.0/8\n  acl admin src 0.0.0.0/0", false}, // The actual P0-2 exploit
+		{"haproxy-keyword", "10.0.0.0/8, acl_open 0.0.0.0/0", false},
+		{"garbage", "not-an-ip", false},
+		{"out-of-range-octet", "999.999.999.999", false},
+		{"semicolon", "10.0.0.0/8; foo", false},
+		{"tab-injection", "10.0.0.0/8\t10.1.0.0/16", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, ok := validateACLIPList(tt.input)
+			if ok != tt.ok {
+				t.Errorf("validateACLIPList(%q) ok=%v, want %v", tt.input, ok, tt.ok)
+			}
+		})
+	}
+}
+
+func TestParseFile_InjectionViaBackendName(t *testing.T) {
+	// 2026-05 audit P0-1: a malicious haproxy.backend.name with embedded
+	// newlines must be rejected at parse time so it never reaches the
+	// generator's fmt.Sprintf("backend %s", …) call.
+	tmpDir := t.TempDir()
+	appDir := filepath.Join(tmpDir, "evil")
+	if err := os.MkdirAll(appDir, 0755); err != nil {
+		t.Fatalf("Failed to create app dir: %v", err)
+	}
+
+	// Note: YAML's literal-block style "|" preserves newlines, which is the
+	// exact shape of the exploit payload as it would appear in a docker-
+	// compose.yml authored by an attacker with push access to the repo.
+	composeContent := "services:\n" +
+		"  web:\n" +
+		"    image: nginx\n" +
+		"    labels:\n" +
+		"      haproxy.enable: \"true\"\n" +
+		"      haproxy.hostname: \"evil.example.com\"\n" +
+		"      haproxy.backend.server: \"10.0.0.1:80\"\n" +
+		"      haproxy.backend.name: |\n" +
+		"        myapp\n" +
+		"          lua-load /tmp/evil.lua\n"
+
+	composePath := filepath.Join(appDir, "docker-compose.yml")
+	if err := os.WriteFile(composePath, []byte(composeContent), 0644); err != nil {
+		t.Fatalf("Failed to write compose file: %v", err)
+	}
+
+	parser := NewParser(tmpDir, testLogger())
+	backends, err := parser.ParseFile(composePath)
+	if err != nil {
+		t.Fatalf("ParseFile() error = %v", err)
+	}
+	if len(backends) != 0 {
+		t.Errorf("ParseFile() returned %d backend(s) for an injection payload; want 0 (rejected)", len(backends))
+	}
+}
+
+func TestParseFile_InjectionViaACLIP(t *testing.T) {
+	// 2026-05 audit P0-2.
+	tmpDir := t.TempDir()
+	appDir := filepath.Join(tmpDir, "aclip")
+	if err := os.MkdirAll(appDir, 0755); err != nil {
+		t.Fatalf("Failed to create app dir: %v", err)
+	}
+
+	composeContent := "services:\n" +
+		"  web:\n" +
+		"    image: nginx\n" +
+		"    labels:\n" +
+		"      haproxy.enable: \"true\"\n" +
+		"      haproxy.hostname: \"evil.example.com\"\n" +
+		"      haproxy.backend.server: \"10.0.0.1:80\"\n" +
+		"      haproxy.acl.ip: |\n" +
+		"        10.0.0.0/8\n" +
+		"          acl admin src 0.0.0.0/0\n"
+
+	composePath := filepath.Join(appDir, "docker-compose.yml")
+	if err := os.WriteFile(composePath, []byte(composeContent), 0644); err != nil {
+		t.Fatalf("Failed to write compose file: %v", err)
+	}
+
+	parser := NewParser(tmpDir, testLogger())
+	backends, err := parser.ParseFile(composePath)
+	if err != nil {
+		t.Fatalf("ParseFile() error = %v", err)
+	}
+	if len(backends) != 0 {
+		t.Errorf("ParseFile() returned %d backend(s) for an injection payload; want 0 (rejected)", len(backends))
+	}
+}
+
+// 2026-05 audit P2-10: haproxy.acl.path and haproxy.acl.header are
+// validated at parse time even though no current generator emits them.
+// Closes the latent injection class before a future PR wires them in.
+func TestValidACLPath(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{"empty", "", true}, // empty handled by call-site short-circuit
+		{"root", "/", true},
+		{"single-segment", "/api", true},
+		{"multi-segment", "/api/v1/users", true},
+		{"trailing-slash", "/api/", true},
+		{"with-dash-underscore", "/api/_v2-beta", true},
+		{"url-encoded-allowed", "/api/%20space", true},
+
+		{"no-leading-slash", "api", false},
+		{"newline-injection", "/api\n  http-request deny", false},
+		{"semicolon", "/api; default-src *", false},
+		{"space", "/api /v1", false},
+		{"backslash", "/api\\v1", false},
+		{"query-string", "/api?x=1", false},
+		{"fragment", "/api#section", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.input == "" {
+				return // call-site skips validation for empty
+			}
+			if got := validACLPath.MatchString(tt.input); got != tt.want {
+				t.Errorf("validACLPath.MatchString(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidACLHeader(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{"simple", "X-Custom-Header", true},
+		{"all-lower", "authorization", true},
+		{"underscore", "X_Custom", true},
+		{"dot-allowed-by-rfc", "X.Forwarded.For", true},
+
+		{"empty", "", false},
+		{"space", "X Custom", false},
+		{"newline-injection", "X-Custom\nhttp-request deny", false},
+		{"semicolon", "X-Custom;evil", false},
+		{"colon", "X-Custom:value", false},
+		{"slash", "X-Custom/extra", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := validACLHeader.MatchString(tt.input); got != tt.want {
+				t.Errorf("validACLHeader.MatchString(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseFile_InjectionViaACLPath(t *testing.T) {
+	// 2026-05 audit P2-10: even though the generator doesn't emit
+	// haproxy.acl.path today, a malicious value must not be stored on
+	// BackendConfig — otherwise a future generator wire-up would re-open
+	// the P0-1/P0-2 class of injection.
+	tmpDir := t.TempDir()
+	appDir := filepath.Join(tmpDir, "aclpath")
+	if err := os.MkdirAll(appDir, 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	composeContent := "services:\n" +
+		"  web:\n" +
+		"    image: nginx\n" +
+		"    labels:\n" +
+		"      haproxy.enable: \"true\"\n" +
+		"      haproxy.hostname: \"evil.example.com\"\n" +
+		"      haproxy.backend.server: \"10.0.0.1:80\"\n" +
+		"      haproxy.acl.path: |\n" +
+		"        /api\n" +
+		"          http-request deny\n"
+
+	composePath := filepath.Join(appDir, "docker-compose.yml")
+	if err := os.WriteFile(composePath, []byte(composeContent), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	parser := NewParser(tmpDir, testLogger())
+	backends, err := parser.ParseFile(composePath)
+	if err != nil {
+		t.Fatalf("ParseFile: %v", err)
+	}
+	if len(backends) != 0 {
+		t.Errorf("ParseFile returned %d backend(s); want 0 (rejected on aclpath injection)", len(backends))
 	}
 }

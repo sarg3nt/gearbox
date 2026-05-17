@@ -1,6 +1,7 @@
 package security
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -102,5 +103,39 @@ func TestJailStatsFields(t *testing.T) {
 	}
 	if len(stats.BannedIPs) != 2 {
 		t.Errorf("BannedIPs len = %d, want 2", len(stats.BannedIPs))
+	}
+}
+
+// 2026-05 audit P1-3: jail names that could be interpreted as fail2ban-client
+// flags must be rejected before they reach exec.Command. Today the only flow
+// is from getJails() (which parses fail2ban-client's own output), but this
+// pins down the validation in case a future code path exposes jail names to
+// API input.
+func TestValidJailName(t *testing.T) {
+	tests := []struct {
+		name string
+		want bool
+	}{
+		{"sshd", true},
+		{"haproxy-http", true},
+		{"my_jail", true},
+		{"jail-1", true},
+		{"a", true},
+
+		{"", false},
+		{"--help", false},
+		{"-h", false},
+		{"jail with space", false},
+		{"jail\nwith-newline", false},
+		{"jail;rm -rf /", false},
+		{"jail$(whoami)", false},
+		{strings.Repeat("a", 65), false}, // length cap
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := validJailName.MatchString(tt.name); got != tt.want {
+				t.Errorf("validJailName.MatchString(%q) = %v, want %v", tt.name, got, tt.want)
+			}
+		})
 	}
 }

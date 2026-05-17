@@ -18,8 +18,35 @@ type Config struct {
 	TLSKey     string
 	TLSCustom  bool // True if user provided custom TLS cert paths
 
-	// API key settings
-	APIKeyPath string
+	// TLSHosts are additional hostnames / IPs to include as SANs in the
+	// auto-generated self-signed certificate. Ignored when TLSCustom is
+	// true (the user-provided cert is used verbatim).
+	//
+	// The cert generator always covers "localhost", "127.0.0.1", and
+	// "::1"; TLSHosts is for any other address clients will actually
+	// dial (e.g. a static container IP, an FQDN behind a reverse proxy,
+	// or both). The container's os.Hostname() is deliberately NOT added
+	// automatically — in a container it's a random short ID that
+	// changes per recreation, which would force needless cert
+	// regeneration since LoadOrCreateTLSCert regenerates when the
+	// existing cert is missing a requested SAN.
+	//
+	// Parsed from HAPROXY_AGENT_TLS_HOSTS as a comma-separated list;
+	// whitespace around each entry is trimmed, empty entries are dropped.
+	TLSHosts []string
+
+	// API key settings.
+	//
+	// APIKeyPath is the legacy single-key file; retained for backwards
+	// compatibility with installs that pre-date the keyring. On startup
+	// the agent migrates its contents into a single keyring entry
+	// (kid="legacy", role=primary) and the file is left in place as a
+	// read-only fallback for one release cycle.
+	//
+	// KeyRingPath is the new N-entry rotating keyring (issue #72).
+	// Defaults to <DataDir>/keyring.json.
+	APIKeyPath  string
+	KeyRingPath string
 
 	// Data directory for state, certs, etc.
 	DataDir string
@@ -60,6 +87,58 @@ type Config struct {
 
 	// Certificate renewal detection
 	CertbotTimer string // Custom certbot timer name (default: auto-detect)
+
+	// SwaggerEnabled, when true, serves the Swagger UI + OpenAPI spec at
+	// /swagger and /swagger/*. Off by default to avoid exposing the agent's
+	// endpoint + schema list to unauthenticated callers in production. See
+	// 2026-05 security audit P3-2.
+	SwaggerEnabled bool
+
+	// Metric-source overrides. Each one points a single metric category
+	// at a specific gear, bypassing auto-detection. Empty = pure
+	// auto-detection (built-in preference order). Lowercased at load
+	// time; the manager validates that each named gear is actually
+	// available before honouring the override (falls back to auto and
+	// warns otherwise).
+	//
+	// Background: most hosts have one obvious producer per metric
+	// category. When two coexist (e.g. HAProxy + nginx both serving
+	// HTTP), the agent picks one as primary; this override lets the
+	// operator force the choice for boxes where the built-in
+	// preference picks wrong. See [docs/source-detection.md] /
+	// issue #95.
+	HTTPSource string // GEARBOX_AGENT_HTTP_SOURCE — primary for CategoryHTTPRequests
+
+	// Per-source detection overrides. Each one short-circuits the
+	// detector's default well-known-paths/loopback-URL probe and trusts
+	// the operator-supplied surface instead. The agent does not probe
+	// these synchronously at startup — a misconfigured value will
+	// surface later when the metrics phase tries to read from it.
+	//
+	// Empty (the default) means "auto-detect" — the corresponding
+	// gear's Probe() walks its well-known paths and default loopback
+	// URL. Operators on hosts where the binary lives in a non-standard
+	// place, or whose status endpoint lives on a non-default address,
+	// reach for these as the escape hatch. See [docs/source-detection.md]
+	// / issue #95.
+	NginxStatusURL    string // NGINX_STATUS_URL    — force a specific stub_status URL
+	NginxConfigFile   string // NGINX_CONFIG_FILE   — force a specific nginx.conf path
+	ApacheStatusURL   string // APACHE_STATUS_URL   — force a specific mod_status URL
+	ApacheConfigFile  string // APACHE_CONFIG_FILE  — force a specific httpd.conf path
+	CaddyAdminURL     string // CADDY_ADMIN_URL     — force the admin/Prometheus URL
+	TraefikMetricsURL string // TRAEFIK_METRICS_URL — force the Prometheus endpoint URL
+	DockerSocket      string // DOCKER_SOCKET       — force a specific docker socket path
+
+	// Access-log paths per source. The /api/v1/access-log/{source}/recent
+	// endpoint reads the most recent N lines from these files and parses
+	// each with the matching profile. Empty (the default) means the
+	// endpoint falls back to a well-known path; if that doesn't exist
+	// the endpoint reports "no readable log file" rather than failing
+	// the agent. See [docs/source-detection.md] / issue #91 Phase 5.
+	HAProxyAccessLog string // HAPROXY_ACCESS_LOG
+	NginxAccessLog   string // NGINX_ACCESS_LOG
+	ApacheAccessLog  string // APACHE_ACCESS_LOG
+	CaddyAccessLog   string // CADDY_ACCESS_LOG
 }
 
 // DefaultConfig returns the default configuration.
@@ -103,7 +182,9 @@ func Load() (*Config, error) {
 	} else {
 		cfg.TLSKey = cfg.DataDir + "/tls/server.key"
 	}
+	cfg.TLSHosts = parseCommaList(os.Getenv("HAPROXY_AGENT_TLS_HOSTS"))
 	cfg.APIKeyPath = getEnvOrDefault("HAPROXY_AGENT_API_KEY_PATH", cfg.DataDir+"/api-key")
+	cfg.KeyRingPath = getEnvOrDefault("GEARBOX_AGENT_KEYRING_PATH", cfg.DataDir+"/keyring.json")
 
 	// Logging
 	if v := os.Getenv("HAPROXY_AGENT_LOG_LEVEL"); v != "" {
@@ -152,7 +233,42 @@ func Load() (*Config, error) {
 	// Certificate renewal detection (optional override)
 	cfg.CertbotTimer = os.Getenv("HAPROXY_CERTBOT_TIMER")
 
+	// Swagger UI off by default; opt in for dev / API debugging.
+	cfg.SwaggerEnabled = os.Getenv("HAPROXY_AGENT_SWAGGER_ENABLED") == "true"
+
+	// Metric-source overrides. Lowercased + trimmed so 'HAProxy ' and
+	// 'haproxy' both match the gear's Info().Name. Empty = auto-detect.
+	cfg.HTTPSource = normaliseSourceOverride(os.Getenv("GEARBOX_AGENT_HTTP_SOURCE"))
+
+	// Per-source detection overrides. Unprefixed env vars to match the
+	// existing HAPROXY_STATS_URL style — these belong to the subject,
+	// not the agent. Trimmed but not lowercased (URLs and paths are
+	// case-sensitive on most filesystems).
+	cfg.NginxStatusURL = strings.TrimSpace(os.Getenv("NGINX_STATUS_URL"))
+	cfg.NginxConfigFile = strings.TrimSpace(os.Getenv("NGINX_CONFIG_FILE"))
+	cfg.ApacheStatusURL = strings.TrimSpace(os.Getenv("APACHE_STATUS_URL"))
+	cfg.ApacheConfigFile = strings.TrimSpace(os.Getenv("APACHE_CONFIG_FILE"))
+	cfg.CaddyAdminURL = strings.TrimSpace(os.Getenv("CADDY_ADMIN_URL"))
+	cfg.TraefikMetricsURL = strings.TrimSpace(os.Getenv("TRAEFIK_METRICS_URL"))
+	cfg.DockerSocket = strings.TrimSpace(os.Getenv("DOCKER_SOCKET"))
+
+	// Access-log path overrides — trimmed but case-preserved (paths
+	// are case-sensitive on most filesystems).
+	cfg.HAProxyAccessLog = strings.TrimSpace(os.Getenv("HAPROXY_ACCESS_LOG"))
+	cfg.NginxAccessLog = strings.TrimSpace(os.Getenv("NGINX_ACCESS_LOG"))
+	cfg.ApacheAccessLog = strings.TrimSpace(os.Getenv("APACHE_ACCESS_LOG"))
+	cfg.CaddyAccessLog = strings.TrimSpace(os.Getenv("CADDY_ACCESS_LOG"))
+
 	return cfg, nil
+}
+
+// normaliseSourceOverride trims + lowercases an operator-supplied gear
+// name so case / whitespace differences ('HAProxy ' vs 'haproxy') don't
+// cause silent misses against Info().Name. Returns "" for an empty or
+// whitespace-only input, which downstream callers treat as "no
+// override, auto-detect".
+func normaliseSourceOverride(raw string) string {
+	return strings.ToLower(strings.TrimSpace(raw))
 }
 
 // Validate validates the configuration.
@@ -189,6 +305,26 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
+}
+
+// parseCommaList splits a comma-separated env value into a clean slice:
+// each entry is trimmed of surrounding whitespace and empty entries are
+// dropped. Returns nil for an empty/whitespace-only input.
+func parseCommaList(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if v := strings.TrimSpace(p); v != "" {
+			out = append(out, v)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func getEnvOrDefault(key, defaultValue string) string {

@@ -73,8 +73,13 @@ regexes = [
 # Allowlist - commits to ignore
 # 2fdb5ba: functional_test.go had an example API key value in a doc comment
 # (test-only, not a real credential — replaced with <YOUR_API_KEY> placeholder in a later commit)
+# 96bd383: aead_test.go added three 64-hex-char fixtures (plainSecret /
+# apiKey) to exercise the encryption-at-rest round-trip. A later commit
+# added inline //gitleaks:allow comments, but the gitleaks-action scans
+# the full PR diff range so the historical commit still trips the rule.
 commits = [
     "2fdb5ba0d2e8da23a6409527cdbf6696d90eb537",
+    "96bd38365b022aa8b9d78886dfd3eb16e644eecf",
 ]
 
 # Stopwords - tokens that if found will stop gitleaks

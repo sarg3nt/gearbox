@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -32,12 +33,108 @@ const (
 type Client struct {
 	baseURL    string
 	apiKey     string
+	kid        string // optional; when set, sent as X-Gearbox-Kid header
+	onDrift    DriftHandler
 	httpClient *http.Client
+}
+
+// HeaderKID is the request/response header name carrying the keyring
+// entry id. The agent's middleware echoes the matched kid on every
+// authenticated response (see middleware.ResponseHeaderKID); the
+// dashboard sends this kid on outbound requests so the agent + audit
+// log can correlate keys. Drift detection (Phase 5) compares the
+// request-time kid with the echoed response kid.
+const HeaderKID = "X-Gearbox-Kid"
+
+// DriftHandler is invoked when the agent's echoed kid differs from
+// the kid the client sent. Implementations typically log + surface a
+// "rotation drift" banner; the default is to do nothing (set via
+// SetDriftHandler).
+//
+// expected = what the client sent on the request
+// actual   = what the agent echoed back on the response
+//
+// The handler is called on the request goroutine; cheap operations
+// only (logging is fine, network calls are not).
+type DriftHandler func(expected, actual string)
+
+// LogDriftHandler returns a DriftHandler that emits a structured
+// warn-level log line — the lowest-friction wiring for a long-lived
+// agent.Client. The "box_id" tag lets the operator filter the journal
+// to a single box.
+func LogDriftHandler(logger *slog.Logger, boxID int64) DriftHandler {
+	return func(expected, actual string) {
+		logger.Warn("rotation drift: agent matched a different kid than expected",
+			"box_id", boxID,
+			"expected_kid", expected,
+			"actual_kid", actual)
+	}
 }
 
 // NewClient creates a new HAProxy Agent API client.
 func NewClient(baseURL, apiKey string, skipTLSVerify bool) *Client {
 	return NewClientWithTimeout(baseURL, apiKey, skipTLSVerify, DefaultTimeout)
+}
+
+// NewClientWithKID creates a client that also identifies the keyring
+// entry it's signing with — the agent echoes back the matched kid in
+// X-Gearbox-Kid and the dashboard compares the two to detect rotation
+// drift. Empty kid is fine (legacy single-key boxes); the client just
+// won't send the header.
+func NewClientWithKID(baseURL, apiKey, kid string, skipTLSVerify bool) *Client {
+	c := NewClient(baseURL, apiKey, skipTLSVerify)
+	c.kid = kid
+	return c
+}
+
+// WithKID returns a shallow copy of c tagged with kid. Useful when a
+// short-lived client wants to be rebuilt to point at a different
+// keyring entry without re-doing TLS setup.
+func (c *Client) WithKID(kid string) *Client {
+	clone := *c
+	clone.kid = kid
+	return &clone
+}
+
+// KID returns the kid this client signs requests with, or "" if it
+// wasn't built with one. Used by the rotator and drift-detection
+// paths.
+func (c *Client) KID() string { return c.kid }
+
+// SetDriftHandler installs a callback invoked when the agent's
+// echoed X-Gearbox-Kid response header differs from the kid the
+// client sent. Nil disables drift detection (the default).
+//
+// Use this on long-lived Client instances cached per box; the rotator
+// builds short-lived clients per call and wouldn't benefit from
+// installing a handler.
+func (c *Client) SetDriftHandler(h DriftHandler) { c.onDrift = h }
+
+// checkDrift inspects resp's X-Gearbox-Kid header against the kid the
+// client sent. Called from each doRequest* path on success. No-op when
+// the client has no kid or no handler is installed.
+func (c *Client) checkDrift(resp *http.Response) {
+	if resp == nil || c.kid == "" || c.onDrift == nil {
+		return
+	}
+	actual := resp.Header.Get(HeaderKID)
+	if actual == "" || actual == c.kid {
+		return
+	}
+	c.onDrift(c.kid, actual)
+}
+
+// setAuthHeaders applies the standard auth + Accept headers and, when
+// the client was built with a kid, the X-Gearbox-Kid request header.
+// Callers must call this BEFORE setting Content-Type so their override
+// wins (the helper deliberately doesn't set Content-Type — varied
+// per-callsite based on whether the request has a body).
+func (c *Client) setAuthHeaders(req *http.Request) {
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	req.Header.Set("Accept", "application/json")
+	if c.kid != "" {
+		req.Header.Set(HeaderKID, c.kid)
+	}
 }
 
 // NewClientWithTimeout creates a new HAProxy Agent API client with a custom timeout.
@@ -86,14 +183,51 @@ func NewClientWithTimeout(baseURL, apiKey string, skipTLSVerify bool, timeout ti
 		},
 	}
 
-	return &Client{
+	c := &Client{
 		baseURL: baseURL,
 		apiKey:  apiKey,
-		httpClient: &http.Client{
-			Timeout:   timeout,
-			Transport: transport,
-		},
 	}
+	c.httpClient = &http.Client{
+		Timeout: timeout,
+		// Wrap the base transport so every response is inspected for the
+		// X-Gearbox-Kid header against c.kid. The transport reads c.kid
+		// and c.onDrift at RoundTrip time, so SetDriftHandler is reflected
+		// immediately without rebuilding the client.
+		Transport: &kidObservingTransport{base: transport, c: c},
+	}
+	return c
+}
+
+// kidObservingTransport wraps an http.RoundTripper and invokes the
+// owning Client's checkDrift on every successful response. Implements
+// the drift-detection half of Phase 5 (issue #72) — the dashboard
+// learns immediately when an agent's matched kid disagrees with the
+// kid the dashboard sent, signalling a partial rotation.
+type kidObservingTransport struct {
+	base http.RoundTripper
+	c    *Client
+}
+
+func (t *kidObservingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.base.RoundTrip(req)
+	if err == nil {
+		t.c.checkDrift(resp)
+	}
+	return resp, err
+}
+
+// BuildTLSConfig is the exported alias for createTLSConfig — used by
+// code paths outside the HTTP client (e.g. the dashboard's console
+// WebSocket proxy in handler/api_console.go) that need to dial agents
+// with the same trust policy as a regular API call.
+//
+// Keeping a single implementation behind one exported entry point
+// means a future operator who sets AGENT_CA_CERT_PATH gets both REST
+// and WebSocket dials pinned in one place, instead of "REST is
+// pinned but the WS proxy quietly accepts anything." See #89
+// follow-up.
+func BuildTLSConfig(skipTLSVerify bool) *tls.Config {
+	return createTLSConfig(skipTLSVerify)
 }
 
 // createTLSConfig creates a TLS configuration with certificate verification.
@@ -191,8 +325,7 @@ func (c *Client) doRequest(method, path string, query url.Values) ([]byte, error
 	}
 
 	// Add bearer token authentication
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	req.Header.Set("Accept", "application/json")
+	c.setAuthHeaders(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -232,8 +365,7 @@ func (c *Client) doRequestLongRunning(method, path string, query url.Values) ([]
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	req.Header.Set("Accept", "application/json")
+	c.setAuthHeaders(req)
 
 	// Use a separate client with extended timeout, sharing the same transport
 	longClient := &http.Client{
@@ -267,8 +399,6 @@ func (c *Client) doRequestWithBody(method, path string, reqBody interface{}) ([]
 	return c.doRequestWithBodyAndQuery(method, path, reqBody, nil)
 }
 
-
-
 // doRequestWithBodyAndQuery performs an HTTP request with a JSON body and query parameters.
 func (c *Client) doRequestWithBodyAndQuery(method, path string, reqBody interface{}, query url.Values) ([]byte, error) {
 	fullURL := c.baseURL + path
@@ -290,8 +420,7 @@ func (c *Client) doRequestWithBodyAndQuery(method, path string, reqBody interfac
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	req.Header.Set("Accept", "application/json")
+	c.setAuthHeaders(req)
 	if reqBody != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -737,7 +866,7 @@ func (c *Client) DownloadCertificate(domain string) ([]byte, string, error) {
 		return nil, "", fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	c.setAuthHeaders(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -806,6 +935,24 @@ func (c *Client) GetTrafficSummary() (*TrafficSummaryResponse, error) {
 	var resp TrafficSummaryResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, fmt.Errorf("failed to parse traffic summary response: %w", err)
+	}
+
+	return &resp, nil
+}
+
+// GetCapabilities retrieves the agent's probe table — every registered
+// gear's availability verdict and detected capability key-values. Used by
+// the dashboard's Gears settings page to hide gears the active box can't
+// run (issue #71 item 2).
+func (c *Client) GetCapabilities() (*CapabilitiesResponse, error) {
+	body, err := c.doRequest("GET", "/api/v1/system/capabilities", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp CapabilitiesResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse capabilities response: %w", err)
 	}
 
 	return &resp, nil
@@ -1002,8 +1149,7 @@ func (c *Client) UpdateHAProxyConfig(req *HAProxyConfigUpdateRequest) (*HAProxyC
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
-	httpReq.Header.Set("Accept", "application/json")
+	c.setAuthHeaders(httpReq)
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	httpResp, err := c.httpClient.Do(httpReq)
@@ -1082,14 +1228,44 @@ func (c *Client) GetFirewallConfig() (*FirewallConfigResponse, error) {
 }
 
 // UpdateFirewallConfig updates the firewall configuration.
+// Note: Returns a response even on validation failure (400) - check resp.Success field.
+// The agent returns 400 with a valid JSON body containing validation details
+// (nft -c -f output, expected-SHA mismatch, etc.) rather than a generic error.
 func (c *Client) UpdateFirewallConfig(req *FirewallConfigUpdateRequest) (*FirewallConfigUpdateResponse, error) {
-	body, err := c.doRequestWithBody("POST", "/api/v1/firewall/config", req)
+	fullURL := c.baseURL + "/api/v1/firewall/config"
+
+	jsonBody, err := json.Marshal(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to marshal request body: %w", err)
+	}
+
+	httpReq, err := http.NewRequest("POST", fullURL, strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.setAuthHeaders(httpReq)
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	httpResp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer httpResp.Body.Close()
+
+	body, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	var resp FirewallConfigUpdateResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
+		if httpResp.StatusCode >= 400 {
+			return nil, &APIError{
+				StatusCode: httpResp.StatusCode,
+				Message:    fmt.Sprintf("HTTP %d: %s", httpResp.StatusCode, http.StatusText(httpResp.StatusCode)),
+			}
+		}
 		return nil, fmt.Errorf("failed to parse firewall config update response: %w", err)
 	}
 
@@ -1762,5 +1938,112 @@ func (c *Client) ConfigureUnattended(enabled, autoReboot bool) (*UnattendedConfi
 		return nil, fmt.Errorf("failed to parse unattended config response: %w", err)
 	}
 
+	return &resp, nil
+}
+
+// ==============================================================
+// Source-aware metrics endpoints (issue #91 phases 4 + 5 + 7).
+//
+// These mirror the agent's /api/v1/{nginx,apache,caddy,traefik}/stats
+// + /api/v1/access-log/{source}/recent shape. The dashboard collector
+// calls GetSourceStats once per available source per scrape; the
+// metrics-page handler calls GetAccessLogRecent when the Error
+// Insights panel asks for a different source. The agent endpoints
+// landed in PR #100 / #101; see gearbox-agent/docs/source-detection.md
+// for the per-source surface they expose.
+// ==============================================================
+
+// SourceStats is the un-typed JSON payload the agent's /api/v1/{src}/stats
+// endpoints return. Each source's Stats struct shape differs (nginx has
+// active/reading/writing/waiting; Traefik has per-status-class counters;
+// etc.), so the client surface keeps the payload as a flexible map and
+// lets the collector normalise it into the database's SourceStatsSnapshot
+// shape. This avoids re-declaring four near-identical Go types whose only
+// real purpose is JSON unmarshaling.
+type SourceStats map[string]any
+
+// GetSourceStats fetches the latest stats snapshot for one source
+// (nginx / apache / caddy / traefik). Returns 503 from the agent
+// when the gear hasn't completed its first scrape yet; we surface
+// that as an error so the collector can log + skip without
+// persisting a misleading zero row.
+//
+// `source` must be one of the four supported identifiers; the
+// agent will return 404 for anything else and we surface that too.
+func (c *Client) GetSourceStats(source string) (SourceStats, error) {
+	body, err := c.doRequest("GET", "/api/v1/"+source+"/stats", nil)
+	if err != nil {
+		return nil, err
+	}
+	var out SourceStats
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, fmt.Errorf("failed to parse %s stats response: %w", source, err)
+	}
+	return out, nil
+}
+
+// AccessLogRecord mirrors the agent's accesslog.Record shape — the
+// dashboard renders these directly in the Error Insights panel, so
+// the JSON keys here have to track the agent's. Keep alphabetical
+// by field name within each grouping so adding a new field is a
+// trivial inspection.
+type AccessLogRecord struct {
+	Profile      string  `json:"profile"`
+	Timestamp    string  `json:"timestamp,omitempty"`
+	TimestampRaw string  `json:"timestamp_raw,omitempty"`
+	SourceIP     string  `json:"source_ip,omitempty"`
+	Method       string  `json:"method,omitempty"`
+	Path         string  `json:"path,omitempty"`
+	Host         string  `json:"host,omitempty"`
+	StatusCode   int     `json:"status_code"`
+	BytesSent    int64   `json:"bytes_sent,omitempty"`
+	DurationMs   float64 `json:"duration_ms,omitempty"`
+	Backend      string  `json:"backend,omitempty"`
+	Server       string  `json:"server,omitempty"`
+	UserAgent    string  `json:"user_agent,omitempty"`
+	Referer      string  `json:"referer,omitempty"`
+	Raw          string  `json:"raw"`
+}
+
+// AccessLogResponse is the envelope the agent's
+// /api/v1/access-log/{source}/recent endpoint returns. Available=false
+// + a Reason populated means the host has no readable log for this
+// source — the dashboard renders that as a "logs unavailable" hint
+// rather than an empty panel.
+type AccessLogResponse struct {
+	Source     string            `json:"source"`
+	Profile    string            `json:"profile"`
+	Path       string            `json:"path,omitempty"`
+	Available  bool              `json:"available"`
+	Reason     string            `json:"reason,omitempty"`
+	MatchCount int               `json:"match_count"`
+	Records    []AccessLogRecord `json:"records"`
+}
+
+// GetAccessLogRecent fetches recent parsed log records from the
+// agent's access-log endpoint. statusMin = 0 is a valid value
+// meaning "disable filtering" — the agent treats it that way (see
+// gearbox-agent's access-log handler). To distinguish "caller
+// supplied 0 explicitly" from "caller wants the agent default of
+// 500" we treat any non-negative value as caller-supplied and pass
+// it through; a negative value (e.g. -1) is the way to fall back
+// to the agent default. limit > 0 follows the same explicit/default
+// split — 0 is server-default, positive is explicit.
+func (c *Client) GetAccessLogRecent(source string, statusMin, limit int) (*AccessLogResponse, error) {
+	q := url.Values{}
+	if statusMin >= 0 {
+		q.Set("status_min", fmt.Sprintf("%d", statusMin))
+	}
+	if limit > 0 {
+		q.Set("limit", fmt.Sprintf("%d", limit))
+	}
+	body, err := c.doRequest("GET", "/api/v1/access-log/"+source+"/recent", q)
+	if err != nil {
+		return nil, err
+	}
+	var resp AccessLogResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse access-log response: %w", err)
+	}
 	return &resp, nil
 }

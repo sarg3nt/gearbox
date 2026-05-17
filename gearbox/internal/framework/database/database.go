@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	_ "modernc.org/sqlite"
 	"github.com/sarg3nt/gearbox/internal/framework/models"
+	_ "modernc.org/sqlite"
 )
 
 // DB wraps the SQLite database connection.
@@ -100,6 +100,12 @@ func New(dbPath string, logger *slog.Logger) (*DB, error) {
 	// Initialize Home dashboard schema (boards, tiles, secrets)
 	if err := d.initHomeSchema(); err != nil {
 		return nil, fmt.Errorf("failed to initialize home schema: %w", err)
+	}
+
+	// Initialize metrics layouts (per-user, per-box GridStack
+	// positions for the metrics page — see issue #103).
+	if err := d.initMetricsLayoutsSchema(); err != nil {
+		return nil, fmt.Errorf("failed to initialize metrics layouts schema: %w", err)
 	}
 
 	// Run schema migrations AFTER all schemas are initialized
@@ -811,6 +817,15 @@ func (d *DB) ClearMetricsData(boxID string) error {
 		`DELETE FROM stats_history WHERE box_id = ?`,
 		`DELETE FROM backend_history WHERE box_id = ?`,
 		`DELETE FROM system_metrics_history WHERE box_id = ?`,
+		// source_stats lives in the traffic-analysis schema but is
+		// driven by the same metrics-collection cadence as the
+		// HAProxy stats_history table above. Clearing metrics data
+		// must wipe it too, otherwise per-source history stays
+		// visible after the operator clicks "clear" and surprises
+		// them. The column is server_id rather than box_id (table
+		// is shared with traffic_flows which predates the box_id
+		// naming), so the WHERE clause differs.
+		`DELETE FROM source_stats WHERE server_id = ?`,
 	}
 
 	for _, query := range queries {
@@ -839,6 +854,11 @@ func (d *DB) CleanupMetricsByAge(boxID string, retention time.Duration) (int64, 
 		`DELETE FROM stats_history WHERE box_id = ? AND collected_at < ?`,
 		`DELETE FROM backend_history WHERE box_id = ? AND collected_at < ?`,
 		`DELETE FROM system_metrics_history WHERE box_id = ? AND collected_at < ?`,
+		// source_stats follows the same TTL as the HAProxy
+		// histories — see ClearMetricsData for the rationale.
+		// Different WHERE column name because the traffic-analysis
+		// schema uses server_id, not box_id.
+		`DELETE FROM source_stats WHERE server_id = ? AND collected_at < ?`,
 	}
 
 	for _, query := range queries {
@@ -858,14 +878,19 @@ func (d *DB) CleanupMetricsBySize(boxID string, maxSizeMB int) (int64, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	// Get current stats
-	var statsCount, backendCount, metricsCount int64
+	// Get current stats. source_stats joins the proportional cleanup
+	// at the same rough byte-per-row weight as system_metrics_history
+	// (~150 bytes; 4 numeric columns + a tiny JSON blob). Without it
+	// the per-source table would grow unbounded under the size-based
+	// retention policy.
+	var statsCount, backendCount, metricsCount, sourceCount int64
 	_ = d.db.QueryRow("SELECT COUNT(*) FROM stats_history WHERE box_id = ?", boxID).Scan(&statsCount)
 	_ = d.db.QueryRow("SELECT COUNT(*) FROM backend_history WHERE box_id = ?", boxID).Scan(&backendCount)
 	_ = d.db.QueryRow("SELECT COUNT(*) FROM system_metrics_history WHERE box_id = ?", boxID).Scan(&metricsCount)
+	_ = d.db.QueryRow("SELECT COUNT(*) FROM source_stats WHERE server_id = ?", boxID).Scan(&sourceCount)
 
 	// Estimate current size
-	currentSizeBytes := statsCount*150 + backendCount*200 + metricsCount*100
+	currentSizeBytes := statsCount*150 + backendCount*200 + metricsCount*100 + sourceCount*150
 	maxSizeBytes := int64(maxSizeMB) * 1024 * 1024
 
 	if currentSizeBytes <= maxSizeBytes {
@@ -878,7 +903,7 @@ func (d *DB) CleanupMetricsBySize(boxID string, maxSizeMB int) (int64, error) {
 
 	// Delete oldest records proportionally from each table
 	var totalDeleted int64
-	totalRecords := statsCount + backendCount + metricsCount
+	totalRecords := statsCount + backendCount + metricsCount + sourceCount
 	if totalRecords == 0 {
 		return 0, nil
 	}
@@ -922,6 +947,24 @@ func (d *DB) CleanupMetricsBySize(boxID string, maxSizeMB int) (int64, error) {
 			result, err := d.db.Exec(`
 				DELETE FROM system_metrics_history WHERE box_id = ? AND id IN (
 					SELECT id FROM system_metrics_history WHERE box_id = ? ORDER BY collected_at ASC LIMIT ?
+				)
+			`, boxID, boxID, deleteCount)
+			if err == nil {
+				deleted, _ := result.RowsAffected()
+				totalDeleted += deleted
+			}
+		}
+	}
+
+	// Delete from source_stats (per-source rollups). Different
+	// id-WHERE column (server_id) because the traffic-analysis
+	// schema predates the box_id naming.
+	if sourceCount > 0 {
+		deleteCount := int64(float64(bytesToDelete) * float64(sourceCount) / float64(currentSizeBytes) / 150)
+		if deleteCount > 0 {
+			result, err := d.db.Exec(`
+				DELETE FROM source_stats WHERE server_id = ? AND id IN (
+					SELECT id FROM source_stats WHERE server_id = ? ORDER BY collected_at ASC LIMIT ?
 				)
 			`, boxID, boxID, deleteCount)
 			if err == nil {

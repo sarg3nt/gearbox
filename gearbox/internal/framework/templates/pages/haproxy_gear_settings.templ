@@ -13,25 +13,6 @@ import (
 // config editor, and git-based configuration management.
 templ HAProxyGearSettingsPage(user *models.User, serverID string, serverName string, server *database.BoxDB, haproxyGit *database.BoxGitConfig, successMsg, errorMsg string) {
 	@layouts.Base("HAProxy Settings", user, "/settings") {
-		<!-- Hidden container for page header content - will be moved to main header via JS -->
-		<div id="page-header-source" class="hidden">
-			<div class="flex items-center">
-				<h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">
-					HAProxy Settings
-					if serverName != "" {
-						<span class="text-gray-400 dark:text-gray-500 mx-2">:</span>
-						<span class="text-gray-600 dark:text-gray-300">{ serverName }</span>
-					}
-				</h2>
-			</div>
-			<div class="flex-1"></div>
-			<a href={ templ.SafeURL("/settings/gears?server=" + serverID) } class="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center">
-				<svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
-				</svg>
-				Back to Gears
-			</a>
-		</div>
 
 		<div class="max-w-4xl mx-auto px-4 py-8">
 			if successMsg != "" {
@@ -212,19 +193,6 @@ templ HAProxyGearSettingsPage(user *models.User, serverID string, serverName str
 				}
 			</div>
 
-			<script>
-			function setupPageHeader() {
-				const source = document.getElementById('page-header-source');
-				const target = document.getElementById('header-page-content');
-				if (source && target) {
-					while (source.firstChild) {
-						target.appendChild(source.firstChild);
-					}
-					source.remove();
-				}
-			}
-			document.addEventListener('DOMContentLoaded', setupPageHeader);
-			</script>
 		</div>
 	}
 }

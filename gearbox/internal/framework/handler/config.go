@@ -579,6 +579,7 @@ func (h *Handler) APIFirewallConfigSave(w http.ResponseWriter, r *http.Request) 
 	boxID := chi.URLParam(r, "boxID")
 	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
+		h.logger.Warn("firewall config save: box lookup failed", "box_id", boxID, "err", err, "server_nil", server == nil)
 		h.jsonError(w, "Server not found", http.StatusNotFound)
 		return
 	}
@@ -645,6 +646,7 @@ func (h *Handler) APIFirewallConfigValidate(w http.ResponseWriter, r *http.Reque
 	boxID := chi.URLParam(r, "boxID")
 	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
+		h.logger.Warn("firewall config validate: box lookup failed", "box_id", boxID, "err", err, "server_nil", server == nil)
 		h.jsonError(w, "Server not found", http.StatusNotFound)
 		return
 	}

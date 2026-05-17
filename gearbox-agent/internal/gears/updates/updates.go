@@ -38,7 +38,11 @@ type Package struct {
 	AvailableVersion string `json:"available_version"`
 	Architecture     string `json:"architecture"`
 	IsSecurityUpdate bool   `json:"is_security_update"`
-	Priority         string `json:"priority"` // low, medium, high, critical
+	// Always serialize is_held — the dashboard filters on `is_held === false`,
+	// so `omitempty` (dropping the field for false values) would cause those
+	// rows to be filtered out by strict-equality checks on the client.
+	IsHeld           bool   `json:"is_held"` // Package is held (pinned via apt-mark/dpkg) — apt will not upgrade it even though a newer version is available
+	Priority         string `json:"priority"`          // low, medium, high, critical
 	Repository       string `json:"repository"`
 	Size             int64  `json:"size_bytes"`    // Download size in bytes
 	ChangelogURL     string `json:"changelog_url"` // URL to package changelog (Launchpad)
@@ -57,7 +61,7 @@ type InstalledPackage struct {
 	UpdateAvailable  bool      `json:"update_available,omitempty"`
 	AvailableVersion string    `json:"available_version,omitempty"`
 	IsSecurityUpdate bool      `json:"is_security_update,omitempty"`
-	IsHeld           bool      `json:"is_held,omitempty"` // Package is held (pinned) by dpkg/apt-mark
+	IsHeld           bool      `json:"is_held"` // Package is held (pinned) by dpkg/apt-mark — always serialized (see note on Package above)
 	PackageURL       string    `json:"package_url,omitempty"` // Link to package info page
 }
 
@@ -221,17 +225,73 @@ func (c *UpdatesCollector) runPipxCommand(args ...string) ([]byte, error) {
 }
 
 // runPipxCommandWithOutput runs a pipx command and wraps failures with the
-// command's output, just like runCommandWithOutput does for regular commands.
+// command's output. Pipx's failure messages don't follow apt's "E:" convention,
+// so we use a pipx-tuned extractor that surfaces multiple trailing lines rather
+// than just the final "<long-path>/python -m pip install --upgrade pkg -q' failed"
+// summary line — that line on its own is missing the actual pip diagnostic.
+//
+// On failure the full output is also logged via slog at Warn level so operators
+// can dig into the agent log for full pip stdout/stderr; the returned error is
+// shorter and dashboard-friendly.
 func (c *UpdatesCollector) runPipxCommandWithOutput(args ...string) ([]byte, error) {
 	output, err := c.runPipxCommand(args...)
 	if err != nil {
-		errDetail := extractErrorLines(output)
+		slog.Warn("pipx command failed",
+			"args", args,
+			"err", err,
+			"output", strings.TrimSpace(string(output)),
+		)
+		errDetail := extractPipxErrorDetail(output)
 		if errDetail != "" {
 			return output, errors.New(errDetail)
 		}
 		return output, err
 	}
 	return output, nil
+}
+
+// extractPipxErrorDetail collects the most useful diagnostic lines from pipx
+// output for surfacing in a wrapped error. Unlike apt, pipx's failure summary
+// is typically the final line ("'<python> -m pip install --upgrade pkg -q' failed")
+// while the cause (network error, dependency conflict, missing module, etc.)
+// is on lines above it. We therefore return up to the last few non-empty lines
+// joined with "; ", capped at a reasonable display length.
+//
+// No prefix-based filtering: pip diagnostics legitimately use "Failed to …"
+// prefixes too (e.g. "Failed to build wheels for cryptography"), and those
+// are exactly the actionable lines we want to surface.
+func extractPipxErrorDetail(output []byte) string {
+	if len(output) == 0 {
+		return ""
+	}
+
+	text := strings.TrimSpace(string(output))
+	if text == "" {
+		return ""
+	}
+
+	const maxLines = 5
+	const maxTotalLen = 500
+
+	rawLines := strings.Split(text, "\n")
+	var picked []string
+	for i := len(rawLines) - 1; i >= 0 && len(picked) < maxLines; i-- {
+		trimmed := strings.TrimSpace(rawLines[i])
+		if trimmed == "" {
+			continue
+		}
+		picked = append([]string{trimmed}, picked...)
+	}
+
+	if len(picked) == 0 {
+		return ""
+	}
+
+	joined := strings.Join(picked, "; ")
+	if len(joined) > maxTotalLen {
+		joined = joined[:maxTotalLen] + "..."
+	}
+	return joined
 }
 
 // CheckUpdates retrieves the current update status.

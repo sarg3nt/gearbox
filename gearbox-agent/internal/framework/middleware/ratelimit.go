@@ -8,6 +8,23 @@ import (
 	"time"
 )
 
+// maxRateLimitClients caps the number of distinct client IPs the rate
+// limiter will track in memory. A distributed attacker hitting the agent
+// from a botnet (or any large pool of unique source IPs) would otherwise
+// be able to grow the map unbounded, since the cleanup goroutine only
+// evicts entries idle for 10 minutes. With the cap in place, attempts to
+// add a new bucket past the cap fall through to a synchronous "premature
+// cleanup" of stale entries; if that doesn't free space, the request is
+// denied as if rate-limited. See 2026-05 security audit, P1-6.
+const maxRateLimitClients = 10000
+
+// staleClientThreshold is how old a bucket's lastUpdate must be before the
+// premature-cleanup path is willing to evict it. Lower than the 10-minute
+// cleanupLoop threshold to give the at-capacity path more room to work,
+// but high enough that a brief burst from many clients doesn't cause real
+// requests to be denied.
+const staleClientThreshold = 2 * time.Minute
+
 // RateLimiter implements a simple token bucket rate limiter per IP.
 type RateLimiter struct {
 	mu          sync.Mutex
@@ -15,10 +32,22 @@ type RateLimiter struct {
 	rate        int           // Requests per second
 	burst       int           // Maximum burst size
 	cleanup     time.Duration // How often to clean up old entries
+	maxClients  int           // Bounded map size; 0 = unbounded (tests only)
 	logger      *slog.Logger
 	trustProxy  bool          // Whether to trust X-Forwarded-For headers
 	stopCleanup chan struct{} // Signal to stop cleanup goroutine
+
+	// capacityWarnInterval throttles the "map at capacity" warning so a
+	// distributed scanner can't turn the structured-log pipeline into a
+	// disk/ingest amplification vector. 2026-05 audit P1-6 follow-up
+	// (Copilot review on PR #42).
+	lastCapacityWarn time.Time
 }
+
+// capacityWarnInterval is the minimum time between "map at capacity"
+// warnings. One per minute is enough for ops visibility (the condition
+// is sticky once it starts) and slow enough to make log-DoS impractical.
+const capacityWarnInterval = time.Minute
 
 type clientBucket struct {
 	tokens     float64
@@ -35,6 +64,7 @@ func NewRateLimiter(rate, burst int, trustProxy bool, logger *slog.Logger) *Rate
 		rate:        rate,
 		burst:       burst,
 		cleanup:     5 * time.Minute,
+		maxClients:  maxRateLimitClients,
 		logger:      logger,
 		trustProxy:  trustProxy,
 		stopCleanup: make(chan struct{}),
@@ -61,9 +91,36 @@ func (rl *RateLimiter) Allow(ip string) bool {
 
 	bucket, exists := rl.clients[ip]
 	if !exists {
-		// New client, start with full burst capacity
+		// New client. Check the bounded-map cap before allocating a bucket
+		// to defend against a distributed attacker pumping unique IPs into
+		// the map faster than the 5-minute cleanup loop evicts them
+		// (2026-05 audit, P1-6).
+		if rl.maxClients > 0 && len(rl.clients) >= rl.maxClients {
+			rl.evictStaleLocked(now)
+			if len(rl.clients) >= rl.maxClients {
+				// Still full after premature cleanup. Deny rather than
+				// allocate. The denied IP gets back in next time someone
+				// else's bucket goes stale.
+				//
+				// Throttle the warn log: under a distributed scan this
+				// fires on every new IP, so unbounded logging would let
+				// the attacker drive disk/ingest cost (a secondary DoS).
+				// One warning per capacityWarnInterval is enough — the
+				// condition is sticky once it starts.
+				if rl.logger != nil && now.Sub(rl.lastCapacityWarn) >= capacityWarnInterval {
+					rl.logger.Warn("Rate limiter map at capacity; denying new client",
+						"ip", ip,
+						"map_size", len(rl.clients),
+						"throttled_until", now.Add(capacityWarnInterval).Format(time.RFC3339),
+					)
+					rl.lastCapacityWarn = now
+				}
+				return false
+			}
+		}
+		// Start with full burst capacity (-1 for this request).
 		rl.clients[ip] = &clientBucket{
-			tokens:     float64(rl.burst - 1), // -1 for this request
+			tokens:     float64(rl.burst - 1),
 			lastUpdate: now,
 		}
 		return true
@@ -105,6 +162,19 @@ func (rl *RateLimiter) cleanupLoop() {
 			rl.mu.Unlock()
 		case <-rl.stopCleanup:
 			return
+		}
+	}
+}
+
+// evictStaleLocked drops bucket entries older than staleClientThreshold.
+// Caller MUST hold rl.mu. Used by Allow() when the map hits capacity, to
+// make room before allocating a new bucket. The 2-minute threshold is
+// shorter than the cleanupLoop's 10-minute threshold so the at-capacity
+// path can free space without waiting for the periodic sweep.
+func (rl *RateLimiter) evictStaleLocked(now time.Time) {
+	for ip, bucket := range rl.clients {
+		if now.Sub(bucket.lastUpdate) > staleClientThreshold {
+			delete(rl.clients, ip)
 		}
 	}
 }

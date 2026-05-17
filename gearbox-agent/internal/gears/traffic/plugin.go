@@ -3,7 +3,9 @@ package traffic
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -69,6 +71,30 @@ func (p *Gear) Health() gear.HealthStatus {
 		return gear.NewDegradedStatus("HAProxy stats not configured")
 	}
 	return gear.NewHealthyStatus("operational")
+}
+
+// Probe reports whether the agent has a usable HAProxy stats surface.
+// Traffic analysis reads stick tables over the same stats socket / URL as
+// the haproxy gear, so the prerequisite is identical: a URL configured or
+// a socket that exists on disk.
+func (p *Gear) Probe(ctx context.Context, deps gear.Dependencies) gear.ProbeResult {
+	if deps.HAProxyStatsURL != "" {
+		return gear.ProbeAvailable("stats URL configured", map[string]string{
+			"stats_url": deps.HAProxyStatsURL,
+		})
+	}
+	if deps.HAProxyStatsSocket != "" {
+		if _, err := os.Stat(deps.HAProxyStatsSocket); err == nil {
+			return gear.ProbeAvailable("stats socket reachable", map[string]string{
+				"stats_socket": deps.HAProxyStatsSocket,
+			})
+		}
+		return gear.ProbeInaccessible(fmt.Sprintf(
+			"stats socket configured at %s but does not exist",
+			deps.HAProxyStatsSocket,
+		))
+	}
+	return gear.ProbeNotInstalled("no HAProxy stats socket or URL configured")
 }
 
 // RegisterRoutes registers the plugin's HTTP routes.

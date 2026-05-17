@@ -95,14 +95,15 @@ func (h *Handler) HAProxyBoxCreatePost(w http.ResponseWriter, r *http.Request) {
 
 	// Parse form into server struct
 	server := &database.BoxDB{
-		BoxID:         strings.TrimSpace(r.FormValue("box_id")),
-		Name:          strings.TrimSpace(r.FormValue("name")),
-		Location:      strings.TrimSpace(r.FormValue("location")),
-		Notes:         strings.TrimSpace(r.FormValue("notes")),
-		AgentURL:      strings.TrimSpace(r.FormValue("agent_url")),
-		Enabled:       r.FormValue("enabled") == "on",
-		SkipTLSVerify: r.FormValue("skip_tls_verify") == "on",
-		CreatedBy:     &user.ID,
+		BoxID:          strings.TrimSpace(r.FormValue("box_id")),
+		Name:           strings.TrimSpace(r.FormValue("name")),
+		Location:       strings.TrimSpace(r.FormValue("location")),
+		Notes:          strings.TrimSpace(r.FormValue("notes")),
+		AgentURL:       strings.TrimSpace(r.FormValue("agent_url")),
+		Enabled:        r.FormValue("enabled") == "on",
+		SkipTLSVerify:  r.FormValue("skip_tls_verify") == "on",
+		ConsoleEnabled: r.FormValue("console_enabled") == "on",
+		CreatedBy:      &user.ID,
 	}
 
 	// Validate required fields
@@ -232,6 +233,7 @@ func (h *Handler) HAProxyBoxUpdatePost(w http.ResponseWriter, r *http.Request) {
 	server.AgentURL = strings.TrimSpace(r.FormValue("agent_url"))
 	server.Enabled = r.FormValue("enabled") == "on"
 	server.SkipTLSVerify = r.FormValue("skip_tls_verify") == "on"
+	server.ConsoleEnabled = r.FormValue("console_enabled") == "on"
 
 	// Update API key if provided
 	apiKey := strings.TrimSpace(r.FormValue("api_key"))
@@ -249,6 +251,12 @@ func (h *Handler) HAProxyBoxUpdatePost(w http.ResponseWriter, r *http.Request) {
 		h.renderServerFormWithError(w, r, user, server, true, fmt.Sprintf("Failed to update server: %v", err))
 		return
 	}
+
+	// The Agent URL or API key may have changed; drop any cached
+	// capabilities so the next render fetches against the new endpoint
+	// rather than serving stale data from the previous agent until the
+	// TTL expires.
+	h.invalidateBoxCapabilities(server.BoxID)
 
 	// Log audit
 	h.logAudit(r, user.ID, "haproxy_box_update", fmt.Sprintf("Updated HAProxy box: %s (%s)", server.Name, server.BoxID))
@@ -312,6 +320,11 @@ func (h *Handler) HAProxyBoxDeletePost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to delete server", http.StatusInternalServerError)
 		return
 	}
+
+	// Drop cached capabilities — even if the same box ID is recreated
+	// later, it's likely a different host and we shouldn't serve the
+	// previous probe table.
+	h.invalidateBoxCapabilities(server.BoxID)
 
 	// Log audit
 	h.logAudit(r, user.ID, "haproxy_box_delete", fmt.Sprintf("Deleted HAProxy box: %s (%s)", server.Name, server.BoxID))

@@ -5,9 +5,9 @@ A Go service that runs on monitored servers and workstations to provide:
 1. **Gear-based data collection** - Gathers system metrics, service stats, logs, and security data
 2. **Secure REST API** - Exposes collected data over HTTPS with API key authentication
 3. **Real-time events** - WebSocket endpoint for live updates to Gearbox dashboard
-4. **Auto-discovery** - Detects installed services and enables relevant collectors
+4. **Capability-driven gear loading** - At startup the agent probes the host for each gear's prerequisites and loads only the gears that apply
 
-**Universal Monitoring:** Works on ANY Linux system - HAProxy hosts, Docker hosts, TrueNAS Scale, workstations, bare servers.
+**Universal Monitoring:** Works on ANY Linux system - HAProxy hosts, Docker hosts, TrueNAS Scale, workstations, bare servers. Gears that don't apply to the current host (e.g. `haproxy` on a TrueNAS box) are skipped at startup — no Initialize, no background goroutines, no failing collectors. See [docs/gear-probes.md](docs/gear-probes.md) for the probe lifecycle, status enum, and per-gear contracts.
 
 **HAProxy-Specific Features (when HAProxy is detected):**
 
@@ -178,7 +178,18 @@ HAPROXY_AGENT_LOG_LEVEL=info  # debug, info, warn, error
 # TLS (optional - uses self-signed if not set)
 HAPROXY_AGENT_TLS_CERT=/etc/haproxy/certs/sarg3.net.fullchain.crt
 HAPROXY_AGENT_TLS_KEY=/etc/haproxy/certs/sarg3.net.key
+
+# Extra SANs for the auto-generated self-signed cert. Comma-separated list
+# of hostnames and/or IPs that clients will use to reach this agent. Ignored
+# when a custom cert is configured above. Loopback (localhost / 127.0.0.1 /
+# ::1) is always covered automatically.
+HAPROXY_AGENT_TLS_HOSTS=mjolnir,172.16.2.3,agent.example.com
 ```
+
+> [!NOTE]
+> The agent regenerates the self-signed cert automatically when
+> `HAPROXY_AGENT_TLS_HOSTS` changes (adding a SAN that the existing cert
+> does not cover). No manual cleanup required.
 
 ### Git Sync
 
@@ -205,6 +216,46 @@ HAPROXY_STATS_URL=http://localhost:8404/stats  # Fallback
 HAPROXY_STATS_USER=admin
 HAPROXY_STATS_PASSWORD=secret
 ```
+
+### Metric-source overrides
+
+Most hosts have one obvious producer per metric category. Where two coexist — for example HAProxy fronting nginx, with both genuinely serving HTTP — the agent auto-picks a primary using a built-in preference list and surfaces it in the capability manifest. Operators can override that pick when auto-detection chooses wrong on their host.
+
+Auto-detection is the default. The override env vars below exist for the rare edge cases.
+
+```bash
+# Force a specific gear as the primary for HTTP-request metrics
+# (request volume, response codes, response times, vhost breakdowns).
+# Valid values match gear identifiers in /api/v1/system/capabilities:
+# haproxy, nginx, apache, caddy, traefik.
+GEARBOX_AGENT_HTTP_SOURCE=nginx
+```
+
+Override behaviour:
+
+- Names are case-insensitive and trimmed (`HAProxy` and `haproxy` both work).
+- An override pointing at a gear that didn't probe Available, or doesn't produce data for the category, logs a warning at startup and **falls back to auto-detect** — locking out HTTP metrics because the override's target isn't installed on this box would be worse than serving auto-picked data.
+- The selected primary plus the chosen reason and the alternatives that were also available appear in `/api/v1/system/capabilities` under `primary_sources` so dashboards and humans can confirm the resolution.
+
+### Source detection
+
+The agent probes the host at startup for every supported source — nginx, Apache, Caddy, Traefik, Docker, plus the always-present `host` entry — and reports each one's status in the capability manifest as `available`, `not_installed`, or `inaccessible`. **Auto-detection is the default; no configuration required for the common case.**
+
+The override env vars below exist for the rare cases where auto-detection misses or the operator wants to point the agent at a non-default surface:
+
+| Env var               | Purpose                                                          |
+|-----------------------|------------------------------------------------------------------|
+| `NGINX_STATUS_URL`    | Force a specific `stub_status` URL (skips the default probe).    |
+| `NGINX_CONFIG_FILE`   | Force a specific `nginx.conf` path.                              |
+| `APACHE_STATUS_URL`   | Force a specific `mod_status` URL (e.g. `?auto` variant).        |
+| `APACHE_CONFIG_FILE`  | Force a specific `httpd.conf` / `apache2.conf` path.             |
+| `CADDY_ADMIN_URL`     | Force the admin / Prometheus URL (default `:2019/metrics`).      |
+| `TRAEFIK_METRICS_URL` | Force the Prometheus endpoint URL.                               |
+| `DOCKER_SOCKET`       | Force a specific Docker socket path (e.g. rootless installs).    |
+
+When an override is set the agent trusts the operator and skips the synchronous detection probe for that source — a misconfigured value surfaces later when the metrics gear (Phase 4+) tries to read from it, not at startup.
+
+See [docs/source-detection.md](docs/source-detection.md) for the full probe precedence flow, per-source troubleshooting recipes, and the "multiple instances of one source" limitation.
 
 ## Authentication
 
@@ -361,6 +412,7 @@ gearbox-agent/
 
 ## Documentation
 
+- [Gear Probes](docs/gear-probes.md) - Capability-driven gear loading, status enum, per-gear contracts
 - [HAProxy API](docs/haproxy-api.md) - Stats, runtime info, validation
 - [Logs API](docs/logs-api.md) - Log streaming
 - [Security API](docs/security-api.md) - Fail2ban and firewall stats

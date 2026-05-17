@@ -1,3 +1,7 @@
+	// Services gear config — every toggle saves immediately (issue #71 item 3).
+	// The legacy "Save Configuration" submit button has been removed; this file
+	// owns the persistence flow now.
+
 	function filterServices(query) {
 		const items = document.querySelectorAll('.service-item');
 		const lowerQuery = query.toLowerCase();
@@ -9,6 +13,87 @@
 				item.style.display = 'none';
 			}
 		});
+	}
+
+	// In-flight save tracking. We coalesce overlapping saves: only one POST
+	// at a time, and if changes pile up while one is flying, queue exactly
+	// one re-save with the latest state when it returns. Avoids stomping
+	// rapid toggles or sending N parallel requests on Enable All.
+	let saveInFlight = false;
+	let savePending = false;
+
+	function getActionURL() {
+		const root = document.getElementById('services-config-root');
+		return root ? root.dataset.action : '';
+	}
+
+	// Warn loudly when the page renders without a usable save URL. The
+	// previous quiet return path meant a future templ refactor that drops
+	// data-action would make every toggle appear to "save" while doing
+	// nothing — see Copilot review on PR #76.
+	let warnedNoActionURL = false;
+	function warnMissingActionURL() {
+		if (warnedNoActionURL) return;
+		warnedNoActionURL = true;
+		console.error('services-config: #services-config-root[data-action] missing — toggles will not persist');
+		if (window.showToast) {
+			window.showToast('Cannot save services: page is missing its save URL', 'error', 6000);
+		}
+	}
+
+	function gatherFormData() {
+		const data = new FormData();
+		document.querySelectorAll('#services-grid .service-item').forEach(item => {
+			const enabledInput = item.querySelector('input[name^="service_enabled_"]');
+			if (enabledInput && enabledInput.value === 'true') {
+				const name = item.dataset.name;
+				if (name) data.append('services', name);
+			}
+		});
+		const showAll = document.getElementById('services-show-all');
+		if (showAll && showAll.checked) {
+			data.append('show_all', 'on');
+		}
+		return data;
+	}
+
+	function autoSave() {
+		if (saveInFlight) {
+			savePending = true;
+			return;
+		}
+		const url = getActionURL();
+		if (!url) {
+			warnMissingActionURL();
+			return;
+		}
+
+		saveInFlight = true;
+		fetch(url, {
+			method: 'POST',
+			headers: { 'Accept': 'application/json' },
+			body: gatherFormData(),
+			credentials: 'same-origin',
+		})
+			.then(r => r.json().catch(() => ({ success: r.ok })))
+			.then(data => {
+				if (data && data.success === false && window.showToast) {
+					window.showToast(data.error || 'Failed to save services', 'error', 4000);
+				}
+			})
+			.catch(err => {
+				console.error('services auto-save failed', err);
+				if (window.showToast) {
+					window.showToast('Failed to save services', 'error', 4000);
+				}
+			})
+			.finally(() => {
+				saveInFlight = false;
+				if (savePending) {
+					savePending = false;
+					autoSave();
+				}
+			});
 	}
 
 	function toggleServiceItem(button, serviceName) {
@@ -35,6 +120,7 @@
 			button.querySelector('span').classList.add('translate-x-0');
 		}
 		button.setAttribute('aria-checked', newValue ? 'true' : 'false');
+		autoSave();
 	}
 
 	function toggleAllServices(enable) {
@@ -62,4 +148,12 @@
 				button.setAttribute('aria-checked', enable ? 'true' : 'false');
 			}
 		});
+		autoSave();
 	}
+
+	document.addEventListener('DOMContentLoaded', function () {
+		const showAll = document.getElementById('services-show-all');
+		if (showAll) {
+			showAll.addEventListener('change', autoSave);
+		}
+	});

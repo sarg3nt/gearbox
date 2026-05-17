@@ -56,6 +56,28 @@ func (p *Gear) Initialize(ctx context.Context, deps gear.Dependencies) error {
 	return nil
 }
 
+// Probe reports whether a certificate manager (certbot or acme.sh) is
+// installed and reachable on this host. The gear cannot do anything
+// useful without one, so it loads only when at least one is present.
+func (p *Gear) Probe(ctx context.Context, deps gear.Dependencies) gear.ProbeResult {
+	// Reuse the existing detection logic from Collector without spinning
+	// one up — detectCertbotForProbe and detectAcmeshHome both return
+	// without side effects.
+	if path, ok := detectCertbotForProbe(); ok {
+		return gear.ProbeAvailable("certbot found", map[string]string{
+			"manager": "certbot",
+			"path":    path,
+		})
+	}
+	if home := detectAcmeshHome(); home != "" {
+		return gear.ProbeAvailable("acme.sh found", map[string]string{
+			"manager": "acme.sh",
+			"home":    home,
+		})
+	}
+	return gear.ProbeNotInstalled("neither certbot nor acme.sh found on PATH or common install paths")
+}
+
 // Start is a no-op - collection is handled by the plugin manager.
 func (p *Gear) Start(ctx context.Context) error {
 	return nil

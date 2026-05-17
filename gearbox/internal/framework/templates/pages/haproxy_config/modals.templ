@@ -2,7 +2,7 @@ package haproxy_config
 
 templ Modals() {
 	<!-- Backups Modal -->
-	<div id="backups-modal" class="hidden fixed inset-0 z-50 overflow-y-auto">
+	<div id="backups-modal" role="dialog" aria-modal="true" aria-label="Configuration backups" class="hidden fixed inset-0 z-50 overflow-y-auto">
 		<div class="flex items-center justify-center min-h-screen px-4">
 			<div id="backups-modal-backdrop" class="fixed inset-0 bg-black bg-opacity-50"></div>
 			<div class="relative bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-2xl w-full p-6">
@@ -19,7 +19,7 @@ templ Modals() {
 		</div>
 	</div>
 	<!-- Error Dialog for tampered markers -->
-	<div id="marker-error-modal" class="hidden fixed inset-0 z-50 overflow-y-auto">
+	<div id="marker-error-modal" role="dialog" aria-modal="true" aria-label="Configuration error" class="hidden fixed inset-0 z-50 overflow-y-auto">
 		<div class="flex items-center justify-center min-h-screen px-4">
 			<div class="fixed inset-0 bg-black bg-opacity-50"></div>
 			<div class="relative bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-2xl w-full">
@@ -56,7 +56,7 @@ templ Modals() {
 		</div>
 	</div>
 	<!-- Save Reason Dialog -->
-	<div id="save-reason-modal" class="hidden fixed inset-0 z-50 overflow-y-auto">
+	<div id="save-reason-modal" role="dialog" aria-modal="true" aria-label="Save configuration" class="hidden fixed inset-0 z-50 overflow-y-auto">
 		<div class="flex items-center justify-center min-h-screen px-4">
 			<div id="save-reason-backdrop" class="fixed inset-0 bg-black bg-opacity-50"></div>
 			<div class="relative bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-md w-full">
@@ -103,7 +103,7 @@ templ Modals() {
 		</div>
 	</div>
 	<!-- Validation Output Dialog -->
-	<div id="validation-modal" class="hidden fixed inset-0 z-50 overflow-y-auto">
+	<div id="validation-modal" role="dialog" aria-modal="true" aria-labelledby="validation-modal-title" class="hidden fixed inset-0 z-50 overflow-y-auto">
 		<div class="flex items-center justify-center min-h-screen px-4">
 			<div id="validation-modal-backdrop" class="fixed inset-0 bg-black bg-opacity-50"></div>
 			<div class="relative bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-2xl w-full">
@@ -134,7 +134,7 @@ templ Modals() {
 		</div>
 	</div>
 	<!-- Insert Snippets Modal -->
-	<div id="snippets-modal" class="hidden fixed inset-0 z-50 overflow-y-auto">
+	<div id="snippets-modal" role="dialog" aria-modal="true" aria-label="Insert configuration snippet" class="hidden fixed inset-0 z-50 overflow-y-auto">
 		<div class="flex items-center justify-center min-h-screen px-4">
 			<div id="snippets-modal-backdrop" class="fixed inset-0 bg-black bg-opacity-50"></div>
 			<div class="relative bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[85vh] flex flex-col">

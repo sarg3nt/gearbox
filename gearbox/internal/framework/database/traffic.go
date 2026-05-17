@@ -99,6 +99,46 @@ func (d *DB) initTrafficSchema() error {
 	CREATE INDEX IF NOT EXISTS idx_traffic_snapshots_server_time
 		ON traffic_snapshots(server_id, collected_at);
 
+	-- Source stats: per-source aggregate snapshots for non-HAProxy
+	-- metric producers (nginx, Apache, Caddy, Traefik). Distinct
+	-- table from traffic_flows because those sources don't emit
+	-- per-IP / per-backend detail — they expose top-level rollups
+	-- via stub_status / mod_status / Prometheus. Adding the rollups
+	-- here keeps traffic_flows's HAProxy-shaped schema clean and
+	-- avoids a forest of NULL columns. If we later land per-IP
+	-- breakdowns via access-log parsing, that's the moment to
+	-- extend traffic_flows with a source column — for now,
+	-- source-aware data lives here.
+	--
+	-- requests_total is monotonic; rates are derived dashboard-side
+	-- by diffing successive collected_at rows. response_{2xx,5xx}
+	-- are populated only for sources that emit per-status-class
+	-- counters (Traefik today); other sources leave them at 0 and
+	-- the dashboard renders the requests/error charts only.
+	--
+	-- extra_json holds source-specific fields that don't fit the
+	-- common shape (nginx active/reading/writing/waiting; Apache
+	-- worker pool; Caddy request_errors_total; Traefik entrypoints)
+	-- — the dashboard parses what it needs per source. JSON column
+	-- keeps the schema additive when new sources land.
+	CREATE TABLE IF NOT EXISTS source_stats (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		server_id TEXT NOT NULL,
+		source TEXT NOT NULL,
+		collected_at DATETIME NOT NULL,
+		requests_total INTEGER NOT NULL DEFAULT 0,
+		response_2xx INTEGER NOT NULL DEFAULT 0,
+		response_3xx INTEGER NOT NULL DEFAULT 0,
+		response_4xx INTEGER NOT NULL DEFAULT 0,
+		response_5xx INTEGER NOT NULL DEFAULT 0,
+		active_connections INTEGER NOT NULL DEFAULT 0,
+		extra_json TEXT,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_source_stats_server_source_time
+		ON source_stats(server_id, source, collected_at);
+
 	-- Traffic anomalies: detected issues and suspicious activity
 	CREATE TABLE IF NOT EXISTS traffic_anomalies (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,

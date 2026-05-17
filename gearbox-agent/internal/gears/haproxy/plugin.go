@@ -4,7 +4,10 @@ package haproxy
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"os"
+	"os/exec"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -76,12 +79,60 @@ func (p *Gear) Health() gear.HealthStatus {
 	return gear.NewHealthyStatus("operational")
 }
 
+// Probe reports whether the agent has a usable HAProxy stats surface.
+// Logic, in order:
+//  1. Stats URL configured → trust the operator (no synchronous HTTP probe).
+//  2. Stats socket configured AND exists on disk → reachable.
+//  3. Stats socket configured but missing → inaccessible (config wrong, or
+//     bind mount missing in container mode; the reason names which).
+//  4. Nothing configured, but haproxy binary on PATH → inaccessible (host
+//     has HAProxy but agent wasn't told how to reach stats).
+//  5. None of the above → not_installed.
+func (p *Gear) Probe(ctx context.Context, deps gear.Dependencies) gear.ProbeResult {
+	if deps.HAProxyStatsURL != "" {
+		return gear.ProbeAvailable("stats URL configured", map[string]string{
+			"stats_url": deps.HAProxyStatsURL,
+		})
+	}
+	if deps.HAProxyStatsSocket != "" {
+		if _, err := os.Stat(deps.HAProxyStatsSocket); err == nil {
+			return gear.ProbeAvailable("stats socket reachable", map[string]string{
+				"stats_socket": deps.HAProxyStatsSocket,
+			})
+		}
+		return gear.ProbeInaccessible(fmt.Sprintf(
+			"stats socket configured at %s but does not exist (HAProxy not running, or bind mount missing in container mode)",
+			deps.HAProxyStatsSocket,
+		))
+	}
+	if path, err := exec.LookPath("haproxy"); err == nil {
+		return gear.ProbeInaccessible(fmt.Sprintf(
+			"haproxy binary present at %s but neither HAPROXY_STATS_SOCKET nor HAPROXY_STATS_URL is configured",
+			path,
+		))
+	}
+	return gear.ProbeNotInstalled("no haproxy binary on PATH; no stats socket or URL configured")
+}
+
 // RegisterRoutes registers HTTP API routes.
 func (p *Gear) RegisterRoutes(r chi.Router) {
 	r.Get("/api/v1/haproxy/stats", p.handleStats)
 	r.Get("/api/v1/haproxy/info", p.handleRuntimeInfo)
 	r.Get("/api/v1/haproxy/tables", p.handleStickTables)
 	r.Get("/api/v1/haproxy/validate", p.handleConfigValidation)
+}
+
+// MetricCategories declares the metric categories this gear produces
+// data for. The agent's manager uses this to build the
+// category-to-producers table that drives primary-source selection.
+// HAProxy stats provide request-level data (requests/sec, response
+// codes, response times, per-backend breakdowns) — the
+// CategoryHTTPRequests slot. When other HTTP-source gears land
+// (nginx, Apache, Caddy, Traefik), they'll join the same category
+// and the operator can pick between them via
+// GEARBOX_AGENT_HTTP_SOURCE.
+func (p *Gear) MetricCategories() []gear.MetricCategory {
+	return []gear.MetricCategory{gear.CategoryHTTPRequests}
 }
 
 // Collectors returns the periodic collectors for this gear.

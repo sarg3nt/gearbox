@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -12,6 +14,14 @@ import (
 	"github.com/sarg3nt/gearbox-agent/internal/framework/events"
 	"github.com/sarg3nt/gearbox-agent/internal/framework/gear"
 )
+
+// validUnitName matches a systemd unit name that is safe to pass to systemctl
+// without risk of flag injection. Must start with an alphanumeric so a value
+// like "--all" or "-h" can't be interpreted as a systemctl flag; subsequent
+// characters match the systemd unit charset (alphanumerics plus `.`, `-`,
+// `_`, `@`). Length capped at 256 to match the prior length check.
+// See 2026-05 security audit, P1-1.
+var validUnitName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._@-]{0,255}$`)
 
 func init() {
 	gear.Register(&Gear{})
@@ -45,6 +55,22 @@ func (p *Gear) Initialize(ctx context.Context, deps gear.Dependencies) error {
 	p.collector = NewCollector()
 	p.eventBus = deps.EventBus
 	return nil
+}
+
+// Probe reports whether the agent can read the kernel surfaces this gear
+// needs. /proc/stat is required for CPU and load metrics; on any modern
+// Linux it's always present and readable by an unprivileged process.
+// A containerized agent without /proc bind-mounted will land here as
+// inaccessible — the operator's fix is to add the mount, not install
+// software.
+func (p *Gear) Probe(ctx context.Context, deps gear.Dependencies) gear.ProbeResult {
+	if _, err := os.Stat("/proc/stat"); err != nil {
+		if os.IsNotExist(err) {
+			return gear.ProbeInaccessible("/proc/stat does not exist (containerized agent without /proc bind-mount?)")
+		}
+		return gear.ProbeInaccessible("/proc/stat present but unreadable: " + err.Error())
+	}
+	return gear.ProbeAvailable("/proc readable", nil)
 }
 
 // Start is a no-op - collection is handled by the plugin manager.
@@ -267,17 +293,16 @@ func (p *Gear) handleServiceControl(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate service name (basic sanity check - prevent command injection)
-	if req.Service == "" || len(req.Service) > 256 {
+	// Validate service name. The first character MUST be alphanumeric so a
+	// crafted name like "--all" or "--no-block" cannot be passed to systemctl
+	// as a flag (discrete-arg exec prevents shell injection but not flag
+	// injection). Subsequent characters allow the usual systemd unit charset
+	// (alphanumeric plus . - _ @). collector.ControlService also passes "--"
+	// to systemctl before the unit name as defense-in-depth.
+	// See 2026-05 security audit, P1-1.
+	if !validUnitName.MatchString(req.Service) {
 		http.Error(w, "Invalid service name", http.StatusBadRequest)
 		return
-	}
-	// Only allow alphanumeric, dash, underscore, at-sign, and dot in service names
-	for _, c := range req.Service {
-		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '@' || c == '.') {
-			http.Error(w, "Invalid character in service name", http.StatusBadRequest)
-			return
-		}
 	}
 
 	// Execute systemctl command

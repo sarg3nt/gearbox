@@ -1,0 +1,133 @@
+package bx
+
+import (
+	"encoding/json"
+	"fmt"
+
+	"github.com/sarg3nt/gearbox/internal/framework/models"
+	"github.com/sarg3nt/gearbox/internal/framework/templates/layouts"
+)
+
+// encodeRowsJSON serializes the initial fleet snapshot for the grid mount.
+// The grid is the source of truth for layout / sort / filter UI; the SSE
+// stream upgrades rows in place.
+func encodeRowsJSON(rows []BoxStatus) string {
+	if len(rows) == 0 {
+		return "[]"
+	}
+	b, err := json.Marshal(rows)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
+}
+
+// IndexPageData is what the Bx fleet view consumes. Defining the shape here
+// (rather than passing positional args) keeps the templ signature stable
+// as we add columns and group-by controls.
+type IndexPageData struct {
+	User  *models.User
+	Rows  []BoxStatus
+	Total int
+}
+
+// Status dot colors and labels are now rendered client-side by bx-page.js so
+// the grid can re-format rows on SSE updates without a server round-trip.
+// Same color semantics — see STATUS_CLASSES / STATUS_TITLES in bx-page.js.
+
+templ IndexPage(d IndexPageData) {
+	@layouts.Base("Boxes", d.User, "/bx") {
+		<div class="px-6 py-6">
+			@pageHeader(d.Total)
+			if d.Total == 0 {
+				@emptyState()
+			} else {
+				@boxGrid(d.Rows)
+			}
+		</div>
+		<script src="/static/js/bx/bx-page.js" defer></script>
+	}
+}
+
+// pageHeader renders the toolbar above the grid: fleet count on the left,
+// search input + view-state filter in the middle, "Add box" on the right.
+// The page-title role is taken over by the global breadcrumb in the header.
+templ pageHeader(total int) {
+	<div class="mb-4 flex items-center gap-3">
+		<p class="text-sm text-gray-500 dark:text-gray-400 flex-shrink-0">
+			if total == 1 {
+				1 box
+			} else {
+				{ fmt.Sprintf("%d boxes", total) }
+			}
+		</p>
+		if total > 0 {
+			<!-- #bx-search moved to the global HeaderSearch (issue #92).
+			     Hidden input kept so the Tabulator-backed datagrid
+			     (createDataGrid({searchInput: '#bx-search'})) still
+			     latches onto it; bx-page.js dispatches an `input`
+			     event each time HeaderSearch fires. -->
+			<input type="search" id="bx-search" class="hidden" autocomplete="off"/>
+			<select
+				id="bx-view-filter"
+				aria-label="Filter boxes view"
+				class="datagrid-view-filter"
+				onchange="window.bxOnViewFilterChange && window.bxOnViewFilterChange(this.value)"
+			>
+				<option value="all">All</option>
+				<option value="healthy">Healthy</option>
+				<option value="issues">Issues</option>
+				<option value="disabled">Disabled</option>
+			</select>
+		}
+		<div class="flex-1"></div>
+		<a
+			href="/settings/boxes/new"
+			class="inline-flex items-center px-3 h-[34px] text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors flex-shrink-0"
+		>
+			<svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+			</svg>
+			Add box
+		</a>
+	</div>
+}
+
+// emptyState is shown on first-run when no boxes have been added yet. The
+// CTA jumps directly to the new-box flow rather than the boxes index, so a
+// fresh install gets a one-click onboarding path.
+templ emptyState() {
+	<div class="rounded-lg border-2 border-dashed border-gray-300 dark:border-slate-700 p-12 text-center bg-white dark:bg-slate-800">
+		<svg class="mx-auto w-12 h-12 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.4">
+			<rect x="3" y="3" width="7.5" height="7.5" rx="1.2"></rect>
+			<rect x="13.5" y="3" width="7.5" height="7.5" rx="1.2"></rect>
+			<rect x="3" y="13.5" width="7.5" height="7.5" rx="1.2"></rect>
+			<rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.2"></rect>
+		</svg>
+		<h2 class="mt-4 text-lg font-medium text-gray-900 dark:text-gray-100">Connect your first box</h2>
+		<p class="mt-1 text-sm text-gray-500 dark:text-gray-400 max-w-md mx-auto">
+			Install <code class="px-1 py-0.5 rounded bg-gray-100 dark:bg-slate-700 text-xs">gearbox-agent</code> on a Linux server or
+			workstation, then add it here to start collecting metrics and managing services.
+		</p>
+		<a
+			href="/settings/boxes/new"
+			class="inline-flex items-center mt-6 px-4 h-[42px] text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors"
+		>
+			Add a box
+		</a>
+	</div>
+}
+
+// boxGrid renders the fleet-view mount point. Initial row data is shipped
+// inline as JSON so the grid hydrates without a round-trip; the page JS
+// then subscribes to /bx/api/events (SSE) for live status/latency updates.
+//
+// Column order is deliberately minimal: status dot, name, location, agent
+// host, latency, last-checked. Anything heavier (per-box CPU/mem
+// sparklines) can be opt-in later — at 1000 boxes the dense rendering of
+// every chart drags the page to a crawl.
+templ boxGrid(rows []BoxStatus) {
+	@templ.Raw("<script type=\"application/json\" id=\"bx-data\">" + encodeRowsJSON(rows) + "</script>")
+	<div id="bx-grid"></div>
+}
+

@@ -11,6 +11,7 @@ Fast local development workflow for the Gearbox application on macOS.
   - [Option 1: Hot Reload with Air (Recommended)](#option-1-hot-reload-with-air-recommended)
   - [Option 2: Manual Rebuild](#option-2-manual-rebuild)
   - [Option 3: VS Code Launch Configuration](#option-3-vs-code-launch-configuration)
+- [Dev-Only Loopback Auto-Login](#dev-only-loopback-auto-login)
 - [VS Code Integration](#vs-code-integration)
   - [Required Extensions](#required-extensions)
   - [Launch Configuration](#launch-configuration)
@@ -121,6 +122,73 @@ make build
 ### Option 3: VS Code Launch Configuration
 
 See [VS Code Integration](#vs-code-integration) below for debugger support.
+
+## Dev-Only Loopback Auto-Login
+
+`make dev` builds with `-tags dev` — the flag is set by the `dev:` target
+in [gearbox/Makefile](../Makefile), which overrides air's build command
+via `air --build.cmd "$(DEV_BUILD_CMD)"`. (`.air.toml` is per-developer
+and gitignored, so the build flag intentionally lives in the Makefile.)
+The tag compiles in a localhost-only auto-login bypass. When all three
+of these conditions hold, the request is auto-authenticated as the
+seeded `dev` user — no login screen, no cookie management:
+
+1. The binary was built with `-tags dev`.
+2. The environment variable `GEARBOX_DEV_AUTO_LOGIN=1` is set.
+3. The request's `RemoteAddr` resolves to a loopback IP (`127.0.0.0/8` or `::1`).
+
+### Enabling it
+
+1. Add to `.env`:
+
+   ```text
+   GEARBOX_DEV_AUTO_LOGIN=1
+   ```
+
+2. Restart `make dev` (air doesn't reload `.env` changes on its own).
+
+3. On startup you'll see a banner like:
+
+   ```text
+   WARN dev auto-login ACTIVE — loopback requests log in as `dev`
+   WARN DO NOT USE IN PRODUCTION. Rebuild without `-tags dev` to remove entirely.
+   ```
+
+4. Open <http://localhost:3000> in a browser (or run `curl http://localhost:3000/`)
+   and you're in as the `dev` user (Admin role).
+
+### Why this is safe
+
+- **The bypass code is not in production binaries.** `make build` does not
+  use `-tags dev`, so the entire mechanism — env var read, loopback check,
+  user lookup, banner — is replaced by no-op stubs (see
+  [internal/framework/auth/dev_bypass_off.go](../internal/framework/auth/dev_bypass_off.go)).
+  Even setting `GEARBOX_DEV_AUTO_LOGIN=1` on a prod box does nothing.
+- **Loopback-only.** chi's `middleware.RealIP` rewrites `RemoteAddr` from
+  `X-Forwarded-For` / `X-Real-IP`. A reverse proxy in front of gearbox
+  surfaces the *proxy's* IP, not the browser's — so the bypass declines
+  on any proxied request.
+- **The `dev` user has an unusable password hash.** Form-login can never
+  authenticate as it; only the loopback bypass can.
+
+> [!WARNING]
+> Loopback access on a shared host is not loopback-isolated — any user
+> with shell access can `curl http://localhost:3000` and inherit Admin.
+> This is dev-machine-only. Production builds enforce this by omitting
+> the build tag entirely.
+
+### When it does NOT activate
+
+- `make run` (no air, plain `go run`) — doesn't pass `-tags dev`. Add it
+  manually with `go run -tags dev ./cmd/server` if you want the bypass
+  without air's hot reload.
+- The seeded `dev` row is missing or inactive (e.g. you ran `make clean-data`).
+  Restart `make dev` — startup runs `SeedDevUserIfEnabled` and re-creates it.
+- Requests through HAProxy / reverse proxy — `RemoteAddr` is no longer
+  loopback after `middleware.RealIP` rewrites it.
+
+See issue [#83](https://github.com/sarg3nt/gearbox/issues/83) for the
+design rationale and security analysis.
 
 ## VS Code Integration
 

@@ -219,8 +219,13 @@ func (r *AptRunner) runAptInstall(ctx context.Context, op *AptOperation, securit
 	// Build apt command
 	var args []string
 	if len(packages) > 0 {
-		// Install specific packages
-		args = append([]string{"install", "-y"}, packages...)
+		// Install specific packages. "--" between the flags and the package
+		// list prevents a flag-shaped element from being interpreted as an
+		// apt-get option (2026-05 audit P2-9). The packages slice flows
+		// from API input; even though every consumer validates with
+		// isValidPackageName, the explicit separator is a cheap
+		// defense-in-depth gate.
+		args = append([]string{"install", "-y", "--"}, packages...)
 		r.publishLine(op.ID, fmt.Sprintf("Installing %d specific package(s)...", len(packages)))
 	} else if securityOnly {
 		// Security updates only - use unattended-upgrade
@@ -502,7 +507,9 @@ func (r *AptRunner) runRestoreSnapshot(ctx context.Context, op *AptOperation, sn
 		r.publishLine(op.ID, fmt.Sprintf("Downgrading %d package(s) to snapshot versions...", len(downgrades)))
 		r.publishLine(op.ID, "")
 
-		args := append([]string{"install", "-y", "--allow-downgrades"}, downgrades...)
+		// "--" before downgrades for the same reason as the install path
+		// above. See 2026-05 audit P2-9.
+		args := append([]string{"install", "-y", "--allow-downgrades", "--"}, downgrades...)
 		downgradeCmd := exec.CommandContext(ctx, "apt-get", args...)
 		downgradeCmd.Env = append(os.Environ(),
 			"DEBIAN_FRONTEND=noninteractive",

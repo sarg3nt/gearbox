@@ -1,6 +1,7 @@
 package pages
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -10,6 +11,18 @@ import (
 	"github.com/sarg3nt/gearbox/internal/framework/templates/components"
 	"github.com/sarg3nt/gearbox/internal/framework/templates/layouts"
 )
+
+// jsonScriptBody marshals v to JSON and escapes any "</" so it can safely sit
+// inside a <script type="application/json"> tag without prematurely closing
+// the script element. Returns "null" on marshal failure rather than blowing
+// up the page render.
+func jsonScriptBody(v any) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "null"
+	}
+	return strings.ReplaceAll(string(b), "</", `<\/`)
+}
 
 // OSUpdatesPageData contains all data needed for the OS updates page.
 type OSUpdatesPageData struct {
@@ -30,47 +43,17 @@ type OSUpdatesPageData struct {
 
 templ OSUpdatesPage(data OSUpdatesPageData) {
 	@layouts.Base("OS Updates", data.User, "/os-updates") {
-		<!-- Hidden container for page header content -->
+		<!-- Hidden container for page header content. Title + box selector
+		     live in the global header breadcrumb + chip. -->
 		<div id="page-header-source" class="hidden">
-			<div class="flex items-center">
-				<h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">
-					OS Updates
-					if len(data.Servers) > 1 {
-						<span class="text-gray-400 dark:text-gray-500 mx-2">:</span>
-						<span class="inline-block relative">
-							<select
-								id="server-selector"
-								class="appearance-none bg-transparent text-xl font-bold text-gray-800 dark:text-gray-100 pr-7 cursor-pointer focus:outline-none hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-								onchange="switchServer(this.value)"
-							>
-								for _, server := range data.Servers {
-									<option value={ server.ID } selected?={ server.ID == data.BoxID }>{ server.Name }</option>
-								}
-							</select>
-							<svg class="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-							</svg>
-						</span>
-					} else if len(data.Servers) == 1 {
-						<span class="text-gray-400 dark:text-gray-500 mx-2">:</span>
-						<span>{ data.Servers[0].Name }</span>
-					}
-				</h2>
-			</div>
 			<div class="flex-1"></div>
 			<div class="flex items-center space-x-3">
-				if data.CanAction {
-					<button
-						id="check-updates-btn"
-						onclick="checkForUpdates()"
-						class="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
-					>
-						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-						</svg>
-						Check for Updates
-					</button>
-				}
+				<!-- LiveRefreshButton serves dual purpose here: its color reflects
+				     the SSE connection (green = live apt-event stream), and clicking
+				     it triggers checkForUpdates() — which queries apt for new
+				     versions and refreshes the cards + grid in place. SSE itself
+				     does NOT poll for new updates; manual click (or page reload) is
+				     the only way to refresh that state. -->
 				@components.LiveRefreshButton()
 			</div>
 		</div>
@@ -217,12 +200,22 @@ templ OSUpdatesPage(data OSUpdatesPageData) {
 										</button>
 									}
 								}
+								<!-- #pkg-search moved to the global HeaderSearch
+								     (issue #92). The element is kept here as a
+								     hidden input so the Tabulator-backed
+								     datagrid (createDataGrid({searchInput:
+								     '#pkg-search'})) can still latch onto it;
+								     a window.gearbox.filter registration in
+								     os-updates-page.js writes to .value and
+								     dispatches 'input' on every keystroke. -->
+								<input type="search" id="pkg-search" class="hidden" autocomplete="off"/>
 								<select
 									id="pkg-view-filter"
 									onchange="onPkgViewFilterChange(this.value)"
 									class="h-[38px] px-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
 								>
 									<option value="updates">Updates</option>
+									<option value="held">Held</option>
 									<option value="all">All Packages</option>
 								</select>
 								if data.CanAction {
@@ -241,8 +234,12 @@ templ OSUpdatesPage(data OSUpdatesPageData) {
 						</div>
 					</div>
 					<div class="p-4">
-						<div id="installed-packages-table" class="rounded-lg border border-gray-200 dark:border-slate-600 overflow-hidden">
-							<div id="installed-packages-loading" class="p-8 text-center text-gray-500 dark:text-gray-400 flex items-center justify-center gap-2">
+						<!-- Fixed height (474px) matches the gridHeight computed in
+						     os-updates-page.js (ROW_HEIGHT 36 × 12 visible rows + 42px
+						     header). Pre-sizing the container avoids a layout shift
+						     when Tabulator replaces the loading state with the grid. -->
+						<div id="installed-packages-table" class="rounded-lg border border-gray-200 dark:border-slate-600 overflow-hidden" style="height: 474px">
+							<div id="installed-packages-loading" class="h-full flex items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400">
 								<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
 								Loading packages...
 							</div>
@@ -252,132 +249,54 @@ templ OSUpdatesPage(data OSUpdatesPageData) {
 					</div>
 				</div>
 
-				<!-- Snapshots Section -->
-				<div class="bg-white dark:bg-slate-800 rounded-lg shadow">
-					<div class="p-4 border-b border-gray-200 dark:border-slate-700">
-						<div class="flex justify-between items-center">
+				<!-- Snapshots Section: collapsible, lazy-loaded on first expand.
+				     Live updates: whenever an apt operation completes (SSE event)
+				     and this section is open, the grid is refetched. -->
+				<details class="datagrid-card bg-white dark:bg-slate-800 rounded-lg shadow" data-section="snapshots">
+					<summary class="p-4 border-b border-gray-200 dark:border-slate-700 flex justify-between items-center gap-3">
+						<div class="flex items-center gap-3">
+							<svg class="datagrid-chevron w-4 h-4 text-gray-400 dark:text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+							</svg>
 							<div>
 								<h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">Package Snapshots</h3>
 								<p class="text-sm text-gray-500 dark:text-gray-400">Restore to a previous package state</p>
 							</div>
-							if data.CanAction {
-								<div class="flex gap-2 items-center">
-									<button
-										id="bulk-delete-snapshots-btn"
-										onclick="bulkDeleteSnapshots()"
-										class="hidden px-3 py-1.5 text-sm bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
-									>
-										Delete Selected
-									</button>
-									<button
-										onclick="createManualSnapshot()"
-										class="px-3 py-1.5 text-sm bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
-									>
-										Create Snapshot
-									</button>
-								</div>
-							}
 						</div>
+						if data.CanAction {
+							<div class="flex gap-2 items-center">
+								<button
+									id="bulk-delete-snapshots-btn"
+									onclick="bulkDeleteSnapshots()"
+									class="hidden px-3 py-1.5 text-sm bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+								>
+									Delete Selected
+								</button>
+								<button
+									onclick="createManualSnapshot()"
+									class="px-3 py-1.5 text-sm bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+								>
+									Create Snapshot
+								</button>
+							</div>
+						}
+					</summary>
+					<div class="p-4">
+						<div id="snapshots-grid" class="rounded-lg border border-gray-200 dark:border-slate-600 overflow-hidden"></div>
 					</div>
-					<div class="overflow-x-auto">
-						<table class="w-full text-sm">
-							<thead class="bg-gray-50 dark:bg-slate-700">
-								<tr>
-									if data.CanAction {
-										<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 w-10">
-											<input type="checkbox" id="select-all-snapshots" onchange="toggleSelectAllSnapshots(this.checked)" class="w-4 h-4 rounded border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700"/>
-										</th>
-									}
-									<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Date</th>
-									<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Name</th>
-									<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Type</th>
-									<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Description</th>
-									if data.CanAction {
-										<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Actions</th>
-									}
-								</tr>
-							</thead>
-							<tbody id="snapshots-table" class="divide-y divide-gray-200 dark:divide-slate-600">
-								if data.Snapshots == nil || len(data.Snapshots.Snapshots) == 0 {
-									<tr>
-										<td colspan="6" class="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
-											No snapshots available
-										</td>
-									</tr>
-								} else {
-									for i, snapshot := range data.Snapshots.Snapshots {
-										<tr class="hover:bg-gray-50 dark:hover:bg-slate-700" data-snapshot-row={ snapshot.ID }>
-											if data.CanAction {
-												<td class="px-4 py-3">
-													<input
-														type="checkbox"
-														class="snapshot-checkbox w-4 h-4 rounded border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700"
-														data-snapshot-id={ snapshot.ID }
-														onchange="updateBulkDeleteButton()"
-													/>
-												</td>
-											}
-											<td class="px-4 py-3 text-gray-600 dark:text-gray-400 whitespace-nowrap">
-												<span class="snapshot-date" data-timestamp={ snapshot.CreatedAt }>{ snapshot.CreatedAt }</span>
-											</td>
-											<td class="px-4 py-3 text-gray-800 dark:text-gray-200 font-medium">
-												{ snapshot.ID }
-											</td>
-											<td class="px-4 py-3">
-												<div class="flex items-center gap-1.5">
-													if isAutoSnapshot(snapshot.Reason) {
-														<span class="px-2 py-0.5 text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded font-medium">auto</span>
-													} else {
-														<span class="px-2 py-0.5 text-xs bg-gray-100 dark:bg-slate-600 text-gray-600 dark:text-gray-400 rounded font-medium">manual</span>
-													}
-													if i == 0 {
-														<span class="px-2 py-0.5 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded font-medium">Latest</span>
-													}
-												</div>
-											</td>
-											<td class="px-4 py-3 text-gray-600 dark:text-gray-400">
-												{ snapshotDescription(snapshot.Reason) }
-											</td>
-											if data.CanAction {
-												<td class="px-4 py-3">
-													<div class="flex gap-2">
-														<button
-															class="snapshot-preview-btn text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-xs font-medium"
-															data-snapshot-id={ snapshot.ID }
-														>
-															Preview
-														</button>
-														<button
-															class="snapshot-restore-btn text-yellow-600 dark:text-yellow-400 hover:text-yellow-800 dark:hover:text-yellow-300 text-xs font-medium"
-															data-snapshot-id={ snapshot.ID }
-														>
-															Restore
-														</button>
-														<button
-															class="snapshot-delete-btn text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 text-xs font-medium"
-															data-snapshot-id={ snapshot.ID }
-														>
-															Delete
-														</button>
-													</div>
-												</td>
-											}
-										</tr>
-									}
-								}
-							</tbody>
-						</table>
-					</div>
-				</div>
+				</details>
 
-				<!-- Python CLI Tools Section -->
-				if data.Config != nil && data.Config.ShowPythonTools {
+				<!-- Python CLI Tools Section.
+				     Only rendered when at least one of pipx/pip is available on the
+				     target system, so empty subsections don't waste screen space. -->
+				if data.Config != nil && data.Config.ShowPythonTools && data.PythonToolsStatus != nil && (data.PythonToolsStatus.Pipx.Available || data.PythonToolsStatus.Pip.Available) {
 					<div class="bg-white dark:bg-slate-800 rounded-lg shadow">
 						<div class="p-4 border-b border-gray-200 dark:border-slate-700">
 							<h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">Python CLI Tools</h3>
 							<p class="text-sm text-gray-500 dark:text-gray-400">Manage Python packages and applications</p>
 						</div>
 
+						if data.PythonToolsStatus.Pipx.Available {
 						<!-- pipx subsection -->
 						<div class="p-4 border-b border-gray-200 dark:border-slate-700">
 							<div class="flex justify-between items-center mb-3">
@@ -416,79 +335,15 @@ templ OSUpdatesPage(data OSUpdatesPageData) {
 									Clear
 								</button>
 							</div>
-							<div id="pipx-list" class="overflow-x-auto rounded-lg border border-gray-200 dark:border-slate-600">
-								if data.PythonToolsStatus == nil || !data.PythonToolsStatus.Pipx.Available {
-									<div class="p-6 text-center text-gray-500 dark:text-gray-400">
-										pipx is not available on this system
-									</div>
-								} else if len(data.PythonToolsStatus.Pipx.Packages) == 0 {
-									<div class="p-6 text-center text-gray-500 dark:text-gray-400">
-										No pipx packages installed
-									</div>
-								} else {
-									<table class="w-full text-sm">
-										<thead class="bg-gray-50 dark:bg-slate-700 border-b border-gray-200 dark:border-slate-600">
-											<tr>
-												if data.CanAction {
-													<th class="px-3 py-3 w-8">
-														<input type="checkbox" id="pipx-select-all" class="rounded border-gray-300 dark:border-slate-500 text-blue-600 focus:ring-blue-500" onchange="togglePipxSelectAll(this)"/>
-													</th>
-												}
-												<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Package</th>
-												<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Installed</th>
-												<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Latest</th>
-												<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Apps</th>
-												if data.CanAction {
-													<th class="px-4 py-3 w-40"></th>
-												}
-											</tr>
-										</thead>
-										<tbody class="divide-y divide-gray-200 dark:divide-slate-600">
-											for _, pkg := range data.PythonToolsStatus.Pipx.Packages {
-												<tr class="hover:bg-gray-50 dark:hover:bg-slate-700 pipx-row" data-package-name={ pkg.Name }>
-													if data.CanAction {
-														<td class="px-3 py-3">
-															<input type="checkbox" class="pipx-checkbox rounded border-gray-300 dark:border-slate-500 text-blue-600 focus:ring-blue-500" value={ pkg.Name } onchange="onPipxCheckboxChange()"/>
-														</td>
-													}
-													<td class="px-4 py-3 text-gray-800 dark:text-gray-200 font-medium">{ pkg.Name }</td>
-													<td class="px-4 py-3 text-gray-600 dark:text-gray-400 font-mono text-xs">{ pkg.Version }</td>
-													<td class="px-4 py-3 font-mono text-xs pipx-version-cell" data-package={ pkg.Name } data-installed={ pkg.Version }>
-														<svg class="w-3.5 h-3.5 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-													</td>
-													<td class="px-4 py-3 text-gray-500 dark:text-gray-400 text-xs">
-														if len(pkg.Apps) > 0 {
-															{ joinStrings(pkg.Apps, ", ") }
-														} else {
-															<span class="text-gray-400 dark:text-gray-500">—</span>
-														}
-													</td>
-													if data.CanAction {
-														<td class="px-4 py-3">
-															<div class="flex gap-2 justify-end">
-																<button
-																	class="pipx-upgrade-btn px-3 py-1.5 text-sm bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-400 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
-																	data-package-name={ pkg.Name }
-																>
-																	Upgrade
-																</button>
-																<button
-																	class="pipx-uninstall-btn px-3 py-1.5 text-sm bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 rounded-lg transition-colors"
-																	data-package-name={ pkg.Name }
-																>
-																	Uninstall
-																</button>
-															</div>
-														</td>
-													}
-												</tr>
-											}
-										</tbody>
-									</table>
-								}
-							</div>
+							<!-- Initial package data embedded as JSON for the datagrid.
+							     PyPI latest-version lookups happen async via
+							     loadPythonVersions() once the grid is built. -->
+							@templ.Raw("<script type=\"application/json\" id=\"pipx-data\">" + jsonScriptBody(data.PythonToolsStatus.Pipx.Packages) + "</script>")
+							<div id="pipx-grid" class="rounded-lg border border-gray-200 dark:border-slate-600 overflow-hidden"></div>
 						</div>
+						}
 
+						if data.PythonToolsStatus.Pip.Available {
 						<!-- pip subsection -->
 						<div class="p-4">
 							<div class="flex justify-between items-center mb-3">
@@ -527,162 +382,45 @@ templ OSUpdatesPage(data OSUpdatesPageData) {
 									Clear
 								</button>
 							</div>
-							<div id="pip-list" class="overflow-x-auto rounded-lg border border-gray-200 dark:border-slate-600">
-								if data.PythonToolsStatus == nil || !data.PythonToolsStatus.Pip.Available {
-									<div class="p-6 text-center text-gray-500 dark:text-gray-400">
-										pip is not available on this system
-									</div>
-								} else if len(data.PythonToolsStatus.Pip.Packages) == 0 {
-									<div class="p-6 text-center text-gray-500 dark:text-gray-400">
-										No user-installed pip packages
-									</div>
-								} else {
-									<table class="w-full text-sm">
-										<thead class="bg-gray-50 dark:bg-slate-700 border-b border-gray-200 dark:border-slate-600">
-											<tr>
-												if data.CanAction {
-													<th class="px-3 py-3 w-8">
-														<input type="checkbox" id="pip-select-all" class="rounded border-gray-300 dark:border-slate-500 text-blue-600 focus:ring-blue-500" onchange="togglePipSelectAll(this)"/>
-													</th>
-												}
-												<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Package</th>
-												<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Installed</th>
-												<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Latest</th>
-												if data.CanAction {
-													<th class="px-4 py-3 w-40"></th>
-												}
-											</tr>
-										</thead>
-										<tbody class="divide-y divide-gray-200 dark:divide-slate-600">
-											for _, pkg := range data.PythonToolsStatus.Pip.Packages {
-												<tr class="hover:bg-gray-50 dark:hover:bg-slate-700 pip-row" data-package-name={ pkg.Name }>
-													if data.CanAction {
-														<td class="px-3 py-3">
-															<input type="checkbox" class="pip-checkbox rounded border-gray-300 dark:border-slate-500 text-blue-600 focus:ring-blue-500" value={ pkg.Name } onchange="onPipCheckboxChange()"/>
-														</td>
-													}
-													<td class="px-4 py-3 text-gray-800 dark:text-gray-200 font-medium">{ pkg.Name }</td>
-													<td class="px-4 py-3 text-gray-600 dark:text-gray-400 font-mono text-xs">{ pkg.Version }</td>
-													<td class="px-4 py-3 font-mono text-xs pip-version-cell" data-package={ pkg.Name } data-installed={ pkg.Version }>
-														<svg class="w-3.5 h-3.5 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-													</td>
-													if data.CanAction {
-														<td class="px-4 py-3">
-															<div class="flex gap-2 justify-end">
-																<button
-																	class="pip-upgrade-btn px-3 py-1.5 text-sm bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-400 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
-																	data-package-name={ pkg.Name }
-																>
-																	Upgrade
-																</button>
-																<button
-																	class="pip-uninstall-btn px-3 py-1.5 text-sm bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 rounded-lg transition-colors"
-																	data-package-name={ pkg.Name }
-																>
-																	Uninstall
-																</button>
-															</div>
-														</td>
-													}
-												</tr>
-											}
-										</tbody>
-									</table>
-								}
-							</div>
+							@templ.Raw("<script type=\"application/json\" id=\"pip-data\">" + jsonScriptBody(data.PythonToolsStatus.Pip.Packages) + "</script>")
+							<div id="pip-grid" class="rounded-lg border border-gray-200 dark:border-slate-600 overflow-hidden"></div>
 						</div>
+						}
 					</div>
 				}
 
-				<!-- Update History -->
-				<div class="bg-white dark:bg-slate-800 rounded-lg shadow">
-					<div class="p-4 border-b border-gray-200 dark:border-slate-700">
-						<h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">Update History</h3>
-						<p class="text-sm text-gray-500 dark:text-gray-400">Recent package changes</p>
+				<!-- Update History: collapsible, lazy-loaded on first expand. -->
+				<details class="datagrid-card bg-white dark:bg-slate-800 rounded-lg shadow" data-section="history">
+					<summary class="p-4 border-b border-gray-200 dark:border-slate-700 flex items-center gap-3">
+						<svg class="datagrid-chevron w-4 h-4 text-gray-400 dark:text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+						</svg>
+						<div>
+							<h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">Update History</h3>
+							<p class="text-sm text-gray-500 dark:text-gray-400">Recent package changes</p>
+						</div>
+					</summary>
+					<div class="p-4">
+						<div id="history-grid" class="rounded-lg border border-gray-200 dark:border-slate-600 overflow-hidden"></div>
 					</div>
-					<div class="overflow-x-auto">
-						<table class="w-full text-sm">
-							<thead class="bg-gray-50 dark:bg-slate-700">
-								<tr>
-									<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Timestamp</th>
-									<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Action</th>
-									<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Package</th>
-									<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Version Change</th>
-									<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Status</th>
-								</tr>
-							</thead>
-							<tbody id="history-table" class="divide-y divide-gray-200 dark:divide-slate-600">
-								if data.History == nil || len(data.History.History) == 0 {
-									<tr>
-										<td colspan="5" class="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
-											No update history available
-										</td>
-									</tr>
-								} else {
-									for _, entry := range data.History.History {
-										<tr class="hover:bg-gray-50 dark:hover:bg-slate-700">
-											<td class="px-4 py-3 text-gray-600 dark:text-gray-400">{ entry.Timestamp }</td>
-											<td class="px-4 py-3">
-												<span class={ "px-2 py-1 text-xs rounded", getActionColor(entry.Action) }>{ entry.Action }</span>
-											</td>
-											<td class="px-4 py-3 text-gray-800 dark:text-gray-200 font-medium">{ entry.Package }</td>
-											<td class="px-4 py-3 text-gray-600 dark:text-gray-400 font-mono text-xs">
-												if entry.FromVersion != "" && entry.ToVersion != "" {
-													{ entry.FromVersion } → { entry.ToVersion }
-												} else if entry.ToVersion != "" {
-													{ entry.ToVersion }
-												} else {
-													-
-												}
-											</td>
-											<td class="px-4 py-3">
-												if entry.Status == "success" || entry.Status == "install" || entry.Status == "upgrade" {
-													<span class="px-2 py-1 text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded">Success</span>
-												} else if entry.Status == "remove" || entry.Status == "purge" {
-													<span class="px-2 py-1 text-xs bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 rounded">Removed</span>
-												} else {
-													<span class="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded">{ entry.Status }</span>
-												}
-											</td>
-										</tr>
-									}
-								}
-							</tbody>
-						</table>
-					</div>
-				</div>
-					<!-- Update Logs -->
-				<div class="bg-white dark:bg-slate-800 rounded-lg shadow">
-					<div class="p-4 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
+				</details>
+				<!-- Update Logs: collapsible, lazy-loaded on first expand.
+				     Replaces the previous "Load Logs" button — opening the section
+				     fetches the logs. -->
+				<details class="datagrid-card bg-white dark:bg-slate-800 rounded-lg shadow" data-section="logs">
+					<summary class="p-4 border-b border-gray-200 dark:border-slate-700 flex items-center gap-3">
+						<svg class="datagrid-chevron w-4 h-4 text-gray-400 dark:text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+						</svg>
 						<div>
 							<h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">Update Logs</h3>
 							<p class="text-sm text-gray-500 dark:text-gray-400">Logs from apt operations run through Gearbox</p>
 						</div>
-						<button onclick="loadUpdateLogs()" class="px-3 py-1.5 text-sm bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-700 dark:text-gray-300 rounded-lg transition-colors">
-							Load Logs
-						</button>
+					</summary>
+					<div class="p-4">
+						<div id="logs-grid" class="rounded-lg border border-gray-200 dark:border-slate-600 overflow-hidden"></div>
 					</div>
-					<div class="overflow-x-auto">
-						<table class="w-full text-sm">
-							<thead class="bg-gray-50 dark:bg-slate-700">
-								<tr>
-									<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Date</th>
-									<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Type</th>
-									<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Status</th>
-									<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Details</th>
-									<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Actions</th>
-								</tr>
-							</thead>
-							<tbody id="update-logs-table" class="divide-y divide-gray-200 dark:divide-slate-600">
-								<tr>
-									<td colspan="5" class="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
-										Click "Load Logs" to view apt operation logs
-									</td>
-								</tr>
-							</tbody>
-						</table>
-					</div>
-				</div>
+				</details>
 			</div>
 
 			<!-- Update Log Detail Modal -->

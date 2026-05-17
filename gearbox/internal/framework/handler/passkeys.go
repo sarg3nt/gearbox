@@ -89,8 +89,11 @@ func (h *Handler) PasskeyRegisterBegin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Return options to client
+	// Return options to client. The challenge is single-use and bound to
+	// the session ID we just stored — never let an intermediary cache it.
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
 	json.NewEncoder(w).Encode(PasskeyRegisterBeginResponse{ //#nosec G104
 		Options:   options,
 		SessionID: sessionID,

@@ -105,12 +105,16 @@ templ IndexPage(d IndexPageData) {
 			     Home icon ... and there does not seem to be a way to
 			     navigate between boards"). -->
 			<div class="flex items-center gap-3 flex-shrink-0">
-				<h2 class="text-xl font-bold text-gray-800 dark:text-gray-100 whitespace-nowrap">
+				<!-- Board name. Sized to match the global breadcrumb so the
+				     toolbar reads as one row rather than two competing
+				     titles. When multiple boards exist this becomes a
+				     dropdown so the user can switch between them. -->
+				<div class="text-sm font-medium text-gray-800 dark:text-gray-200 whitespace-nowrap">
 					if len(d.Boards) > 1 {
 						<span class="inline-flex items-center relative group">
 							<select
 								id="home-board-select"
-								class="appearance-none bg-transparent text-xl font-bold text-gray-800 dark:text-gray-100 cursor-pointer focus:outline-none hover:text-blue-600 dark:hover:text-blue-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors pr-6"
+								class="appearance-none bg-transparent text-sm font-medium text-gray-800 dark:text-gray-200 cursor-pointer focus:outline-none hover:text-blue-600 dark:hover:text-blue-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors pr-5"
 								onchange="window.location.href = this.value"
 								aria-label="Switch board"
 							>
@@ -119,7 +123,7 @@ templ IndexPage(d IndexPageData) {
 								}
 							</select>
 							<svg
-								class="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500 group-hover:text-blue-500 dark:group-hover:text-blue-400 pointer-events-none transition-colors"
+								class="absolute right-0 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 dark:text-gray-500 group-hover:text-blue-500 dark:group-hover:text-blue-400 pointer-events-none transition-colors"
 								fill="none"
 								stroke="currentColor"
 								viewBox="0 0 24 24"
@@ -131,45 +135,14 @@ templ IndexPage(d IndexPageData) {
 					} else {
 						{ d.Board.Name }
 					}
-				</h2>
+				</div>
 			</div>
 
-			<!-- Center: search bar. Takes the remaining horizontal space and
-			     caps at max-w-xl so it doesn't dominate wide viewports.
-			     Press '/' anywhere to focus; bookmark-search on Enter when
-			     the query matches a tile name.
-
-			     Placeholder is a pseudo-overlay (not the native
-			     `placeholder` attribute) so we can render a real <kbd>
-			     keycap inside it, GitHub-style: "Type / to search". The
-			     input has `peer` + a single-space placeholder; the
-			     overlay sibling shows only while the input is empty
-			     (`peer-placeholder-shown`) and not focused (`peer-focus:`
-			     hides it). pointer-events-none on the overlay so clicks
-			     pass through to the input. -->
-			<form id="home-search" action="https://duckduckgo.com/" method="get" target="_blank" class="flex-1 mx-4 min-w-0">
-				<div class="relative max-w-xl mx-auto">
-					<svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 z-10 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-					</svg>
-					<input
-						id="home-search-input"
-						name="q"
-						type="text"
-						placeholder=" "
-						class="peer w-full pl-9 pr-3 h-[34px] rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-						autocomplete="off"
-					/>
-					<div
-						aria-hidden="true"
-						class="absolute left-9 top-1/2 -translate-y-1/2 flex items-center gap-1.5 text-sm text-gray-400 dark:text-gray-500 pointer-events-none opacity-0 peer-placeholder-shown:opacity-100 peer-focus:opacity-0 transition-opacity"
-					>
-						<span>Type</span>
-						<kbd class="inline-flex items-center justify-center min-w-[1.25rem] h-[1.25rem] px-1 rounded border border-gray-300 dark:border-slate-500 bg-gray-50 dark:bg-slate-800 text-[0.7rem] font-sans font-medium text-gray-600 dark:text-gray-300 shadow-sm">/</kbd>
-						<span>to search</span>
-					</div>
-				</div>
-			</form>
+			<!-- Search box is now the global HeaderSearch in the page chrome
+			     (issue #92). Home registers a filter via
+			     window.gearbox.filter.register in home.js: every keystroke
+			     hides non-matching tiles, and Enter either opens a matching
+			     tile or falls back to DuckDuckGo. -->
 
 			<!-- Right: management controls. Buttons with .home-edit-only are
 			     hidden until the user enters edit mode (home.js toggles). -->
@@ -229,19 +202,32 @@ templ IndexPage(d IndexPageData) {
 					}
 				</button>
 				<button
-					id="home-edit-toggle"
-					type="button"
-					class="text-sm px-3 py-1.5 rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-800 dark:text-white hover:bg-gray-50 dark:hover:bg-slate-600"
-				>
-					<span class="home-edit-off-label">Edit</span>
-					<span class="home-edit-on-label hidden">Done</span>
-				</button>
-				<button
 					id="home-add-tile"
 					type="button"
 					class="text-sm px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white whitespace-nowrap"
 				>
 					+ Add tile
+				</button>
+				<!-- Edit toggle — standardised "gear cog" affordance
+				     shared with the Metrics gear's #metrics-edit-toggle
+				     (same SVG as the main sidebar Settings icon).
+				     Icon-only; aria-pressed conveys edit state and
+				     drives the blue-tinted "pressed" appearance via
+				     the .gear-cog-btn rule below. Anchored at the far
+				     right of the header so every gear's settings
+				     entry-point lands in a consistent spot. -->
+				<button
+					id="home-edit-toggle"
+					type="button"
+					class="gear-cog-btn h-[34px] w-[34px] inline-flex items-center justify-center rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-600 transition-colors"
+					title="Edit board"
+					aria-label="Edit board"
+					aria-pressed="false"
+				>
+					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+					</svg>
 				</button>
 			</div>
 		</div>
@@ -249,8 +235,8 @@ templ IndexPage(d IndexPageData) {
 		<div class="px-4 sm:px-6 lg:px-8 py-6">
 			if len(d.Tiles) == 0 {
 				<div id="home-empty-state" class="border-2 border-dashed border-gray-300 dark:border-slate-700 rounded-xl py-16 text-center">
-					<div class="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500 mb-3">
-						@HomeIcon()
+					<div class="mx-auto text-gray-400 dark:text-gray-500 mb-4 flex justify-center">
+						@HomeIconClass("w-20 h-20")
 					</div>
 					<h2 class="text-lg font-semibold text-gray-700 dark:text-gray-200">Your dashboard is empty</h2>
 					<p class="mt-2 text-sm text-gray-500 dark:text-gray-400 max-w-md mx-auto">

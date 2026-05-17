@@ -40,7 +40,10 @@ func (a *aptPackageManager) BuildUpgradeCommand() []string {
 
 func (a *aptPackageManager) BuildInstallCommand(packages []string, securityOnly bool) []string {
 	if len(packages) > 0 {
-		return append([]string{"apt-get", "install", "-y"}, packages...)
+		// "--" before the package list mirrors InstallPackage/RemovePackage:
+		// defense-in-depth against a missed isValidPackageName check upstream
+		// (a future caller that forgets to validate, or a regex regression).
+		return append([]string{"apt-get", "install", "-y", "--"}, packages...)
 	}
 	if securityOnly {
 		return []string{"unattended-upgrade", "--minimal-upgrade-steps"}
@@ -82,7 +85,45 @@ func (a *aptPackageManager) ListUpgradable() ([]Package, error) {
 	}
 	packages := a.parseAptListOutput(string(output))
 	a.fetchPackageSizes(packages)
+	a.markHeldPackages(packages)
 	return packages, nil
+}
+
+// markHeldPackages sets pkg.IsHeld=true for any package whose name appears in
+// `apt-mark showhold`. Held packages can still show up in `apt list --upgradable`
+// when a newer version exists in the repos; apt simply refuses to upgrade them.
+// Marking them lets the dashboard render a "held" badge and route the row to a
+// separate "Held" view instead of the active updates list.
+//
+// Errors from apt-mark are non-fatal: we just leave IsHeld=false rather than
+// failing the whole upgradable listing, since the held lookup is purely an
+// enrichment step.
+func (a *aptPackageManager) markHeldPackages(packages []Package) {
+	if len(packages) == 0 {
+		return
+	}
+	held, err := a.ListHeldPackages()
+	if err != nil {
+		return
+	}
+	applyHeldMarks(packages, held)
+}
+
+// applyHeldMarks is the pure-logic core of markHeldPackages, broken out so it
+// can be unit-tested without execing apt-mark.
+func applyHeldMarks(packages []Package, held []string) {
+	if len(held) == 0 {
+		return
+	}
+	heldSet := make(map[string]struct{}, len(held))
+	for _, name := range held {
+		heldSet[name] = struct{}{}
+	}
+	for i := range packages {
+		if _, ok := heldSet[packages[i].Name]; ok {
+			packages[i].IsHeld = true
+		}
+	}
 }
 
 func (a *aptPackageManager) TriggerUpdateCheck() error {
@@ -95,7 +136,9 @@ func (a *aptPackageManager) TriggerUpdateCheck() error {
 
 func (a *aptPackageManager) InstallUpdates(securityOnly bool, packages []string) ([]string, error) {
 	if len(packages) > 0 {
-		_, err := a.collector.runCommandWithOutput("apt-get", append([]string{"install", "-y"}, packages...)...)
+		// "--" before the package list — same defense-in-depth rationale as
+		// BuildInstallCommand / InstallPackage. See 2026-05 audit P2-9.
+		_, err := a.collector.runCommandWithOutput("apt-get", append([]string{"install", "-y", "--"}, packages...)...)
 		if err != nil {
 			return nil, fmt.Errorf("apt upgrade failed: %w", err)
 		}
@@ -122,11 +165,16 @@ func (a *aptPackageManager) InstallUpdates(securityOnly bool, packages []string)
 	return nil, nil
 }
 
+// "--" between the apt-get subcommand flags and the package-name operand
+// is defense-in-depth: isValidPackageName already rejects names with a
+// leading hyphen, but the explicit separator means a future change that
+// loosens the regex (or a missed validation site) still can't smuggle
+// a flag-shaped name as an apt-get option. See 2026-05 audit P2-9.
 func (a *aptPackageManager) InstallPackage(name string) error {
 	if !isValidPackageName(name) {
 		return fmt.Errorf("invalid package name: %s", name)
 	}
-	_, err := a.collector.runCommandWithOutput("apt-get", "install", "-y", name)
+	_, err := a.collector.runCommandWithOutput("apt-get", "install", "-y", "--", name)
 	if err != nil {
 		return fmt.Errorf("failed to install package %s: %w", name, err)
 	}
@@ -141,7 +189,7 @@ func (a *aptPackageManager) RemovePackage(name string, purge bool) error {
 	if purge {
 		action = "purge"
 	}
-	_, err := a.collector.runCommandWithOutput("apt-get", action, "-y", name)
+	_, err := a.collector.runCommandWithOutput("apt-get", action, "-y", "--", name)
 	if err != nil {
 		return fmt.Errorf("failed to remove package %s: %w", name, err)
 	}
@@ -608,7 +656,7 @@ func (a *aptPackageManager) HoldPackage(name string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "apt-mark", "hold", name)
+	cmd := exec.CommandContext(ctx, "apt-mark", "hold", "--", name)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("apt-mark hold %s: %w: %s", name, err, strings.TrimSpace(string(out)))
 	}
@@ -622,7 +670,7 @@ func (a *aptPackageManager) UnholdPackage(name string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "apt-mark", "unhold", name)
+	cmd := exec.CommandContext(ctx, "apt-mark", "unhold", "--", name)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("apt-mark unhold %s: %w: %s", name, err, strings.TrimSpace(string(out)))
 	}

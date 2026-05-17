@@ -471,7 +471,33 @@ func (d *DB) ClearPasswordResetToken(userID int64) error {
 	return err
 }
 
+// failureWindow is the sliding window over which failed attempts accumulate
+// before the count resets. 2026-05 audit P2-4.
+const failureWindow = 5 * time.Minute
+
 // RecordLoginAttempt updates login attempt tracking.
+//
+// Semantic changes for the sliding-window rate limit (2026-05 audit P2-4):
+//
+//   - On success: reset failed_login_attempts, last_failed_attempt, and
+//     locked_until. Same as before.
+//   - On failure: if the previous failure was inside the sliding window
+//     (failureWindow ago), increment failed_login_attempts; otherwise
+//     reset to 1. last_failed_attempt is always set to now.
+//   - Apply a tiered cooldown based on the new attempt count:
+//       3 failures within window  →  1 minute cooldown
+//       4 failures within window  →  5 minute cooldown
+//       5+ failures               →  15 minute hard lockout (legacy)
+//
+// The tiered cooldown is the new piece — it slows down attempts 3 and 4
+// before the existing hard lockout fires at attempt 5. This defends
+// against distributed brute force where each IP individually paces below
+// the global IP rate limit but the per-account failure rate is high.
+//
+// IMPORTANT: lockout state must NOT be surfaced to the API caller (login
+// error returns the same generic "invalid credentials" for missing user,
+// wrong password, AND locked). Exposing it gives an attacker an
+// enumeration oracle: "this email is locked" implies "this email exists."
 func (d *DB) RecordLoginAttempt(userID string, success bool) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -480,24 +506,75 @@ func (d *DB) RecordLoginAttempt(userID string, success bool) error {
 		now := time.Now()
 		_, err := d.db.Exec(`
 			UPDATE users SET
-				last_login_at = ?, failed_login_attempts = 0, locked_until = NULL, updated_at = ?
+				last_login_at = ?,
+				failed_login_attempts = 0,
+				last_failed_attempt = NULL,
+				locked_until = NULL,
+				updated_at = ?
 			WHERE id = ?`,
 			now, now, userID,
 		)
 		return err
 	}
 
-	// Failed attempt - increment counter and potentially lock
-	_, err := d.db.Exec(`
-		UPDATE users SET
-			failed_login_attempts = failed_login_attempts + 1,
-			locked_until = CASE
-				WHEN failed_login_attempts >= 4 THEN datetime('now', '+15 minutes')
-				ELSE locked_until
-			END,
-			updated_at = datetime('now')
-		WHERE id = ?`,
+	// Failed attempt — sliding-window increment.
+	// Read current state under the same mutex so we can decide whether to
+	// reset or increment. Also read locked_until so we don't clear a
+	// still-active lockout when the sliding window resets the count
+	// (the 15-min hard lock outlives the 5-min failure window, so an
+	// attacker could otherwise "wait out" the window mid-lockout and
+	// have the next failure reset locked_until to NULL).
+	var prevAttempts int
+	var prevLastFailed *time.Time
+	var prevLockedUntil *time.Time
+	err := d.db.QueryRow(
+		`SELECT failed_login_attempts, last_failed_attempt, locked_until FROM users WHERE id = ?`,
 		userID,
+	).Scan(&prevAttempts, &prevLastFailed, &prevLockedUntil)
+	if err != nil {
+		return fmt.Errorf("read attempt state: %w", err)
+	}
+
+	now := time.Now()
+	var newCount int
+	if prevLastFailed == nil || now.Sub(*prevLastFailed) > failureWindow {
+		// Outside the window — start a fresh count.
+		newCount = 1
+	} else {
+		newCount = prevAttempts + 1
+	}
+
+	// Tiered cooldown based on the new count.
+	var lockedUntil *time.Time
+	switch {
+	case newCount >= 5:
+		t := now.Add(15 * time.Minute) // existing hard lockout
+		lockedUntil = &t
+	case newCount == 4:
+		t := now.Add(5 * time.Minute)
+		lockedUntil = &t
+	case newCount == 3:
+		t := now.Add(1 * time.Minute)
+		lockedUntil = &t
+	}
+
+	// Preserve a still-active lockout — never shorten or clear it via a
+	// late, lower-tier failure. We keep whichever of (existing, newly
+	// computed) is later.
+	if prevLockedUntil != nil && prevLockedUntil.After(now) {
+		if lockedUntil == nil || prevLockedUntil.After(*lockedUntil) {
+			lockedUntil = prevLockedUntil
+		}
+	}
+
+	_, err = d.db.Exec(`
+		UPDATE users SET
+			failed_login_attempts = ?,
+			last_failed_attempt = ?,
+			locked_until = ?,
+			updated_at = ?
+		WHERE id = ?`,
+		newCount, now, lockedUntil, now, userID,
 	)
 	return err
 }

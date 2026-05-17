@@ -2,9 +2,91 @@ package middleware
 
 import (
 	"net/http"
+	"net/url"
 	"os"
+	"regexp"
 	"strings"
 )
+
+// validCSPDirective matches a single CSP directive line in the shape the
+// directives slice expects: a directive name followed by one or more source
+// expressions, with no semicolons (which would close the directive and let
+// the env-var splice arbitrary new directives into the CSP header).
+//
+// CSP directive names are letters, digits, and hyphens. Source expressions
+// can be 'self' / 'none' / 'unsafe-inline' / nonce-... / sha256-... / scheme
+// URLs / wildcards / data: / blob: — i.e. printable ASCII without ; or ,
+// or newline. We keep the validator deliberately conservative: only
+// alphanumerics, a small punctuation set, and quoted keywords.
+//
+// `+` and `=` are included so nonce-... and sha256/sha384/sha512-...
+// expressions whose payload uses the standard base64 alphabet aren't
+// silently dropped. 2026-05 audit P1-4 follow-up (Copilot review on
+// PR #43).
+//
+// 2026-05 audit P1-4.
+var validCSPDirective = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9-]+(\s+[a-zA-Z0-9'_:/.\-*+=]+)+$`)
+
+// cspContainsForbidden returns true when s contains any byte that has no
+// business appearing in a CSP header value. A hand-curated whitespace
+// list misses codepoints like form-feed (\f) and the various unicode
+// space chars, so we reject ASCII control chars (< 0x20, 0x7F) and any
+// rune outside ASCII as a precaution against header smuggling via the
+// CSP env vars. 2026-05 audit P1-4 follow-up (Copilot review on PR #43).
+func cspContainsForbidden(s string) bool {
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f || r > 0x7e {
+			return true
+		}
+	}
+	return false
+}
+
+// sanitizeCSPExtraSource accepts a single entry from the
+// CSP_EXTRA_SOURCES comma-separated env var and returns the trimmed
+// value plus an OK flag. Rejects values containing characters that
+// would let an attacker close the current directive and inject a new
+// one (`;`), inject CRLF into the header (`\r`, `\n`), or that don't
+// look like a valid `directive source [source...]` line.
+func sanitizeCSPExtraSource(s string) (string, bool) {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return "", false
+	}
+	if strings.ContainsAny(trimmed, ";") || cspContainsForbidden(trimmed) {
+		return "", false
+	}
+	if !validCSPDirective.MatchString(trimmed) {
+		return "", false
+	}
+	return trimmed, true
+}
+
+// sanitizeCSPReportURI validates the CSP_REPORT_URI env var. Accepts an
+// http(s):// URL; rejects relative paths (would silently fall through to
+// the dashboard's own origin), schemed URIs other than http(s) (no
+// `javascript:` or `data:`), and anything with embedded whitespace or
+// newlines (CRLF injection into the response header).
+func sanitizeCSPReportURI(s string) (string, bool) {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return "", false
+	}
+	if strings.ContainsAny(trimmed, " ;") || cspContainsForbidden(trimmed) {
+		return "", false
+	}
+	u, err := url.Parse(trimmed)
+	if err != nil || u == nil {
+		return "", false
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", false
+	}
+	if u.Host == "" {
+		return "", false
+	}
+	return trimmed, true
+}
 
 // SecurityHeaders adds security-related HTTP headers to responses.
 // Implements defense-in-depth security controls including:
@@ -30,6 +112,20 @@ func SecurityHeaders(next http.Handler) http.Handler {
 		// Referrer-Policy
 		// Control how much referrer information is sent
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+
+		// Strict-Transport-Security
+		// Force HTTPS for a year, including subdomains, and signal eligibility
+		// for the HSTS preload list. The header is only honored over HTTPS,
+		// so emitting it unconditionally is safe — a plain-HTTP response on
+		// :3000 in dev is ignored by the browser. Required for an HTTPS-only
+		// deployment; harmless on the rare plain-HTTP request. 2026-05 audit P2-6.
+		w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
+
+		// Permissions-Policy
+		// Disable browser features the dashboard never uses. Prevents a
+		// future XSS or compromised iframe-embedded asset from quietly
+		// accessing camera/mic/geolocation/etc. 2026-05 audit P2-6.
+		w.Header().Set("Permissions-Policy", "geolocation=(), microphone=(), camera=(), usb=(), payment=(), interest-cohort=(), browsing-topics=()")
 
 		// X-XSS-Protection (legacy, but still useful for older browsers)
 		// Modern browsers rely on CSP instead
@@ -77,6 +173,19 @@ func buildCSP() string {
 			// Home gear app catalog hosts SVG icons on jsDelivr (selfh.st/icons).
 			"img-src 'self' data: blob: https://cdn.jsdelivr.net",
 			"font-src 'self' data:",
+			// connect-src deliberately stays restricted even though
+			// script-src / style-src trust the same CDN origins.
+			// Defense-in-depth: if a CDN script is ever compromised
+			// (typosquat, account takeover, mirror desync), it can
+			// already run in our origin via script-src, but it can't
+			// exfiltrate data to the CDN via fetch/XHR/EventSource
+			// because connect-src blocks those calls. The browser
+			// tries to fetch .map sourcemaps for the .min.js files
+			// when DevTools is open — those requests show as CSP
+			// violations in the DevTools console; that's the only
+			// cost and only operators with DevTools open ever see
+			// them. Use USE_LOCAL_ASSETS=true in development to
+			// silence them entirely (everything served same-origin).
 			"connect-src 'self' ws: wss:",
 			"frame-ancestors 'none'",
 			"base-uri 'self'",
@@ -84,22 +193,25 @@ func buildCSP() string {
 		}
 	}
 
-	// Add extra sources from environment variable if configured
+	// Add extra sources from environment variable if configured.
+	// Each comma-separated entry is required to be a well-formed CSP
+	// directive line; entries that look like injection attempts (embedded
+	// `;`, CRLF, etc.) are silently dropped so a compromised deployment
+	// env can't neutralize the CSP. See 2026-05 security audit P1-4.
 	extraSources := os.Getenv("CSP_EXTRA_SOURCES")
 	if extraSources != "" {
-		sources := strings.Split(extraSources, ",")
-		for _, source := range sources {
-			source = strings.TrimSpace(source)
-			if source != "" {
-				directives = append(directives, source)
+		for _, source := range strings.Split(extraSources, ",") {
+			if clean, ok := sanitizeCSPExtraSource(source); ok {
+				directives = append(directives, clean)
 			}
 		}
 	}
 
-	// Add report-uri if configured
-	reportURI := os.Getenv("CSP_REPORT_URI")
-	if reportURI != "" {
-		directives = append(directives, "report-uri "+reportURI)
+	// Add report-uri if configured. The URI is required to be an absolute
+	// http(s) URL; anything else (including relative paths, `javascript:`,
+	// or values with embedded whitespace) is dropped.
+	if uri, ok := sanitizeCSPReportURI(os.Getenv("CSP_REPORT_URI")); ok {
+		directives = append(directives, "report-uri "+uri)
 	}
 
 	return strings.Join(directives, "; ")

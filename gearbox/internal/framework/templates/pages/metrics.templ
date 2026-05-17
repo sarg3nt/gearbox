@@ -1,0 +1,2877 @@
+package pages
+
+import "github.com/sarg3nt/gearbox/internal/framework/models"
+import "github.com/sarg3nt/gearbox/internal/framework/templates/layouts"
+import "github.com/sarg3nt/gearbox/internal/framework/templates/components"
+
+templ Metrics(user *models.User, servers []models.BoxConfig) {
+	@layouts.Base("Metrics", user, "/metrics") {
+		<!-- Hidden container for page header content. Title + box selector
+		     live in the global header breadcrumb + chip. -->
+		<div id="page-header-source" class="hidden">
+			<div class="flex-1"></div>
+			<!-- Controls -->
+			<div class="flex items-center space-x-3">
+				<!-- Time Range -->
+				<select
+					id="hours-select"
+					class="h-[38px] px-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+					onchange="loadHistoryData()"
+				>
+					<option value="0.083">Last 5 min</option>
+					<option value="0.5">Last 30 min</option>
+					<option value="1">Last 1 hour</option>
+					<option value="6">Last 6 hours</option>
+					<option value="24" selected>Last 24 hours</option>
+					<option value="72">Last 3 days</option>
+					<option value="168">Last 7 days</option>
+				</select>
+
+				<!-- Resolution slider -->
+				<div class="flex items-center gap-2">
+					<label class="text-sm font-medium text-gray-700 dark:text-gray-300">Resolution:</label>
+					<input
+						type="range"
+						id="resolution-slider"
+						min="1"
+						max="10"
+						value="5"
+						class="w-20 h-2 bg-gray-200 dark:bg-slate-600 rounded-lg appearance-none cursor-pointer"
+						onchange="loadHistoryData()"
+					/>
+					<span id="resolution-label" class="text-sm text-gray-600 dark:text-gray-400 w-14">Medium</span>
+				</div>
+
+				<!-- Reset Zoom button (hidden by default) -->
+				<button
+					id="reset-zoom-btn"
+					onclick="resetAllZoom()"
+					class="hidden h-[38px] px-3 py-1.5 text-sm bg-gray-200 dark:bg-slate-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-slate-500 transition-colors font-medium"
+				>
+					Reset Zoom
+				</button>
+
+				<!-- Manual Refresh button with SSE status indicator -->
+				<button
+					id="refresh-btn"
+					onclick="manualRefresh()"
+					class="p-2 rounded-lg transition-colors text-gray-400"
+					title="Connecting..."
+				>
+					<svg id="refresh-icon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+					</svg>
+				</button>
+
+				<!-- Reset-to-default button (issue #103). Hidden
+				     outside edit mode — appears next to the toggle
+				     once the operator starts editing so a "back to
+				     defaults" path is one click away during a drag
+				     session that went wrong. -->
+				<button
+					id="metrics-reset-layout"
+					type="button"
+					class="metrics-edit-only hidden h-[38px] px-3 py-1.5 text-sm border border-amber-300 dark:border-amber-700 rounded-lg bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors"
+					title="Reset the chart layout for this box to the default arrangement"
+					aria-label="Reset chart layout to default"
+				>
+					↺ Reset layout
+				</button>
+
+				<!-- Edit-layout toggle (issue #103). Standardised
+				     "gear cog" affordance shared with the Home gear
+				     and intended to be reused by future gears; same
+				     SVG path as the main sidebar Settings icon so the
+				     visual vocabulary stays consistent. Icon-only;
+				     aria-pressed conveys edit state. The colour
+				     shifts to the accent blue while pressed so the
+				     edit-mode state is glanceable. -->
+				<button
+					id="metrics-edit-toggle"
+					type="button"
+					class="gear-cog-btn h-[38px] w-[38px] inline-flex items-center justify-center rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
+					title="Edit chart layout"
+					aria-label="Edit chart layout"
+					aria-pressed="false"
+				>
+					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+					</svg>
+				</button>
+			</div>
+		</div>
+
+		if len(servers) == 0 {
+			@components.InfoAlert("No servers configured.")
+		} else {
+			<!-- HAProxy-unavailable banner — shown when the active box's
+			     agent reports the HAProxy gear is anything other than
+			     'available'. JS in applyCapabilities() picks message
+			     text from the capability entry's status + reason so the
+			     copy matches reality: a missing binary (not_installed)
+			     gets different guidance than an unreachable socket
+			     (inaccessible) or an operator-disabled gear (disabled). -->
+			<div id="no-haproxy-banner" class="hidden mb-4 rounded-lg border border-blue-200 dark:border-blue-900/40 bg-blue-50 dark:bg-blue-900/20 px-4 py-3 text-sm text-blue-900 dark:text-blue-100">
+				<strong id="no-haproxy-banner-title" class="font-semibold">HAProxy metrics unavailable on this host.</strong>
+				<span id="no-haproxy-banner-detail">Showing host-level metrics only.</span>
+			</div>
+
+			<!-- KPI summary band — populated by loadKPISummary().
+			     Each card shows a current value, delta vs the previous
+			     window of equal length, and an inline sparkline. -->
+			<div id="kpi-band" class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-4">
+				<!-- 6 skeleton placeholders so the layout doesn't pop in. -->
+				for i := 0; i < 6; i++ {
+					<div class="kpi-card-skel bg-white dark:bg-slate-800 rounded-lg shadow-sm p-3 h-[88px] animate-pulse">
+						<div class="h-3 w-20 bg-gray-200 dark:bg-slate-700 rounded mb-2"></div>
+						<div class="h-6 w-28 bg-gray-200 dark:bg-slate-700 rounded"></div>
+					</div>
+				}
+			</div>
+
+			<!-- Chart grid (issue #103). GridStack-driven; each card is
+			     a tile that can be dragged + resized in edit mode. The
+			     wrapper panel that used to surround the grid is gone —
+			     cards are top-level so they can flow into any layout
+			     the operator chooses. Default tile coordinates below
+			     match the layout proposed in #103:
+			       row 0  | CPU      | Memory
+			       row 1  | Network  | Response Time
+			       row 2  | Health   | Error Rates
+			       row 3  | Sessions & Requests (full width)
+			       rows 4+ | per-source cards, capability-gated
+			     Each tile defaults to gs-w=6 / gs-h=4 (half-width,
+			     four cell rows tall — matches the existing aspect-
+			     ratio container). The "Sessions & Requests" tile is
+			     gs-w=12 because it deserves the full row on its own.
+			     Per-source tiles are gs-w=6 and live in two rows
+			     below the baseline cards. -->
+			<div
+				id="charts-grid"
+				class="grid-stack mb-6"
+				data-default-rendered="false"
+			>
+				<!-- CPU Load (row 0, left) -->
+				<div class="grid-stack-item" gs-id="card-cpu" gs-x="0" gs-y="0" gs-w="6" gs-h="4">
+					<div id="card-cpu" data-source="host" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
+						<div class="flex justify-between items-center mb-2">
+							<div class="flex items-baseline gap-3 min-w-0">
+								<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Host:</span> CPU Load</h4>
+								<span id="cpu-live" class="chart-live-value"></span>
+							</div>
+							<button onclick="toggleFullscreen('card-cpu')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
+								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+								</svg>
+							</button>
+						</div>
+						<div class="chart-aspect-container">
+							<canvas id="cpu-chart"></canvas>
+						</div>
+					</div>
+				</div>
+
+				<!-- Memory Usage (row 0, right) -->
+				<div class="grid-stack-item" gs-id="card-memory" gs-x="6" gs-y="0" gs-w="6" gs-h="4">
+					<div id="card-memory" data-source="host" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
+						<div class="flex justify-between items-center mb-2">
+							<div class="flex items-baseline gap-3 min-w-0">
+								<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Host:</span> Memory Usage</h4>
+								<span id="memory-live" class="chart-live-value"></span>
+							</div>
+							<button onclick="toggleFullscreen('card-memory')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
+								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+								</svg>
+							</button>
+						</div>
+						<div class="chart-aspect-container">
+							<canvas id="memory-chart"></canvas>
+						</div>
+					</div>
+				</div>
+
+				<!-- Network Throughput (row 1, left) -->
+				<div class="grid-stack-item" gs-id="card-network" gs-x="0" gs-y="4" gs-w="6" gs-h="4">
+					<div id="card-network" data-source="host" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
+						<div class="flex justify-between items-center mb-2">
+							<div class="flex items-baseline gap-3 min-w-0">
+								<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Host:</span> Network Throughput</h4>
+								<span id="network-live" class="chart-live-value"></span>
+							</div>
+							<button onclick="toggleFullscreen('card-network')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
+								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+								</svg>
+							</button>
+						</div>
+						<div class="chart-aspect-container">
+							<canvas id="network-chart"></canvas>
+						</div>
+					</div>
+				</div>
+
+				<!-- Response Times (row 1, right) -->
+				<div class="grid-stack-item" gs-id="card-response-time" gs-x="6" gs-y="4" gs-w="6" gs-h="4">
+					<div id="card-response-time" data-source="haproxy" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
+						<div class="flex justify-between items-center mb-2">
+							<div class="flex items-baseline gap-3 min-w-0">
+								<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">HAProxy:</span> Response Times</h4>
+								<span id="response-time-live" class="chart-live-value"></span>
+							</div>
+							<button onclick="toggleFullscreen('card-response-time')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
+								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+								</svg>
+							</button>
+						</div>
+						<div class="chart-aspect-container">
+							<canvas id="response-time-chart"></canvas>
+						</div>
+					</div>
+				</div>
+
+				<!-- Server Health (row 2, left) -->
+				<div class="grid-stack-item" gs-id="card-health" gs-x="0" gs-y="8" gs-w="6" gs-h="4">
+					<div id="card-health" data-source="haproxy" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
+						<div class="flex justify-between items-center mb-2">
+							<div class="flex items-baseline gap-3 min-w-0">
+								<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">HAProxy:</span> Server Health</h4>
+								<span id="health-live" class="chart-live-value"></span>
+							</div>
+							<button onclick="toggleFullscreen('card-health')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
+								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+								</svg>
+							</button>
+						</div>
+						<div class="chart-aspect-container">
+							<canvas id="health-chart"></canvas>
+						</div>
+					</div>
+				</div>
+
+				<!-- Error Rates (row 2, right) -->
+				<div class="grid-stack-item" gs-id="card-errors" gs-x="6" gs-y="8" gs-w="6" gs-h="4">
+					<div id="card-errors" data-source="haproxy" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
+						<div class="flex justify-between items-center mb-2">
+							<div class="flex items-baseline gap-3 min-w-0">
+								<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">HAProxy:</span> Error Rates (5xx)</h4>
+								<span id="errors-live" class="chart-live-value"></span>
+							</div>
+							<button onclick="toggleFullscreen('card-errors')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
+								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+								</svg>
+							</button>
+						</div>
+						<div class="chart-aspect-container">
+							<canvas id="errors-chart"></canvas>
+						</div>
+					</div>
+				</div>
+
+				<!-- Sessions & Requests (row 3, full width — gs-w=12) -->
+				<div class="grid-stack-item" gs-id="card-sessions" gs-x="0" gs-y="12" gs-w="12" gs-h="4">
+					<div id="card-sessions" data-source="haproxy" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative">
+						<div class="flex justify-between items-center mb-2">
+							<div class="flex items-baseline gap-3 min-w-0">
+								<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">HAProxy:</span> Sessions & Requests</h4>
+								<span id="sessions-live" class="chart-live-value"></span>
+							</div>
+							<button onclick="toggleFullscreen('card-sessions')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
+								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+								</svg>
+							</button>
+						</div>
+						<div class="chart-aspect-container">
+							<canvas id="sessions-chart"></canvas>
+						</div>
+					</div>
+				</div>
+
+				<!-- Per-source cards (rows 4 + 5). Hidden by default
+				     via the existing applyCapabilities() pass; the
+				     GridStack-init layer also calls removeWidget()
+				     for any source whose gear isn't Available so the
+				     grid doesn't reserve slots for invisible tiles.
+				     When a source becomes Available later, makeWidget()
+				     puts the tile back at its default position. -->
+				<div class="grid-stack-item" gs-id="card-nginx" gs-x="0" gs-y="16" gs-w="6" gs-h="4">
+					<div id="card-nginx" data-source="nginx" data-source-card="true" data-cap-hidden="true" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative hidden">
+						<div class="flex justify-between items-center mb-2">
+							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">nginx:</span> Connections &amp; Requests</h4>
+							<button onclick="toggleFullscreen('card-nginx')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
+								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+								</svg>
+							</button>
+						</div>
+						<div class="chart-aspect-container">
+							<canvas id="nginx-chart"></canvas>
+						</div>
+					</div>
+				</div>
+				<div class="grid-stack-item" gs-id="card-apache" gs-x="6" gs-y="16" gs-w="6" gs-h="4">
+					<div id="card-apache" data-source="apache" data-source-card="true" data-cap-hidden="true" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative hidden">
+						<div class="flex justify-between items-center mb-2">
+							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Apache:</span> Workers &amp; Requests</h4>
+							<button onclick="toggleFullscreen('card-apache')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
+								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+								</svg>
+							</button>
+						</div>
+						<div class="chart-aspect-container">
+							<canvas id="apache-chart"></canvas>
+						</div>
+					</div>
+				</div>
+				<div class="grid-stack-item" gs-id="card-caddy" gs-x="0" gs-y="20" gs-w="6" gs-h="4">
+					<div id="card-caddy" data-source="caddy" data-source-card="true" data-cap-hidden="true" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative hidden">
+						<div class="flex justify-between items-center mb-2">
+							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Caddy:</span> Requests &amp; Errors</h4>
+							<button onclick="toggleFullscreen('card-caddy')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
+								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+								</svg>
+							</button>
+						</div>
+						<div class="chart-aspect-container">
+							<canvas id="caddy-chart"></canvas>
+						</div>
+					</div>
+				</div>
+				<div class="grid-stack-item" gs-id="card-traefik" gs-x="6" gs-y="20" gs-w="6" gs-h="4">
+					<div id="card-traefik" data-source="traefik" data-source-card="true" data-cap-hidden="true" class="grid-stack-item-content chart-card bg-gray-50 dark:bg-slate-700 rounded-lg p-4 relative hidden">
+						<div class="flex justify-between items-center mb-2">
+							<h4 class="text-lg font-medium text-gray-700 dark:text-gray-300"><span class="source-tag">Traefik:</span> Status Class</h4>
+							<button onclick="toggleFullscreen('card-traefik')" class="fullscreen-btn p-1 hover:bg-gray-200 dark:hover:bg-slate-600 rounded transition-colors" title="Toggle fullscreen">
+								<svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+								</svg>
+							</button>
+						</div>
+						<div class="chart-aspect-container">
+							<canvas id="traefik-chart"></canvas>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Error Insights — replaces the old "Recent Incidents" list.
+			     Three columns answer "where are my errors coming from?":
+			     top backends by 5xx, top source IPs by 4xx+5xx, and top
+			     countries. Each row is clickable and opens the drill-down
+			     drawer. The panel renders nothing when there are no errors
+			     in the window — silence is the desired state. -->
+			<div id="error-insights-section" data-source="haproxy" class="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-6 mb-6">
+				<div class="flex items-center justify-between mb-4">
+					<div>
+						<h3 class="text-xl font-semibold text-gray-800 dark:text-gray-100">HAProxy Error Insights</h3>
+						<p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+							Where the 4xx/5xx responses in this window are coming from, as reported by HAProxy logs. Click any row to drill in.
+						</p>
+					</div>
+					<button
+						id="error-insights-refresh"
+						class="text-sm px-2 py-1 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+						title="Refresh error breakdown"
+						onclick="loadErrorInsights()"
+					>↻</button>
+				</div>
+				<div id="error-insights-body" class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+					<p class="text-gray-500 dark:text-gray-400 col-span-3 text-sm">Loading…</p>
+				</div>
+				<div id="error-insights-empty" class="hidden text-center py-6">
+					<svg class="w-10 h-10 mx-auto text-green-500 dark:text-green-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+					</svg>
+					<p class="text-gray-600 dark:text-gray-400 text-sm">No 4xx/5xx responses in this window. Everything's green.</p>
+				</div>
+			</div>
+
+			<!-- Per-Source Recent Errors — Phase 6 of issue #91. One
+			     block per detected non-HAProxy source (nginx, Apache,
+			     Caddy), rendered into the per-source containers below.
+			     Each block fetches /metrics/source/{source}/log-errors
+			     (which proxies to the agent's structured access-log
+			     endpoint) and renders a compact table of recent 5xx
+			     records. Hidden entirely on hosts where no non-HAProxy
+			     source is Available — the existing HAProxy Error
+			     Insights panel above is the only thing on this page
+			     then. -->
+			<div id="source-errors-section" class="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-6 mb-6 hidden">
+				<div class="flex items-center justify-between mb-4">
+					<div>
+						<h3 class="text-xl font-semibold text-gray-800 dark:text-gray-100">Per-Source Recent Errors</h3>
+						<p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+							Recent error responses parsed from each source's access log. The agent does the parsing; the dashboard renders. Sources whose log file isn't readable on the host show a hint instead.
+						</p>
+					</div>
+					<button
+						id="source-errors-refresh"
+						class="text-sm px-2 py-1 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+						title="Refresh per-source error tables"
+						aria-label="Refresh per-source error tables"
+						onclick="loadSourceErrors()"
+					>↻</button>
+				</div>
+				<div id="source-errors-blocks" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+					<!-- Populated by loadSourceErrors(). One block per Available source. -->
+				</div>
+			</div>
+
+			<!-- Drill-down drawer — slides in from the right with backend
+			     details, time series, top sources, and recent HAProxy error
+			     log lines. Backed by /api/{id}/metrics/backend/{name}/details
+			     plus /api/{id}/metrics/log-errors?backend=…. -->
+			<div id="drilldown-backdrop"
+				class="fixed inset-0 bg-black/40 z-[10000] hidden opacity-0 transition-opacity duration-200"
+				onclick="closeDrillDown()"
+			></div>
+			<aside id="drilldown-drawer"
+				class="fixed top-0 right-0 h-full w-full md:w-[640px] xl:w-[760px] bg-white dark:bg-slate-900 shadow-2xl z-[10001] hidden translate-x-full transition-transform duration-200 ease-out overflow-y-auto"
+				role="dialog"
+				aria-modal="true"
+			>
+				<header class="sticky top-0 bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-700 px-5 py-3 flex items-center justify-between z-10">
+					<div>
+						<div id="drilldown-eyebrow" class="text-xs uppercase tracking-wider text-gray-400 dark:text-gray-500">Backend</div>
+						<h2 id="drilldown-title" class="text-lg font-semibold text-gray-900 dark:text-gray-100">—</h2>
+					</div>
+					<div class="flex items-center gap-2">
+						<a id="drilldown-logs-link"
+							class="text-sm px-2 py-1 rounded bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 hidden"
+							target="_blank"
+							rel="noopener"
+						>View logs →</a>
+						<button onclick="closeDrillDown()" aria-label="Close" class="p-1 rounded hover:bg-gray-100 dark:hover:bg-slate-700" title="Close (Esc)">
+							<svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+							</svg>
+						</button>
+					</div>
+				</header>
+				<div id="drilldown-body" class="p-5 space-y-5">
+					<p class="text-sm text-gray-500 dark:text-gray-400">Loading…</p>
+				</div>
+			</aside>
+		}
+
+		<!-- GridStack vendor styles (issue #103). Shared with the Home
+		     gear; loaded inline rather than via base.templ because the
+		     stylesheet only matters on the metrics page. -->
+		<link rel="stylesheet" href="/static/css/vendor/gridstack/gridstack.min.css"/>
+
+		<style>
+		/* Per-page GridStack tweaks: tighter cell height than the
+		   Home gear because chart cards want more breathing room
+		   per row. Edit-mode visual cue (dashed outline) mirrors
+		   Home's .home-grid-edit class so the affordance reads
+		   consistently across pages. */
+		/* Absorb GridStack's 6px outer inset (from marginLeft/Right/Top
+		   = 6) so the grid's first column/row aligns with the KPI
+		   band above and the page-content edges. Without these
+		   negative margins the chart grid floats 6px in from every
+		   outer edge while the KPI band sits flush — visually
+		   inconsistent. The -10px top compensates for the KPI's
+		   mb-4 (16px) so the gap from KPI bottom to first chart-tile
+		   visible-top is 12px, matching the inter-tile rhythm. */
+		#charts-grid {
+			margin-left: -6px;
+			margin-right: -6px;
+			margin-top: -10px;
+		}
+		#charts-grid.metrics-grid-edit .grid-stack-item-content {
+			outline: 2px dashed rgba(59, 130, 246, 0.5);
+			outline-offset: -4px;
+			cursor: move;
+		}
+		/* Make each tile a flex column so the chart container can
+		   flex to fill the GridStack-controlled vertical space
+		   (between top:marginTop and bottom:marginBottom set
+		   inline by GridStack). overflow:hidden clips any
+		   stragglers (legends, axis labels) that briefly extend
+		   past the bounds during GridStack resize transitions.
+		   :not(.hidden) keeps Tailwind's .hidden (display:none)
+		   winning the cascade for capability-hidden cards.
+		   IMPORTANT: do NOT set `height: 100%` here — GridStack's
+		   own inline `top` + `bottom` positioning already sizes
+		   the absolute-positioned inner content. height: 100%
+		   would over-constrain (height + top + bottom all set →
+		   height wins per CSS spec), making the inner extend
+		   marginBottom px past the outer's bottom and visually
+		   eat the vertical gap between rows. */
+		#charts-grid .grid-stack-item-content:not(.hidden) {
+			display: flex;
+			flex-direction: column;
+			overflow: hidden;
+		}
+		/* Inside a GridStack tile, drop the percent-of-width
+		   aspect-ratio trick — the tile's height comes from gs-h *
+		   cellHeight, and the canvas should fill what's left after
+		   the header row. min-height: 0 is the flex-child idiom
+		   that lets the container shrink below its content's
+		   intrinsic size (without it, the chart's reported size
+		   refuses to go below ~432px and overflows). */
+		#charts-grid .chart-aspect-container {
+			position: relative;
+			flex: 1 1 auto;
+			min-height: 0;
+			width: 100%;
+			height: auto;
+			padding-bottom: 0;
+		}
+		/* Original aspect-ratio rule preserved for any usages
+		   outside the metrics grid (drill-down drawer, etc.). */
+		.chart-aspect-container {
+			position: relative;
+			width: 100%;
+			height: 0;
+			padding-bottom: 72%; /* taller aspect ratio */
+		}
+		.chart-aspect-container canvas {
+			position: absolute;
+			top: 0;
+			left: 0;
+			width: 100% !important;
+			height: 100% !important;
+		}
+		.chart-card {
+			cursor: pointer;
+			transition: box-shadow 0.15s ease, transform 0.15s ease;
+		}
+		.chart-card:hover {
+			box-shadow: 0 8px 24px -8px rgba(15, 23, 42, 0.15);
+			transform: translateY(-1px);
+		}
+		.chart-card.fullscreen {
+			position: fixed !important;
+			top: 0 !important;
+			left: 0 !important;
+			right: 0 !important;
+			bottom: 0 !important;
+			width: 100vw !important;
+			height: 100vh !important;
+			z-index: 9999 !important;
+			border-radius: 0 !important;
+			margin: 0 !important;
+			padding: 2rem !important;
+			display: flex !important;
+			flex-direction: column !important;
+			transform: none !important;
+		}
+		.chart-card.fullscreen .chart-aspect-container {
+			padding-bottom: 0 !important;
+			height: 100% !important;
+			flex: 1 !important;
+		}
+
+		/* KPI band */
+		.kpi-card {
+			position: relative;
+			background: white;
+			border-radius: 0.5rem;
+			padding: 0.75rem 0.9rem;
+			box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+			border-left: 3px solid transparent;
+			min-height: 88px;
+		}
+		.dark .kpi-card { background: rgb(30, 41, 59); box-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+		.kpi-card.status-good { border-left-color: #10b981; }
+		.kpi-card.status-warn { border-left-color: #f59e0b; }
+		.kpi-card.status-bad  { border-left-color: #ef4444; }
+		.kpi-label {
+			font-size: 0.75rem;
+			color: #6b7280;
+			text-transform: uppercase;
+			letter-spacing: 0.04em;
+			font-weight: 500;
+			display: flex;
+			align-items: center;
+			gap: 0.35rem;
+		}
+		.dark .kpi-label { color: #94a3b8; }
+		.kpi-value {
+			font-size: 1.5rem;
+			font-weight: 600;
+			color: #111827;
+			line-height: 1.1;
+			margin-top: 0.1rem;
+		}
+		.dark .kpi-value { color: #f1f5f9; }
+		.kpi-unit { font-size: 0.85rem; color: #6b7280; font-weight: 400; margin-left: 0.15rem; }
+		.dark .kpi-unit { color: #94a3b8; }
+		.kpi-delta { font-size: 0.75rem; font-weight: 500; }
+		.kpi-delta.up   { color: #ef4444; }
+		.kpi-delta.down { color: #10b981; }
+		.kpi-delta.neutral { color: #6b7280; }
+		.kpi-delta.inverse-good.up   { color: #10b981; } /* For traffic, going up is good */
+		.kpi-delta.inverse-good.down { color: #6b7280; }
+		.kpi-sparkline {
+			position: absolute;
+			right: 0.5rem;
+			bottom: 0.5rem;
+			width: 70px;
+			height: 24px;
+			pointer-events: none;
+		}
+		/* Source attribution. Used on chart-card titles and KPI cards so the
+		   reader can tell at a glance which collector produced the metric. */
+		.source-tag {
+			display: inline-block;
+			font-size: 0.7rem;
+			font-weight: 600;
+			letter-spacing: 0.02em;
+			text-transform: uppercase;
+			padding: 0.05rem 0.4rem;
+			margin-right: 0.4rem;
+			border-radius: 9999px;
+			background: #eef2ff;
+			color: #4338ca;
+			vertical-align: 0.15em;
+		}
+		.dark .source-tag { background: rgba(99, 102, 241, 0.15); color: #a5b4fc; }
+		/* Live readout shown to the right of each chart title — gives
+		   a glanceable "current value" so a flat-looking chart (e.g.
+		   memory parked at 3%) still tells the user what the number
+		   actually is. Mono + tabular-nums keeps digits from jittering
+		   as values change. */
+		.chart-live-value {
+			font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+			font-variant-numeric: tabular-nums;
+			font-size: 0.85rem;
+			font-weight: 500;
+			color: #475569;
+			white-space: nowrap;
+		}
+		.dark .chart-live-value { color: #cbd5e1; }
+		.chart-live-value:empty { display: none; }
+		.kpi-source-badge {
+			position: absolute;
+			top: 0.5rem;
+			right: 0.5rem;
+			font-size: 0.6rem;
+			font-weight: 600;
+			letter-spacing: 0.02em;
+			text-transform: uppercase;
+			padding: 0.05rem 0.4rem;
+			border-radius: 9999px;
+			background: #eef2ff;
+			color: #4338ca;
+		}
+		.dark .kpi-source-badge { background: rgba(99, 102, 241, 0.15); color: #a5b4fc; }
+
+		/* Error Insights tables */
+		.ei-col h4 {
+			font-size: 0.85rem;
+			font-weight: 600;
+			color: #374151;
+			margin-bottom: 0.5rem;
+			text-transform: uppercase;
+			letter-spacing: 0.04em;
+		}
+		.dark .ei-col h4 { color: #e5e7eb; }
+		.ei-row {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			padding: 0.5rem 0.6rem;
+			border-radius: 0.375rem;
+			cursor: pointer;
+			transition: background 0.1s;
+			border-left: 2px solid transparent;
+		}
+		.ei-row:hover {
+			background: rgb(243, 244, 246);
+			border-left-color: #3b82f6;
+		}
+		.dark .ei-row:hover { background: rgb(51, 65, 85); }
+		.ei-row + .ei-row { margin-top: 0.15rem; }
+		.ei-row .ei-primary { font-size: 0.875rem; color: #111827; font-weight: 500; }
+		.dark .ei-row .ei-primary { color: #f1f5f9; }
+		.ei-row .ei-secondary { font-size: 0.7rem; color: #6b7280; }
+		.dark .ei-row .ei-secondary { color: #94a3b8; }
+		.ei-row .ei-count {
+			font-size: 0.75rem;
+			font-weight: 600;
+			padding: 0.1rem 0.5rem;
+			border-radius: 999px;
+			background: rgb(254, 226, 226);
+			color: rgb(153, 27, 27);
+			white-space: nowrap;
+		}
+		.dark .ei-row .ei-count { background: rgba(239, 68, 68, 0.2); color: #fca5a5; }
+		.ei-row .ei-count.warning { background: rgb(254, 243, 199); color: rgb(146, 64, 14); }
+		.dark .ei-row .ei-count.warning { background: rgba(245, 158, 11, 0.2); color: #fcd34d; }
+
+		/* Drill-down drawer */
+		#drilldown-drawer.open { transform: translateX(0); }
+		#drilldown-backdrop.open { opacity: 1; }
+		.drilldown-section h3 {
+			font-size: 0.85rem;
+			font-weight: 600;
+			color: #374151;
+			margin-bottom: 0.5rem;
+			text-transform: uppercase;
+			letter-spacing: 0.04em;
+		}
+		.dark .drilldown-section h3 { color: #e5e7eb; }
+		.drilldown-kv {
+			display: grid;
+			grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+			gap: 0.75rem;
+		}
+		.drilldown-kv > div {
+			background: rgb(249, 250, 251);
+			border-radius: 0.375rem;
+			padding: 0.55rem 0.75rem;
+		}
+		.dark .drilldown-kv > div { background: rgb(30, 41, 59); }
+		.drilldown-kv .k {
+			font-size: 0.7rem;
+			color: #6b7280;
+			text-transform: uppercase;
+			letter-spacing: 0.04em;
+		}
+		.dark .drilldown-kv .k { color: #94a3b8; }
+		.drilldown-kv .v {
+			font-size: 1.15rem;
+			font-weight: 600;
+			color: #111827;
+		}
+		.dark .drilldown-kv .v { color: #f1f5f9; }
+		.drilldown-chart {
+			position: relative;
+			height: 160px;
+			background: rgb(249, 250, 251);
+			border-radius: 0.375rem;
+			padding: 0.5rem;
+		}
+		.dark .drilldown-chart { background: rgb(30, 41, 59); }
+		.log-line {
+			font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+			font-size: 0.72rem;
+			padding: 0.35rem 0.55rem;
+			border-radius: 0.25rem;
+			background: rgb(249, 250, 251);
+			color: #1f2937;
+			word-break: break-all;
+			margin-bottom: 0.25rem;
+			border-left: 2px solid #ef4444;
+		}
+		.dark .log-line { background: rgb(30, 41, 59); color: #e2e8f0; }
+		.log-line .lc-status { color: #ef4444; font-weight: 600; }
+		.log-line .lc-status.s4 { color: #f59e0b; }
+		.log-line .lc-path { color: #2563eb; }
+		.dark .log-line .lc-path { color: #93c5fd; }
+		.log-line .lc-ip { color: #7c3aed; }
+		.dark .log-line .lc-ip { color: #c4b5fd; }
+		</style>
+
+		<script>
+		let charts = {};
+		let currentFullscreenCard = null;
+		let cachedStatsData = [];
+		let cachedMetricsData = [];
+		let eventSource = null;
+
+		function getChartColors() {
+			const isDark = document.documentElement.classList.contains('dark');
+			return {
+				text: isDark ? '#e2e8f0' : '#374151',
+				grid: isDark ? '#475569' : '#e5e7eb',
+				primary: '#3b82f6',
+				secondary: '#10b981',
+				warning: '#f59e0b',
+				danger: '#ef4444',
+				purple: '#8b5cf6',
+				cyan: '#06b6d4'
+			};
+		}
+
+		// gradientFor returns a Chart.js-compatible vertical gradient for the
+		// background fill of a line/area dataset. Falls back to a transparent
+		// background if no rendering context is available yet.
+		function gradientFor(ctx, hexColor) {
+			if (!ctx) return 'transparent';
+			const chart = ctx.chart || ctx;
+			const area = chart.chartArea;
+			if (!area) return 'transparent';
+			// Convert the line color to a low-opacity fill at the top and
+			// fully transparent at the bottom — Grafana-style trace area.
+			const fillTop = hexColor + '40';   // ~25% alpha
+			const fillMid = hexColor + '14';   // ~8% alpha
+			const fillBot = hexColor + '00';
+			const g = chart.ctx.createLinearGradient(0, area.top, 0, area.bottom);
+			g.addColorStop(0, fillTop);
+			g.addColorStop(0.5, fillMid);
+			g.addColorStop(1, fillBot);
+			return g;
+		}
+
+		// Build a filled-area dataset with a gradient. Used instead of the
+		// flat `backgroundColor: 'transparent'` we were using before so the
+		// charts look modern (gradient under the line) without needing a new
+		// chart library.
+		function makeAreaDataset(label, data, color) {
+			return {
+				label: label,
+				data: data,
+				borderColor: color,
+				backgroundColor: function(context) { return gradientFor(context, color); },
+				fill: true,
+				borderWidth: 1.6,
+				pointRadius: 0,
+				pointHoverRadius: 3,
+				tension: 0.4
+			};
+		}
+
+		function getZoomOptions() {
+			return {
+				zoom: {
+					drag: {
+						enabled: true,
+						backgroundColor: 'rgba(59, 130, 246, 0.1)',
+						borderColor: 'rgba(59, 130, 246, 0.5)',
+						borderWidth: 1
+					},
+					mode: 'x',
+					onZoomComplete: function() {
+						showResetZoomButton();
+					}
+				},
+				pan: {
+					enabled: true,
+					mode: 'x',
+					modifierKey: 'shift'
+				}
+			};
+		}
+
+		function createChartOptions(minY = undefined) {
+			const colors = getChartColors();
+			const isDark = document.documentElement.classList.contains('dark');
+			return {
+				responsive: true,
+				maintainAspectRatio: false,
+				interaction: { mode: 'index', intersect: false }, // crosshair tooltip
+				plugins: {
+					legend: {
+						labels: { color: colors.text }
+					},
+					tooltip: {
+						backgroundColor: isDark ? 'rgba(15, 23, 42, 0.95)' : 'rgba(255, 255, 255, 0.97)',
+						titleColor: colors.text,
+						bodyColor: colors.text,
+						borderColor: colors.grid,
+						borderWidth: 1,
+						padding: 8,
+						boxPadding: 4,
+						usePointStyle: true,
+						titleFont: { weight: '600' }
+					},
+					zoom: getZoomOptions()
+				},
+				scales: {
+					x: {
+						ticks: {
+							color: colors.text,
+							maxTicksLimit: 8
+						},
+						grid: { color: colors.grid }
+					},
+					y: {
+						min: minY,
+						ticks: { color: colors.text },
+						grid: { color: colors.grid }
+					}
+				}
+			};
+		}
+
+		function createIntegerYAxisOptions() {
+			const colors = getChartColors();
+			const isDark = document.documentElement.classList.contains('dark');
+			return {
+				responsive: true,
+				maintainAspectRatio: false,
+				interaction: { mode: 'index', intersect: false },
+				plugins: {
+					legend: {
+						labels: { color: colors.text }
+					},
+					tooltip: {
+						backgroundColor: isDark ? 'rgba(15, 23, 42, 0.95)' : 'rgba(255, 255, 255, 0.97)',
+						titleColor: colors.text,
+						bodyColor: colors.text,
+						borderColor: colors.grid,
+						borderWidth: 1,
+						padding: 8,
+						boxPadding: 4,
+						usePointStyle: true,
+						titleFont: { weight: '600' }
+					},
+					zoom: getZoomOptions()
+				},
+				scales: {
+					x: {
+						ticks: {
+							color: colors.text,
+							maxTicksLimit: 8
+						},
+						grid: { color: colors.grid }
+					},
+					y: {
+						min: 0,
+						ticks: {
+							color: colors.text,
+							// precision: 0 instead of stepSize: 1 — same
+							// integer-ticks intent without triggering
+							// Chart.js's "8000 ticks, limiting to 1000"
+							// warning on large-range series. See the same
+							// fix in static/js/charts/chart-defaults.js.
+							precision: 0,
+							callback: function(value) {
+								if (Math.floor(value) === value) {
+									return value;
+								}
+							}
+						},
+						grid: { color: colors.grid }
+					}
+				}
+			};
+		}
+
+		function destroyCharts() {
+			Object.values(charts).forEach(chart => chart.destroy());
+			charts = {};
+		}
+
+		function showResetZoomButton() {
+			const btn = document.getElementById('reset-zoom-btn');
+			if (btn) btn.classList.remove('hidden');
+		}
+
+		function hideResetZoomButton() {
+			const btn = document.getElementById('reset-zoom-btn');
+			if (btn) btn.classList.add('hidden');
+		}
+
+		function resetAllZoom() {
+			Object.values(charts).forEach(chart => {
+				if (chart.resetZoom) {
+					chart.resetZoom();
+				}
+			});
+			hideResetZoomButton();
+		}
+
+		function formatTime(timestamp) {
+			const date = new Date(timestamp);
+			return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+		}
+
+		function formatBytes(bytes) {
+			if (bytes === 0) return '0 B';
+			const k = 1024;
+			const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+			const i = Math.floor(Math.log(Math.abs(bytes)) / Math.log(k));
+			return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+		}
+
+		function getResolutionLabel(value) {
+			// Slider is inverted: 1 = lowest resolution, 10 = highest resolution
+			const labels = {
+				1: 'Lowest',
+				2: 'Lowest',
+				3: 'Low',
+				4: 'Low',
+				5: 'Medium',
+				6: 'Medium',
+				7: 'High',
+				8: 'High',
+				9: 'Highest',
+				10: 'Highest'
+			};
+			return labels[value] || 'Medium';
+		}
+
+		function updateResolutionLabel() {
+			const slider = document.getElementById('resolution-slider');
+			const label = document.getElementById('resolution-label');
+			if (slider && label) {
+				label.textContent = getResolutionLabel(parseInt(slider.value));
+			}
+		}
+
+		function downsampleData(data, factor) {
+			if (factor <= 1 || data.length <= 20) return data;
+			const result = [];
+			for (let i = 0; i < data.length; i += factor) {
+				result.push(data[i]);
+			}
+			// Always include the last point
+			if (result[result.length - 1] !== data[data.length - 1]) {
+				result.push(data[data.length - 1]);
+			}
+			return result;
+		}
+
+		function toggleFullscreen(cardId) {
+			const card = document.getElementById(cardId);
+			const chartsGrid = document.getElementById('charts-grid');
+			const chartKey = getChartKey(cardId);
+
+			if (card.classList.contains('fullscreen')) {
+				// Exit fullscreen
+				card.classList.remove('fullscreen');
+				// Show all other cards EXCEPT capability-hidden
+				// per-source cards (data-source-card). Without this
+				// check, exiting fullscreen would un-hide cards for
+				// sources the agent reported as not Available — the
+				// blanket .classList.remove('hidden') below would
+				// otherwise override applyCapabilities()'s decision.
+				const avail = window._availableSources || {};
+				chartsGrid.querySelectorAll('.chart-card').forEach(c => {
+					if (c.id === cardId) return;
+					const srcAttr = c.getAttribute('data-source');
+					const isSourceCard = c.hasAttribute('data-source-card');
+					if (isSourceCard && srcAttr && !avail[srcAttr]) {
+						// Stay hidden — capability gate says no.
+						return;
+					}
+					c.classList.remove('hidden');
+				});
+				currentFullscreenCard = null;
+
+				// Recreate all charts to fix sizing issues
+				setTimeout(() => {
+					destroyCharts();
+					renderAllCharts();
+				}, 50);
+			} else {
+				// Enter fullscreen
+				card.classList.add('fullscreen');
+				// Hide all other cards
+				chartsGrid.querySelectorAll('.chart-card').forEach(c => {
+					if (c.id !== cardId) {
+						c.classList.add('hidden');
+					}
+				});
+				currentFullscreenCard = cardId;
+
+				// Resize chart to fit new container size
+				if (charts[chartKey]) {
+					setTimeout(() => charts[chartKey].resize(), 100);
+				}
+			}
+		}
+
+		function getChartKey(cardId) {
+			const mapping = {
+				'card-sessions': 'sessions',
+				'card-health': 'health',
+				'card-cpu': 'cpu',
+				'card-memory': 'memory',
+				'card-network': 'network',
+				'card-response-time': 'responseTime',
+				'card-errors': 'errors'
+			};
+			return mapping[cardId];
+		}
+
+		// Handle Escape key to exit fullscreen. preventDefault so the
+		// global Esc handler in shortcut-help.js doesn't also fire on
+		// the same press (it falls through to history.back() when
+		// nothing else consumes Esc).
+		document.addEventListener('keydown', function(e) {
+			if (e.key === 'Escape' && currentFullscreenCard) {
+				e.preventDefault();
+				toggleFullscreen(currentFullscreenCard);
+			}
+		});
+
+		function renderAllCharts() {
+			hideResetZoomButton();
+			renderSessionsChart(cachedStatsData);
+			renderHealthChart(cachedStatsData);
+			renderCpuChart(cachedMetricsData);
+			renderMemoryChart(cachedMetricsData);
+			renderNetworkChart(cachedMetricsData);
+			renderResponseTimeChart(cachedStatsData);
+			renderErrorsChart(cachedStatsData);
+			updateHostLiveValues(cachedMetricsData);
+			updateHaproxyLiveValues(cachedStatsData);
+		}
+
+		// Get current server ID - handles both multi-server (select) and single-server (hidden input) modes
+		function getServerID() {
+			const selector = document.getElementById('server-select');
+			if (selector) return selector.value;
+			const defaultServer = document.getElementById('default-server-id');
+			if (defaultServer) return defaultServer.value;
+			return '';
+		}
+
+		async function loadHistoryData() {
+			updateResolutionLabel();
+			const serverID = getServerID();
+			const hours = document.getElementById('hours-select').value;
+
+			if (!serverID) {
+				console.error('No server ID available');
+				return;
+			}
+
+			// Capability gating runs before chart rendering so HAProxy
+			// sections are hidden up-front rather than flickering in then
+			// out. Failures here fail open — the rest of the page still
+			// renders the same as before.
+			await applyCapabilities(serverID);
+
+			try {
+				// Fetch HAProxy stats time series
+				const statsResponse = await fetch(`/api/${serverID}/metrics/stats?hours=${hours}`);
+				const statsData = await statsResponse.json();
+
+				// Fetch system-metrics time series
+				const metricsResponse = await fetch(`/api/${serverID}/metrics/system?hours=${hours}`);
+				const metricsData = await metricsResponse.json();
+
+				// Cache the data for fullscreen toggle
+				cachedStatsData = statsData.data || [];
+				cachedMetricsData = metricsData.data || [];
+
+				// Render charts
+				destroyCharts();
+				renderAllCharts();
+
+				// Setup SSE connection for real-time updates
+				setupSSE(serverID);
+
+				// Kick off insights loads (don't block charts on these).
+				loadKPISummary();
+				loadErrorInsights();
+				loadSourceMetrics(serverID);
+				loadSourceErrors();
+
+			} catch (error) {
+				console.error('Failed to load history data:', error);
+			}
+		}
+
+		// SOURCES_WITH_ERROR_LOGS is the set the agent has access-log
+		// parsers for. Traefik is NOT in this set — the agent's
+		// accesslog gear registers haproxy/nginx/apache/caddy only
+		// (Traefik's "logs" come through Prometheus instead). The
+		// chart-card rendering set is wider (it does include Traefik)
+		// because Traefik does emit per-status-class metrics via the
+		// summary endpoint. Keeping the two sets separate prevents
+		// the "Per-Source Recent Errors" section from unhiding empty
+		// on a Traefik-only host.
+		const SOURCES_WITH_CHARTS = ['nginx', 'apache', 'caddy', 'traefik'];
+		const SOURCES_WITH_ERROR_LOGS = ['nginx', 'apache', 'caddy'];
+
+		// hoursSelectToRange maps the existing hours-select control
+		// onto the metricsRangeToTimes() range names the per-source
+		// summary handler accepts. Without this the per-source cards
+		// would always fall back to the handler's 24h default,
+		// ignoring the operator's range selection.
+		function hoursSelectToRange() {
+			const sel = document.getElementById('hours-select');
+			if (!sel) return '24h';
+			switch (sel.value) {
+				case '0.083': return '5m';   // 5 minutes
+				case '0.25':  return '15m';  // 15 minutes
+				case '1':     return '1h';
+				case '6':     return '6h';
+				case '24':    return '24h';
+				case '168':   return '7d';
+				case '720':   return '30d';
+				default:      return sel.value + 'h';
+			}
+		}
+
+		// loadSourceMetrics fetches /metrics/source/{source}/summary
+		// for every per-source capability the box reported Available,
+		// and paints the matching chart card. Per-source layouts:
+		//   - nginx  → reading/writing/waiting stacked, plus a
+		//              request-rate line derived from successive
+		//              `requests` counter samples.
+		//   - apache → busy + idle workers stacked.
+		//   - caddy  → request rate vs error rate (both derived from
+		//              monotonic counters via successive-sample diffs).
+		//   - traefik → status-class stacked area (each band is a
+		//               rate, not a cumulative total).
+		async function loadSourceMetrics(serverID) {
+			const available = window._availableSources || {};
+			const range = hoursSelectToRange();
+			for (const src of SOURCES_WITH_CHARTS) {
+				if (!available[src]) continue;
+				try {
+					const res = await fetch('/api/' + serverID + '/metrics/source/' + src + '/summary?range=' + encodeURIComponent(range));
+					if (!res.ok) continue;
+					const data = await res.json();
+					renderSourceCard(src, data);
+				} catch (err) {
+					console.debug('source metrics fetch failed', src, err);
+				}
+			}
+		}
+
+		// counterDeltas turns a series of monotonic counter samples
+		// into a per-bucket delta series suitable for rate charts.
+		// Resets (current < previous, e.g. service restart) surface
+		// as 0 rather than a huge negative spike; that matches
+		// Prometheus's `rate()` reset handling and keeps the chart
+		// readable across deploys. The first sample has no
+		// predecessor, so its delta is 0.
+		function counterDeltas(samples, getter) {
+			const out = new Array(samples.length).fill(0);
+			for (let i = 1; i < samples.length; i++) {
+				const curr = Number(getter(samples[i]) || 0);
+				const prev = Number(getter(samples[i - 1]) || 0);
+				const d = curr - prev;
+				out[i] = d >= 0 ? d : 0;
+			}
+			return out;
+		}
+
+		// renderSourceCard paints one per-source chart card. Uses
+		// the existing createChartOptions() helper + formatTime()
+		// string labels (no Chart.js time scale — the dashboard
+		// doesn't load a date adapter) so the chart matches the
+		// other cards' visual style without any new dependencies.
+		function renderSourceCard(source, data) {
+			const canvas = document.getElementById(source + '-chart');
+			if (!canvas) return;
+
+			// Drop any previous chart instance so re-renders don't
+			// stack tooltips / event handlers.
+			window._sourceCharts = window._sourceCharts || {};
+			if (window._sourceCharts[source]) {
+				window._sourceCharts[source].destroy();
+			}
+
+			const history = (data && data.history) || [];
+			const labels = history.map(h => formatTime(h.collected_at));
+
+			let datasets = [];
+			let stacked = false;
+			switch (source) {
+				case 'nginx': {
+					// Three connection states + a request rate. The
+					// `requests` counter is monotonic so we diff
+					// it via counterDeltas to show per-bucket
+					// request rate rather than a forever-rising line.
+					const ext = (k) => (h) => Number((h.extra && h.extra[k]) || 0);
+					stacked = true;
+					datasets = [
+						{ label: 'Reading', data: history.map(ext('reading')), borderColor: '#22c55e', backgroundColor: 'rgba(34, 197, 94, 0.2)', fill: true, tension: 0.3, borderWidth: 1.5, pointRadius: 0 },
+						{ label: 'Writing', data: history.map(ext('writing')), borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.2)', fill: true, tension: 0.3, borderWidth: 1.5, pointRadius: 0 },
+						{ label: 'Waiting', data: history.map(ext('waiting')), borderColor: '#a3a3a3', backgroundColor: 'rgba(163, 163, 163, 0.2)', fill: true, tension: 0.3, borderWidth: 1.5, pointRadius: 0 },
+						{ label: 'Requests / interval', data: counterDeltas(history, h => h.requests_total), borderColor: '#ec4899', backgroundColor: 'transparent', fill: false, tension: 0.3, borderWidth: 1.5, pointRadius: 0, yAxisID: 'y1' },
+					];
+					break;
+				}
+				case 'apache': {
+					const idle = (h) => Number((h.extra && h.extra.idle_workers) || 0);
+					stacked = true;
+					datasets = [
+						{ label: 'Busy workers', data: history.map(h => h.active_connections), borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.2)', fill: true, tension: 0.3, borderWidth: 1.5, pointRadius: 0 },
+						{ label: 'Idle workers', data: history.map(h => idle(h)), borderColor: '#a3a3a3', backgroundColor: 'rgba(163, 163, 163, 0.2)', fill: true, tension: 0.3, borderWidth: 1.5, pointRadius: 0 },
+					];
+					break;
+				}
+				case 'caddy': {
+					// Both counters are monotonic; diff to rates.
+					const errs = (h) => Number((h.extra && h.extra.request_errors_total) || 0);
+					datasets = [
+						{ label: 'Requests / interval', data: counterDeltas(history, h => h.requests_total), borderColor: '#3b82f6', backgroundColor: 'transparent', fill: false, tension: 0.3, borderWidth: 1.5, pointRadius: 0 },
+						{ label: 'Errors / interval', data: counterDeltas(history, errs), borderColor: '#ef4444', backgroundColor: 'transparent', fill: false, tension: 0.3, borderWidth: 1.5, pointRadius: 0 },
+					];
+					break;
+				}
+				case 'traefik': {
+					// Per-status-class totals are monotonic counters
+					// too — diff each to a per-interval rate so the
+					// stacked area shows traffic shape over time
+					// rather than an ever-rising envelope.
+					stacked = true;
+					datasets = [
+						{ label: '2xx', data: counterDeltas(history, h => h.response_2xx), borderColor: '#22c55e', backgroundColor: 'rgba(34, 197, 94, 0.2)', fill: true, tension: 0.3, borderWidth: 1.5, pointRadius: 0 },
+						{ label: '3xx', data: counterDeltas(history, h => h.response_3xx), borderColor: '#a3a3a3', backgroundColor: 'rgba(163, 163, 163, 0.2)', fill: true, tension: 0.3, borderWidth: 1.5, pointRadius: 0 },
+						{ label: '4xx', data: counterDeltas(history, h => h.response_4xx), borderColor: '#f59e0b', backgroundColor: 'rgba(245, 158, 11, 0.2)', fill: true, tension: 0.3, borderWidth: 1.5, pointRadius: 0 },
+						{ label: '5xx', data: counterDeltas(history, h => h.response_5xx), borderColor: '#ef4444', backgroundColor: 'rgba(239, 68, 68, 0.2)', fill: true, tension: 0.3, borderWidth: 1.5, pointRadius: 0 },
+					];
+					break;
+				}
+			}
+
+			const options = createChartOptions(0);
+			// Stacking is per-source — nginx + Apache + Traefik
+			// stack their primary series; Caddy does not.
+			if (stacked) {
+				options.scales.y.stacked = true;
+				if (options.scales.x) options.scales.x.stacked = true;
+			}
+			// nginx uses a second y-axis for the request-rate line so
+			// it doesn't get crushed by the connection-state stack.
+			if (source === 'nginx') {
+				options.scales.y1 = {
+					position: 'right',
+					beginAtZero: true,
+					ticks: { color: options.scales.y.ticks ? options.scales.y.ticks.color : undefined },
+					grid: { drawOnChartArea: false },
+				};
+			}
+
+			window._sourceCharts[source] = new Chart(canvas.getContext('2d'), {
+				type: 'line',
+				data: { labels: labels, datasets: datasets },
+				options: options,
+			});
+		}
+
+		// loadSourceErrors paints the per-source recent-errors
+		// section. One block per Available source — each block fetches
+		// the agent's /access-log/{source}/recent via the dashboard's
+		// proxy endpoint and shows a compact table of recent 5xx
+		// records. DOM-built (not innerHTML-with-strings) so the
+		// agent-supplied path / timestamp / method fields stay safe
+		// against XSS without leaning on string escaping.
+		async function loadSourceErrors() {
+			const container = document.getElementById('source-errors-blocks');
+			if (!container) return;
+			const serverID = getServerID();
+			if (!serverID) return;
+			const available = window._availableSources || {};
+
+			// Build into a DocumentFragment first so the section
+			// doesn't flicker through "empty → populated" on slow
+			// agents — single commit at the end. SOURCES_WITH_ERROR_LOGS
+			// matches the same set used by applyCapabilities() to
+			// decide whether to show the section — keeps the gate
+			// and the renderer aligned so the section can't unhide
+			// empty.
+			const frag = document.createDocumentFragment();
+			let rendered = 0;
+			for (const src of SOURCES_WITH_ERROR_LOGS) {
+				if (!available[src]) continue;
+				let data = null;
+				try {
+					const res = await fetch('/api/' + serverID + '/metrics/source/' + src + '/log-errors?status_min=500&limit=20');
+					if (res.ok) data = await res.json();
+				} catch (err) {
+					data = { available: false, reason: String(err) };
+				}
+				frag.appendChild(buildSourceErrorsBlock(src, data));
+				rendered++;
+			}
+			// Clear without innerHTML so we don't trip the XSS
+			// guard that flags innerHTML assignments.
+			while (container.firstChild) container.removeChild(container.firstChild);
+			if (rendered === 0) return;
+			container.appendChild(frag);
+		}
+
+		// buildSourceErrorsBlock returns one DOM block for the
+		// Per-Source Recent Errors section. Built via createElement
+		// + textContent so agent-supplied fields can't inject HTML.
+		function buildSourceErrorsBlock(source, data) {
+			const label = source.charAt(0).toUpperCase() + source.slice(1);
+
+			const block = document.createElement('div');
+			block.className = 'rounded border border-gray-200 dark:border-slate-700 p-3';
+
+			const heading = document.createElement('h4');
+			heading.className = 'text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2';
+			heading.textContent = label;
+			block.appendChild(heading);
+
+			if (!data || data.available === false) {
+				const hint = document.createElement('p');
+				hint.className = 'text-xs text-gray-500 dark:text-gray-400';
+				hint.textContent = (data && data.reason) ? String(data.reason) : 'logs unavailable on this host';
+				block.appendChild(hint);
+				return block;
+			}
+
+			const records = data.records || [];
+			if (records.length === 0) {
+				const ok = document.createElement('p');
+				ok.className = 'text-xs text-gray-500 dark:text-gray-400';
+				ok.textContent = "No 5xx responses in the recent window.";
+				block.appendChild(ok);
+				return block;
+			}
+
+			const table = document.createElement('table');
+			table.className = 'w-full text-xs';
+
+			// Visually-hidden caption + visible thead for assistive
+			// technology — without these, screen readers announce
+			// only the cell values with no column context. The
+			// .sr-only utility is part of the existing Tailwind
+			// preset; falls back to clip-path positioning.
+			const caption = document.createElement('caption');
+			caption.className = 'sr-only';
+			caption.textContent = label + ' recent 5xx responses';
+			table.appendChild(caption);
+
+			const thead = document.createElement('thead');
+			const trh = document.createElement('tr');
+			['Time', 'Status', 'Request'].forEach(function(colLabel) {
+				const th = document.createElement('th');
+				th.scope = 'col';
+				th.className = 'px-2 py-1 text-left text-xs font-medium text-gray-500 dark:text-gray-400';
+				th.textContent = colLabel;
+				trh.appendChild(th);
+			});
+			thead.appendChild(trh);
+			table.appendChild(thead);
+
+			const tbody = document.createElement('tbody');
+			records.slice(0, 10).forEach(function(r) {
+				const tr = document.createElement('tr');
+				tr.className = 'border-t border-gray-100 dark:border-slate-700';
+
+				const tdTime = document.createElement('td');
+				tdTime.className = 'px-2 py-1 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap';
+				tdTime.textContent = r.timestamp || r.timestamp_raw || '';
+				tr.appendChild(tdTime);
+
+				const tdStatus = document.createElement('td');
+				tdStatus.className = 'px-2 py-1 text-xs font-mono text-red-600 dark:text-red-400';
+				tdStatus.textContent = String(r.status_code);
+				tr.appendChild(tdStatus);
+
+				const tdReq = document.createElement('td');
+				tdReq.className = 'px-2 py-1 text-xs text-gray-700 dark:text-gray-300';
+				tdReq.textContent = (r.method || '') + ' ' + (r.path || '');
+				tr.appendChild(tdReq);
+
+				tbody.appendChild(tr);
+			});
+			table.appendChild(tbody);
+			block.appendChild(table);
+
+			if (records.length > 10) {
+				const more = document.createElement('p');
+				more.className = 'text-xs text-gray-500 dark:text-gray-400 mt-2';
+				more.textContent = '… plus ' + (records.length - 10) + ' more';
+				block.appendChild(more);
+			}
+			return block;
+		}
+
+		// applyCapabilities fetches the per-box probe table and toggles
+		// HAProxy-specific UI based on whether the haproxy gear is
+		// available. Host-sourced cards always remain visible. Errors
+		// fail open: the dashboard reverts to "HAProxy assumed present"
+		// rather than locking the user out of cards they may need.
+		async function applyCapabilities(serverID) {
+			// Tracks which non-HAProxy sources are Available on this
+			// host so loadSourceMetrics() / loadSourceErrors() can
+			// skip the missing ones rather than 404-spamming the
+			// agent. Surfaced on window for the loaders that run
+			// after this returns.
+			window._availableSources = window._availableSources || {};
+
+			let haproxyAvailable = true;
+			let haproxyEntry = null;
+			let gears = {};
+			try {
+				const res = await fetch('/api/' + serverID + '/capabilities');
+				if (res.ok) {
+					const data = await res.json();
+					gears = (data && data.gears) || {};
+					haproxyEntry = gears.haproxy;
+					if (haproxyEntry) {
+						haproxyAvailable = haproxyEntry.status === 'available';
+					}
+				}
+			} catch (err) {
+				console.debug('capabilities fetch failed; assuming haproxy present', err);
+			}
+
+			// Toggle every element tagged data-source="haproxy". Includes
+			// the chart cards plus the Error Insights panel. We set
+			// both `.hidden` (for the visual hide) and
+			// `data-cap-hidden` (the dedicated marker metrics-layout.js
+			// reads so it can tell capability-driven hides apart from
+			// fullscreen-driven `.hidden`s on neighbouring cards).
+			document.querySelectorAll('[data-source="haproxy"]').forEach(function(el) {
+				el.classList.toggle('hidden', !haproxyAvailable);
+				if (el.classList.contains('chart-card')) {
+					el.dataset.capHidden = haproxyAvailable ? 'false' : 'true';
+				}
+			});
+
+			// Gate the per-source chart cards on each source's probe
+			// verdict. Sources whose gear is absent / inaccessible
+			// stay hidden — there's no data to render and showing an
+			// empty card would look like a regression.
+			// data-source-card distinguishes per-source cards from
+			// the existing host/haproxy ones so we don't accidentally
+			// hide the latter when toggling.
+			for (const src of SOURCES_WITH_CHARTS) {
+				const entry = gears[src];
+				const available = entry && entry.status === 'available';
+				window._availableSources[src] = !!available;
+				document.querySelectorAll('[data-source="' + src + '"][data-source-card]').forEach(function(el) {
+					el.classList.toggle('hidden', !available);
+					el.dataset.capHidden = available ? 'false' : 'true';
+				});
+			}
+
+			// Show the per-source errors section only when at least
+			// one source we have an access-log parser for is
+			// Available. Using SOURCES_WITH_ERROR_LOGS (rather than
+			// the wider SOURCES_WITH_CHARTS) prevents the section
+			// from unhiding empty on a Traefik-only host — Traefik
+			// has metrics but no access-log parser.
+			const anyErrorSource = SOURCES_WITH_ERROR_LOGS.some(s => window._availableSources[s]);
+			const sourceErrorsSection = document.getElementById('source-errors-section');
+			if (sourceErrorsSection) {
+				sourceErrorsSection.classList.toggle('hidden', !anyErrorSource);
+			}
+
+			const banner = document.getElementById('no-haproxy-banner');
+			if (banner) {
+				banner.classList.toggle('hidden', haproxyAvailable);
+				if (!haproxyAvailable) {
+					updateNoHAProxyBanner(haproxyEntry);
+				}
+			}
+
+			// Notify the GridStack layer (metrics-layout.js) that the
+			// capability-driven .hidden classes have been re-applied.
+			// It listens for this event and removes/re-adds widgets
+			// from the grid so unavailable sources don't leave gaps.
+			// Decoupled via CustomEvent so the two scripts don't need
+			// to know about each other's globals.
+			window.dispatchEvent(new CustomEvent('metrics:capabilities-applied'));
+		}
+
+		// updateNoHAProxyBanner picks user-facing copy that matches the
+		// actual probe verdict — not_installed / inaccessible / disabled
+		// each get different guidance, and the agent's `reason` field is
+		// surfaced verbatim when present so operators see the exact
+		// detection failure.
+		function updateNoHAProxyBanner(entry) {
+			const titleEl = document.getElementById('no-haproxy-banner-title');
+			const detailEl = document.getElementById('no-haproxy-banner-detail');
+			if (!titleEl || !detailEl) return;
+
+			let title = 'HAProxy metrics unavailable on this host.';
+			let detail = 'Showing host-level metrics only.';
+
+			const status = entry && entry.status;
+			const reason = (entry && entry.reason) ? String(entry.reason) : '';
+
+			switch (status) {
+				case 'not_installed':
+					title = 'No HAProxy detected on this host.';
+					detail = 'Install HAProxy or enable the agent\'s HAProxy gear to see proxy metrics. Showing host-level metrics only.';
+					break;
+				case 'inaccessible':
+					title = 'HAProxy is installed but the agent can\'t reach its stats.';
+					detail = (reason ? reason + ' ' : '') + 'Showing host-level metrics only.';
+					break;
+				case 'disabled':
+					title = 'HAProxy gear disabled in agent configuration.';
+					detail = (reason ? reason + ' ' : '') + 'Showing host-level metrics only.';
+					break;
+				default:
+					// status === undefined (agent didn't surface haproxy at
+					// all — older agent or fetch failed). Keep the generic
+					// copy and don't pretend we know more than we do.
+					break;
+			}
+
+			titleEl.textContent = title;
+			detailEl.textContent = ' ' + detail;
+		}
+
+		// hoursToRange maps the hours-select dropdown value (e.g. "0.083",
+		// "24") to the human-readable range token the new /metrics/* APIs
+		// accept ("5m", "24h", …). Anything we don't recognise falls back
+		// to "24h" — matches the API's default and the dropdown's default.
+		function hoursToRange(hours) {
+			const h = parseFloat(hours);
+			if (h <= 0.1)   return '5m';
+			if (h <= 0.5)   return '30m';
+			if (h <= 1)     return '1h';
+			if (h <= 6)     return '6h';
+			if (h <= 24)    return '24h';
+			if (h <= 72)    return '3d';
+			if (h <= 168)   return '7d';
+			return '24h';
+		}
+
+		function setupSSE(serverID) {
+			// Close existing connection
+			if (eventSource) {
+				eventSource.close();
+			}
+
+			eventSource = new EventSource(`/api/events?server=${serverID}`);
+
+			eventSource.onopen = function() {
+				updateConnectionStatus(true);
+			};
+
+			eventSource.onerror = function() {
+				updateConnectionStatus(false);
+			};
+
+			eventSource.addEventListener('stats.updated', function(e) {
+				try {
+					const data = JSON.parse(e.data);
+					if (data.server_id === serverID) {
+						// Add new data point to cache and re-render
+						appendStatsData(data);
+					}
+				} catch (err) {
+					console.error('Failed to parse stats event:', err);
+				}
+			});
+
+			eventSource.addEventListener('metrics.updated', function(e) {
+				try {
+					const data = JSON.parse(e.data);
+					if (data.server_id === serverID) {
+						// Add new data point to cache and re-render
+						appendMetricsData(data);
+					}
+				} catch (err) {
+					console.error('Failed to parse metrics event:', err);
+				}
+			});
+		}
+
+		function updateConnectionStatus(connected) {
+			const btn = document.getElementById('refresh-btn');
+			if (!btn) return;
+
+			// Remove all status classes
+			btn.classList.remove('text-green-500', 'text-red-500', 'text-yellow-500', 'text-gray-400');
+
+			if (connected) {
+				btn.classList.add('text-green-500');
+				btn.title = 'Live - streaming data';
+			} else {
+				btn.classList.add('text-red-500');
+				btn.title = 'Disconnected - click to reconnect';
+			}
+		}
+
+		function manualRefresh() {
+			const icon = document.getElementById('refresh-icon');
+			if (icon) {
+				icon.classList.add('animate-spin');
+				setTimeout(() => icon.classList.remove('animate-spin'), 1000);
+			}
+			loadHistoryData();
+		}
+
+		function appendStatsData(newData) {
+			// The SSE event structure is: { type, server_id, timestamp, data: { stats: {...} } }
+			// We need to aggregate them to match the historical data format
+			const eventData = newData.data || {};
+			const stats = eventData.stats || {};
+			const frontends = stats.frontends || [];
+			const backends = stats.backends || [];
+
+			// Aggregate stats from frontends and backends
+			let totalSessions = 0;
+			let totalRequests = 0;
+			let total5xxErrors = 0;
+			let totalResponseTime = 0;
+			let responseTimeCount = 0;
+			let totalServers = 0;
+			let healthyServers = 0;
+
+			// Sum up frontend stats
+			frontends.forEach(f => {
+				totalSessions += f.scur || 0;
+				totalRequests += f.req_tot || 0;
+				total5xxErrors += f.hrsp_5xx || 0;
+			});
+
+			// Sum up backend stats
+			backends.forEach(b => {
+				totalSessions += b.scur || 0;
+				totalRequests += b.req_tot || 0;
+				total5xxErrors += b.hrsp_5xx || 0;
+				if (b.rtime > 0) {
+					totalResponseTime += b.rtime;
+					responseTimeCount++;
+				}
+				// Count servers from backends
+				totalServers += b.total_servers || 0;
+				healthyServers += (b.total_servers || 0) - (b.down_servers || 0);
+			});
+
+			const avgResponseTime = responseTimeCount > 0 ? totalResponseTime / responseTimeCount : 0;
+
+			const point = {
+				collected_at: new Date().toISOString(),
+				total_sessions: totalSessions,
+				total_requests: totalRequests,
+				total_servers: totalServers,
+				healthy_servers: healthyServers,
+				avg_response_time: avgResponseTime,
+				total_5xx_errors: total5xxErrors
+			};
+
+			// Skip if no backends/frontends were found (empty stats).
+			// Quietly — this fires on every empty payload and was noisy
+			// at console.log level.
+			if (frontends.length === 0 && backends.length === 0) {
+				return;
+			}
+
+			cachedStatsData.push(point);
+
+			// Keep data within time window
+			const hours = parseFloat(document.getElementById('hours-select').value);
+			const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
+			cachedStatsData = cachedStatsData.filter(d => new Date(d.collected_at) > cutoff);
+
+			// Update charts in place (no animation)
+			const factor = getDownsampleFactor();
+			const sampledData = downsampleData(cachedStatsData, factor);
+
+			if (charts.sessions) {
+				updateChartData(charts.sessions, sampledData, [
+					sampledData.map(d => d.total_sessions),
+					sampledData.map(d => Math.round(d.total_requests / 1000))
+				]);
+			}
+			if (charts.health) {
+				updateChartData(charts.health, sampledData, [
+					sampledData.map(d => d.healthy_servers),
+					sampledData.map(d => d.total_servers)
+				]);
+			}
+			if (charts.responseTime) {
+				updateChartData(charts.responseTime, sampledData, [
+					sampledData.map(d => d.avg_response_time)
+				]);
+			}
+			if (charts.errors) {
+				// Per-interval delta — see renderErrorsChart for why.
+				updateChartData(charts.errors, sampledData, [
+					counterDeltas(sampledData, d => d.total_5xx_errors)
+				]);
+			}
+			updateHaproxyLiveValues(cachedStatsData);
+		}
+
+		function appendMetricsData(newData) {
+			// The SSE event structure is: { type, server_id, timestamp, data: { metrics: {...} } }
+			const eventData = newData.data || {};
+			const metrics = eventData.metrics || {};
+			const point = {
+				collected_at: new Date().toISOString(),
+				// Database uses snake_case, match that format
+				load_average_1: metrics.load_average_1 || 0,
+				load_average_5: metrics.load_average_5 || 0,
+				load_average_15: metrics.load_average_15 || 0,
+				memory_usage_percent: metrics.memory_usage_percent || 0,
+				network_rx_bytes: metrics.network_rx_bytes || 0,
+				network_tx_bytes: metrics.network_tx_bytes || 0
+			};
+
+			// Skip if all values are zero (no real data). Quietly —
+			// this fires on every empty payload and was noisy at
+			// console.log level.
+			if (point.load_average_1 === 0 && point.load_average_5 === 0 &&
+				point.memory_usage_percent === 0 && point.network_rx_bytes === 0) {
+				return;
+			}
+
+			cachedMetricsData.push(point);
+
+			// Keep data within time window
+			const hours = parseFloat(document.getElementById('hours-select').value);
+			const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
+			cachedMetricsData = cachedMetricsData.filter(d => new Date(d.collected_at) > cutoff);
+
+			// Update charts in place (no animation)
+			const factor = getDownsampleFactor();
+			const sampledData = downsampleData(cachedMetricsData, factor);
+
+			if (charts.cpu) {
+				updateChartData(charts.cpu, sampledData, [
+					sampledData.map(d => d.load_average_1),
+					sampledData.map(d => d.load_average_5),
+					sampledData.map(d => d.load_average_15)
+				]);
+			}
+			if (charts.memory) {
+				updateChartData(charts.memory, sampledData, [
+					sampledData.map(d => d.memory_usage_percent)
+				]);
+			}
+			if (charts.network) {
+				// Network needs special handling for rate calculation
+				updateNetworkChart(sampledData);
+			}
+			updateHostLiveValues(cachedMetricsData);
+		}
+
+		// ──────────────────────────────────────────────────────────────
+		// Live chart-title readouts. Each formatter takes the latest
+		// data point(s) and returns the short string shown next to the
+		// chart title. The point is to make flat-looking charts (e.g.
+		// memory parked at 3% on a 0–100 axis) still answer "what's the
+		// number right now?" without the user reading axis ticks.
+		// ──────────────────────────────────────────────────────────────
+		function setLiveValue(id, text) {
+			const el = document.getElementById(id);
+			if (el) el.textContent = text || '';
+		}
+		function fmtPercent(v) {
+			if (v == null || isNaN(v)) return '';
+			// 1 decimal under 10 (where it actually matters), integer
+			// above — keeps the readout from being "12.7%" when "13%"
+			// reads cleaner.
+			return v < 10 ? v.toFixed(1) + '%' : Math.round(v) + '%';
+		}
+		function fmtLoad(v) {
+			if (v == null || isNaN(v)) return '0.00';
+			return v.toFixed(2);
+		}
+		function fmtMs(v) {
+			if (v == null || isNaN(v)) return '';
+			if (v >= 1000) return (v / 1000).toFixed(1) + ' s';
+			return Math.round(v) + ' ms';
+		}
+		function fmtMbps(v) {
+			if (v == null || isNaN(v)) return '0';
+			if (v >= 100) return Math.round(v).toString();
+			if (v >= 10)  return v.toFixed(1);
+			return v.toFixed(2);
+		}
+		function fmtCount(v) {
+			if (v == null || isNaN(v)) return '0';
+			if (v >= 1e6) return (v / 1e6).toFixed(1) + 'M';
+			if (v >= 1e3) return (v / 1e3).toFixed(1) + 'k';
+			return Math.round(v).toString();
+		}
+		function updateHostLiveValues(history) {
+			if (!history || history.length === 0) {
+				setLiveValue('cpu-live', '');
+				setLiveValue('memory-live', '');
+				setLiveValue('network-live', '');
+				return;
+			}
+			const last = history[history.length - 1];
+			setLiveValue('cpu-live',
+				fmtLoad(last.load_average_1) + ' / ' +
+				fmtLoad(last.load_average_5) + ' / ' +
+				fmtLoad(last.load_average_15));
+			setLiveValue('memory-live', fmtPercent(last.memory_usage_percent));
+			// Network rate needs two consecutive points; same delta
+			// math the chart uses internally.
+			if (history.length >= 2) {
+				const prev = history[history.length - 2];
+				const dt = (new Date(last.collected_at) - new Date(prev.collected_at)) / 1000;
+				if (dt > 0) {
+					const rxDiff = last.network_rx_bytes - prev.network_rx_bytes;
+					const txDiff = last.network_tx_bytes - prev.network_tx_bytes;
+					const rxMbps = rxDiff >= 0 ? (rxDiff * 8 / 1e6) / dt : 0;
+					const txMbps = txDiff >= 0 ? (txDiff * 8 / 1e6) / dt : 0;
+					setLiveValue('network-live', '↓' + fmtMbps(rxMbps) + ' ↑' + fmtMbps(txMbps) + ' Mbps');
+					return;
+				}
+			}
+			setLiveValue('network-live', '');
+		}
+		function updateHaproxyLiveValues(history) {
+			if (!history || history.length === 0) {
+				setLiveValue('sessions-live', '');
+				setLiveValue('health-live', '');
+				setLiveValue('response-time-live', '');
+				setLiveValue('errors-live', '');
+				return;
+			}
+			const last = history[history.length - 1];
+			const healthy = last.healthy_servers || 0;
+			const total = last.total_servers || 0;
+			setLiveValue('health-live', healthy + ' / ' + total + ' healthy');
+			setLiveValue('response-time-live', fmtMs(last.avg_response_time));
+			// total_5xx_errors is a cumulative counter (see renderErrorsChart).
+			// Show the window-total — (last - first), clamped on resets —
+			// so the readout agrees with the KPI band's "5xx Errors" card.
+			let inWindow5xx = 0;
+			if (history.length >= 2) {
+				const delta = (last.total_5xx_errors || 0) - (history[0].total_5xx_errors || 0);
+				if (delta > 0) inWindow5xx = delta;
+			}
+			setLiveValue('errors-live', fmtCount(inWindow5xx) + ' in window');
+			setLiveValue('sessions-live', fmtCount(last.total_sessions) + ' active');
+		}
+		function getDownsampleFactor() {
+			const slider = document.getElementById('resolution-slider');
+			// Invert: slider 10 (highest res) = factor 1 (no downsampling)
+			//         slider 1 (lowest res) = factor 10 (max downsampling)
+			const sliderValue = slider ? parseInt(slider.value) : 5;
+			return 11 - sliderValue;
+		}
+
+		// Update chart data in place without animation
+		function updateChartData(chart, sampledData, datasets) {
+			chart.data.labels = sampledData.map(d => formatTime(d.collected_at));
+			datasets.forEach((data, index) => {
+				if (chart.data.datasets[index]) {
+					chart.data.datasets[index].data = data;
+				}
+			});
+			chart.update('none'); // 'none' disables animation
+		}
+
+		// Special update for network chart (rate calculation)
+		function updateNetworkChart(sampledData) {
+			const rxRate = [];
+			const txRate = [];
+			const labels = [];
+
+			for (let i = 1; i < sampledData.length; i++) {
+				const prev = sampledData[i - 1];
+				const curr = sampledData[i];
+				const timeDiff = (new Date(curr.collected_at) - new Date(prev.collected_at)) / 1000;
+				if (timeDiff <= 0) continue;
+
+				const rxDiff = curr.network_rx_bytes - prev.network_rx_bytes;
+				const txDiff = curr.network_tx_bytes - prev.network_tx_bytes;
+				// Convert bytes/s to megabits/s: bytes * 8 / 1,000,000
+				const rxMbps = rxDiff >= 0 ? (rxDiff * 8 / 1000000) / timeDiff : 0;
+				const txMbps = txDiff >= 0 ? (txDiff * 8 / 1000000) / timeDiff : 0;
+
+				rxRate.push(rxMbps);
+				txRate.push(txMbps);
+				labels.push(formatTime(curr.collected_at));
+			}
+
+			charts.network.data.labels = labels;
+			charts.network.data.datasets[0].data = rxRate;
+			charts.network.data.datasets[1].data = txRate;
+			charts.network.update('none');
+		}
+
+		function renderSessionsChart(data) {
+			const ctx = document.getElementById('sessions-chart');
+			if (!ctx) return;
+
+			const factor = getDownsampleFactor();
+			const sampledData = downsampleData(data, factor);
+			const colors = getChartColors();
+
+			charts.sessions = new Chart(ctx.getContext('2d'), {
+				type: 'line',
+				data: {
+					labels: sampledData.map(d => formatTime(d.collected_at)),
+					datasets: [
+						{
+							label: 'Sessions',
+							data: sampledData.map(d => d.total_sessions),
+							borderColor: colors.primary,
+							backgroundColor: 'transparent',
+							borderWidth: 1.5,
+							pointRadius: 0,
+							pointHoverRadius: 3,
+							tension: 0.4
+						},
+						{
+							label: 'Requests (÷1000)',
+							data: sampledData.map(d => Math.round(d.total_requests / 1000)),
+							borderColor: colors.secondary,
+							backgroundColor: 'transparent',
+							borderWidth: 1.5,
+							pointRadius: 0,
+							pointHoverRadius: 3,
+							tension: 0.4
+						}
+					]
+				},
+				options: createChartOptions(0)
+			});
+		}
+
+		function renderHealthChart(data) {
+			const ctx = document.getElementById('health-chart');
+			if (!ctx) return;
+
+			const factor = getDownsampleFactor();
+			const sampledData = downsampleData(data, factor);
+			const colors = getChartColors();
+
+			charts.health = new Chart(ctx.getContext('2d'), {
+				type: 'line',
+				data: {
+					labels: sampledData.map(d => formatTime(d.collected_at)),
+					datasets: [
+						{
+							label: 'Healthy Servers',
+							data: sampledData.map(d => d.healthy_servers),
+							borderColor: colors.secondary,
+							backgroundColor: 'transparent',
+							borderWidth: 1.5,
+							pointRadius: 0,
+							pointHoverRadius: 3,
+							tension: 0.4
+						},
+						{
+							label: 'Total Servers',
+							data: sampledData.map(d => d.total_servers),
+							borderColor: colors.primary,
+							backgroundColor: 'transparent',
+							borderWidth: 1.5,
+							pointRadius: 0,
+							pointHoverRadius: 3,
+							tension: 0.4
+						}
+					]
+				},
+				options: createChartOptions(0)
+			});
+		}
+
+		function renderCpuChart(data) {
+			const ctx = document.getElementById('cpu-chart');
+			if (!ctx) return;
+
+			const factor = getDownsampleFactor();
+			const sampledData = downsampleData(data, factor);
+			const colors = getChartColors();
+
+			charts.cpu = new Chart(ctx.getContext('2d'), {
+				type: 'line',
+				data: {
+					labels: sampledData.map(d => formatTime(d.collected_at)),
+					datasets: [
+						{
+							label: '1 min',
+							data: sampledData.map(d => d.load_average_1),
+							borderColor: colors.primary,
+							backgroundColor: 'transparent',
+							borderWidth: 1.5,
+							pointRadius: 0,
+							pointHoverRadius: 3,
+							tension: 0.4
+						},
+						{
+							label: '5 min',
+							data: sampledData.map(d => d.load_average_5),
+							borderColor: colors.secondary,
+							backgroundColor: 'transparent',
+							borderWidth: 1.5,
+							pointRadius: 0,
+							pointHoverRadius: 3,
+							tension: 0.4
+						},
+						{
+							label: '15 min',
+							data: sampledData.map(d => d.load_average_15),
+							borderColor: colors.purple,
+							backgroundColor: 'transparent',
+							borderWidth: 1.5,
+							pointRadius: 0,
+							pointHoverRadius: 3,
+							tension: 0.4
+						}
+					]
+				},
+				options: createChartOptions(0)
+			});
+		}
+
+		function renderMemoryChart(data) {
+			const ctx = document.getElementById('memory-chart');
+			if (!ctx) return;
+
+			const factor = getDownsampleFactor();
+			const sampledData = downsampleData(data, factor);
+			const colors = getChartColors();
+
+			charts.memory = new Chart(ctx.getContext('2d'), {
+				type: 'line',
+				data: {
+					labels: sampledData.map(d => formatTime(d.collected_at)),
+					datasets: [
+						{
+							label: 'Memory %',
+							data: sampledData.map(d => d.memory_usage_percent),
+							borderColor: colors.warning,
+							backgroundColor: 'transparent',
+							borderWidth: 1.5,
+							pointRadius: 0,
+							pointHoverRadius: 3,
+							tension: 0.4
+						}
+					]
+				},
+				options: {
+					...createChartOptions(0),
+					scales: {
+						...createChartOptions(0).scales,
+						y: {
+							min: 0,
+							max: 100,
+							ticks: { color: getChartColors().text },
+							grid: { color: getChartColors().grid }
+						}
+					}
+				}
+			});
+		}
+
+		function renderNetworkChart(data) {
+			const ctx = document.getElementById('network-chart');
+			if (!ctx) return;
+
+			const factor = getDownsampleFactor();
+			const sampledData = downsampleData(data, factor);
+			const colors = getChartColors();
+
+			// Calculate throughput (delta between consecutive points) in Mbps
+			const rxRate = [];
+			const txRate = [];
+			const labels = [];
+
+			for (let i = 1; i < sampledData.length; i++) {
+				const prev = sampledData[i - 1];
+				const curr = sampledData[i];
+
+				// Calculate time difference in seconds
+				const timeDiff = (new Date(curr.collected_at) - new Date(prev.collected_at)) / 1000;
+				if (timeDiff <= 0) continue;
+
+				// Calculate byte difference and convert to Mbps (megabits per second)
+				const rxDiff = curr.network_rx_bytes - prev.network_rx_bytes;
+				const txDiff = curr.network_tx_bytes - prev.network_tx_bytes;
+
+				// Handle counter resets (when diff is negative)
+				// Convert bytes/s to megabits/s: bytes * 8 / 1,000,000
+				const rxMbps = rxDiff >= 0 ? (rxDiff * 8 / 1000000) / timeDiff : 0;
+				const txMbps = txDiff >= 0 ? (txDiff * 8 / 1000000) / timeDiff : 0;
+
+				rxRate.push(rxMbps);
+				txRate.push(txMbps);
+				labels.push(formatTime(curr.collected_at));
+			}
+
+			charts.network = new Chart(ctx.getContext('2d'), {
+				type: 'line',
+				data: {
+					labels: labels,
+					datasets: [
+						{
+							label: 'RX (Mbps)',
+							data: rxRate,
+							borderColor: colors.primary,
+							backgroundColor: 'transparent',
+							borderWidth: 1.5,
+							pointRadius: 0,
+							pointHoverRadius: 3,
+							tension: 0.4
+						},
+						{
+							label: 'TX (Mbps)',
+							data: txRate,
+							borderColor: colors.purple,
+							backgroundColor: 'transparent',
+							borderWidth: 1.5,
+							pointRadius: 0,
+							pointHoverRadius: 3,
+							tension: 0.4
+						}
+					]
+				},
+				options: createChartOptions(0)
+			});
+		}
+
+		function renderResponseTimeChart(data) {
+			const ctx = document.getElementById('response-time-chart');
+			if (!ctx) return;
+
+			const factor = getDownsampleFactor();
+			const sampledData = downsampleData(data, factor);
+			const colors = getChartColors();
+
+			charts.responseTime = new Chart(ctx.getContext('2d'), {
+				type: 'line',
+				data: {
+					labels: sampledData.map(d => formatTime(d.collected_at)),
+					datasets: [
+						{
+							label: 'Avg Response Time (ms)',
+							data: sampledData.map(d => d.avg_response_time),
+							borderColor: colors.primary,
+							backgroundColor: 'transparent',
+							borderWidth: 1.5,
+							pointRadius: 0,
+							pointHoverRadius: 3,
+							tension: 0.4
+						}
+					]
+				},
+				options: createChartOptions(0)
+			});
+		}
+
+		function renderErrorsChart(data) {
+			const ctx = document.getElementById('errors-chart');
+			if (!ctx) return;
+
+			const factor = getDownsampleFactor();
+			const sampledData = downsampleData(data, factor);
+			const colors = getChartColors();
+
+			// total_5xx_errors is a sum of HAProxy's monotonic hrsp_5xx
+			// counters across all frontends/backends — i.e. cumulative
+			// since the haproxy process started. Plotting it raw made
+			// the chart climb forever and diverge from the KPI band
+			// (which reports per-window counts from the database).
+			// Diff to a per-bucket count instead so the line answers
+			// "when did 5xxs happen and how many" — same framing as
+			// the Caddy/Traefik response-class charts.
+			charts.errors = new Chart(ctx.getContext('2d'), {
+				type: 'line',
+				data: {
+					labels: sampledData.map(d => formatTime(d.collected_at)),
+					datasets: [
+						makeAreaDataset('5xx / interval', counterDeltas(sampledData, d => d.total_5xx_errors), colors.danger)
+					]
+				},
+				options: createIntegerYAxisOptions()
+			});
+		}
+
+		// ──────────────────────────────────────────────────────────────
+		// KPI band
+		// ──────────────────────────────────────────────────────────────
+
+		async function loadKPISummary() {
+			const serverID = getServerID();
+			if (!serverID) return;
+			const range = hoursToRange(document.getElementById('hours-select').value);
+			try {
+				const res = await fetch('/api/' + serverID + '/metrics/summary?range=' + encodeURIComponent(range));
+				if (!res.ok) {
+					throw new Error('HTTP ' + res.status);
+				}
+				const data = await res.json();
+				renderKPICards(data.cards || []);
+			} catch (err) {
+				console.error('Failed to load KPI summary', err);
+				const band = document.getElementById('kpi-band');
+				if (band) band.innerHTML = '<div class="col-span-full text-sm text-red-500">Failed to load summary.</div>';
+			}
+		}
+
+		function renderKPICards(cards) {
+			const band = document.getElementById('kpi-band');
+			if (!band) return;
+
+			// Build the band as a string first, then append the
+			// canonical info-tooltip nodes via createInfoTooltip()
+			// (window helper from /static/js/common/info-tooltip.js).
+			// Keeping the tooltip out of the innerHTML string means
+			// description text never needs HTML-escaping and matches
+			// the HAProxy overview tooltip behaviour exactly.
+			band.innerHTML = cards.map(function(c) {
+				const valueText = formatKPIValue(c);
+				const deltaHTML = formatKPIDelta(c);
+				// Source badge tells the reader which collector produced the
+				// number. Server emits source/source_label on every card;
+				// legacy responses without these fields render no badge.
+				const sourceBadge = c.source_label
+					? '<span class="kpi-source-badge" title="Reported by ' + escapeAttr(c.source_label) + '">' + escapeHtml(c.source_label) + '</span>'
+					: '';
+				return ''
+					+ '<div class="kpi-card status-' + (c.status || 'good') + '" data-source="' + escapeAttr(c.source || '') + '" data-kpi-key="' + escapeAttr(c.key || '') + '">'
+					+   sourceBadge
+					+   '<div class="kpi-label"><span class="kpi-label-text">' + escapeHtml(c.label) + '</span><span class="kpi-info-slot"></span></div>'
+					+   '<div class="kpi-value">' + valueText + '</div>'
+					+   '<div class="kpi-delta-row mt-1">' + deltaHTML + '</div>'
+					+   '<canvas class="kpi-sparkline" data-spark="' + escapeAttr(JSON.stringify(c.sparkline || [])) + '"'
+					+     ' data-status="' + (c.status || 'good') + '"></canvas>'
+					+ '</div>';
+			}).join('');
+
+			// Attach the canonical info tooltip (matches the HAProxy
+			// dashboard widget byte-for-byte) to each card whose
+			// description is non-empty.
+			cards.forEach(function(c) {
+				if (!c.description) return;
+				const card = band.querySelector('.kpi-card[data-kpi-key="' + (c.key || '').replace(/"/g, '\\"') + '"]');
+				if (!card) return;
+				const slot = card.querySelector('.kpi-info-slot');
+				if (slot && typeof window.appendInfoTooltipTo === 'function') {
+					window.appendInfoTooltipTo(slot, c.description);
+				}
+			});
+
+			// Render sparklines.
+			band.querySelectorAll('canvas.kpi-sparkline').forEach(function(canvas) {
+				try {
+					const pts = JSON.parse(canvas.dataset.spark || '[]');
+					drawSparkline(canvas, pts, canvas.dataset.status);
+				} catch (e) { /* ignore */ }
+			});
+		}
+
+		function formatKPIValue(c) {
+			// Health card uses PrevValue as the "total" — show as N/M.
+			if (c.key === 'health') {
+				return Math.round(c.value) + '<span class="kpi-unit">/ ' + Math.round(c.prev_value || 0) + '</span>';
+			}
+			let v = c.value;
+			let decimals = (typeof c.decimals === 'number') ? c.decimals : 1;
+			if (c.is_count && !c.unit) decimals = 0;
+			let displayValue;
+			if (Math.abs(v) >= 1e6) {
+				displayValue = (v / 1e6).toFixed(1) + 'M';
+			} else if (Math.abs(v) >= 1e4) {
+				displayValue = (v / 1e3).toFixed(1) + 'k';
+			} else {
+				displayValue = v.toFixed(decimals);
+			}
+			const unit = c.unit ? ('<span class="kpi-unit">' + escapeHtml(c.unit) + '</span>') : '';
+			return displayValue + unit;
+		}
+
+		function formatKPIDelta(c) {
+			// Health KPI doesn't need a delta — the N/M conveys state already.
+			if (c.key === 'health') {
+				return '<span class="kpi-delta neutral">live</span>';
+			}
+			const d = c.delta_pct || 0;
+			// Both windows are zero — there's data, it's just all
+			// quiet. "—" is the honest summary; the old "no prior
+			// data" label was misleading because we *do* have prior
+			// data, it's just also zero.
+			if (c.prev_value === 0 && c.value === 0) {
+				return '<span class="kpi-delta neutral">—</span>';
+			}
+			// True absence of comparison data (delta couldn't be
+			// computed) — keep the explicit label so it's not
+			// confused with the both-zero case above.
+			if (!isFinite(d)) {
+				return '<span class="kpi-delta neutral">no prior data</span>';
+			}
+			let cls = 'neutral';
+			let arrow = '→';
+			if (Math.abs(d) < 0.5) {
+				cls = 'neutral';
+			} else if (d > 0) {
+				cls = 'up'; arrow = '▲';
+			} else {
+				cls = 'down'; arrow = '▼';
+			}
+			// "Going up" is bad for error rate / 5xx / response time; good for traffic / sessions.
+			let inv = '';
+			if (c.key === 'requests' || c.key === 'sessions') {
+				inv = 'inverse-good ';
+			}
+			return '<span class="kpi-delta ' + inv + cls + '">'
+				+ arrow + ' ' + Math.abs(d).toFixed(1) + '% vs prior window</span>';
+		}
+
+		function drawSparkline(canvas, pts, status) {
+			if (!pts || pts.length < 2) return;
+			const dpr = window.devicePixelRatio || 1;
+			const w = canvas.clientWidth || 70;
+			const h = canvas.clientHeight || 24;
+			canvas.width = w * dpr;
+			canvas.height = h * dpr;
+			const ctx = canvas.getContext('2d');
+			ctx.scale(dpr, dpr);
+			const min = Math.min.apply(null, pts);
+			const max = Math.max.apply(null, pts);
+			const range = max - min || 1;
+			const color = status === 'bad' ? '#ef4444'
+				: status === 'warn' ? '#f59e0b'
+				: '#10b981';
+			ctx.lineWidth = 1.25;
+			ctx.strokeStyle = color;
+			ctx.beginPath();
+			for (let i = 0; i < pts.length; i++) {
+				const x = (i / (pts.length - 1)) * (w - 2) + 1;
+				const y = h - 1 - ((pts[i] - min) / range) * (h - 2);
+				if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+			}
+			ctx.stroke();
+			ctx.lineTo(w - 1, h);
+			ctx.lineTo(1, h);
+			ctx.closePath();
+			ctx.globalAlpha = 0.12;
+			ctx.fillStyle = color;
+			ctx.fill();
+			ctx.globalAlpha = 1;
+		}
+
+		// ──────────────────────────────────────────────────────────────
+		// Error Insights panel
+		// ──────────────────────────────────────────────────────────────
+
+		async function loadErrorInsights() {
+			const serverID = getServerID();
+			if (!serverID) return;
+			const range = hoursToRange(document.getElementById('hours-select').value);
+			const body = document.getElementById('error-insights-body');
+			const empty = document.getElementById('error-insights-empty');
+			try {
+				const res = await fetch('/api/' + serverID + '/metrics/error-breakdown?range=' + encodeURIComponent(range));
+				if (!res.ok) throw new Error('HTTP ' + res.status);
+				const data = await res.json();
+				renderErrorInsights(data);
+				const hasAny = (data.backends || []).length + (data.sources || []).length + (data.countries || []).length;
+				if (hasAny === 0) {
+					body.classList.add('hidden');
+					empty.classList.remove('hidden');
+				} else {
+					body.classList.remove('hidden');
+					empty.classList.add('hidden');
+				}
+			} catch (err) {
+				console.error('Failed to load error insights', err);
+				body.innerHTML = '<div class="col-span-3 text-sm text-red-500">Failed to load error breakdown.</div>';
+			}
+		}
+
+		function renderErrorInsights(data) {
+			const body = document.getElementById('error-insights-body');
+			if (!body) return;
+
+			const backendCol = renderEIBackends(data.backends || []);
+			const sourceCol  = renderEISources(data.sources || []);
+			const countryCol = renderEICountries(data.countries || []);
+
+			body.innerHTML = ''
+				+ '<div class="ei-col"><h4>Top backends by errors</h4><div>' + backendCol + '</div></div>'
+				+ '<div class="ei-col"><h4>Top source IPs</h4><div>' + sourceCol + '</div></div>'
+				+ '<div class="ei-col"><h4>Top countries</h4><div>' + countryCol + '</div></div>';
+		}
+
+		function renderEIBackends(rows) {
+			if (rows.length === 0) return '<p class="text-xs text-gray-500 dark:text-gray-400">No backend errors.</p>';
+			return rows.map(function(r) {
+				const total = (r.response_5xx || 0) + (r.response_4xx || 0);
+				const label5 = (r.response_5xx || 0) + ' 5xx';
+				const label4 = (r.response_4xx || 0) + ' 4xx';
+				const errorRate = (r.error_rate || 0).toFixed(1) + '%';
+				const cls = (r.response_5xx || 0) > 0 ? '' : ' warning';
+				return ''
+					+ '<div class="ei-row" data-backend="' + escapeAttr(r.backend_name) + '" onclick="openDrillDown(\'backend\', \'' + escapeJSArg(r.backend_name) + '\')">'
+					+   '<div>'
+					+     '<div class="ei-primary">' + escapeHtml(r.backend_name) + '</div>'
+					+     '<div class="ei-secondary">' + label5 + ' · ' + label4 + ' · ' + errorRate + ' err rate</div>'
+					+   '</div>'
+					+   '<div class="ei-count' + cls + '">' + total.toLocaleString() + '</div>'
+					+ '</div>';
+			}).join('');
+		}
+
+		function renderEISources(rows) {
+			if (rows.length === 0) return '<p class="text-xs text-gray-500 dark:text-gray-400">No erroring source IPs.</p>';
+			return rows.map(function(r) {
+				const flag = r.country_code && r.country_code !== 'XX' && r.country_code !== 'AG' ? r.country_code : '';
+				const meta = (r.country || 'Unknown') + ' · ' + (r.backends_hit || 0) + ' backends · ' + (r.error_rate || 0).toFixed(1) + '% err';
+				return ''
+					+ '<div class="ei-row" onclick="openDrillDown(\'source\', \'' + escapeJSArg(r.source_ip) + '\')">'
+					+   '<div>'
+					+     '<div class="ei-primary">' + escapeHtml(r.source_ip) + (flag ? ' <span class="text-xs text-gray-400">' + escapeHtml(flag) + '</span>' : '') + '</div>'
+					+     '<div class="ei-secondary">' + escapeHtml(meta) + '</div>'
+					+   '</div>'
+					+   '<div class="ei-count">' + (r.error_count || 0).toLocaleString() + '</div>'
+					+ '</div>';
+			}).join('');
+		}
+
+		function renderEICountries(rows) {
+			if (rows.length === 0) return '<p class="text-xs text-gray-500 dark:text-gray-400">No country breakdown.</p>';
+			return rows.map(function(r) {
+				return ''
+					+ '<div class="ei-row" style="cursor: default;">'
+					+   '<div>'
+					+     '<div class="ei-primary">' + escapeHtml(r.country || 'Unknown') + ' <span class="text-xs text-gray-400">' + escapeHtml(r.country_code || '') + '</span></div>'
+					+     '<div class="ei-secondary">' + (r.unique_ips || 0) + ' IPs · ' + (r.error_rate || 0).toFixed(1) + '% err</div>'
+					+   '</div>'
+					+   '<div class="ei-count">' + (r.errors || 0).toLocaleString() + '</div>'
+					+ '</div>';
+			}).join('');
+		}
+
+		// ──────────────────────────────────────────────────────────────
+		// Drill-down drawer
+		// ──────────────────────────────────────────────────────────────
+
+		let drilldownCharts = {};
+
+		function destroyDrilldownCharts() {
+			Object.values(drilldownCharts).forEach(function(c) { try { c.destroy(); } catch(e){} });
+			drilldownCharts = {};
+		}
+
+		function openDrillDown(kind, name) {
+			const drawer = document.getElementById('drilldown-drawer');
+			const backdrop = document.getElementById('drilldown-backdrop');
+			drawer.classList.remove('hidden');
+			backdrop.classList.remove('hidden');
+			// Force reflow so the transition triggers.
+			void drawer.offsetWidth;
+			drawer.classList.add('open');
+			backdrop.classList.add('open');
+
+			document.getElementById('drilldown-eyebrow').textContent = kind === 'backend' ? 'Backend' : 'Source IP';
+			document.getElementById('drilldown-title').textContent = name;
+			document.getElementById('drilldown-body').innerHTML = '<p class="text-sm text-gray-500">Loading…</p>';
+
+			if (kind === 'backend') {
+				loadBackendDrillDown(name);
+			} else if (kind === 'source') {
+				loadSourceDrillDown(name);
+			}
+		}
+
+		function closeDrillDown() {
+			const drawer = document.getElementById('drilldown-drawer');
+			const backdrop = document.getElementById('drilldown-backdrop');
+			drawer.classList.remove('open');
+			backdrop.classList.remove('open');
+			setTimeout(function() {
+				drawer.classList.add('hidden');
+				backdrop.classList.add('hidden');
+				destroyDrilldownCharts();
+			}, 200);
+		}
+
+		document.addEventListener('keydown', function(e) {
+			if (e.key === 'Escape' && document.getElementById('drilldown-drawer').classList.contains('open')) {
+				// preventDefault so the global Esc handler doesn't also
+				// run on the same press (e.g. fall through to history.back).
+				e.preventDefault();
+				closeDrillDown();
+			}
+		});
+
+		async function loadBackendDrillDown(backendName) {
+			const serverID = getServerID();
+			const range = hoursToRange(document.getElementById('hours-select').value);
+			const url = '/api/' + serverID + '/metrics/backend/' + encodeURIComponent(backendName) + '/details?range=' + encodeURIComponent(range);
+			try {
+				const res = await fetch(url);
+				if (!res.ok) throw new Error('HTTP ' + res.status);
+				const data = await res.json();
+				renderBackendDrillDown(data);
+				const link = document.getElementById('drilldown-logs-link');
+				link.href = '/logs?server=' + encodeURIComponent(serverID) + '&source=haproxy';
+				link.classList.remove('hidden');
+				loadLogErrors(serverID, backendName);
+			} catch (err) {
+				console.error('Drill-down failed', err);
+				document.getElementById('drilldown-body').innerHTML =
+					'<p class="text-sm text-red-500">Failed to load backend details: ' + escapeHtml(err.message) + '</p>';
+			}
+		}
+
+		async function loadSourceDrillDown(sourceIP) {
+			const serverID = getServerID();
+			const html = ''
+				+ '<div class="drilldown-section">'
+				+   '<h3>Source IP details</h3>'
+				+   '<p class="text-sm text-gray-700 dark:text-gray-300">Per-source breakdowns and GeoIP lookup live on the Traffic gear.</p>'
+				+   '<p class="mt-3"><a class="text-blue-600 dark:text-blue-400 underline" href="/traffic?server=' + encodeURIComponent(serverID) + '" target="_blank" rel="noopener">Open Traffic gear →</a></p>'
+				+ '</div>';
+			document.getElementById('drilldown-body').innerHTML = html;
+		}
+
+		function renderBackendDrillDown(data) {
+			const ts = data.timeseries || [];
+			let total5xx = 0, total4xx = 0, total2xx = 0, total3xx = 0, totalReq = 0;
+			let avgRT = 0, rtN = 0;
+			ts.forEach(function(b) {
+				total5xx += b.response_5xx || 0;
+				total4xx += b.response_4xx || 0;
+				total2xx += b.response_2xx || 0;
+				total3xx += b.response_3xx || 0;
+				totalReq += b.requests || 0;
+				if ((b.avg_response_ms || 0) > 0) { avgRT += b.avg_response_ms; rtN++; }
+			});
+			if (rtN > 0) avgRT = avgRT / rtN;
+			const totalResp = total2xx + total3xx + total4xx + total5xx;
+			const errRate = totalResp > 0 ? ((total4xx + total5xx) / totalResp * 100).toFixed(2) : '0.00';
+
+			const sources = data.top_sources || [];
+
+			const sourcesHTML = sources.length === 0
+				? '<p class="text-sm text-gray-500 dark:text-gray-400">No source data in window.</p>'
+				: '<div class="space-y-1">' + sources.map(function(s) {
+					const flag = s.country_code && s.country_code !== 'XX' ? s.country_code : '';
+					return ''
+						+ '<div class="flex items-center justify-between text-sm py-1.5 px-2 rounded hover:bg-gray-50 dark:hover:bg-slate-800">'
+						+   '<div>'
+						+     '<span class="font-medium">' + escapeHtml(s.source_ip) + '</span>'
+						+     (flag ? ' <span class="text-xs text-gray-400">' + escapeHtml(flag) + '</span>' : '')
+						+     '<span class="ml-2 text-xs text-gray-500">' + escapeHtml(s.country || 'Unknown') + '</span>'
+						+   '</div>'
+						+   '<div class="text-xs text-gray-700 dark:text-gray-300">'
+						+     (s.requests || 0).toLocaleString() + ' req · '
+						+     '<span class="text-red-500">' + (s.error_count || 0) + ' err</span>'
+						+   '</div>'
+						+ '</div>';
+				}).join('') + '</div>';
+
+			document.getElementById('drilldown-body').innerHTML = ''
+				+ '<div class="drilldown-section">'
+				+   '<h3>Summary</h3>'
+				+   '<div class="drilldown-kv">'
+				+     '<div><div class="k">Requests</div><div class="v">' + totalReq.toLocaleString() + '</div></div>'
+				+     '<div><div class="k">Error rate</div><div class="v ' + (parseFloat(errRate) > 5 ? 'text-red-500' : '') + '">' + errRate + '%</div></div>'
+				+     '<div><div class="k">5xx</div><div class="v ' + (total5xx > 0 ? 'text-red-500' : '') + '">' + total5xx.toLocaleString() + '</div></div>'
+				+     '<div><div class="k">4xx</div><div class="v ' + (total4xx > 0 ? 'text-yellow-500' : '') + '">' + total4xx.toLocaleString() + '</div></div>'
+				+     '<div><div class="k">Avg latency</div><div class="v">' + Math.round(avgRT) + ' ms</div></div>'
+				+   '</div>'
+				+ '</div>'
+				+ '<div class="drilldown-section">'
+				+   '<h3>Requests &amp; errors over time</h3>'
+				+   '<div class="drilldown-chart"><canvas id="drilldown-rate-chart"></canvas></div>'
+				+ '</div>'
+				+ '<div class="drilldown-section">'
+				+   '<h3>Status code mix</h3>'
+				+   '<div class="drilldown-chart" style="height: 140px;"><canvas id="drilldown-status-chart"></canvas></div>'
+				+ '</div>'
+				+ '<div class="drilldown-section">'
+				+   '<h3>Top sources hitting this backend</h3>'
+				+   sourcesHTML
+				+ '</div>'
+				+ '<div class="drilldown-section">'
+				+   '<div class="flex items-center justify-between">'
+				+     '<h3>Recent 5xx log lines</h3>'
+				+     '<span id="drilldown-logs-state" class="text-xs text-gray-400">Loading…</span>'
+				+   '</div>'
+				+   '<div id="drilldown-logs-body" class="space-y-1 mt-1"></div>'
+				+ '</div>';
+
+			renderDrilldownRateChart(ts);
+			renderDrilldownStatusChart({ r2xx: total2xx, r3xx: total3xx, r4xx: total4xx, r5xx: total5xx });
+		}
+
+		function renderDrilldownRateChart(ts) {
+			const ctx = document.getElementById('drilldown-rate-chart');
+			if (!ctx || ts.length === 0) return;
+			const labels = ts.map(function(b) { return formatTime(b.bucket_time); });
+			const reqs   = ts.map(function(b) { return b.requests || 0; });
+			const errs   = ts.map(function(b) { return (b.response_4xx || 0) + (b.response_5xx || 0); });
+			const colors = getChartColors();
+			drilldownCharts.rate = new Chart(ctx.getContext('2d'), {
+				type: 'line',
+				data: {
+					labels: labels,
+					datasets: [
+						{ label: 'Requests', data: reqs, borderColor: colors.primary, backgroundColor: 'rgba(59, 130, 246, 0.08)', fill: true, borderWidth: 1.4, pointRadius: 0, tension: 0.35, yAxisID: 'y' },
+						{ label: 'Errors',   data: errs, borderColor: colors.danger,  backgroundColor: 'rgba(239, 68, 68, 0.15)', fill: true, borderWidth: 1.4, pointRadius: 0, tension: 0.35, yAxisID: 'y1' }
+					]
+				},
+				options: {
+					responsive: true,
+					maintainAspectRatio: false,
+					plugins: { legend: { labels: { color: colors.text, boxWidth: 10, font: { size: 10 } } } },
+					scales: {
+						x:  { ticks: { color: colors.text, maxTicksLimit: 6, font: { size: 10 } }, grid: { color: colors.grid } },
+						y:  { position: 'left',  beginAtZero: true, ticks: { color: colors.text, font: { size: 10 } }, grid: { color: colors.grid } },
+						y1: { position: 'right', beginAtZero: true, ticks: { color: colors.danger, font: { size: 10 } }, grid: { drawOnChartArea: false } }
+					}
+				}
+			});
+		}
+
+		function renderDrilldownStatusChart(s) {
+			const ctx = document.getElementById('drilldown-status-chart');
+			if (!ctx) return;
+			const colors = getChartColors();
+			drilldownCharts.status = new Chart(ctx.getContext('2d'), {
+				type: 'doughnut',
+				data: {
+					labels: ['2xx', '3xx', '4xx', '5xx'],
+					datasets: [{
+						data: [s.r2xx || 0, s.r3xx || 0, s.r4xx || 0, s.r5xx || 0],
+						backgroundColor: [colors.secondary, colors.primary, colors.warning, colors.danger],
+						borderWidth: 0
+					}]
+				},
+				options: {
+					responsive: true,
+					maintainAspectRatio: false,
+					plugins: {
+						legend: { position: 'right', labels: { color: colors.text, boxWidth: 12, font: { size: 11 } } }
+					},
+					cutout: '60%'
+				}
+			});
+		}
+
+		async function loadLogErrors(serverID, backendName) {
+			const state = document.getElementById('drilldown-logs-state');
+			const body = document.getElementById('drilldown-logs-body');
+			if (!state || !body) return;
+			try {
+				const url = '/api/' + serverID + '/metrics/log-errors?status_min=500&lines=3000'
+					+ (backendName ? '&backend=' + encodeURIComponent(backendName) : '');
+				const res = await fetch(url);
+				if (!res.ok) throw new Error('HTTP ' + res.status);
+				const data = await res.json();
+				if (!data.available) {
+					state.textContent = 'logs unavailable';
+					body.innerHTML = '<p class="text-xs text-gray-500">' + escapeHtml(data.reason || 'Agent did not return log data.') + '</p>';
+					return;
+				}
+				const matches = data.matches || [];
+				state.textContent = matches.length + ' match' + (matches.length === 1 ? '' : 'es');
+				if (matches.length === 0) {
+					body.innerHTML = '<p class="text-xs text-gray-500">No 5xx log lines in the last few thousand entries.</p>';
+					return;
+				}
+				body.innerHTML = matches.slice(0, 50).map(function(m) {
+					const statusClass = (m.status_code >= 500) ? '' : ' s4';
+					return ''
+						+ '<div class="log-line">'
+						+   '<span class="lc-status' + statusClass + '">' + m.status_code + '</span> '
+						+   (m.method ? escapeHtml(m.method) + ' ' : '')
+						+   (m.path ? '<span class="lc-path">' + escapeHtml(m.path) + '</span> ' : '')
+						+   (m.source_ip ? '<span class="lc-ip">' + escapeHtml(m.source_ip) + '</span> ' : '')
+						+   (m.server ? '→ ' + escapeHtml(m.server) : '')
+						+ '</div>';
+				}).join('');
+			} catch (err) {
+				console.error('log-errors fetch failed', err);
+				state.textContent = 'load failed';
+				body.innerHTML = '<p class="text-xs text-red-500">Failed to load log lines.</p>';
+			}
+		}
+
+		// ──────────────────────────────────────────────────────────────
+		// Helpers
+		// ──────────────────────────────────────────────────────────────
+
+		function escapeHtml(s) {
+			if (s === null || s === undefined) return '';
+			const div = document.createElement('div');
+			div.textContent = String(s);
+			return div.innerHTML;
+		}
+
+		function escapeAttr(s) {
+			return escapeHtml(s).replace(/"/g, '&quot;');
+		}
+
+		// escapeJSArg escapes a string for safe inclusion as a single-quoted
+		// JS argument inside a double-quoted HTML attribute, e.g.
+		//   <div onclick="openDrillDown('source', 'VALUE')">
+		// It must therefore neutralise BOTH the JS string context (\\ and ')
+		// AND the HTML attribute context (", <, >, & — otherwise a value
+		// containing `"` would break out of the attribute and a `<` could
+		// start a new tag). Backend names come from operator-controlled
+		// HAProxy config, but source IPs and country codes flow from
+		// agent-collected data, so defence-in-depth is warranted.
+		function escapeJSArg(s) {
+			return String(s)
+				.replace(/\\/g, '\\\\')
+				.replace(/'/g, "\\'")
+				.replace(/&/g, '&amp;')
+				.replace(/"/g, '&quot;')
+				.replace(/</g, '&lt;')
+				.replace(/>/g, '&gt;');
+		}
+
+		// Move page header content to main header
+		function setupPageHeader() {
+			const source = document.getElementById('page-header-source');
+			const target = document.getElementById('header-page-content');
+			if (source && target) {
+				// Move all children from source to target
+				while (source.firstChild) {
+					target.appendChild(source.firstChild);
+				}
+				// Remove the hidden source container
+				source.remove();
+			}
+		}
+
+		// Initialize on page load
+		document.addEventListener('DOMContentLoaded', function() {
+			setupPageHeader();
+			updateResolutionLabel();
+			loadHistoryData();
+
+			// Update resolution label on slider input
+			const slider = document.getElementById('resolution-slider');
+			if (slider) {
+				slider.addEventListener('input', updateResolutionLabel);
+			}
+
+			// Command palette wiring (issue #92).
+			if (window.gearbox && window.gearbox.commands) {
+				const cmds = window.gearbox.commands;
+				cmds.register({
+					id: 'metrics.toggle-edit',
+					label: 'Toggle edit mode',
+					subtitle: 'Enter drag-to-arrange + resize mode for chart tiles',
+					group: 'Metrics',
+					run: function () {
+						const btn = document.getElementById('metrics-edit-toggle');
+						if (btn) btn.click();
+					},
+				});
+				cmds.register({
+					id: 'metrics.refresh',
+					label: 'Refresh metrics',
+					group: 'Metrics',
+					run: function () { if (typeof loadHistoryData === 'function') loadHistoryData(); },
+				});
+			}
+		});
+
+		// Cleanup on page unload
+		window.addEventListener('beforeunload', function() {
+			if (eventSource) {
+				eventSource.close();
+			}
+		});
+
+		// Re-render charts when theme changes
+		const observer = new MutationObserver(function(mutations) {
+			mutations.forEach(function(mutation) {
+				if (mutation.attributeName === 'class') {
+					destroyCharts();
+					renderAllCharts();
+				}
+			});
+		});
+		observer.observe(document.documentElement, { attributes: true });
+		</script>
+
+		<!-- GridStack vendor JS (issue #103). Same bundle the Home
+		     gear uses. Loaded with defer so it doesn't block initial
+		     paint; defer also guarantees both scripts run after the
+		     DOM is parsed, in source order — so metrics-layout.js
+		     can rely on GridStack being defined and on its target
+		     #charts-grid element existing the moment its top-level
+		     IIFE executes (no extra DOMContentLoaded gate needed). -->
+		<script src="/static/js/vendor/gridstack/gridstack-all.js" defer></script>
+		<script src="/static/js/metrics-layout.js" defer></script>
+	}
+}

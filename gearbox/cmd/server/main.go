@@ -15,22 +15,24 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	gearbox "github.com/sarg3nt/gearbox"
-	"github.com/sarg3nt/gearbox/internal/framework/collector"
-	"github.com/sarg3nt/gearbox/internal/framework/database"
 	"github.com/sarg3nt/gearbox/internal/framework/auth"
+	"github.com/sarg3nt/gearbox/internal/framework/collector"
 	"github.com/sarg3nt/gearbox/internal/framework/config"
+	"github.com/sarg3nt/gearbox/internal/framework/database"
 	"github.com/sarg3nt/gearbox/internal/framework/events"
 	"github.com/sarg3nt/gearbox/internal/framework/gear"
-	"github.com/sarg3nt/gearbox/internal/framework/services"
-	"github.com/sarg3nt/gearbox/internal/framework/services/alerts"
-	"github.com/sarg3nt/gearbox/internal/framework/services/crypto"
-	"github.com/sarg3nt/gearbox/internal/framework/services/email"
 	"github.com/sarg3nt/gearbox/internal/framework/handler"
 	gbmiddleware "github.com/sarg3nt/gearbox/internal/framework/middleware"
 	"github.com/sarg3nt/gearbox/internal/framework/models"
+	"github.com/sarg3nt/gearbox/internal/framework/services"
+	"github.com/sarg3nt/gearbox/internal/framework/services/agent_keyring"
+	"github.com/sarg3nt/gearbox/internal/framework/services/alerts"
+	"github.com/sarg3nt/gearbox/internal/framework/services/crypto"
+	"github.com/sarg3nt/gearbox/internal/framework/services/email"
 
 	// Import gears - blank identifier triggers init() registration
 	_ "github.com/sarg3nt/gearbox/internal/gears/alerts"
+	_ "github.com/sarg3nt/gearbox/internal/gears/bx"
 	_ "github.com/sarg3nt/gearbox/internal/gears/certificates"
 	_ "github.com/sarg3nt/gearbox/internal/gears/containers"
 	_ "github.com/sarg3nt/gearbox/internal/gears/haproxy"
@@ -151,21 +153,35 @@ func main() {
 		}
 	}
 
-	// Calculate session timeout
+	// Calculate session timeouts. The sliding window is refreshed on every
+	// request; the absolute window is set ONCE at login and forces re-auth
+	// once exceeded. See 2026-05 audit P2-3.
 	sessionTimeout := time.Duration(cfg.SessionTimeoutMinutes) * time.Minute
+	absoluteSessionTimeout := time.Duration(cfg.SessionAbsoluteHours) * time.Hour
 
 	// Initialize authentication manager with database
-	authManager, err := auth.NewManager(db, cfg.SessionSecret, sessionTimeout, logger)
+	authManager, err := auth.NewManager(db, cfg.SessionSecret, sessionTimeout, absoluteSessionTimeout, logger)
 	if err != nil {
 		log.Fatalf("Failed to create authentication manager: %v", err)
 	}
-	logger.Info("authentication manager initialized")
+	logger.Info("authentication manager initialized",
+		"sliding_timeout", sessionTimeout,
+		"absolute_timeout", absoluteSessionTimeout,
+	)
 
 	// Secure cookies are enabled by default; disable only when TLS is not configured
 	if cfg.TLSCertPath == "" || cfg.TLSKeyPath == "" {
 		authManager.SetSecure(false)
 		logger.Warn("TLS not configured — session cookies will be sent over HTTP (insecure)")
 	}
+
+	// Dev-only loopback auto-login (issue #83). Both calls are no-ops in
+	// production builds (no `-tags dev`) — the bypass code is not even
+	// linked in. See gearbox/internal/framework/auth/dev_bypass_off.go.
+	if err := auth.SeedDevUserIfEnabled(db, logger); err != nil {
+		log.Fatalf("Failed to seed dev user for loopback bypass: %v", err)
+	}
+	auth.LogDevBypassStartupBanner(logger)
 
 	// Initialize email service
 	emailService := email.NewService(db, logger, cfg.BaseURL)
@@ -330,6 +346,24 @@ func main() {
 	alertEvaluator.Start(30 * time.Second) // Evaluate alerts every 30 seconds
 	logger.Info("alert evaluator initialized")
 
+	// Initialize retired-key cleaner. Each manual or scheduled rotation
+	// leaves the demoted key in box_agent_keys with retired_at stamped
+	// but role=secondary so the overlap window can preserve recovery.
+	// The cleaner walks every box every CleanerInterval and removes
+	// keys whose retired_at + overlap window has passed — both on the
+	// agent and in the DB. See issue #72 Phase 4.
+	keyringCleaner := agent_keyring.NewCleaner(
+		agent_keyring.New(db, encryptor, logger),
+		db,
+		agent_keyring.DefaultOverlapWindow,
+		agent_keyring.CleanerInterval,
+		logger,
+	)
+	keyringCleanerCtx, cancelKeyringCleaner := context.WithCancel(context.Background())
+	defer cancelKeyringCleaner()
+	go keyringCleaner.Run(keyringCleanerCtx)
+	logger.Info("retired-key cleaner initialized")
+
 	// Initialize WebSocket manager for Agent connections
 	wsManager := collector.NewWebSocketManager(eventHub, registry, logger)
 	logger.Info("WebSocket manager initialized")
@@ -367,15 +401,21 @@ func main() {
 	authAdapter.SetEncryptor(encryptor)
 	eventsAdapter := services.NewEventsAdapter(eventHub)
 	serverAdapter := services.NewServerAdapter(db, encryptor, servers, logger)
+	// Share the handler's probe-table cache with the adapter so gear
+	// plugins (HAProxy, Logs, Services, …) can filter their box list by
+	// what the agent actually advertises — see issue #112. Without this,
+	// the HAProxy dashboard fires /htmx/{box}/stats|metrics polls at every
+	// enabled box and gets 503s back from agents that don't run HAProxy.
+	serverAdapter.SetCapabilitiesCache(h.CapabilitiesCache())
 
 	gearDeps := gear.Dependencies{
-		DB:             db.GetDB(), // Get the underlying *sql.DB
-		Logger:         logger,
-		EventHub:       eventsAdapter,
-		Auth:           authAdapter,
-		Servers:        serverAdapter,
-		HTTPClient:     http.DefaultClient,
-		Config:         make(map[string]any),
+		DB:         db.GetDB(), // Get the underlying *sql.DB
+		Logger:     logger,
+		EventHub:   eventsAdapter,
+		Auth:       authAdapter,
+		Servers:    serverAdapter,
+		HTTPClient: http.DefaultClient,
+		Config:     make(map[string]any),
 	}
 
 	// Create gear manager (no store for now - will add database-backed store later)
@@ -392,8 +432,10 @@ func main() {
 	}
 	logger.Info("gear system initialized")
 
-	// Initialize WebAuthn for passkey support
-	if cfg.WebAuthnRPID != "" && cfg.WebAuthnRPID != "localhost" {
+	// Initialize WebAuthn for passkey support. `localhost` is a valid RPID
+	// per the WebAuthn spec and is whitelisted as a secure origin by every
+	// browser specifically for dev — don't gate it out.
+	if cfg.WebAuthnRPID != "" {
 		webAuthnCfg := &auth.WebAuthnConfig{
 			RPDisplayName: cfg.WebAuthnRPDisplayName,
 			RPID:          cfg.WebAuthnRPID,
@@ -408,9 +450,20 @@ func main() {
 			logger.Info("WebAuthn initialized",
 				"rp_id", cfg.WebAuthnRPID,
 				"origins", cfg.WebAuthnRPOrigins)
+			// If RPID is "localhost" but BASE_URL was never explicitly set,
+			// the operator probably forgot to configure it. Passkey UI will
+			// render but registration will fail at the authenticator with an
+			// opaque origin-mismatch error — warn loudly so the misconfig is
+			// findable in the journal.
+			if cfg.WebAuthnRPID == "localhost" && os.Getenv("BASE_URL") == "" {
+				logger.Warn("WebAuthn RPID is 'localhost' because BASE_URL is unset — " +
+					"passkey UI will appear, but registration from any non-localhost " +
+					"hostname will fail with an origin-mismatch error. Set BASE_URL " +
+					"(or WEBAUTHN_RP_ID/WEBAUTHN_RP_ORIGINS) in production.")
+			}
 		}
 	} else {
-		logger.Info("WebAuthn disabled (requires BASE_URL with non-localhost domain)")
+		logger.Info("WebAuthn disabled (BASE_URL did not yield a hostname)")
 	}
 
 	// Setup router
@@ -425,6 +478,12 @@ func main() {
 	r.Use(gbmiddleware.SecurityHeaders)
 	// Inject asset configuration for templates (CDN vs local assets)
 	r.Use(gbmiddleware.InjectAssetConfig(cfg.UseLocalAssets))
+
+	// Themed 404 for unmatched routes. The handler is intentionally
+	// static (inline HTML, no auth/DB/templ) so a typo'd URL can't be a
+	// side channel for fingerprinting session state. See the handler's
+	// own godoc for the rationale.
+	r.NotFound(handler.NotFoundHandler)
 	// Note: Timeout middleware is applied per-route group below
 	// SSE endpoints need to bypass the timeout middleware
 
@@ -507,7 +566,7 @@ func main() {
 	r.Group(func(r chi.Router) {
 		r.Use(authManager.RequireAuth)
 		r.Use(authManager.RequirePasswordChange) // Enforce password change before any other action
-		r.Use(h.InjectIntegrationStatus) // Add integration status to context for sidebar rendering
+		r.Use(h.InjectIntegrationStatus)         // Add integration status to context for sidebar rendering
 		r.Use(middleware.Timeout(60 * time.Second))
 
 		// Logout
@@ -516,6 +575,18 @@ func main() {
 		// Root URL — redirect to the user's default-landing-path
 		// (per-user → system → fallback). See feature/dashboard-gear F1.
 		r.Get("/", h.RootRedirect)
+
+		// Passkey registration (authenticated). Mounted at the same /api/passkey
+		// prefix as the public login routes above for URL symmetry; auth is
+		// supplied by this protected group's middleware, not the path.
+		r.Get("/api/passkey/register/begin", h.PasskeyRegisterBegin)
+		r.Post("/api/passkey/register/finish", h.PasskeyRegisterFinish)
+
+		// First-run onboarding (issue #49). Admin-only. The /welcome page
+		// self-redirects to / once onboarding is complete (any box or
+		// system gear enabled), so it's safe to leave reachable.
+		r.Get("/welcome", h.WelcomePage)
+		r.Post("/onboarding", h.OnboardingPost)
 
 		// Settings routes
 		r.Route("/settings", func(r chi.Router) {
@@ -532,9 +603,7 @@ func main() {
 			r.Get("/change-password", h.ChangePasswordPage)
 			r.Post("/change-password", h.ChangePasswordPost)
 
-			// Passkey management
-			r.Get("/api/passkey/register/begin", h.PasskeyRegisterBegin)
-			r.Post("/api/passkey/register/finish", h.PasskeyRegisterFinish)
+			// Passkey deletion (still under /settings as a profile sub-action)
 			r.Post("/profile/passkey/delete", h.PasskeyDelete)
 
 			// User management routes (require admin or approve_users permission)
@@ -567,6 +636,8 @@ func main() {
 			r.Post("/boxes/{id}/edit", h.HAProxyBoxUpdatePost)
 			r.Post("/boxes/{id}/delete", h.HAProxyBoxDeletePost)
 			r.Post("/boxes/{id}/toggle", h.HAProxyBoxTogglePost)
+			r.Post("/boxes/{id}/rotate-key", h.HAProxyBoxRotateKeyPost)
+			r.Post("/boxes/rotate-key-all", h.HAProxyBoxesRotateKeyAllPost)
 			r.Post("/boxes/test", h.HAProxyBoxTestConnectionPost)
 			r.Get("/boxes/{id}/logs", h.HAProxyBoxLogSettingsPage)
 			r.Post("/boxes/{id}/logs", h.HAProxyBoxLogSettingsPost)
@@ -592,8 +663,9 @@ func main() {
 		r.Get("/", h.RootHandler)
 
 		// Gear-registered routes
-		// Gears handle: /haproxy (overview), /status-grid, /logs, /services,
-		// /history (metrics), /certificates, /traffic, /alerts, /containers
+		// Gears handle: / (haproxy overview), /status-grid (haproxy), /logs (logs),
+		// /services (services), /metrics (metrics gear), /certificates (certificates),
+		// /traffic (traffic), /alerts (alerts), /containers (containers)
 		gearManager.RegisterRoutes(r)
 
 		// Page routes (non-gear)
@@ -641,11 +713,40 @@ func main() {
 			r.Get("/{boxID}/charts/error-rates", h.APIChartsErrorRatesHandler)
 			r.Get("/{boxID}/logs/{logName}", h.APILogsHandler)
 			r.Get("/{boxID}/log-sources", h.APILogSourcesHandler) // Get enabled log sources
-			// History API endpoints
-			r.Get("/{boxID}/history/stats", h.APIStatsHistoryHandler)
-			r.Get("/{boxID}/history/metrics", h.APISystemMetricsHistoryHandler)
-			r.Get("/{boxID}/history/backend/{backendName}", h.APIBackendHistoryHandler)
+			// Metrics gear — time-series endpoints (HAProxy stats,
+			// system metrics, per-backend stats). These power the
+			// charts on the /metrics page; the /metrics/* "v2"
+			// endpoints just below power the KPI band + insights.
+			r.Get("/{boxID}/metrics/stats", h.APIMetricsStatsHandler)
+			r.Get("/{boxID}/metrics/system", h.APIMetricsSystemHandler)
+			r.Get("/{boxID}/metrics/backend/{backendName}", h.APIMetricsBackendHandler)
 			r.Get("/{boxID}/incidents", h.APIIncidentsHandler)
+
+			// Metrics gear v2 — insights & drill-down endpoints
+			r.Get("/{boxID}/metrics/summary", h.APIMetricsSummaryHandler)
+			r.Get("/{boxID}/metrics/error-breakdown", h.APIMetricsErrorBreakdownHandler)
+			r.Get("/{boxID}/metrics/backend/{backendName}/details", h.APIMetricsBackendDetailsHandler)
+			r.Get("/{boxID}/metrics/log-errors", h.APIMetricsLogErrorsHandler)
+
+			// Per-source metrics endpoints (issue #91 phases 4/5/7).
+			// {source} ∈ {nginx, apache, caddy, traefik} for summary;
+			// the log-errors variant also accepts "haproxy" because
+			// Phase 5 unifies log parsing across every source.
+			r.Get("/{boxID}/metrics/source/{source}/summary", h.APIMetricsSourceSummaryHandler)
+			r.Get("/{boxID}/metrics/source/{source}/log-errors", h.APIMetricsSourceLogErrorsHandler)
+
+			// Per-user, per-box layout (issue #103). GET returns
+			// the user's saved GridStack positions for this box
+			// (or 204 = "use template defaults"); PATCH upserts;
+			// DELETE drops the saved row to reset to defaults.
+			r.Get("/{boxID}/metrics/layout", h.APIMetricsLayoutGetHandler)
+			r.Patch("/{boxID}/metrics/layout", h.APIMetricsLayoutPatchHandler)
+			r.Delete("/{boxID}/metrics/layout", h.APIMetricsLayoutDeleteHandler)
+
+			// Per-box capability manifest — exposes which agent gears probed
+			// available so the metrics gear (and future source-aware UI) can
+			// hide cards/KPIs that don't apply to this host.
+			r.Get("/{boxID}/capabilities", h.APIBoxCapabilitiesHandler)
 
 			// Disabled entities management
 			r.Get("/{boxID}/disabled-entities", h.APIDisabledEntitiesHandler)
@@ -698,6 +799,13 @@ func main() {
 			r.Post("/{boxID}/firewall/config/validate", h.APIFirewallConfigValidate)
 			r.Get("/{boxID}/firewall/config/backups", h.APIFirewallConfigBackups)
 			r.Post("/{boxID}/firewall/config/restore", h.APIFirewallConfigRestore)
+
+			// Remote console API (per #89). Capabilities is a JSON
+			// proxy; the WS endpoint pipes the JSON-framed shell
+			// session between the browser and the agent. Both gate
+			// on the box_console component permissions.
+			r.Get("/console/{boxID}/capabilities", h.APIConsoleCapabilities)
+			r.Get("/console/{boxID}/ws", h.APIConsoleWS)
 
 			// User permissions API
 			r.Route("/users", func(r chi.Router) {

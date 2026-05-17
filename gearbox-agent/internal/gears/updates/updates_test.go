@@ -480,3 +480,128 @@ func TestAptSnapshot_Fields(t *testing.T) {
 		t.Error("CreatedAt mismatch")
 	}
 }
+
+// TestApplyHeldMarks verifies that the held-marker correctly flips IsHeld on
+// packages whose names appear in the held list, leaves others alone, and is a
+// no-op when there are no held packages or no packages.
+func TestApplyHeldMarks(t *testing.T) {
+	t.Run("marks held packages and leaves others alone", func(t *testing.T) {
+		pkgs := []Package{
+			{Name: "openssl"},
+			{Name: "linux-image-generic"},
+			{Name: "nginx"},
+		}
+		applyHeldMarks(pkgs, []string{"openssl", "nginx"})
+
+		if !pkgs[0].IsHeld {
+			t.Errorf("openssl should be held")
+		}
+		if pkgs[1].IsHeld {
+			t.Errorf("linux-image-generic should not be held")
+		}
+		if !pkgs[2].IsHeld {
+			t.Errorf("nginx should be held")
+		}
+	})
+
+	t.Run("empty held list is a no-op", func(t *testing.T) {
+		pkgs := []Package{{Name: "openssl"}}
+		applyHeldMarks(pkgs, nil)
+		if pkgs[0].IsHeld {
+			t.Errorf("no packages should be marked when held list is empty")
+		}
+	})
+
+	t.Run("empty packages list is safe", func(t *testing.T) {
+		// Must not panic.
+		applyHeldMarks(nil, []string{"openssl"})
+		applyHeldMarks([]Package{}, []string{"openssl"})
+	})
+
+	t.Run("held name with no matching package is ignored", func(t *testing.T) {
+		pkgs := []Package{{Name: "nginx"}}
+		applyHeldMarks(pkgs, []string{"ghost-package", "nginx"})
+		if !pkgs[0].IsHeld {
+			t.Errorf("nginx should be held")
+		}
+	})
+}
+
+// TestExtractPipxErrorDetail verifies that pipx error extraction surfaces the
+// last few meaningful lines of pipx output rather than just the final
+// "'...python -m pip install --upgrade pkg -q' failed" summary — which on its
+// own loses the diagnostic that explains *why* the upgrade failed.
+func TestExtractPipxErrorDetail(t *testing.T) {
+	tests := []struct {
+		name     string
+		output   string
+		wantSubs []string // every substring must appear in the result
+		notWant  []string // none of these may appear
+		empty    bool     // expect empty string
+	}{
+		{
+			name:   "empty input",
+			output: "",
+			empty:  true,
+		},
+		{
+			name:   "whitespace only",
+			output: "   \n\t\n  \n",
+			empty:  true,
+		},
+		{
+			name: "real-world pipx failure surfaces cause and summary",
+			output: "Upgrading certbot...\n" +
+				"ERROR: Could not find a version that satisfies the requirement certbot==9.99\n" +
+				"ERROR: No matching distribution found for certbot==9.99\n" +
+				"'/root/.local/share/pipx/venvs/certbot/bin/python -m pip install --upgrade certbot -q' failed",
+			wantSubs: []string{
+				"No matching distribution found",
+				"--upgrade certbot -q' failed",
+			},
+		},
+		{
+			name: "surfaces Failed to lines from pip (e.g. build-wheel failures)",
+			output: "Collecting cryptography\n" +
+				"Failed to build wheels for cryptography\n" +
+				"'/root/.local/share/pipx/venvs/foo/bin/python -m pip install --upgrade foo -q' failed",
+			wantSubs: []string{
+				"Failed to build wheels for cryptography",
+				"--upgrade foo -q' failed",
+			},
+		},
+		{
+			name:   "caps at 5 lines",
+			output: "l1\nl2\nl3\nl4\nl5\nl6\nl7",
+			wantSubs: []string{"l3", "l4", "l5", "l6", "l7"},
+			notWant:  []string{"l1", "l2"},
+		},
+		{
+			name:   "truncates very long combined output",
+			output: strings.Repeat("a", 600),
+			wantSubs: []string{"..."},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := extractPipxErrorDetail([]byte(tc.output))
+			if tc.empty {
+				if got != "" {
+					t.Errorf("expected empty, got %q", got)
+				}
+				return
+			}
+			for _, sub := range tc.wantSubs {
+				if !strings.Contains(got, sub) {
+					t.Errorf("missing substring %q in result %q", sub, got)
+				}
+			}
+			for _, sub := range tc.notWant {
+				if strings.Contains(got, sub) {
+					t.Errorf("unexpected substring %q in result %q", sub, got)
+				}
+			}
+		})
+	}
+}

@@ -26,6 +26,7 @@ const (
 	ComponentSecurity         Component = "security"         // Security dashboard, IP blocking, fail2ban
 	ComponentAlerts           Component = "alerts"           // Alert management and configuration
 	ComponentOSUpdates        Component = "os_updates"       // OS updates and package management
+	ComponentBoxConsole       Component = "box_console"      // Remote shell sessions per box; see #89
 )
 
 const (
@@ -37,6 +38,11 @@ const (
 	PermissionDownload      Permission = "download"       // Download files (certificates, etc.) (implies view)
 	PermissionApproveUsers  Permission = "approve_users"  // Approve new user accounts
 	PermissionManageBoxes Permission = "manage_boxes" // Add/edit/delete monitored boxes
+	// PermissionConnect opens a remote-console session against a box.
+	// Distinct from PermissionAction because the blast radius is larger
+	// (a shell, not a single API call) and audit semantics differ —
+	// every connect is a logged session, not a stateless request. See #89.
+	PermissionConnect Permission = "connect"
 )
 
 // PermissionGrant represents a permission granted to a user for a specific component.
@@ -213,6 +219,7 @@ func AllComponents() []Component {
 		ComponentSecurity,
 		ComponentAlerts,
 		ComponentOSUpdates,
+		ComponentBoxConsole,
 	}
 }
 
@@ -233,6 +240,7 @@ func GetComponentDisplayName(c Component) string {
 		ComponentSecurity:         "Security",
 		ComponentAlerts:           "Alerts",
 		ComponentOSUpdates:        "OS Updates",
+		ComponentBoxConsole:       "Box Console",
 	}
 
 	if name, exists := names[c]; exists {
@@ -251,6 +259,7 @@ func GetPermissionDisplayName(p Permission) string {
 		PermissionDownload:      "Download",
 		PermissionApproveUsers:  "Approve Users",
 		PermissionManageBoxes: "Manage Boxes",
+		PermissionConnect:       "Connect (Open Session)",
 	}
 
 	if name, exists := names[p]; exists {
@@ -269,6 +278,7 @@ func GetPermissionDescription(p Permission) string {
 		PermissionDownload:      "Download certificate files",
 		PermissionApproveUsers:  "Approve or deny new user account requests",
 		PermissionManageBoxes: "Add, edit, or remove monitored box connections",
+		PermissionConnect:       "Open an interactive shell session on a box via the dashboard",
 	}
 
 	if desc, exists := descriptions[p]; exists {
@@ -335,7 +345,7 @@ func GetAvailablePermissionsForComponent(c Component) []Permission {
 		}
 	case ComponentMetrics:
 		return []Permission{
-			PermissionView,      // View metrics/history page and data
+			PermissionView,      // View the Metrics page and its data
 			PermissionConfigure, // Configure metrics storage settings
 		}
 	case ComponentGears:
@@ -358,6 +368,12 @@ func GetAvailablePermissionsForComponent(c Component) []Permission {
 			PermissionView,      // View update status, packages, history
 			PermissionConfigure, // Configure automatic updates settings
 			PermissionAction,    // Install updates, manage packages, reboot
+		}
+	case ComponentBoxConsole:
+		return []Permission{
+			PermissionView,      // See that console is available for a box
+			PermissionConfigure, // Toggle per-box console enable + edit run-as / shell
+			PermissionConnect,   // Open an actual shell session (the load-bearing one)
 		}
 	default:
 		return defaultPerms

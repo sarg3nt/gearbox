@@ -5,6 +5,7 @@ package api
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -15,6 +16,8 @@ import (
 	httpSwagger "github.com/swaggo/http-swagger"
 
 	_ "github.com/sarg3nt/gearbox-agent/docs" // Swagger docs
+	"github.com/sarg3nt/gearbox-agent/internal/api/console"
+	"github.com/sarg3nt/gearbox-agent/internal/framework/crypto"
 	"github.com/sarg3nt/gearbox-agent/internal/framework/events"
 	frameworkmiddleware "github.com/sarg3nt/gearbox-agent/internal/framework/middleware"
 )
@@ -24,7 +27,7 @@ type Server struct {
 	httpServer *http.Server
 	router     chi.Router
 	logger     *slog.Logger
-	apiKey     string
+	keyring    *crypto.KeyRingPointer
 	certFile   string
 	keyFile    string
 }
@@ -32,7 +35,7 @@ type Server struct {
 // ServerConfig holds configuration for the API server.
 type ServerConfig struct {
 	ListenAddr       string
-	APIKey           string
+	KeyRing          *crypto.KeyRingPointer
 	CertFile         string
 	KeyFile          string
 	Version          string
@@ -44,6 +47,13 @@ type ServerConfig struct {
 	WebhookSecret  string
 	WebhookURL     string
 	SyncTrigger    SyncTrigger
+
+	// SwaggerEnabled controls whether the Swagger UI / OpenAPI spec are
+	// served at /swagger and /swagger/*. Useful in development; in
+	// production it lets unauthenticated callers enumerate the agent's
+	// endpoints + schemas. Default false (off in production). See
+	// 2026-05 security audit P3-2.
+	SwaggerEnabled bool
 
 	// WebSocket settings (optional)
 	EventBus *events.Bus
@@ -62,7 +72,7 @@ type ServerConfig struct {
 // NewServer creates a new API server.
 func NewServer(cfg ServerConfig) *Server {
 	// Create handlers
-	handlers := NewHandlers(cfg.MetadataProvider, cfg.Version)
+	handlers := NewHandlers(cfg.MetadataProvider)
 
 	// Create chi router
 	r := chi.NewRouter()
@@ -77,12 +87,24 @@ func NewServer(cfg ServerConfig) *Server {
 	// Create rate limiter (50 req/sec with burst of 100)
 	rateLimiter := frameworkmiddleware.DefaultRateLimiter(cfg.Logger)
 
+	// Per-IP auth-failure backoff layered on top of rate limiting — defends
+	// against distributed API-key brute force where each IP individually
+	// stays below the 50 req/sec rate-limit threshold. See 2026-05 audit P1-7.
+	authBackoff := frameworkmiddleware.DefaultBackoffTracker(cfg.Logger)
+
 	// Health endpoint (no auth required, no rate limit)
 	r.Get("/health", handlers.Health)
 
-	// Swagger UI (no auth required)
-	r.Get("/swagger", httpSwagger.Handler(httpSwagger.URL("/swagger/doc.json")))
-	r.Get("/swagger/*", httpSwagger.Handler(httpSwagger.URL("/swagger/doc.json")))
+	// Swagger UI (no auth required) — only served when explicitly enabled.
+	// In production, leaving this on lets unauthenticated callers enumerate
+	// every endpoint + schema, which is a fingerprinting aid for attackers
+	// (2026-05 security audit P3-2). Set HAPROXY_AGENT_SWAGGER_ENABLED=true
+	// at deploy time when debugging an API contract; default off.
+	if cfg.SwaggerEnabled {
+		r.Get("/swagger", httpSwagger.Handler(httpSwagger.URL("/swagger/doc.json")))
+		r.Get("/swagger/*", httpSwagger.Handler(httpSwagger.URL("/swagger/doc.json")))
+		cfg.Logger.Warn("Swagger UI enabled at /swagger; unauth-readable. Disable for production deploys.")
+	}
 
 	// Webhook endpoint (uses GitHub signature verification, not API key)
 	var webhookHandler *WebhookHandler
@@ -108,10 +130,25 @@ func NewServer(cfg ServerConfig) *Server {
 		})
 	}
 
+	// Remote console handler. Always mounted — the dashboard's
+	// per-box console_enabled toggle is the sole gate on whether a
+	// session can actually open. The agent's surface is still
+	// API-key gated (token endpoint) and single-use-token gated
+	// (WS endpoint), and the dashboard refuses to proxy to a box
+	// that hasn't opted in. See [#89] and the per-box toggle in
+	// the dashboard's box settings page.
+	consoleHandler := console.NewHandler(cfg.EventBus, cfg.Logger)
+	// The token-exchange + capabilities endpoints sit behind the
+	// shared API-key + rate-limit + auth-backoff stack; the WS
+	// endpoint trusts the single-use token alone (consistent
+	// with /api/v1/events).
+	r.With(frameworkmiddleware.RateLimitMiddleware(rateLimiter)).Get(
+		"/api/v1/console/ws", consoleHandler.HandleWS)
+
 	// Protected API routes (require API key auth)
 	r.Group(func(r chi.Router) {
 		r.Use(frameworkmiddleware.RateLimitMiddleware(rateLimiter))
-		r.Use(frameworkmiddleware.APIKeyAuth(cfg.APIKey, cfg.Logger))
+		r.Use(frameworkmiddleware.APIKeyAuth(cfg.KeyRing, cfg.Logger, authBackoff))
 
 		// Core endpoints (not handled by plugins)
 		r.Get("/api/v1/metadata", handlers.Metadata)
@@ -129,6 +166,12 @@ func NewServer(cfg ServerConfig) *Server {
 				r.Get("/api/v1/events/info", wsHandler.HandleWSInfo)
 			}
 		}
+
+		// Console token exchange + capabilities. These two sit inside
+		// the API-key + auth-backoff group; the WS endpoint itself uses
+		// the single-use token and is mounted above.
+		r.Post("/api/v1/console/token", consoleHandler.Tokens.HandleTokenExchange)
+		r.Get("/api/v1/console/capabilities", consoleHandler.HandleCapabilities)
 	})
 
 	return &Server{
@@ -138,10 +181,20 @@ func NewServer(cfg ServerConfig) *Server {
 			ReadTimeout:  15 * time.Second,
 			WriteTimeout: 15 * time.Second,
 			IdleTimeout:  60 * time.Second,
+			// Explicit TLS 1.3 floor. Go's default minimum is TLS 1.2 (still
+			// negotiable by misconfigured or older clients); both ends of the
+			// agent <-> dashboard channel are controlled by us, so we have
+			// no reason to leave TLS 1.2 reachable. Pinning to 1.3 shrinks
+			// the negotiation attack surface (no downgrade, fewer cipher
+			// suites, AEAD-only, forward secrecy guaranteed). See 2026-05
+			// security audit P2-7.
+			TLSConfig: &tls.Config{
+				MinVersion: tls.VersionTLS13,
+			},
 		},
 		router:   r,
 		logger:   cfg.Logger,
-		apiKey:   cfg.APIKey,
+		keyring:  cfg.KeyRing,
 		certFile: cfg.CertFile,
 		keyFile:  cfg.KeyFile,
 	}
@@ -152,9 +205,10 @@ func (s *Server) Router() chi.Router {
 	return s.router
 }
 
-// APIKey returns the server's API key for middleware configuration.
-func (s *Server) APIKey() string {
-	return s.apiKey
+// KeyRing returns the server's keyring pointer for middleware
+// configuration on plugin routes registered after server construction.
+func (s *Server) KeyRing() *crypto.KeyRingPointer {
+	return s.keyring
 }
 
 // Logger returns the server's logger.

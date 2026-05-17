@@ -20,9 +20,15 @@ type BoxDB struct {
 	Enabled         bool
 	AutoDiscovery   bool
 	SkipTLSVerify   bool
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	CreatedBy       *string // UUID
+	// ConsoleEnabled is the per-box opt-in for the remote console
+	// feature (see #89). Default 0 — operator flips it on per box
+	// from the box settings UI. This is the sole gate on the
+	// dashboard's console proxy path; flipping it off revokes
+	// access immediately.
+	ConsoleEnabled bool
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	CreatedBy      *string // UUID
 }
 
 // UsesAgentAPI returns true if this box has valid Agent API configuration.
@@ -39,8 +45,8 @@ func (d *DB) CreateBox(box *BoxDB) error {
 	query := `
 		INSERT INTO boxes (
 			box_id, name, location, notes, agent_url, api_key_encrypted,
-			enabled, auto_discovery, skip_tls_verify, created_by, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+			enabled, auto_discovery, skip_tls_verify, console_enabled, created_by, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 	`
 
 	result, err := d.db.Exec(query,
@@ -53,6 +59,7 @@ func (d *DB) CreateBox(box *BoxDB) error {
 		box.Enabled,
 		box.AutoDiscovery,
 		box.SkipTLSVerify,
+		box.ConsoleEnabled,
 		box.CreatedBy,
 	)
 	if err != nil {
@@ -75,7 +82,7 @@ func (d *DB) GetBoxes() ([]*BoxDB, error) {
 
 	query := `
 		SELECT id, box_id, name, location, notes, agent_url, api_key_encrypted,
-			enabled, auto_discovery, skip_tls_verify, created_at, updated_at, created_by
+			enabled, auto_discovery, skip_tls_verify, console_enabled, created_at, updated_at, created_by
 		FROM boxes
 		ORDER BY name ASC
 	`
@@ -100,6 +107,7 @@ func (d *DB) GetBoxes() ([]*BoxDB, error) {
 			&box.Enabled,
 			&box.AutoDiscovery,
 			&box.SkipTLSVerify,
+			&box.ConsoleEnabled,
 			&box.CreatedAt,
 			&box.UpdatedAt,
 			&box.CreatedBy,
@@ -125,7 +133,7 @@ func (d *DB) GetEnabledBoxes() ([]*BoxDB, error) {
 
 	query := `
 		SELECT id, box_id, name, location, notes, agent_url, api_key_encrypted,
-			enabled, auto_discovery, skip_tls_verify, created_at, updated_at, created_by
+			enabled, auto_discovery, skip_tls_verify, console_enabled, created_at, updated_at, created_by
 		FROM boxes
 		WHERE enabled = 1
 		ORDER BY name ASC
@@ -151,6 +159,7 @@ func (d *DB) GetEnabledBoxes() ([]*BoxDB, error) {
 			&box.Enabled,
 			&box.AutoDiscovery,
 			&box.SkipTLSVerify,
+			&box.ConsoleEnabled,
 			&box.CreatedAt,
 			&box.UpdatedAt,
 			&box.CreatedBy,
@@ -176,7 +185,7 @@ func (d *DB) GetBoxByID(id int64) (*BoxDB, error) {
 
 	query := `
 		SELECT id, box_id, name, location, notes, agent_url, api_key_encrypted,
-			enabled, auto_discovery, skip_tls_verify, created_at, updated_at, created_by
+			enabled, auto_discovery, skip_tls_verify, console_enabled, created_at, updated_at, created_by
 		FROM boxes
 		WHERE id = ?
 	`
@@ -193,6 +202,7 @@ func (d *DB) GetBoxByID(id int64) (*BoxDB, error) {
 		&box.Enabled,
 		&box.AutoDiscovery,
 		&box.SkipTLSVerify,
+		&box.ConsoleEnabled,
 		&box.CreatedAt,
 		&box.UpdatedAt,
 		&box.CreatedBy,
@@ -214,7 +224,7 @@ func (d *DB) GetBoxByBoxID(boxID string) (*BoxDB, error) {
 
 	query := `
 		SELECT id, box_id, name, location, notes, agent_url, api_key_encrypted,
-			enabled, auto_discovery, skip_tls_verify, created_at, updated_at, created_by
+			enabled, auto_discovery, skip_tls_verify, console_enabled, created_at, updated_at, created_by
 		FROM boxes
 		WHERE box_id = ?
 	`
@@ -231,6 +241,7 @@ func (d *DB) GetBoxByBoxID(boxID string) (*BoxDB, error) {
 		&box.Enabled,
 		&box.AutoDiscovery,
 		&box.SkipTLSVerify,
+		&box.ConsoleEnabled,
 		&box.CreatedAt,
 		&box.UpdatedAt,
 		&box.CreatedBy,
@@ -261,6 +272,7 @@ func (d *DB) UpdateBox(box *BoxDB) error {
 			enabled = ?,
 			auto_discovery = ?,
 			skip_tls_verify = ?,
+			console_enabled = ?,
 			updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?
 	`
@@ -275,6 +287,7 @@ func (d *DB) UpdateBox(box *BoxDB) error {
 		box.Enabled,
 		box.AutoDiscovery,
 		box.SkipTLSVerify,
+		box.ConsoleEnabled,
 		box.ID,
 	)
 	if err != nil {
@@ -292,13 +305,29 @@ func (d *DB) UpdateBox(box *BoxDB) error {
 	return nil
 }
 
-// DeleteBox deletes a box configuration from the database.
+// DeleteBox deletes a box configuration from the database, along with
+// any rotation-keyring entries that reference it.
+//
+// The schema declares ON DELETE CASCADE on box_agent_keys.box_id, but
+// this codebase doesn't set PRAGMA foreign_keys=ON (enabling it is a
+// broader change that risks regressing on legacy rows elsewhere). To
+// avoid leaving orphaned rows that hold encrypted secrets, the
+// dependent table is wiped explicitly inside the same transaction.
 func (d *DB) DeleteBox(id int64) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	query := `DELETE FROM boxes WHERE id = ?`
-	result, err := d.db.Exec(query, id)
+	tx, err := d.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.Exec(`DELETE FROM box_agent_keys WHERE box_id = ?`, id); err != nil {
+		return fmt.Errorf("delete dependent keys: %w", err)
+	}
+
+	result, err := tx.Exec(`DELETE FROM boxes WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete box: %w", err)
 	}
@@ -311,7 +340,7 @@ func (d *DB) DeleteBox(id int64) error {
 		return fmt.Errorf("box not found")
 	}
 
-	return nil
+	return tx.Commit()
 }
 
 // SetBoxEnabled enables or disables a box.

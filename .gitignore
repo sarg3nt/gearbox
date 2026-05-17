@@ -12,8 +12,14 @@ gearbox-agent/data/
 # Environment
 gearbox/.env
 gearbox-agent/.env
+.local.config
 *.local.json
 .mcp.json
+
+# Claude Code per-developer state (commands/ and settings.local.json.example
+# are intentionally tracked; everything else is local-only)
+.claude/skills/
+.claude/worktrees/
 
 # Development
 .DS_Store

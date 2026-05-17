@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os/exec"
 	"regexp"
 	"strconv"
 
@@ -63,6 +64,34 @@ func (p *Gear) Start(ctx context.Context) error {
 	p.streamer.StartAll()
 	p.Logger().Info("log streamer started", "sources", len(DefaultSources()))
 	return nil
+}
+
+// Probe reports whether at least one log streaming tool is present. The
+// gear shells out to journalctl for systemd-unit sources and to tail for
+// file sources; with neither available, none of the 16 default sources
+// can produce output and loading the gear is pure noise. Individual
+// source viability is still checked at stream-start time (gh issue #60
+// tracks moving that detection into per-source probes).
+func (p *Gear) Probe(ctx context.Context, deps gear.Dependencies) gear.ProbeResult {
+	hasJournalctl := false
+	hasTail := false
+	if _, err := exec.LookPath("journalctl"); err == nil {
+		hasJournalctl = true
+	}
+	if _, err := exec.LookPath("tail"); err == nil {
+		hasTail = true
+	}
+	if !hasJournalctl && !hasTail {
+		return gear.ProbeNotInstalled("neither journalctl nor tail found on PATH; cannot stream any log source")
+	}
+	caps := map[string]string{}
+	if hasJournalctl {
+		caps["journalctl"] = "present"
+	}
+	if hasTail {
+		caps["tail"] = "present"
+	}
+	return gear.ProbeAvailable("log streaming tools present", caps)
 }
 
 // Stop stops the log streamer.

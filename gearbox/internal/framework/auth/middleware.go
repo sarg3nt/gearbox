@@ -14,6 +14,8 @@ const userContextKey contextKey = "user"
 const integrationStatusContextKey contextKey = "integrationStatus"
 const integrationOrderContextKey contextKey = "integrationOrder"
 const userPermissionsContextKey contextKey = "userPermissions"
+const selectedBoxContextKey contextKey = "selectedBox"
+const allBoxesContextKey contextKey = "allBoxes"
 
 // SidebarIntegration represents an integration for sidebar rendering with order information.
 type SidebarIntegration struct {
@@ -25,6 +27,17 @@ type SidebarIntegration struct {
 // RequireAuth is middleware that requires authentication.
 func (m *Manager) RequireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Dev-only loopback bypass — short-circuits the session check when
+		// the binary is built with `-tags dev`, GEARBOX_DEV_AUTO_LOGIN=1,
+		// and the request originates from a loopback IP. In production
+		// builds tryDevBypass is a hard-coded `nil, false` stub (see
+		// dev_bypass_off.go); no codepath exists to enable the bypass.
+		if devUser, ok := tryDevBypass(m, r); ok {
+			ctx := context.WithValue(r.Context(), userContextKey, devUser)
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
+
 		user, err := m.GetUser(r)
 		if err != nil {
 			// Not authenticated, redirect to login with return URL
@@ -185,4 +198,38 @@ func HasPermissionFromContext(ctx context.Context, component models.Component, p
 		return false
 	}
 	return perms.HasPermission(component, permission)
+}
+
+// SetSelectedBox stores the active box context (the box the user is currently
+// "in") on the request context. A nil value is a valid signal meaning "no box
+// is currently selected" — i.e. the user is on a box-agnostic page such as
+// the Bx fleet view, Home dashboard, or Settings.
+func SetSelectedBox(ctx context.Context, box *models.BoxConfig) context.Context {
+	return context.WithValue(ctx, selectedBoxContextKey, box)
+}
+
+// GetSelectedBoxFromContext retrieves the active box, if any. The second
+// return value reports whether a box is actually selected — `nil, false`
+// means box-agnostic context.
+func GetSelectedBoxFromContext(ctx context.Context) (*models.BoxConfig, bool) {
+	box, ok := ctx.Value(selectedBoxContextKey).(*models.BoxConfig)
+	if !ok || box == nil {
+		return nil, false
+	}
+	return box, true
+}
+
+// SetAllBoxes stores the full enabled-box roster on the request context so
+// templates (the header chip, the switcher palette) can render it without
+// re-querying the database per page.
+func SetAllBoxes(ctx context.Context, boxes []models.BoxConfig) context.Context {
+	return context.WithValue(ctx, allBoxesContextKey, boxes)
+}
+
+// GetAllBoxesFromContext retrieves the enabled-box roster. Returns an empty
+// slice if not present (first-run, or middleware not wired) — callers should
+// treat that as "no boxes configured."
+func GetAllBoxesFromContext(ctx context.Context) []models.BoxConfig {
+	boxes, _ := ctx.Value(allBoxesContextKey).([]models.BoxConfig)
+	return boxes
 }

@@ -9,84 +9,14 @@ import (
 	"github.com/sarg3nt/gearbox/internal/framework/templates/layouts"
 )
 
-// HAProxyServersPage renders the list of monitored servers.
-// When no servers exist, it uses a minimal layout without the sidebar (like login page).
+// HAProxyBoxesPage renders the list of monitored boxes. First-run onboarding
+// is owned by the /welcome screen (issue #49); this page always uses the
+// standard sidebar layout and shows an inline empty-state when the list is
+// zero.
 templ HAProxyBoxesPage(user *models.User, servers []*database.BoxDB) {
-	if len(servers) == 0 {
-		@HAProxyBoxesPageNoSidebar(user)
-	} else {
-		@layouts.Base("Boxes", user, "/settings") {
-			@HAProxyBoxesPageContent(user, servers)
-		}
+	@layouts.Base("Boxes", user, "/settings") {
+		@HAProxyBoxesPageContent(user, servers)
 	}
-}
-
-// HAProxyServersPageNoSidebar renders the boxes page without sidebar when no servers configured.
-templ HAProxyBoxesPageNoSidebar(user *models.User) {
-	<!DOCTYPE html>
-	<html lang="en" class="h-full">
-	<head>
-		<meta charset="UTF-8"/>
-		<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-		<title>Boxes - Gearbox</title>
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
-		if middleware.UseLocalAssets(ctx) {
-			<script src="/static/js/vendor/tailwind.js"></script>
-		} else {
-			<script src="https://cdn.tailwindcss.com"></script>
-		}
-		<script>
-			tailwind.config = { darkMode: 'class' }
-			// Apply theme immediately
-			function getThemePreference() {
-				const stored = localStorage.getItem('theme');
-				if (stored) return stored;
-				return 'system';
-			}
-			function getEffectiveTheme() {
-				const pref = getThemePreference();
-				if (pref === 'system') {
-					return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-				}
-				return pref;
-			}
-			if (getEffectiveTheme() === 'dark') {
-				document.documentElement.classList.add('dark');
-			}
-		</script>
-	</head>
-	<body class="h-full bg-gray-100 dark:bg-slate-900">
-		<div class="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-			<div class="max-w-2xl w-full">
-				<div class="text-center mb-8">
-					<div class="flex justify-center mb-4">
-						<img src="/favicon.svg" alt="Gearbox Logo" class="w-16 h-16"/>
-					</div>
-					<h1 class="text-3xl font-bold text-gray-900 dark:text-white">Gearbox</h1>
-					<p class="mt-2 text-sm text-gray-600 dark:text-gray-400">Real-time monitoring for HAProxy</p>
-				</div>
-				<div class="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-8 text-center">
-					<svg class="mx-auto h-16 w-16 text-gray-400 mb-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"></path>
-					</svg>
-					<h2 class="text-2xl font-semibold text-gray-900 dark:text-white mb-3">No boxes configured</h2>
-					<p class="text-gray-600 dark:text-gray-400 mb-6">
-						Get started by adding your first monitored box.
-					</p>
-					<a
-						href="/settings/boxes/new"
-						class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-					>
-						<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
-						</svg>
-						Add Box
-					</a>
-				</div>
-			</div>
-		</div>
-	</body>
-	</html>
 }
 
 // HAProxyServersPageContent renders the main content of the boxes page.
@@ -100,6 +30,19 @@ templ HAProxyBoxesPageContent(user *models.User, servers []*database.BoxDB) {
 				</p>
 			</div>
 			<div class="flex items-center space-x-3">
+				if len(servers) > 0 {
+					<button
+						type="button"
+						onclick="rotateAllKeys(this)"
+						class="inline-flex items-center px-4 py-2 border border-amber-300 dark:border-amber-700 text-sm font-medium rounded-md text-amber-700 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/40"
+					>
+						<svg id="rotate-all-spinner" class="hidden animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
+							<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+							<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+						</svg>
+						Rotate All Keys
+					</button>
+				}
 				<a
 					href="/settings/boxes/new"
 					class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
@@ -295,7 +238,7 @@ templ HAProxyBoxesPageContent(user *models.User, servers []*database.BoxDB) {
 						</div>
 					</div>
 					<div class="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
-						<button type="button" onclick="closeNotesModal()" class="w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-slate-700 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-600 sm:w-auto sm:text-sm">
+						<button type="button" onclick="closeNotesModal()" aria-label="Close" class="w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-slate-700 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-600 sm:w-auto sm:text-sm">
 							Close
 						</button>
 					</div>
@@ -333,7 +276,7 @@ templ HAProxyBoxesPageContent(user *models.User, servers []*database.BoxDB) {
 						<button type="button" id="delete-confirm-btn" onclick="confirmDeleteServer()" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 sm:ml-3 sm:w-auto sm:text-sm">
 							Yes, Delete
 						</button>
-						<button type="button" onclick="closeDeleteModal()" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-slate-700 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-600 sm:mt-0 sm:w-auto sm:text-sm">
+						<button type="button" onclick="closeDeleteModal()" aria-label="Cancel" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-slate-700 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-600 sm:mt-0 sm:w-auto sm:text-sm">
 							No, Cancel
 						</button>
 					</div>
@@ -388,6 +331,55 @@ templ HAProxyBoxesPageContent(user *models.User, servers []*database.BoxDB) {
 					closeDeleteModal();
 				}
 			});
+
+			async function rotateAllKeys(buttonEl) {
+				const confirmed = await showConfirmDialog({
+					title: 'Rotate keys for every enabled box?',
+					message: 'A new API key will be generated and installed on each agent. The old keys stay accepted for 24 hours so partial rotations are recoverable. Boxes that fail rotation are reported individually; others succeed independently.',
+					confirmText: 'Rotate All Keys',
+					type: 'warning',
+				});
+				if (!confirmed) return;
+
+				const spinner = document.getElementById('rotate-all-spinner');
+				spinner.classList.remove('hidden');
+				buttonEl.disabled = true;
+				try {
+					const resp = await fetch('/settings/boxes/rotate-key-all', {
+						method: 'POST',
+						headers: { 'Accept': 'application/json' },
+					});
+					const data = await resp.json();
+					if (resp.ok) {
+						const failures = (data.results || []).filter(r => !r.success);
+						if (failures.length === 0) {
+							window.showToast('Rotated ' + data.rotated + ' of ' + data.total + ' boxes.', 'success');
+						} else {
+							const msg = failures.map(r => r.name + ' (id=' + r.box_id + '): ' + r.error).join('\n');
+							await showAlertDialog({
+								title: 'Some rotations failed',
+								message: 'Succeeded: ' + data.rotated + ' / ' + data.total + '\n\nFailed:\n' + msg,
+								type: 'error',
+							});
+						}
+					} else {
+						await showAlertDialog({
+							title: 'Rotation failed',
+							message: (data && data.message) || 'Unknown server error.',
+							type: 'error',
+						});
+					}
+				} catch (err) {
+					await showAlertDialog({
+						title: 'Rotation failed',
+						message: err.message || String(err),
+						type: 'error',
+					});
+				} finally {
+					spinner.classList.add('hidden');
+					buttonEl.disabled = false;
+				}
+			}
 		</script>
 }
 
@@ -542,6 +534,23 @@ templ haProxyBoxForm(user *models.User, server *database.BoxDB, isEdit bool, err
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Box will be monitored when enabled</p>
 					</div>
 					<div>
+						<label class="flex items-center">
+							<input
+								type="checkbox"
+								name="console_enabled"
+								if server != nil && server.ConsoleEnabled {
+									checked
+								}
+								class="rounded border-gray-300 dark:border-gray-600 text-emerald-600 focus:ring-emerald-500 dark:bg-slate-700"
+							/>
+							<span class="ml-2 text-sm text-gray-700 dark:text-gray-300">Remote console</span>
+						</label>
+						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+							Allow opening a shell on this box from the dashboard. Off by default.
+							Non-admin users also need the <code class="px-1 rounded bg-gray-100 dark:bg-slate-700 text-xs">box_console:connect</code> permission. See <a href="https://github.com/sarg3nt/gearbox/issues/89" class="text-blue-600 dark:text-blue-400 hover:underline">#89</a>.
+						</p>
+					</div>
+					<div>
 						<label for="location" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
 							Location
 						</label>
@@ -648,6 +657,30 @@ templ haProxyBoxForm(user *models.User, server *database.BoxDB, isEdit bool, err
 							Disable TLS certificate verification for this box (e.g., when the agent uses a self-signed certificate). Use with caution.
 						</p>
 					</div>
+					if isEdit && server != nil {
+						<div class="pt-2 border-t border-gray-200 dark:border-gray-700">
+							<div class="flex items-start justify-between gap-4">
+								<div>
+									<h3 class="text-sm font-medium text-gray-900 dark:text-white">Rotate API key</h3>
+									<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+										Generates a fresh key, installs it on the agent, and demotes the current key to secondary. The old key keeps working for 24 hours so a partial rotation can be recovered from without bricking the box.
+									</p>
+								</div>
+								<button
+									type="button"
+									data-box-id={ fmt.Sprintf("%d", server.ID) }
+									onclick="rotateApiKey(this)"
+									class="shrink-0 inline-flex items-center px-4 py-2 border border-amber-300 dark:border-amber-700 text-sm font-medium rounded-md text-amber-700 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/40 whitespace-nowrap"
+								>
+									<svg id="rotate-spinner" class="hidden animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
+										<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+										<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+									</svg>
+									Rotate Key
+								</button>
+							</div>
+						</div>
+					}
 				</div>
 			</div>
 			<!-- Form Actions -->
@@ -789,15 +822,58 @@ templ haProxyBoxForm(user *models.User, server *database.BoxDB, isEdit bool, err
 			}
 		});
 
+		async function rotateApiKey(buttonEl) {
+			const boxID = buttonEl.dataset.boxId;
+			const confirmed = await showConfirmDialog({
+				title: 'Rotate this box\'s API key?',
+				message: 'A new key will be generated and installed on the agent. The old key stays accepted on the agent for 24 hours so a partial rotation can be recovered. After 24 hours the old key is removed automatically on the next cleanup run.',
+				confirmText: 'Rotate Key',
+				type: 'warning',
+			});
+			if (!confirmed) return;
+
+			const spinner = document.getElementById('rotate-spinner');
+			spinner.classList.remove('hidden');
+			buttonEl.disabled = true;
+			try {
+				const resp = await fetch('/settings/boxes/' + encodeURIComponent(boxID) + '/rotate-key', {
+					method: 'POST',
+					headers: { 'Accept': 'application/json' },
+				});
+				const data = await resp.json();
+				if (resp.ok && data.success) {
+					window.showToast('Rotation complete. New kid: ' + data.new_kid + '. Old kid (' + data.old_kid + ') retires after ' + new Date(data.retire_after).toLocaleString() + '.', 'success');
+				} else {
+					await showAlertDialog({
+						title: 'Rotation failed',
+						message: data.message || 'Unknown error during rotation.',
+						type: 'error',
+					});
+				}
+			} catch (err) {
+				await showAlertDialog({
+					title: 'Rotation failed',
+					message: err.message || String(err),
+					type: 'error',
+				});
+			} finally {
+				spinner.classList.add('hidden');
+				buttonEl.disabled = false;
+			}
+		}
+
 		async function testConnection() {
 			const spinner = document.getElementById('test-spinner');
 			const resultDiv = document.getElementById('test-result');
 			spinner.classList.remove('hidden');
 			resultDiv.classList.add('hidden');
 
-			// Build form data for Gearbox Agent API connection test
+			// Build form data for Gearbox Agent API connection test.
+			// On edit the api_key field is empty (we never surface the stored
+			// secret to the browser); box_id lets the backend look up and
+			// decrypt the stored key server-side. See haproxy_config.go.
 			const formData = new URLSearchParams();
-			formData.append('server_id', document.getElementById('server_id')?.value || '');
+			formData.append('box_id', document.getElementById('box_id')?.value || '');
 			formData.append('agent_url', document.getElementById('agent_url')?.value || '');
 			formData.append('api_key', document.getElementById('api_key')?.value || '');
 			const skipTLS = document.getElementById('skip_tls_verify');

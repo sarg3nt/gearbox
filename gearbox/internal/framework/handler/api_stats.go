@@ -102,8 +102,12 @@ func (h *Handler) APISystemMetricsHandler(w http.ResponseWriter, r *http.Request
 	h.writeJSON(w, response)
 }
 
-// APIStatsHistoryHandler returns historical stats data.
-func (h *Handler) APIStatsHistoryHandler(w http.ResponseWriter, r *http.Request) {
+// APIMetricsStatsHandler returns time-series HAProxy stats for the
+// Metrics page's per-backend chart. Served at /api/{boxID}/metrics/stats.
+// The underlying DB method is still named GetStatsHistory because the
+// data it returns IS historical records; the URL renamed for clarity
+// with issue #97.
+func (h *Handler) APIMetricsStatsHandler(w http.ResponseWriter, r *http.Request) {
 	boxID := chi.URLParam(r, "boxID")
 	if boxID == "" {
 		http.Error(w, "Server ID required", http.StatusBadRequest)
@@ -142,8 +146,12 @@ func (h *Handler) APIStatsHistoryHandler(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-// APIBackendHistoryHandler returns historical data for a specific backend.
-func (h *Handler) APIBackendHistoryHandler(w http.ResponseWriter, r *http.Request) {
+// APIMetricsBackendHandler returns time-series stats for a specific
+// backend on the Metrics page. Served at
+// /api/{boxID}/metrics/backend/{backendName}. Coexists with the
+// /metrics/backend/{name}/details drill-down (which returns aggregate
+// insights rather than the time-series).
+func (h *Handler) APIMetricsBackendHandler(w http.ResponseWriter, r *http.Request) {
 	// Check if user has permission to view metrics
 	if !h.authManager.HasPermission(r, models.ComponentMetrics, models.PermissionView) {
 		http.Error(w, "Forbidden: insufficient permissions to view metrics", http.StatusForbidden)
@@ -191,8 +199,10 @@ func (h *Handler) APIBackendHistoryHandler(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-// APISystemMetricsHistoryHandler returns historical system metrics.
-func (h *Handler) APISystemMetricsHistoryHandler(w http.ResponseWriter, r *http.Request) {
+// APIMetricsSystemHandler returns time-series host-level metrics for
+// the Metrics page (CPU, memory, disk, network). Served at
+// /api/{boxID}/metrics/system.
+func (h *Handler) APIMetricsSystemHandler(w http.ResponseWriter, r *http.Request) {
 	// Check if user has permission to view metrics
 	if !h.authManager.HasPermission(r, models.ComponentMetrics, models.PermissionView) {
 		http.Error(w, "Forbidden: insufficient permissions to view metrics", http.StatusForbidden)

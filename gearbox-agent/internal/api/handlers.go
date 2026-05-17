@@ -18,42 +18,36 @@ type MetadataProvider interface {
 // Handlers holds HTTP handlers and their dependencies.
 type Handlers struct {
 	metadataProvider MetadataProvider
-	version          string
-	startTime        time.Time
 }
 
 // NewHandlers creates a new Handlers instance.
-func NewHandlers(metadataProvider MetadataProvider, version string) *Handlers {
+func NewHandlers(metadataProvider MetadataProvider) *Handlers {
 	return &Handlers{
 		metadataProvider: metadataProvider,
-		version:          version,
-		startTime:        time.Now(),
 	}
 }
 
 // HealthResponse represents the health check response.
+//
+// Only "status" is returned on the unauthenticated /health endpoint to avoid
+// leaking version / uptime to remote scanners probing for known-vulnerable
+// agent versions. Version and build info are still available on the build
+// itself (--version) and through service logs, but are not exposed over the
+// network on unauthenticated endpoints. See 2026-05 security audit P2-5.
 type HealthResponse struct {
-	Status    string    `json:"status" example:"ok"`
-	Version   string    `json:"version" example:"1.0.0"`
-	Uptime    string    `json:"uptime" example:"2h30m15s"`
-	Timestamp time.Time `json:"timestamp" example:"2024-01-17T10:30:00Z"`
+	Status string `json:"status" example:"ok"`
 }
 
 // Health handles GET /health (no auth required).
 //
 //	@Summary		Health check
-//	@Description	Returns the health status of the gearbox-agent service. No authentication required.
+//	@Description	Returns the health status of the gearbox-agent service. No authentication required. Only "status" is exposed; version and uptime are intentionally omitted from this unauthenticated endpoint to avoid fingerprinting by remote scanners.
 //	@Tags			Health
 //	@Produce		json
 //	@Success		200	{object}	HealthResponse	"Service is healthy"
 //	@Router			/health [get]
 func (h *Handlers) Health(w http.ResponseWriter, r *http.Request) {
-	resp := HealthResponse{
-		Status:    "ok",
-		Version:   h.version,
-		Uptime:    time.Since(h.startTime).Round(time.Second).String(),
-		Timestamp: time.Now(),
-	}
+	resp := HealthResponse{Status: "ok"}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)

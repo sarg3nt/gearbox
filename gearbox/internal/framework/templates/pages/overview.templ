@@ -7,37 +7,16 @@ import "github.com/sarg3nt/gearbox/internal/framework/ui"
 import "github.com/sarg3nt/gearbox/internal/framework/templates/components"
 import "fmt"
 
-templ Overview(user *models.User, servers []models.BoxConfig) {
-	@layouts.Base("Dashboard", user, "/") {
-		<!-- Hidden container for page header content - will be moved to main header via JS -->
+// Overview is the HAProxy dashboard page. When servers is empty, the
+// emptyReason string is shown in an InfoAlert in place of the per-box
+// tiles — pass "" to use the default "No servers configured" message,
+// or a more specific reason when the page is reached on a deployment
+// that has boxes but none with the HAProxy gear (see issue #112).
+templ Overview(user *models.User, servers []models.BoxConfig, emptyReason string) {
+	@layouts.Base("HAProxy", user, "/haproxy") {
+		<!-- Hidden container for page header content - will be moved to main header via JS.
+		     Title + box selector live in the global header breadcrumb + chip. -->
 		<div id="page-header-source" class="hidden">
-			<!-- Left side: Title with integrated server selector -->
-			<div class="flex items-center">
-				<h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">
-					Dashboard
-					if len(servers) > 1 {
-						<span class="text-gray-400 dark:text-gray-500 mx-2">:</span>
-						<span class="inline-block relative">
-							<select
-								id="server-selector"
-								class="appearance-none bg-transparent text-xl font-bold text-gray-800 dark:text-gray-100 pr-7 cursor-pointer focus:outline-none hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-								onchange="switchServer(this.value)"
-							>
-								for _, server := range servers {
-									<option value={ server.ID } selected?={ server.ID == servers[0].ID }>{ server.Name }</option>
-								}
-							</select>
-							<!-- Subtle dropdown indicator -->
-							<svg class="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-							</svg>
-						</span>
-					} else if len(servers) == 1 {
-						<span class="text-gray-400 dark:text-gray-500 mx-2">:</span>
-						<span id="single-server-name">{ servers[0].Name }</span>
-					}
-				</h2>
-			</div>
 			<!-- Right side spacer to push controls to header's right side -->
 			<div class="flex-1"></div>
 			<!-- Controls: Global filters and refresh -->
@@ -62,26 +41,12 @@ templ Overview(user *models.User, servers []models.BoxConfig) {
 					<option value="active">Active Only</option>
 					<option value="disabled">Disabled Only</option>
 				</select>
-				<!-- Global text filter -->
-				<div class="relative">
-					<input
-						type="text"
-						id="global-backend-filter"
-						placeholder="Filter backends..."
-						class="h-[38px] w-40 px-3 py-1.5 pr-8 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-						oninput="applyGlobalFilters()"
-					/>
-					<button
-						type="button"
-						id="global-filter-clear"
-						class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hidden"
-						onclick="clearGlobalFilter()"
-					>
-						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-						</svg>
-					</button>
-				</div>
+				<!-- Global text filter moved to the HeaderSearch
+				     (issue #92). applyGlobalFilters() now reads the
+				     query from __backendFilterQuery, set by a
+				     window.gearbox.filter registration in
+				     static/js/haproxy_dashboard/overview.js (or inline
+				     overview script). -->
 				<!-- Manual refresh button with SSE status indicator -->
 				<button
 					id="refresh-btn"
@@ -97,7 +62,11 @@ templ Overview(user *models.User, servers []models.BoxConfig) {
 		</div>
 
 		if len(servers) == 0 {
-			@components.InfoAlert("No servers configured. Please check your configuration.")
+			if emptyReason != "" {
+				@components.InfoAlert(emptyReason)
+			} else {
+				@components.InfoAlert("No servers configured. Please check your configuration.")
+			}
 		}
 
 		for _, server := range servers {
@@ -412,19 +381,14 @@ templ Overview(user *models.User, servers []models.BoxConfig) {
 			setTimeout(() => icon.classList.remove('animate-spin'), 1000);
 		}
 
-		// Global filter functions
+		// Global filter functions. Text query now flows through the
+		// HeaderSearch (issue #92); applyGlobalFilters() reads it from
+		// __backendFilterQuery instead of an on-page input.
+		let __backendFilterQuery = '';
 		function applyGlobalFilters() {
-			const textFilter = document.getElementById('global-backend-filter').value.toLowerCase();
+			const textFilter = __backendFilterQuery;
 			const healthFilter = document.getElementById('global-health-filter').value;
 			const disabledFilter = document.getElementById('global-disabled-filter').value;
-			const clearBtn = document.getElementById('global-filter-clear');
-
-			// Show/hide clear button
-			if (textFilter.length > 0) {
-				clearBtn.classList.remove('hidden');
-			} else {
-				clearBtn.classList.add('hidden');
-			}
 
 			// Apply filters to all backend cards across all containers
 			document.querySelectorAll('.backend-card').forEach(card => {
@@ -457,16 +421,10 @@ templ Overview(user *models.User, servers []models.BoxConfig) {
 		}
 
 		function clearGlobalFilter() {
-			const input = document.getElementById('global-backend-filter');
+			__backendFilterQuery = '';
 			const select = document.getElementById('global-health-filter');
-			const clearBtn = document.getElementById('global-filter-clear');
-
-			input.value = '';
-			select.value = 'all';
-			clearBtn.classList.add('hidden');
-
+			if (select) select.value = 'all';
 			applyGlobalFilters();
-			input.focus();
 		}
 
 		// Certificate warning functions
@@ -623,17 +581,66 @@ templ Overview(user *models.User, servers []models.BoxConfig) {
 			// Move page header content to main header
 			setupPageHeader();
 
-			// Restore global filters from localStorage
+			// HeaderSearch + command palette wiring (issue #92).
+			// Register BEFORE replaying the saved filter so setValue()'s
+			// dispatch flows through the registered onInput and keeps
+			// __backendFilterQuery in sync (Copilot review).
+			if (window.gearbox && window.gearbox.filter) {
+				window.gearbox.filter.register({
+					placeholder: 'Filter backends…',
+					onInput: function (q) {
+						__backendFilterQuery = (q || '').toLowerCase();
+						applyGlobalFilters();
+					},
+					onClear: function () { __backendFilterQuery = ''; applyGlobalFilters(); },
+				});
+			}
+
+			// Restore global filters from localStorage. The text query
+			// flows through HeaderSearch → registered onInput now; the
+			// health select is still a per-page dropdown.
 			const savedTextFilter = localStorage.getItem('global-text-filter') || '';
 			const savedHealthFilter = localStorage.getItem('global-health-filter') || 'all';
-			const textInput = document.getElementById('global-backend-filter');
 			const healthSelect = document.getElementById('global-health-filter');
 
-			if (textInput && savedTextFilter) {
-				textInput.value = savedTextFilter;
+			if (savedTextFilter && window.HeaderSearch) {
+				window.HeaderSearch.setValue(savedTextFilter);
 			}
 			if (healthSelect && savedHealthFilter) {
 				healthSelect.value = savedHealthFilter;
+			}
+			if (window.gearbox && window.gearbox.commands) {
+				const cmds = window.gearbox.commands;
+				const hSel = document.getElementById('global-health-filter');
+				if (hSel) {
+					Array.from(hSel.options).forEach(function (opt) {
+						cmds.register({
+							id: 'haproxy.health.' + opt.value,
+							label: 'Health: ' + opt.text,
+							subtitle: 'Filter backends by aggregate health',
+							group: 'HAProxy',
+							run: function () { hSel.value = opt.value; applyGlobalFilters(); },
+						});
+					});
+				}
+				const dSel = document.getElementById('global-disabled-filter');
+				if (dSel) {
+					Array.from(dSel.options).forEach(function (opt) {
+						cmds.register({
+							id: 'haproxy.disabled.' + opt.value,
+							label: 'Disabled: ' + opt.text,
+							subtitle: 'Filter by enabled/disabled state',
+							group: 'HAProxy',
+							run: function () { dSel.value = opt.value; applyGlobalFilters(); },
+						});
+					});
+				}
+				cmds.register({
+					id: 'haproxy.refresh',
+					label: 'Refresh HAProxy view',
+					group: 'HAProxy',
+					run: function () { if (typeof manualRefresh === 'function') manualRefresh(); },
+				});
 			}
 
 			// Restore server selection using global ServerSelector (sessionStorage for tab isolation)
@@ -739,14 +746,15 @@ templ StatsPartial(stats *models.HAProxyStats, serverID string, metadata *models
 				FormatFrontendStats(frontendStatus.Frontend),
 				true,
 			) {
-				<!-- Frontend header with status and details link -->
+				<!-- Frontend header with status and details link. The frontend
+				     status pill is only rendered when something is wrong — a
+				     green "ACTIVE" pill on every healthy frontend was 99% noise
+				     since OPEN is the steady state. A non-OPEN status (STOP,
+				     etc.) gets a red pill that's visually loud against the
+				     otherwise pill-free header. -->
 				<div class="flex justify-between items-start mb-4">
 					<div class="flex items-center gap-3">
-						if frontendStatus.Frontend.Status == "OPEN" {
-							<span class="px-2 py-1 text-xs font-semibold rounded bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200">
-								ACTIVE
-							</span>
-						} else {
+						if frontendStatus.Frontend.Status != "OPEN" {
 							<span class="px-2 py-1 text-xs font-semibold rounded bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200">
 								{ frontendStatus.Frontend.Status }
 							</span>
@@ -767,11 +775,16 @@ templ StatsPartial(stats *models.HAProxyStats, serverID string, metadata *models
 					</div>
 				}
 
-				<!-- Show backends if has backends - all in one grid, no grouping -->
+				<!-- Backends, grouped by docker-compose stack. Multi-backend stacks
+				     render their container topology ONCE at the stack header; the
+				     per-backend cards inside are compact (no inline diagram).
+				     Singleton + hardware backends fold into trailing flat buckets
+				     so the UI doesn't grow section chrome for trivial cases. See
+				     docs/research/haproxy-dashboard-stack-layout.md (#79). -->
 				if frontendStatus.HasBackends {
-					<div id={ fmt.Sprintf("%s-backends-%s", serverID, frontendStatus.Frontend.Name) } class="backend-card-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-						for _, backend := range GetBackendsForFrontend(frontendStatus.Frontend.Name, stats.Backends, metadata) {
-							@BackendCard(backend, GetBackendDisplayName(backend.Name), GetContainersForBackend(backend.Name, metadata), ParseBackendName(backend.Name), metadata, IsBackendDisabled(backend.Name, BuildDisabledEntitiesMap(disabledEntities)), serverID, GetDisabledEntity(backend.Name, disabledEntities), canManageDisabled)
+					<div id={ fmt.Sprintf("%s-backends-%s", serverID, frontendStatus.Frontend.Name) } data-backends-root class="space-y-4">
+						for _, stack := range GroupBackendsByStack(GetBackendsForFrontend(frontendStatus.Frontend.Name, stats.Backends, metadata), metadata) {
+							@StackSection(stack, metadata, serverID, disabledEntities, canManageDisabled)
 						}
 					</div>
 				}
@@ -794,7 +807,7 @@ templ StatsPartial(stats *models.HAProxyStats, serverID string, metadata *models
 				<div id="backends-orphaned" class="backend-card-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
 					for _, backend := range stats.Backends {
 						if isOrphanedBackend(backend.Name, metadata) && !isSystemBackend(backend.Name) {
-							@BackendCard(backend, GetBackendDisplayName(backend.Name), GetContainersForBackend(backend.Name, metadata), ParseBackendName(backend.Name), metadata, IsBackendDisabled(backend.Name, BuildDisabledEntitiesMap(disabledEntities)), serverID, GetDisabledEntity(backend.Name, disabledEntities), canManageDisabled)
+							@BackendCard(backend, GetBackendDisplayName(backend.Name), GetContainersForBackend(backend.Name, metadata), ParseBackendName(backend.Name), metadata, IsBackendDisabled(backend.Name, BuildDisabledEntitiesMap(disabledEntities)), serverID, GetDisabledEntity(backend.Name, disabledEntities), canManageDisabled, false)
 						}
 					}
 				</div>
@@ -977,14 +990,15 @@ templ BackendGridPartial(stats *models.HAProxyStats, serverID string, metadata *
 				FormatFrontendStats(frontendStatus.Frontend),
 				true,
 			) {
-				<!-- Frontend header with status and details link -->
+				<!-- Frontend header with status and details link. The frontend
+				     status pill is only rendered when something is wrong — a
+				     green "ACTIVE" pill on every healthy frontend was 99% noise
+				     since OPEN is the steady state. A non-OPEN status (STOP,
+				     etc.) gets a red pill that's visually loud against the
+				     otherwise pill-free header. -->
 				<div class="flex justify-between items-start mb-4">
 					<div class="flex items-center gap-3">
-						if frontendStatus.Frontend.Status == "OPEN" {
-							<span class="px-2 py-1 text-xs font-semibold rounded bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200">
-								ACTIVE
-							</span>
-						} else {
+						if frontendStatus.Frontend.Status != "OPEN" {
 							<span class="px-2 py-1 text-xs font-semibold rounded bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200">
 								{ frontendStatus.Frontend.Status }
 							</span>
@@ -1005,11 +1019,16 @@ templ BackendGridPartial(stats *models.HAProxyStats, serverID string, metadata *
 					</div>
 				}
 
-				<!-- Show backends if has backends - all in one grid, no grouping -->
+				<!-- Backends, grouped by docker-compose stack. Multi-backend stacks
+				     render their container topology ONCE at the stack header; the
+				     per-backend cards inside are compact (no inline diagram).
+				     Singleton + hardware backends fold into trailing flat buckets
+				     so the UI doesn't grow section chrome for trivial cases. See
+				     docs/research/haproxy-dashboard-stack-layout.md (#79). -->
 				if frontendStatus.HasBackends {
-					<div id={ fmt.Sprintf("%s-backends-%s", serverID, frontendStatus.Frontend.Name) } class="backend-card-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-						for _, backend := range GetBackendsForFrontend(frontendStatus.Frontend.Name, stats.Backends, metadata) {
-							@BackendCard(backend, GetBackendDisplayName(backend.Name), GetContainersForBackend(backend.Name, metadata), ParseBackendName(backend.Name), metadata, IsBackendDisabled(backend.Name, BuildDisabledEntitiesMap(disabledEntities)), serverID, GetDisabledEntity(backend.Name, disabledEntities), canManageDisabled)
+					<div id={ fmt.Sprintf("%s-backends-%s", serverID, frontendStatus.Frontend.Name) } data-backends-root class="space-y-4">
+						for _, stack := range GroupBackendsByStack(GetBackendsForFrontend(frontendStatus.Frontend.Name, stats.Backends, metadata), metadata) {
+							@StackSection(stack, metadata, serverID, disabledEntities, canManageDisabled)
 						}
 					</div>
 				}
@@ -1032,7 +1051,7 @@ templ BackendGridPartial(stats *models.HAProxyStats, serverID string, metadata *
 				<div id="backends-orphaned" class="backend-card-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
 					for _, backend := range stats.Backends {
 						if isOrphanedBackend(backend.Name, metadata) && !isSystemBackend(backend.Name) {
-							@BackendCard(backend, GetBackendDisplayName(backend.Name), GetContainersForBackend(backend.Name, metadata), ParseBackendName(backend.Name), metadata, IsBackendDisabled(backend.Name, BuildDisabledEntitiesMap(disabledEntities)), serverID, GetDisabledEntity(backend.Name, disabledEntities), canManageDisabled)
+							@BackendCard(backend, GetBackendDisplayName(backend.Name), GetContainersForBackend(backend.Name, metadata), ParseBackendName(backend.Name), metadata, IsBackendDisabled(backend.Name, BuildDisabledEntitiesMap(disabledEntities)), serverID, GetDisabledEntity(backend.Name, disabledEntities), canManageDisabled, false)
 						}
 					}
 				</div>
@@ -1041,7 +1060,67 @@ templ BackendGridPartial(stats *models.HAProxyStats, serverID string, metadata *
 	</div>
 }
 
-templ BackendCard(backend models.Backend, displayName string, containers []models.Container, groupInfo BackendGroupInfo, metadata *models.Metadata, isDisabled bool, serverID string, disabledEntity *database.DisabledEntity, canManageDisabled bool) {
+// StackSection renders one bucket from GroupBackendsByStack.
+//
+// Real multi-backend stacks get a labeled `<section>` with a compact
+// topology pill row at the top (one small chip per container, blue for
+// backend-serving, muted for supporting) and a grid of compact
+// BackendCards below. The flat bucket (singletons + hardware) renders
+// as a headerless grid — each card carries its own CT / HW badge, so a
+// section label would only repeat that information.
+templ StackSection(stack StackGroup, metadata *models.Metadata, serverID string, disabledEntities []database.DisabledEntity, canManageDisabled bool) {
+	if stack.IsFlat {
+		<div class="backend-card-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+			for _, backend := range stack.Backends {
+				@BackendCard(backend, GetBackendDisplayName(backend.Name), GetContainersForBackend(backend.Name, metadata), ParseBackendName(backend.Name), metadata, IsBackendDisabled(backend.Name, BuildDisabledEntitiesMap(disabledEntities)), serverID, GetDisabledEntity(backend.Name, disabledEntities), canManageDisabled, false)
+			}
+		</div>
+	} else {
+		<section class="border border-gray-200 dark:border-slate-700 rounded-lg bg-white/40 dark:bg-slate-800/30 px-4 py-3">
+			<div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-3">
+				<span class="px-2 py-0.5 text-xs font-semibold rounded bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 uppercase tracking-wide">stack</span>
+				<h5 class="text-base font-semibold text-gray-800 dark:text-gray-100 capitalize">{ stack.DisplayName }</h5>
+				<span class="text-xs text-gray-500 dark:text-gray-400">
+					{ fmt.Sprintf("%d backends · %d containers", len(stack.Backends), len(stack.Topology)) }
+				</span>
+				if len(stack.Topology) > 0 {
+					<div class="flex flex-wrap items-center gap-1.5 ml-auto">
+						for _, c := range stack.Topology {
+							@stackTopologyChip(c)
+						}
+					</div>
+				}
+			</div>
+			<div class="backend-card-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+				for _, backend := range stack.Backends {
+					@BackendCard(backend, GetBackendDisplayName(backend.Name), nil, ParseBackendName(backend.Name), metadata, IsBackendDisabled(backend.Name, BuildDisabledEntitiesMap(disabledEntities)), serverID, GetDisabledEntity(backend.Name, disabledEntities), canManageDisabled, true)
+				}
+			</div>
+		</section>
+	}
+}
+
+// stackTopologyChip renders one container in the merged stack topology as
+// a compact pill. Backend-serving containers (the ones routed by HAProxy)
+// get a blue fill; supporting containers (workers, sidecars, etc.) get a
+// muted grey fill. Designed to flex-wrap inline next to the stack header
+// instead of stacking as tall full-width blocks like `ContainerDiagram`.
+templ stackTopologyChip(c models.Container) {
+	if c.IsBackend {
+		<span class="px-2 py-0.5 text-xs rounded bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-200 font-medium" title="serves an HAProxy backend">{ c.Name }</span>
+	} else {
+		<span class="px-2 py-0.5 text-xs rounded bg-gray-200 dark:bg-slate-700 text-gray-600 dark:text-gray-400" title="supporting container">{ c.Name }</span>
+	}
+}
+
+// BackendCard renders one HAProxy backend as a card. When inStackSection
+// is true the card is already nested inside a StackSection whose header
+// names the docker-compose group; in that case we drop the redundant
+// "Group → " prefix on the title and link the item name directly to its
+// service URL (rather than linking the group name to one of its members,
+// which was confusing). Outside a stack section the prefix is preserved
+// because there's no surrounding context to identify the group.
+templ BackendCard(backend models.Backend, displayName string, containers []models.Container, groupInfo BackendGroupInfo, metadata *models.Metadata, isDisabled bool, serverID string, disabledEntity *database.DisabledEntity, canManageDisabled bool, inStackSection bool) {
 	<div
 		class="backend-card block border border-gray-200 dark:border-slate-600 rounded-lg p-5 transition bg-white dark:bg-slate-700 w-full relative"
 		data-backend-card
@@ -1062,9 +1141,14 @@ templ BackendCard(backend models.Backend, displayName string, containers []model
 		>
 			<!-- Card Header - responsive layout -->
 			<div class="mb-3">
-				<!-- Row 1: Name and IP (wraps on small screens) -->
-				<div class="flex flex-wrap items-start gap-x-2 gap-y-1 pr-14">
-					if groupInfo.Group != "" && groupInfo.Group != groupInfo.Item && groupInfo.Group != "hardware" {
+				<!-- Row 1: Name and IP. items-baseline keeps the IP's
+				     monospaced text on the same baseline as the title even
+				     though they use different font sizes. -->
+				<div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 pr-14">
+					if !inStackSection && groupInfo.Group != "" && groupInfo.Group != groupInfo.Item && groupInfo.Group != "hardware" {
+						<!-- Flat-bucket card with a meaningful group/item split
+						     (e.g. "Plex → tcp") — the group prefix disambiguates
+						     since there's no stack section above to provide it. -->
 						<h5 class="font-semibold text-base text-gray-800 dark:text-gray-100">
 							if GetServiceURL(backend.Name, metadata) != "" {
 								<span
@@ -1079,6 +1163,10 @@ templ BackendCard(backend models.Backend, displayName string, containers []model
 							<span>{ displayName }</span>
 						</h5>
 					} else {
+						<!-- Either we're inside a stack section (the surrounding
+						     section header already names the group, so the prefix
+						     would just be noise) or the group/item names match.
+						     Title is just the item name, linked to its service URL. -->
 						<h5 class="font-semibold text-base text-gray-800 dark:text-gray-100">
 							if GetServiceURL(backend.Name, metadata) != "" {
 								<span
@@ -1091,8 +1179,12 @@ templ BackendCard(backend models.Backend, displayName string, containers []model
 							}
 						</h5>
 					}
-					// IP address on same line or wraps to next line
-					if len(containers) == 0 && GetServerAddress(backend.Name, metadata) != "" {
+					// IP address on same line or wraps to next line. Rendered
+					// inline whenever the ContainerDiagram below would not draw
+					// (hardware, singletons, and stack-member cards where
+					// topology was hoisted to the stack header) — otherwise the
+					// IP appears inside the diagram's blue entry-point box.
+					if len(containers) <= 1 && GetServerAddress(backend.Name, metadata) != "" {
 						<span class="text-sm text-gray-500 dark:text-gray-400 font-mono whitespace-nowrap">
 							{ GetServerAddress(backend.Name, metadata) }
 						</span>
@@ -1103,7 +1195,7 @@ templ BackendCard(backend models.Backend, displayName string, containers []model
 					<!-- Type label (Hardware/Container) - based on backend group name -->
 					if groupInfo.Group == "hardware" {
 						<div class="relative group/type">
-							<span class="px-1.5 py-0.5 text-xs rounded bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 whitespace-nowrap cursor-help">HW</span>
+							<span class="px-1.5 py-0.5 text-xs rounded bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 whitespace-nowrap">HW</span>
 							<div class="absolute left-0 top-full mt-1 px-2 py-1 bg-gray-900 dark:bg-gray-800 text-white text-xs rounded shadow-lg opacity-0 invisible group-hover/type:opacity-100 group-hover/type:visible transition-all duration-200 z-30 whitespace-nowrap">
 								Hardware Service
 								<div class="absolute -top-1 left-2 w-2 h-2 bg-gray-900 dark:bg-gray-800 transform rotate-45"></div>
@@ -1111,7 +1203,7 @@ templ BackendCard(backend models.Backend, displayName string, containers []model
 						</div>
 					} else {
 						<div class="relative group/type">
-							<span class="px-1.5 py-0.5 text-xs rounded bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 whitespace-nowrap cursor-help">
+							<span class="px-1.5 py-0.5 text-xs rounded bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 whitespace-nowrap">
 								if len(containers) > 1 {
 									{ fmt.Sprintf("%d", len(containers)) }x
 								}
@@ -1130,7 +1222,7 @@ templ BackendCard(backend models.Backend, displayName string, containers []model
 					<!-- Disabled badge with tooltip (shown next to status badge) -->
 					if isDisabled && disabledEntity != nil {
 						<div class="relative group">
-							<div class="px-2 py-1 text-xs font-semibold rounded bg-gray-500 dark:bg-gray-600 text-white cursor-help whitespace-nowrap">
+							<div class="px-2 py-1 text-xs font-semibold rounded bg-gray-500 dark:bg-gray-600 text-white whitespace-nowrap">
 								DISABLED
 							</div>
 							<!-- Tooltip -->
@@ -1157,12 +1249,20 @@ templ BackendCard(backend models.Backend, displayName string, containers []model
 					@components.BackendHealthBadge(backend.HealthPercent)
 					<!-- Info icon with tooltip -->
 					<div class="relative group">
-						<svg class="w-4 h-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-help" fill="currentColor" viewBox="0 0 20 20">
+						<svg class="w-4 h-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" fill="currentColor" viewBox="0 0 20 20">
 							<path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
 						</svg>
-						<!-- Tooltip -->
-						<div class="invisible group-hover:visible absolute right-0 top-6 w-64 p-3 bg-gray-900 dark:bg-gray-800 text-white text-xs rounded-lg shadow-lg z-10">
-							if len(containers) > 0 && hasSharedNetwork(containers) {
+						<!-- Tooltip — anchored to the LEFT edge of the info icon so it
+						     extends rightward into the card body instead of leftward.
+						     The previous right-0 anchor placed it w-64 to the left of
+						     the icon, which clipped behind the sidebar on left-column
+						     cards. The icon sits at the left end of the badge row, so
+						     extending right keeps the tooltip inside the card. -->
+						<div class="invisible group-hover:visible absolute left-0 top-6 w-64 p-3 bg-gray-900 dark:bg-gray-800 text-white text-xs rounded-lg shadow-lg z-10">
+							if groupInfo.Group == "hardware" {
+								<p class="font-semibold mb-1">Hardware Service</p>
+								<p>This service runs directly on hardware (not containerized) and is accessed via its IP address.</p>
+							} else if len(containers) > 0 && hasSharedNetwork(containers) {
 								<p class="font-semibold mb-1">VPN Gateway Architecture</p>
 								<p>The backend container shares the network namespace of a VPN gateway. All traffic is routed through the VPN for privacy.</p>
 							} else if len(containers) > 1 {
@@ -1172,11 +1272,14 @@ templ BackendCard(backend models.Backend, displayName string, containers []model
 								<p class="font-semibold mb-1">Simple Container</p>
 								<p>This is a standalone container service with direct HAProxy routing.</p>
 							} else {
-								<p class="font-semibold mb-1">Hardware Service</p>
-								<p>This service runs directly on hardware (not containerized) and is accessed via its IP address.</p>
+								<!-- Stack member: this card is one of N backends in a docker-compose
+								     stack; the full container topology is rendered once at the stack
+								     section header above. -->
+								<p class="font-semibold mb-1">Stack Member</p>
+								<p>One of several HAProxy routes served by this docker-compose stack. See the topology above for the full picture.</p>
 							}
-							<!-- Arrow pointing to icon -->
-							<div class="absolute -top-1 right-2 w-2 h-2 bg-gray-900 dark:bg-gray-800 transform rotate-45"></div>
+							<!-- Arrow pointing up to the icon (now on the LEFT of the tooltip). -->
+							<div class="absolute -top-1 left-2 w-2 h-2 bg-gray-900 dark:bg-gray-800 transform rotate-45"></div>
 						</div>
 					</div>
 				</div>
@@ -1190,8 +1293,13 @@ templ BackendCard(backend models.Backend, displayName string, containers []model
 			<div class="text-right">Sessions: { fmt.Sprintf("%d", backend.CurrentSessions) }</div>
 		</div>
 
-			<!-- Container Architecture (only for non-hardware backends) -->
-			if len(containers) > 0 && groupInfo.Group != "hardware" {
+			<!-- Container topology — only drawn when there's structure worth
+			     showing: a VPN gateway or multi-container service. Single-
+			     container cards just render the IP inline in the header
+			     above; the CT badge already conveys "this is a container."
+			     Stack members pass `containers == nil` so the stack header's
+			     topology pill row carries the full picture instead. -->
+			if len(containers) > 1 && groupInfo.Group != "hardware" {
 				@components.ContainerDiagram(containers, GetServerAddress(backend.Name, metadata))
 			}
 		</a>

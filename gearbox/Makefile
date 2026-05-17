@@ -67,10 +67,17 @@ run: templ-generate ## Run the application with .env file loaded
 		exit 1; \
 	fi
 
-dev: templ-generate ## Run with hot reload and .env file loaded (requires air)
+# `--build.cmd` overrides whatever the developer's local .air.toml uses
+# (the file is gitignored), so `-tags dev` is always passed regardless of
+# per-developer config drift. The tag compiles in the loopback auto-login
+# bypass — see gearbox/docs/development.md and issue #83. `make build`
+# (production) deliberately omits the tag.
+DEV_BUILD_CMD = templ generate && CGO_ENABLED=1 go build -tags dev -o ./tmp/main ./cmd/server
+
+dev: templ-generate ## Run with hot reload + .env loaded + dev auto-login bypass (requires air)
 	@if [ -f .env ]; then \
 		lsof -ti:3000 | xargs -r kill -9 2>/dev/null || true; \
-		set -a && . ./.env && set +a && air; \
+		set -a && . ./.env && set +a && air --build.cmd "$(DEV_BUILD_CMD)"; \
 	else \
 		echo "Error: .env file not found. Copy .env.example to .env and configure it."; \
 		exit 1; \

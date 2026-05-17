@@ -21,6 +21,9 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/pem"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -28,6 +31,8 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+
+	"golang.org/x/crypto/ssh"
 	"syscall"
 	"time"
 
@@ -36,17 +41,24 @@ import (
 	"github.com/sarg3nt/gearbox-agent/internal/framework/config"
 	"github.com/sarg3nt/gearbox-agent/internal/framework/crypto"
 	"github.com/sarg3nt/gearbox-agent/internal/framework/events"
-	"github.com/sarg3nt/gearbox-agent/internal/framework/middleware"
 	"github.com/sarg3nt/gearbox-agent/internal/framework/gear"
+	"github.com/sarg3nt/gearbox-agent/internal/framework/middleware"
 	"github.com/sarg3nt/gearbox-agent/internal/framework/services/sync"
 
 	// Import plugins - blank identifier triggers init() registration
+	_ "github.com/sarg3nt/gearbox-agent/internal/gears/accesslog"
+	_ "github.com/sarg3nt/gearbox-agent/internal/gears/apache"
+	_ "github.com/sarg3nt/gearbox-agent/internal/gears/caddy"
 	_ "github.com/sarg3nt/gearbox-agent/internal/gears/certs"
 	_ "github.com/sarg3nt/gearbox-agent/internal/gears/containers"
+	_ "github.com/sarg3nt/gearbox-agent/internal/gears/docker"
 	_ "github.com/sarg3nt/gearbox-agent/internal/gears/haproxy"
+	_ "github.com/sarg3nt/gearbox-agent/internal/gears/host"
 	_ "github.com/sarg3nt/gearbox-agent/internal/gears/logs"
 	_ "github.com/sarg3nt/gearbox-agent/internal/gears/metrics"
+	_ "github.com/sarg3nt/gearbox-agent/internal/gears/nginx"
 	_ "github.com/sarg3nt/gearbox-agent/internal/gears/security"
+	_ "github.com/sarg3nt/gearbox-agent/internal/gears/traefik"
 	_ "github.com/sarg3nt/gearbox-agent/internal/gears/traffic"
 	_ "github.com/sarg3nt/gearbox-agent/internal/gears/updates"
 )
@@ -68,6 +80,7 @@ func main() {
 	generateWebhookSecret := flag.Bool("generate-webhook-secret", false, "Generate webhook secret (if not exists) and display it")
 	showVersion := flag.Bool("version", false, "Show version and exit")
 	syncOnce := flag.Bool("sync-once", false, "Run one sync cycle and exit")
+	generateConsoleKey := flag.Bool("generate-console-key", false, "Generate an ed25519 SSH key pair under HAPROXY_AGENT_DATA_DIR for the console ssh_bridge mode and print the public key for authorized_keys")
 	flag.Parse()
 
 	if *showVersion {
@@ -93,29 +106,72 @@ func main() {
 		Level: logLevel,
 	}))
 
-	// Handle API key commands
+	// Hard-fail early if GEARBOX_AGENT_ENCRYPTION_KEY is set but malformed,
+	// regardless of which subcommand we're about to run — one-shot CLI
+	// commands like --show-api-key need a usable key too.
+	if _, err := crypto.EncryptionConfigured(); err != nil {
+		fmt.Fprintf(os.Stderr, "Encryption key configuration error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Handle API key commands.
+	//
+	// Both flags read/write the agent's keyring (issue #72), falling back
+	// to the legacy api-key file when no keyring is present yet. The
+	// printed key is the keyring's primary entry, in the
+	// `gbx_<kid>_<base64url>` wire format the dashboard accepts.
 	if *showAPIKey {
-		key, err := crypto.ReadAPIKey(cfg.APIKeyPath)
+		kr, _, err := crypto.LoadOrCreateKeyRing(cfg.KeyRingPath, cfg.APIKeyPath)
 		if err != nil {
-			logger.Error("Failed to read API key", "error", err)
+			logger.Error("Failed to read keyring", "error", err)
 			os.Exit(1)
 		}
-		fmt.Println(key)
+		primary := kr.Primary()
+		if primary == nil {
+			fmt.Fprintln(os.Stderr, "no primary key found in keyring")
+			os.Exit(1)
+		}
+		fmt.Println(crypto.FormatToken(primary.KID, primary.Secret))
 		os.Exit(0)
 	}
 
 	if *rotateAPIKey {
-		key, err := crypto.GenerateAPIKey()
+		// Generates a fresh primary key and writes it to the keyring,
+		// replacing whatever was primary before. The agent reads the
+		// keyring on startup so the new key takes effect after restart.
+		// (Phase 2 will add a hot-reload endpoint that avoids restart.)
+		kr, _, err := crypto.LoadOrCreateKeyRing(cfg.KeyRingPath, cfg.APIKeyPath)
 		if err != nil {
-			logger.Error("Failed to generate API key", "error", err)
+			logger.Error("Failed to load keyring", "error", err)
 			os.Exit(1)
 		}
-		if err := os.WriteFile(cfg.APIKeyPath, []byte(key), crypto.APIKeyFilePerms); err != nil {
-			logger.Error("Failed to write API key", "error", err)
+		// Replace all entries with a single fresh primary. CLI rotate is
+		// the operator escape hatch — it's intentionally not the same as
+		// the controller-driven three-phase rotation; rather, it wipes
+		// the slate so a fresh dashboard pairing can take over.
+		kid, kerr := crypto.NewKID()
+		if kerr != nil {
+			logger.Error("Failed to generate key id", "error", kerr)
+			os.Exit(1)
+		}
+		secret, serr := crypto.NewSecret()
+		if serr != nil {
+			logger.Error("Failed to generate secret", "error", serr)
+			os.Exit(1)
+		}
+		fresh := crypto.KeyRingEntry{
+			KID:       kid,
+			Secret:    secret,
+			Role:      "primary",
+			CreatedAt: time.Now().UTC(),
+		}
+		kr.Entries = []crypto.KeyRingEntry{fresh}
+		if err := crypto.SaveKeyRing(cfg.KeyRingPath, kr); err != nil {
+			logger.Error("Failed to write keyring", "error", err)
 			os.Exit(1)
 		}
 		fmt.Println("New API key generated:")
-		fmt.Println(key)
+		fmt.Println(crypto.FormatToken(fresh.KID, fresh.Secret))
 		fmt.Println("\nRestart the service for the new key to take effect.")
 		os.Exit(0)
 	}
@@ -163,6 +219,51 @@ func main() {
 		os.Exit(0)
 	}
 
+	if *generateConsoleKey {
+		// Generate an ed25519 keypair under DataDir/console-ssh/agent.
+		// Print the public key so the operator can paste it into the
+		// host's authorized_keys. Refuses to overwrite an existing
+		// key — rotation is a deliberate "delete the old one then
+		// re-run" step, not an implicit clobber.
+		keyDir := cfg.DataDir + "/console-ssh"
+		privPath := keyDir + "/agent"
+		pubPath := privPath + ".pub"
+		if _, err := os.Stat(privPath); err == nil {
+			fmt.Fprintf(os.Stderr, "Console SSH key already exists at %s — delete it first if you want to rotate.\n", privPath)
+			os.Exit(1)
+		}
+		if err := os.MkdirAll(keyDir, 0o700); err != nil {
+			logger.Error("Failed to create console-ssh dir", "error", err)
+			os.Exit(1)
+		}
+		pub, priv, err := generateConsoleEd25519()
+		if err != nil {
+			logger.Error("Failed to generate console SSH key", "error", err)
+			os.Exit(1)
+		}
+		if err := os.WriteFile(privPath, priv, 0o600); err != nil {
+			logger.Error("Failed to write console SSH private key", "error", err)
+			os.Exit(1)
+		}
+		if err := os.WriteFile(pubPath, pub, 0o644); err != nil {
+			logger.Error("Failed to write console SSH public key", "error", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Console SSH key pair generated:\n  private: %s (mode 0600)\n  public:  %s\n\n", privPath, pubPath)
+		fmt.Println("Install the public key on the host's authorized_keys (typically /root/.ssh/authorized_keys),")
+		fmt.Println("then set the following env vars on the agent:")
+		fmt.Println("")
+		fmt.Println("  HAPROXY_AGENT_HOST_EXEC=ssh-bridge")
+		fmt.Println("  HAPROXY_AGENT_CONSOLE_SSH_HOST=127.0.0.1:22")
+		fmt.Println("  HAPROXY_AGENT_CONSOLE_SSH_USER=root  # or whatever user owns the authorized_keys")
+		fmt.Printf("  HAPROXY_AGENT_CONSOLE_SSH_KEY=%s\n", privPath)
+		fmt.Println("  HAPROXY_AGENT_CONSOLE_SSH_HOSTKEY=/path/to/expected/host.pub  # ssh-keyscan -t ed25519 <host>")
+		fmt.Println("")
+		fmt.Println("Public key (paste into authorized_keys):")
+		fmt.Println(string(pub))
+		os.Exit(0)
+	}
+
 	// Normal startup
 	logger.Info("Starting gearbox-agent",
 		"version", Version,
@@ -170,19 +271,42 @@ func main() {
 		"built", BuildDate,
 	)
 
-	// Load or create API key
-	apiKey, isNewKey, err := crypto.LoadOrCreateAPIKey(cfg.APIKeyPath)
+	// Warn once at startup if secret-file encryption is not configured.
+	// Placed after one-shot flag handlers so it doesn't pollute their
+	// stdout output (e.g. --show-api-key piped to a clipboard tool).
+	if ok, _ := crypto.EncryptionConfigured(); !ok {
+		logger.Warn("Secret files are stored in plaintext. " +
+			"Set GEARBOX_AGENT_ENCRYPTION_KEY (64 hex chars, see 'openssl rand -hex 32') " +
+			"to enable AES-256-GCM encryption-at-rest.")
+	}
+
+	// Load or create the keyring. Issue #72 replaced the single-key model
+	// with an N-entry keyring to support zero-downtime rotation. Existing
+	// installs that still have an api-key file (no keyring.json yet) are
+	// migrated transparently: the on-disk hex key becomes the keyring's
+	// primary entry with kid="legacy", and the file is left in place as
+	// a read-only fallback for one release cycle.
+	keyring, isNewKey, err := crypto.LoadOrCreateKeyRing(cfg.KeyRingPath, cfg.APIKeyPath)
 	if err != nil {
-		logger.Error("Failed to initialize API key", "error", err)
+		logger.Error("Failed to initialize keyring", "error", err)
 		os.Exit(1)
 	}
+	keyringPtr := crypto.NewKeyRingPointer(keyring)
 	if isNewKey {
-		logger.Warn("NEW API KEY GENERATED - Save this key, it will not be shown again!")
-		// Print to stdout (not logger) so it doesn't appear in system logs
-		fmt.Printf("API Key: %s\n", apiKey)
-		logger.Info("API key saved", "path", cfg.APIKeyPath)
+		primary := keyring.Primary()
+		if primary != nil {
+			logger.Warn("NEW API KEY GENERATED - Save this key, it will not be shown again!")
+			// Print to stdout (not logger) so it doesn't appear in system logs
+			fmt.Printf("API Key: %s\n", crypto.FormatToken(primary.KID, primary.Secret))
+			logger.Info("Keyring saved", "path", cfg.KeyRingPath, "kid", primary.KID)
+		}
 	} else {
-		logger.Info("API key loaded from file")
+		primary := keyring.Primary()
+		kid := "<none>"
+		if primary != nil {
+			kid = primary.KID
+		}
+		logger.Info("Keyring loaded", "path", cfg.KeyRingPath, "entries", len(keyring.Entries), "primary_kid", kid)
 	}
 
 	// Load or create TLS certificates
@@ -196,20 +320,24 @@ func main() {
 		}
 		logger.Info("TLS: Using custom certificate", "path", tlsCfg.CertPath)
 	} else {
-		// Use self-signed certs (generate if needed)
-		hosts := []string{"localhost"}
-		if hostname, err := os.Hostname(); err == nil {
-			hosts = append(hosts, hostname)
-		}
-
+		// Use self-signed certs (generate if needed). The generator
+		// always covers loopback (localhost / 127.0.0.1 / ::1); anything
+		// else clients will dial — a static container IP, an FQDN, a
+		// LAN hostname — must come from HAPROXY_AGENT_TLS_HOSTS.
+		//
+		// We deliberately do NOT add os.Hostname() here: in a container
+		// it's a random short ID that changes on every recreation,
+		// which would force a cert regen each restart for no value.
+		// Operators who want a specific hostname pin it explicitly.
 		var isNewCert bool
-		tlsCfg, isNewCert, err = crypto.LoadOrCreateTLSCert(cfg.TLSCert, cfg.TLSKey, hosts)
+		tlsCfg, isNewCert, err = crypto.LoadOrCreateTLSCert(cfg.TLSCert, cfg.TLSKey, cfg.TLSHosts)
 		if err != nil {
 			logger.Error("Failed to initialize TLS", "error", err)
 			os.Exit(1)
 		}
 		if isNewCert {
-			logger.Info("TLS: Generated new self-signed certificate (valid for 1 year)")
+			logger.Info("TLS: Generated new self-signed certificate (valid for 1 year)",
+				"extra_sans", cfg.TLSHosts)
 		} else {
 			logger.Info("TLS: Using existing self-signed certificate", "path", tlsCfg.CertPath)
 		}
@@ -311,14 +439,21 @@ func main() {
 	}
 	logger.Info("WebSocket: Enabled - real-time events at GET /api/v1/events")
 
+	// [#89] Console endpoints are always mounted; access is gated by
+	// the API key on the token endpoint and by the dashboard's
+	// per-box console_enabled toggle for the WS path. One startup
+	// line so operators see the surface exists in `journalctl`.
+	logger.Info("Console: endpoints mounted at /api/v1/console/* (per-box opt-in is dashboard-side; sessions inherit agent UID)")
+
 	// Create and start API server
 	serverCfg := api.ServerConfig{
-		ListenAddr: cfg.ListenAddr,
-		APIKey:     apiKey,
-		CertFile:   tlsCfg.CertPath,
-		KeyFile:    tlsCfg.KeyPath,
-		Version:    Version,
-		Logger:     logger,
+		ListenAddr:     cfg.ListenAddr,
+		KeyRing:        keyringPtr,
+		CertFile:       tlsCfg.CertPath,
+		KeyFile:        tlsCfg.KeyPath,
+		Version:        Version,
+		Logger:         logger,
+		SwaggerEnabled: cfg.SwaggerEnabled, // P3-2: off by default; opt in via GEARBOX_AGENT_SWAGGER_ENABLED=true
 	}
 	// Only set MetadataProvider if sync service is configured
 	// (Go interfaces holding nil pointers are not themselves nil)
@@ -366,13 +501,32 @@ func main() {
 		HAProxyStatsPassword: cfg.HAProxyStatsPassword,
 		HAProxyConfigPath:    cfg.HAProxyConfigFile,
 		CertbotTimer:         cfg.CertbotTimer,
+		SourceOverrides:      buildSourceOverrides(cfg),
+		NginxStatusURL:       cfg.NginxStatusURL,
+		NginxConfigFile:      cfg.NginxConfigFile,
+		ApacheStatusURL:      cfg.ApacheStatusURL,
+		ApacheConfigFile:     cfg.ApacheConfigFile,
+		CaddyAdminURL:        cfg.CaddyAdminURL,
+		TraefikMetricsURL:    cfg.TraefikMetricsURL,
+		DockerSocket:         cfg.DockerSocket,
+		HAProxyAccessLog:     cfg.HAProxyAccessLog,
+		NginxAccessLog:       cfg.NginxAccessLog,
+		ApacheAccessLog:      cfg.ApacheAccessLog,
+		CaddyAccessLog:       cfg.CaddyAccessLog,
 	}
 
 	// Create plugin manager
 	gearManager := gear.NewManager(gearDeps, logger)
 
-	// Initialize all plugins
+	// Probe the host: each gear self-reports whether its prerequisites are
+	// present. Gears that probe negative are skipped for the rest of the
+	// lifecycle (no Initialize, no Start, no routes). A summary table is
+	// written to stderr (→ systemd journal) so operators can see at a
+	// glance which gears are running on this box and why others aren't.
 	ctx := context.Background()
+	gearManager.ProbeAll(ctx)
+
+	// Initialize the gears that probed Available.
 	if err := gearManager.InitializeAll(ctx); err != nil {
 		logger.Error("Failed to initialize plugins", "error", err)
 		os.Exit(1)
@@ -385,13 +539,18 @@ func main() {
 	}
 
 	// Register plugin routes with the server
-	// Apply rate limiting and API key auth middleware
+	// Apply rate limiting and API key auth middleware (with per-IP auth-failure
+	// backoff layered on top — see 2026-05 audit P1-7).
 	rateLimiter := middleware.DefaultRateLimiter(logger)
+	authBackoff := middleware.DefaultBackoffTracker(logger)
+	keyRingHandler := api.NewKeyRingHandler(server.KeyRing(), cfg.KeyRingPath, logger)
 	pluginRouter := server.Router().Group(func(r chi.Router) {
 		r.Use(middleware.RateLimitMiddleware(rateLimiter))
-		r.Use(middleware.APIKeyAuth(server.APIKey(), logger))
+		r.Use(middleware.APIKeyAuth(server.KeyRing(), logger, authBackoff))
 	})
 	gearManager.RegisterRoutes(pluginRouter)
+	gearManager.RegisterSystemRoutes(pluginRouter)
+	keyRingHandler.RegisterRoutes(pluginRouter)
 
 	logger.Info("Plugin system initialized",
 		"plugins", gear.Names(),
@@ -537,4 +696,42 @@ func main() {
 	}
 
 	logger.Info("Server stopped")
+}
+
+// buildSourceOverrides packs the per-category override env vars from
+// the agent's Config into the category-keyed map that Dependencies
+// (and the manager's primary-source resolver) consume. Empty values
+// are omitted so the map only contains explicit operator picks —
+// callers downstream treat absence as "auto-detect".
+func buildSourceOverrides(cfg *config.Config) map[gear.MetricCategory]string {
+	out := make(map[gear.MetricCategory]string)
+	if cfg.HTTPSource != "" {
+		out[gear.CategoryHTTPRequests] = cfg.HTTPSource
+	}
+	return out
+}
+
+// generateConsoleEd25519 mints an ed25519 keypair encoded in the
+// formats sshd expects: OpenSSH PEM for the private side, single-line
+// authorized_keys format for the public side. Used only by the
+// --generate-console-key one-shot flag, so we keep the implementation
+// inline rather than scattering it across the framework.
+func generateConsoleEd25519() (pub, priv []byte, err error) {
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, nil, fmt.Errorf("generate ed25519: %w", err)
+	}
+	sshPub, err := ssh.NewPublicKey(publicKey)
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshal public: %w", err)
+	}
+	// "gearbox-agent" comment makes the key easy to identify on the
+	// host (`grep gearbox-agent ~/.ssh/authorized_keys`).
+	pub = append(ssh.MarshalAuthorizedKey(sshPub)[:len(ssh.MarshalAuthorizedKey(sshPub))-1], []byte(" gearbox-agent\n")...)
+	pemBlock, err := ssh.MarshalPrivateKey(privateKey, "gearbox-agent console bridge")
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshal private: %w", err)
+	}
+	priv = pem.EncodeToMemory(pemBlock)
+	return pub, priv, nil
 }

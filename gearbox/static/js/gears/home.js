@@ -210,6 +210,13 @@
     editBtn.addEventListener("click", () => {
       const isStatic = grid.classList.toggle("home-grid-edit") === false;
       gs.setStatic(isStatic);
+      // aria-pressed drives the cog button's blue-tinted "pressed"
+      // appearance via the .gear-cog-btn[aria-pressed="true"] rule
+      // in components/buttons.css — shared with the Metrics gear.
+      editBtn.setAttribute("aria-pressed", isStatic ? "false" : "true");
+      // Legacy text-label spans (.home-edit-on-label / -off-label)
+      // were removed when the button became icon-only, but keep the
+      // guarded toggle in case a downstream variant re-adds them.
       const onLabel = editBtn.querySelector(".home-edit-on-label");
       const offLabel = editBtn.querySelector(".home-edit-off-label");
       if (onLabel && offLabel) {
@@ -395,9 +402,12 @@
     });
   }
   // Escape closes the picker (without closing the underlying add-tile modal).
+  // preventDefault + stopImmediatePropagation so the global Esc handler in
+  // shortcut-help.js doesn't also close the parent modal in the same press.
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape" && iconPicker && !iconPicker.classList.contains("hidden")) {
-      ev.stopPropagation();
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
       closeIconPicker();
     }
   });
@@ -1289,55 +1299,89 @@
     });
   }
 
-  /* --- Search bar — '/' to focus, bookmark-search on Enter --- */
+  /* --- Search bar — drives tile-search via the global HeaderSearch
+         input (issue #92). Each keystroke fades non-matching tiles;
+         Enter opens the first matching tile, or falls back to a
+         DuckDuckGo search when nothing on the page matches. --- */
 
-  const searchForm = document.getElementById("home-search");
-  const searchInput = document.getElementById("home-search-input");
-
-  if (searchInput) {
-    document.addEventListener("keydown", (ev) => {
-      if (ev.key !== "/") return;
-      const tag = (document.activeElement && document.activeElement.tagName) || "";
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-      ev.preventDefault();
-      searchInput.focus();
-      searchInput.select();
+  function applyTileFilter(rawQuery) {
+    const q = (rawQuery || "").trim().toLowerCase();
+    const items = grid.querySelectorAll(".grid-stack-item");
+    items.forEach((item) => {
+      if (!q) {
+        item.style.opacity = "";
+        item.style.pointerEvents = "";
+        item.style.filter = "";
+        return;
+      }
+      const nameEl = item.querySelector(".home-tile-name");
+      const name = (nameEl?.textContent || item.dataset.tileName || "").toLowerCase();
+      const host = (item.dataset.tileUrl || "").toLowerCase();
+      const hit = name.includes(q) || host.includes(q);
+      // Don't actually unmount tiles — that would force GridStack to
+      // re-layout. Just fade non-matches so the user sees what they're
+      // typing toward without losing the board's spatial memory.
+      item.style.opacity = hit ? "" : "0.18";
+      item.style.pointerEvents = hit ? "" : "none";
+      item.style.filter = hit ? "" : "grayscale(0.6)";
     });
   }
 
-  if (searchForm) {
-    // Always preventDefault on submit and dispatch via window.open. The
-    // page's CSP enforces `form-action 'self'`, which blocks the native
-    // form submission to https://duckduckgo.com — the new tab opens to
-    // about:blank instead of the search results page (issue: "search bar
-    // doesn't work; opens a new tab at 'about:blank'"). window.open
-    // isn't governed by form-action, so it goes through cleanly. As a
-    // bonus, the bookmark-search and web-search paths now share the
-    // same dispatch helper.
-    const SEARCH_BASE = searchForm.action || "https://duckduckgo.com/";
-    const QUERY_PARAM = searchInput?.name || "q";
-    searchForm.addEventListener("submit", (ev) => {
-      ev.preventDefault();
-      const raw = (searchInput && searchInput.value.trim()) || "";
-      if (!raw) return;
-      const q = raw.toLowerCase();
+  if (window.gearbox && window.gearbox.filter) {
+    window.gearbox.filter.register({
+      placeholder: "Filter or search…",
+      onInput: applyTileFilter,
+      onClear: () => applyTileFilter(""),
+      onSubmit: (rawQuery) => {
+        const raw = (rawQuery || "").trim();
+        if (!raw) return;
+        // Bookmark-jump: if any visible tile matches, open it. Otherwise
+        // fall through to DuckDuckGo. We re-check matches here rather
+        // than reusing applyTileFilter's state in case the user submits
+        // before the fade settles.
+        const q = raw.toLowerCase();
+        let matched = null;
+        grid.querySelectorAll(".home-tile-name").forEach((el) => {
+          if (matched) return;
+          if (el.textContent.toLowerCase().includes(q)) {
+            const a = el.closest("a[data-tile-link]");
+            if (a) matched = a.href;
+          }
+        });
+        const target = matched
+          ? matched
+          : "https://duckduckgo.com/?" + new URLSearchParams({ q: raw }).toString();
+        window.open(target, "_blank", "noopener");
+        // Clear the input (the HeaderSearch onClear will also un-fade).
+        if (window.HeaderSearch) window.HeaderSearch.clear();
+      },
+    });
+  }
 
-      // Bookmark-search: if any tile's display name contains the query,
-      // open the first match instead of doing a web search.
-      let matched = null;
-      grid.querySelectorAll(".home-tile-name").forEach((el) => {
-        if (matched) return;
-        if (el.textContent.toLowerCase().includes(q)) {
-          const a = el.closest("a[data-tile-link]");
-          if (a) matched = a.href;
-        }
-      });
-
-      const target = matched
-        ? matched
-        : SEARCH_BASE + "?" + new URLSearchParams({ [QUERY_PARAM]: raw }).toString();
-      window.open(target, "_blank", "noopener");
-      searchInput.value = "";
+  // Home-gear commands surfaced through the command palette (>+text or
+  // Cmd+K). Adding a tile and toggling the edit cog are common enough to
+  // earn a palette entry; landing-page toggle is power-user but still
+  // discoverable here.
+  if (window.gearbox && window.gearbox.commands) {
+    window.gearbox.commands.register({
+      id: "home.add-tile",
+      label: "Add tile",
+      subtitle: "Open the new-tile dialog",
+      group: "Home",
+      run: () => {
+        const btn = document.getElementById("home-add-tile");
+        if (btn) btn.click();
+      },
+    });
+    window.gearbox.commands.register({
+      id: "home.toggle-edit",
+      label: "Toggle edit mode",
+      subtitle: "Enter drag-to-arrange + tile-edit mode",
+      group: "Home",
+      run: () => {
+        const btn = document.getElementById("home-edit-toggle");
+        if (btn) btn.click();
+      },
     });
   }
 

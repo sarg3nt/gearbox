@@ -220,6 +220,55 @@ func TestLoad_CustomTLS(t *testing.T) {
 	}
 }
 
+func TestLoad_TLSHosts(t *testing.T) {
+	tests := []struct {
+		name     string
+		envValue string
+		want     []string
+	}{
+		{"unset", "", nil},
+		{"whitespace only", "   ", nil},
+		{"single host", "mjolnir", []string{"mjolnir"}},
+		{"comma separated", "mjolnir,10.0.0.1,agent.local", []string{"mjolnir", "10.0.0.1", "agent.local"}},
+		{"trims surrounding whitespace", " mjolnir , 10.0.0.1 ", []string{"mjolnir", "10.0.0.1"}},
+		{"drops empty entries", "mjolnir,,10.0.0.1,", []string{"mjolnir", "10.0.0.1"}},
+	}
+
+	saved := os.Getenv("HAPROXY_AGENT_TLS_HOSTS")
+	defer func() {
+		if saved != "" {
+			os.Setenv("HAPROXY_AGENT_TLS_HOSTS", saved)
+		} else {
+			os.Unsetenv("HAPROXY_AGENT_TLS_HOSTS")
+		}
+	}()
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.envValue == "" {
+				os.Unsetenv("HAPROXY_AGENT_TLS_HOSTS")
+			} else {
+				os.Setenv("HAPROXY_AGENT_TLS_HOSTS", tt.envValue)
+			}
+
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+
+			if len(cfg.TLSHosts) != len(tt.want) {
+				t.Fatalf("TLSHosts = %v (len %d), want %v (len %d)",
+					cfg.TLSHosts, len(cfg.TLSHosts), tt.want, len(tt.want))
+			}
+			for i, v := range tt.want {
+				if cfg.TLSHosts[i] != v {
+					t.Errorf("TLSHosts[%d] = %q, want %q", i, cfg.TLSHosts[i], v)
+				}
+			}
+		})
+	}
+}
+
 func TestValidate(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -373,5 +422,120 @@ func TestGetEnvDurationSecondsOrDefault(t *testing.T) {
 				t.Errorf("getEnvDurationSecondsOrDefault() = %d, want %d", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestNormaliseSourceOverride(t *testing.T) {
+	cases := []struct {
+		in, want string
+	}{
+		{"", ""},
+		{"   ", ""},
+		{"haproxy", "haproxy"},
+		{"HAProxy", "haproxy"},
+		{" HAPROXY ", "haproxy"},
+		{"  Nginx  ", "nginx"},
+	}
+	for _, tc := range cases {
+		if got := normaliseSourceOverride(tc.in); got != tc.want {
+			t.Errorf("normaliseSourceOverride(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestLoad_HTTPSourceOverride(t *testing.T) {
+	// t.Setenv handles save/restore automatically and prevents
+	// parallel-test interference; the old os.Setenv + t.Cleanup pattern
+	// would leak the env var if the test panicked before Cleanup ran.
+	t.Setenv("GEARBOX_AGENT_HTTP_SOURCE", " Nginx ")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.HTTPSource != "nginx" {
+		t.Errorf("HTTPSource = %q, want %q (trimmed + lowercased)", cfg.HTTPSource, "nginx")
+	}
+}
+
+func TestLoad_HTTPSourceDefaultsEmpty(t *testing.T) {
+	// Unset within the test; t.Setenv with an empty string only marks
+	// the env var for restoration but doesn't unset it, so explicit
+	// Unsetenv is the right tool when the test specifically needs the
+	// var absent.
+	t.Setenv("GEARBOX_AGENT_HTTP_SOURCE", "") // record original for restore
+	os.Unsetenv("GEARBOX_AGENT_HTTP_SOURCE")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.HTTPSource != "" {
+		t.Errorf("HTTPSource = %q, want empty (auto-detect)", cfg.HTTPSource)
+	}
+}
+
+// TestLoad_PerSourceOverrides exercises the per-source env vars that
+// short-circuit each detector's default probe. The values must round-
+// trip with whitespace trimmed but case preserved — URLs are
+// case-sensitive in their path components and Linux filesystem paths
+// are case-sensitive too, so the HTTPSource trim+lowercase treatment
+// would be wrong here.
+func TestLoad_PerSourceOverrides(t *testing.T) {
+	cases := []struct {
+		envKey, envVal string
+		field          func(*Config) string
+		want           string
+	}{
+		{"NGINX_STATUS_URL", " http://127.0.0.1/Nginx_Status ", func(c *Config) string { return c.NginxStatusURL }, "http://127.0.0.1/Nginx_Status"},
+		{"NGINX_CONFIG_FILE", "/etc/nginx/Nginx.conf", func(c *Config) string { return c.NginxConfigFile }, "/etc/nginx/Nginx.conf"},
+		{"APACHE_STATUS_URL", "http://127.0.0.1/server-status?auto", func(c *Config) string { return c.ApacheStatusURL }, "http://127.0.0.1/server-status?auto"},
+		{"APACHE_CONFIG_FILE", "/etc/httpd/conf/httpd.conf", func(c *Config) string { return c.ApacheConfigFile }, "/etc/httpd/conf/httpd.conf"},
+		{"CADDY_ADMIN_URL", "http://127.0.0.1:2019/metrics", func(c *Config) string { return c.CaddyAdminURL }, "http://127.0.0.1:2019/metrics"},
+		{"TRAEFIK_METRICS_URL", "http://127.0.0.1:8082/metrics", func(c *Config) string { return c.TraefikMetricsURL }, "http://127.0.0.1:8082/metrics"},
+		{"DOCKER_SOCKET", "/var/run/docker.sock", func(c *Config) string { return c.DockerSocket }, "/var/run/docker.sock"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.envKey, func(t *testing.T) {
+			t.Setenv(tc.envKey, tc.envVal)
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if got := tc.field(cfg); got != tc.want {
+				t.Errorf("%s round-trip = %q, want %q", tc.envKey, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestLoad_PerSourceOverridesDefaultEmpty(t *testing.T) {
+	// Defaults must be empty strings — empty signals to each gear's
+	// Probe() that no override is in effect and it should walk its
+	// well-known-paths default.
+	for _, k := range []string{
+		"NGINX_STATUS_URL", "NGINX_CONFIG_FILE",
+		"APACHE_STATUS_URL", "APACHE_CONFIG_FILE",
+		"CADDY_ADMIN_URL", "TRAEFIK_METRICS_URL", "DOCKER_SOCKET",
+	} {
+		t.Setenv(k, "")
+		os.Unsetenv(k)
+	}
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	getters := map[string]string{
+		"NginxStatusURL":    cfg.NginxStatusURL,
+		"NginxConfigFile":   cfg.NginxConfigFile,
+		"ApacheStatusURL":   cfg.ApacheStatusURL,
+		"ApacheConfigFile":  cfg.ApacheConfigFile,
+		"CaddyAdminURL":     cfg.CaddyAdminURL,
+		"TraefikMetricsURL": cfg.TraefikMetricsURL,
+		"DockerSocket":      cfg.DockerSocket,
+	}
+	for name, got := range getters {
+		if got != "" {
+			t.Errorf("%s default = %q, want empty", name, got)
+		}
 	}
 }

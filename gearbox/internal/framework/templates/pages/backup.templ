@@ -11,20 +11,6 @@ import (
 // BackupPage renders the database backup management page.
 templ BackupPage(user *models.User, backups []database.BackupInfo, backupDir string, successMsg, errorMsg string) {
 	@layouts.Base("Database Backups", user, "/settings") {
-		<!-- Hidden container for page header content -->
-		<div id="page-header-source" class="hidden">
-			<div class="flex items-center">
-				<h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">Database Backups</h2>
-			</div>
-			<div class="flex-1"></div>
-			<a href="/settings" class="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center">
-				<svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
-				</svg>
-				Back to Settings
-			</a>
-		</div>
-
 		<div class="max-w-6xl mx-auto px-4 py-8">
 			if successMsg != "" {
 				@ui.ToastOnLoad(successMsg, "success")
@@ -160,18 +146,6 @@ templ BackupPage(user *models.User, backups []database.BackupInfo, backupDir str
 			}
 
 			<script>
-			// Move page header content to main header
-			function setupPageHeader() {
-				const source = document.getElementById('page-header-source');
-				const target = document.getElementById('header-page-content');
-				if (source && target) {
-					while (source.firstChild) {
-						target.appendChild(source.firstChild);
-					}
-					source.remove();
-				}
-			}
-
 			async function createBackup() {
 				try {
 					const response = await fetch('/api/backup/create', {
@@ -289,8 +263,6 @@ templ BackupPage(user *models.User, backups []database.BackupInfo, backupDir str
 			function downloadBackup(backupPath) {
 				window.location.href = '/api/backup/download/' + encodeURIComponent(backupPath);
 			}
-
-			document.addEventListener('DOMContentLoaded', setupPageHeader);
 			</script>
 		</div>
 	}

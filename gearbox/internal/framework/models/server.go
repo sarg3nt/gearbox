@@ -39,6 +39,13 @@ type AppConfig struct {
 	AdminPassword           string // Initial admin password (optional, will be generated if not set)
 	SessionSecret           string
 	SessionTimeoutMinutes   int
+	// SessionAbsoluteHours is the hard upper bound on a session's lifetime,
+	// independent of activity. Once a session is this old it must re-auth.
+	// 0 disables the hard TTL and keeps the legacy sliding-window-only
+	// behavior. Default is 24h (set in Load), reasonable for a homelab
+	// dashboard; enterprise deployments should consider 8–12h.
+	// See 2026-05 security audit P2-3.
+	SessionAbsoluteHours    int
 	DashboardRefreshSeconds int
 	ConfigRefreshSeconds    int
 	HTTPPort                string

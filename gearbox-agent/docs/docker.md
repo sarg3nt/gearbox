@@ -240,7 +240,19 @@ docker run -d \
 
 #### Option 1: Self-signed (Default)
 
-The agent automatically generates self-signed certificates on first run. No configuration needed.
+The agent automatically generates self-signed certificates on first run. The cert covers loopback (`localhost`, `127.0.0.1`, `::1`) out of the box, which is enough when clients reach the agent over `localhost` (e.g. host-network containers, or the host itself).
+
+If clients dial the agent by a static container IP, an FQDN, or a LAN hostname, add those as extra SANs via `HAPROXY_AGENT_TLS_HOSTS`:
+
+```yaml
+services:
+  gearbox-agent:
+    environment:
+      # Comma-separated list of hostnames and/or IPs to include as SANs.
+      - HAPROXY_AGENT_TLS_HOSTS=mjolnir,172.16.2.3,agent.example.com
+```
+
+The agent regenerates the self-signed cert automatically when this list changes (adding a SAN the existing cert does not cover).
 
 #### Option 2: Custom Certificates
 

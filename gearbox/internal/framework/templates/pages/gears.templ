@@ -17,44 +17,6 @@ import (
 // gear list so toggling them isn't confused with the box selector.
 templ GearsPage(user *models.User, servers []models.BoxConfig, currentServerID string, systemGears []database.Gear, integrations []database.Gear, successMsg, errorMsg string) {
 	@layouts.Base("Gears", user, "/settings") {
-		<!-- Hidden container for page header content - will be moved to main header via JS -->
-		<div id="page-header-source" class="hidden">
-			<!-- Left side: Title with integrated server selector -->
-			<div class="flex items-center">
-				<h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">
-					Gears
-					if len(servers) > 1 {
-						<span class="text-gray-400 dark:text-gray-500 mx-2">:</span>
-						<span class="inline-block relative">
-							<select
-								id="server-selector"
-								class="appearance-none bg-transparent text-xl font-bold text-gray-800 dark:text-gray-100 pr-7 cursor-pointer focus:outline-none hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-								onchange="switchServer(this.value)"
-							>
-								for _, server := range servers {
-									<option value={ server.ID } selected?={ server.ID == currentServerID }>{ server.Name }</option>
-								}
-							</select>
-							<!-- Subtle dropdown indicator -->
-							<svg class="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-							</svg>
-						</span>
-					} else if len(servers) == 1 {
-						<span class="text-gray-400 dark:text-gray-500 mx-2">:</span>
-						<span id="single-server-name">{ servers[0].Name }</span>
-					}
-				</h2>
-			</div>
-			<div class="flex-1"></div>
-			<a href="/settings" class="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center">
-				<svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
-				</svg>
-				Back to Settings
-			</a>
-		</div>
-
 		<div class="max-w-4xl mx-auto px-4 py-8">
 			<input type="hidden" id="current-server-id" value={ currentServerID }/>
 
@@ -74,7 +36,7 @@ templ GearsPage(user *models.User, servers []models.BoxConfig, currentServerID s
 				<div class="mb-6">
 					<div class="flex items-baseline justify-between mb-2">
 						<h3 class="text-base font-semibold text-gray-700 dark:text-gray-200">System</h3>
-						<span class="text-xs text-gray-500 dark:text-gray-400">Applies install-wide, not tied to a server</span>
+						<span class="text-xs text-gray-500 dark:text-gray-400">Applies install-wide, not tied to a box</span>
 					</div>
 					<div id="system-gears-list" class="space-y-4">
 						for _, sg := range systemGears {
@@ -82,20 +44,49 @@ templ GearsPage(user *models.User, servers []models.BoxConfig, currentServerID s
 						}
 					</div>
 				</div>
-				<div class="mb-2">
-					<h3 class="text-base font-semibold text-gray-700 dark:text-gray-200">
-						if currentServerID != "" && len(servers) > 0 {
-							{ serverNameByID(servers, currentServerID) }
-						} else {
-							Server gears
-						}
-					</h3>
-				</div>
 			}
 
+			<div class="mb-2">
+				<h3 class="text-base font-semibold text-gray-700 dark:text-gray-200">
+					if currentServerID != "" && len(servers) > 0 {
+						{ serverNameByID(servers, currentServerID) }
+					} else {
+						Box gears
+					}
+				</h3>
+			</div>
 			<div id="gears-list" class="space-y-4">
-				for _, integration := range integrations {
-					@gearCard(integration, currentServerID)
+				if len(servers) > 0 {
+					for _, integration := range integrations {
+						@gearCard(integration, currentServerID)
+					}
+				} else {
+					<div class="bg-white dark:bg-slate-800 rounded-lg shadow p-6">
+						<div class="flex items-start gap-4">
+							<div class="flex-shrink-0 w-12 h-12 rounded-lg bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center">
+								<svg class="w-6 h-6 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"></path>
+								</svg>
+							</div>
+							<div class="flex-1 min-w-0">
+								<h4 class="text-base font-semibold text-gray-800 dark:text-gray-100">No boxes configured</h4>
+								<p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
+									Per-box gears (HAProxy, Metrics, Logs, Services, Certificates, Traffic, Alerts, OS Updates) need a registered box to run against. Add one to enable them.
+								</p>
+								<div class="mt-4">
+									<a
+										href="/settings/boxes/new"
+										class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+									>
+										<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+										</svg>
+										Add a Box
+									</a>
+								</div>
+							</div>
+						</div>
+					</div>
 				}
 			</div>
 
@@ -230,24 +221,15 @@ templ gearIcon(name string, enabled bool) {
 // PluginDetailPage renders the detail/configuration page for a specific integration.
 templ GearDetailPage(user *models.User, serverID string, serverName string, integration *database.Gear, availableServices []string, availableLogSources []LogSourceInfo, successMsg, errorMsg string) {
 	@layouts.Base(integration.DisplayName + " Configuration", user, "/settings") {
-		<!-- Hidden container for page header content - will be moved to main header via JS -->
+		<!-- Hidden container for page header content. Breadcrumb shows
+		     'Settings'; this slot adds the per-gear sub-title. -->
 		<div id="page-header-source" class="hidden">
 			<div class="flex items-center">
-				<h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">
+				<span class="text-gray-400 dark:text-gray-500 mx-1.5">·</span>
+				<h2 class="text-sm font-medium text-gray-700 dark:text-gray-300">
 					{ integration.DisplayName }
-					if serverName != "" {
-						<span class="text-gray-400 dark:text-gray-500 mx-2">:</span>
-						<span class="text-gray-600 dark:text-gray-300">{ serverName }</span>
-					}
 				</h2>
 			</div>
-			<div class="flex-1"></div>
-			<a href={ templ.SafeURL("/settings/gears?server=" + serverID) } class="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center">
-				<svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
-				</svg>
-				Back to Gears
-			</a>
 		</div>
 
 		<div class="max-w-4xl mx-auto px-4 py-8">
@@ -287,14 +269,17 @@ templ GearDetailPage(user *models.User, serverID string, serverName string, inte
 }
 
 templ servicesConfigForm(integration *database.Gear, serverID string, availableServices []string) {
-	<form method="POST" action={ templ.SafeURL("/settings/gears/" + integration.Name + "?server=" + serverID) }>
+	<!-- No <form>: each toggle auto-saves via fetch() in services-config.js.
+	     The action URL still lives in data-action so the JS doesn't have to
+	     know how to construct it. -->
+	<div id="services-config-root" data-action={ "/settings/gears/" + integration.Name + "?server=" + serverID }>
 		<div class="space-y-6">
 			<!-- Header with title and filter -->
 			<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
 				<div>
 					<h3 class="text-lg font-medium text-gray-900 dark:text-gray-100">Monitored Services</h3>
 					<p class="text-sm text-gray-600 dark:text-gray-400">
-						Select which systemd services to monitor. These services will be displayed on the Services page.
+						Select which systemd services to monitor. Changes save automatically.
 					</p>
 				</div>
 				if len(availableServices) > 0 {
@@ -337,6 +322,7 @@ templ servicesConfigForm(integration *database.Gear, serverID string, availableS
 				<label class="flex items-center space-x-2">
 					<input
 						type="checkbox"
+						id="services-show-all"
 						name="show_all"
 						checked?={ isShowAllEnabled(integration.Config) }
 						class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 dark:border-gray-600 rounded"
@@ -347,17 +333,8 @@ templ servicesConfigForm(integration *database.Gear, serverID string, availableS
 					When enabled, you can query any systemd service by name on the Services page.
 				</p>
 			</div>
-
-			<div class="flex justify-end pt-4">
-				<button
-					type="submit"
-					class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
-				>
-					Save Configuration
-				</button>
-			</div>
 		</div>
-	</form>
+	</div>
 
 	<script src="/static/js/gears/services-config.js"></script>
 }
@@ -409,14 +386,14 @@ func isShowAllEnabled(config json.RawMessage) bool {
 }
 
 templ logsConfigForm(integration *database.Gear, serverID string, availableLogSources []LogSourceInfo) {
-	<form method="POST" action={ templ.SafeURL("/settings/gears/" + integration.Name + "?server=" + serverID) }>
+	<div id="logs-config-root" data-save-url={ "/settings/gears/" + integration.Name + "?server=" + serverID }>
 		<div class="space-y-6">
 			<!-- Header with title and filter -->
 			<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
 				<div>
 					<h3 class="text-lg font-medium text-gray-900 dark:text-gray-100">Available Log Sources</h3>
 					<p class="text-sm text-gray-600 dark:text-gray-400">
-						Select which log sources should be available in the log viewer dropdown.
+						Select which log sources should be available in the log viewer dropdown. Changes save automatically.
 					</p>
 				</div>
 				if len(availableLogSources) > 0 {
@@ -499,19 +476,8 @@ templ logsConfigForm(integration *database.Gear, serverID string, availableLogSo
 					</button>
 				</div>
 			}
-
-			if len(availableLogSources) > 0 {
-				<div class="flex justify-end pt-4">
-					<button
-						type="submit"
-						class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
-					>
-						Save Configuration
-					</button>
-				</div>
-			}
 		</div>
-	</form>
+	</div>
 
 	<script src="/static/js/gears/logs-config.js"></script>
 }

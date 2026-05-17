@@ -1,0 +1,182 @@
+/*
+ * Firewall (nftables) editor styling.
+ *
+ * Builds on top of CodeMirror's material-darker theme:
+ *  - flush dark background that matches the log viewer (#0d0d0d)
+ *  - slightly more contrast on inactive line numbers
+ *  - lint markers + underline decorations for nft -c -f errors
+ *  - distinct color buckets for the nftables mode's token classes
+ */
+
+#firewall-editor,
+#firewall-editor .CodeMirror {
+	height: 100%;
+	min-height: 600px;
+	font-size: 14px;
+	line-height: 1.5;
+}
+
+/* Pull CM's background in line with the surrounding shell so the editor
+ * doesn't sit in a slightly different shade of black. material-darker
+ * defaults to #212121, which is too light against #0d0d0d. */
+#firewall-editor .CodeMirror,
+#firewall-editor .CodeMirror-gutters {
+	background-color: #0d0d0d;
+	border-right: 1px solid #1f2937;
+}
+
+#firewall-editor .CodeMirror-linenumber {
+	color: #4b5563;
+}
+
+#firewall-editor .CodeMirror-activeline-background {
+	background: rgba(59, 130, 246, 0.08);
+}
+#firewall-editor .CodeMirror-activeline-gutter .CodeMirror-linenumber {
+	color: #93c5fd;
+}
+
+#firewall-editor .CodeMirror-cursor {
+	border-left-color: #f8fafc !important;
+}
+
+#firewall-editor .CodeMirror-selected {
+	background: rgba(59, 130, 246, 0.25) !important;
+}
+
+/* ---- Token coloring -------------------------------------------------
+ * Our `nftables` mode tags tokens as:
+ *   def         -> top-level statements (table, chain, rule)
+ *   keyword     -> action words (log, counter, snat, masquerade…)
+ *   keyword.strong -> verdicts (accept, drop, reject, jump…)
+ *   builtin     -> families + chain types (ip, inet, filter, nat)
+ *   attribute   -> hooks (input, output, prerouting…)
+ *   variable-2  -> match expressions (meta, ct, tcp, ip…)
+ *   string-2    -> common values (established, syn, info…)
+ *   atom        -> IP literals (10.0.0.1/24)
+ *   number      -> integers / hex
+ *   string      -> "quoted strings"
+ *   comment     -> # comments
+ *   operator    -> == != & | etc.
+ *   bracket     -> { } ; ,
+ */
+#firewall-editor .CodeMirror .cm-def           { color: #c792ea; font-weight: 600; }
+#firewall-editor .CodeMirror .cm-keyword       { color: #ffcb6b; }
+#firewall-editor .CodeMirror .cm-keyword.cm-strong { color: #f78c6c; font-weight: 700; }
+#firewall-editor .CodeMirror .cm-builtin       { color: #82aaff; }
+#firewall-editor .CodeMirror .cm-attribute     { color: #c3e88d; }
+#firewall-editor .CodeMirror .cm-variable-2    { color: #89ddff; }
+#firewall-editor .CodeMirror .cm-string-2      { color: #addb67; }
+#firewall-editor .CodeMirror .cm-atom          { color: #f07178; }
+#firewall-editor .CodeMirror .cm-number        { color: #f78c6c; }
+#firewall-editor .CodeMirror .cm-string        { color: #c3e88d; }
+#firewall-editor .CodeMirror .cm-comment       { color: #546e7a; font-style: italic; }
+#firewall-editor .CodeMirror .cm-operator      { color: #89ddff; }
+#firewall-editor .CodeMirror .cm-bracket       { color: #eeffff; }
+
+/* ---- Lint gutter markers -------------------------------------------- */
+.firewall-lint-marker {
+	color: #f87171;
+	font-weight: 700;
+	line-height: 1.1;
+	font-size: 12px;
+	width: 14px;
+	text-align: center;
+	cursor: help;
+}
+.firewall-lint-warning {
+	color: #fbbf24;
+}
+
+/* Span underline used when nft gives a column range. The wavy underline
+ * matches the typical "error squiggle" feel and stays visible against the
+ * dark editor background. */
+.firewall-lint-underline-error {
+	text-decoration: underline wavy #ef4444;
+	text-decoration-skip-ink: none;
+	-webkit-text-decoration: underline wavy #ef4444;
+}
+.firewall-lint-underline-warning {
+	text-decoration: underline wavy #f59e0b;
+	text-decoration-skip-ink: none;
+	-webkit-text-decoration: underline wavy #f59e0b;
+}
+
+/* ---- Keyword hover tooltip ------------------------------------------ */
+.firewall-keyword-tooltip {
+	position: fixed;
+	z-index: 60;
+	display: none;
+	max-width: 360px;
+	padding: 10px 12px;
+	background: #0f172a;
+	color: #e2e8f0;
+	border: 1px solid #334155;
+	border-radius: 8px;
+	box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
+	font-size: 12px;
+	line-height: 1.45;
+	pointer-events: auto;
+}
+.firewall-keyword-tooltip-title {
+	color: #a5b4fc;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+	font-weight: 700;
+	margin-bottom: 4px;
+}
+.firewall-keyword-tooltip-body {
+	color: #cbd5e1;
+}
+.firewall-keyword-tooltip-link {
+	display: inline-block;
+	margin-top: 8px;
+	color: #60a5fa;
+	font-weight: 600;
+	text-decoration: none;
+}
+.firewall-keyword-tooltip-link:hover {
+	color: #93c5fd;
+	text-decoration: underline;
+}
+
+/* Variant used when the tooltip describes a validation error rather than
+ * a keyword. Red accent on the border + title, slightly wider for room
+ * to show both the humanized + raw nft message. */
+.firewall-keyword-tooltip.firewall-keyword-tooltip-error {
+	border-color: #b91c1c;
+	box-shadow: 0 12px 28px rgba(127, 29, 29, 0.55);
+	max-width: 420px;
+}
+.firewall-keyword-tooltip.firewall-keyword-tooltip-error .firewall-keyword-tooltip-title {
+	color: #fca5a5;
+}
+.firewall-keyword-tooltip-raw {
+	margin: 8px 0 0;
+	padding: 6px 8px;
+	background: #1e1e1e;
+	border: 1px dashed #475569;
+	border-radius: 4px;
+	color: #94a3b8;
+	font-size: 11px;
+	white-space: pre-wrap;
+	max-height: 120px;
+	overflow: auto;
+}
+
+/* ---- Hint dropdown override ----------------------------------------- */
+.CodeMirror-hints {
+	background: #1e293b;
+	color: #e2e8f0;
+	border: 1px solid #334155;
+	box-shadow: 0 10px 20px rgba(0, 0, 0, 0.5);
+	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+	font-size: 13px;
+	padding: 2px 0;
+}
+.CodeMirror-hint {
+	color: #e2e8f0;
+}
+li.CodeMirror-hint-active {
+	background: #2563eb;
+	color: #ffffff;
+}
