@@ -170,7 +170,14 @@ func (h *Handler) LoginPost(w http.ResponseWriter, r *http.Request) {
 // default-landing-path (per-user → system → fallback). When nothing is
 // configured the fallback chain is:
 //
-//  1. Any box enabled            → /haproxy
+//  1. Any box enabled            → capability-driven landing for the
+//                                  active box (see
+//                                  defaultLandingForActiveBox). On a
+//                                  HAProxy-capable box that's /haproxy
+//                                  exactly as before; on a Mjolnir-style
+//                                  TrueNAS container agent (no haproxy)
+//                                  the user lands on /metrics or /bx
+//                                  instead of an empty HAProxy page.
 //  2. Any system gear enabled    → /home (today the only system gear)
 //  3. Otherwise                  → /welcome (first-run onboarding, issue #49)
 func (h *Handler) RootRedirect(w http.ResponseWriter, r *http.Request) {
@@ -186,7 +193,7 @@ func (h *Handler) RootRedirect(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if count, err := h.db.CountEnabledBoxes(); err == nil && count > 0 {
-		http.Redirect(w, r, "/haproxy", http.StatusSeeOther)
+		http.Redirect(w, r, h.defaultLandingForActiveBox(r), http.StatusSeeOther)
 		return
 	}
 	if homeGear, err := h.db.GetGear(database.SystemServerID, database.GearHome); err == nil && homeGear != nil && homeGear.Enabled {
@@ -194,6 +201,40 @@ func (h *Handler) RootRedirect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/welcome", http.StatusSeeOther)
+}
+
+// defaultLandingForActiveBox returns the dashboard landing path for the
+// box currently active in the header pill, derived from that box's
+// agent probe table. Preference order:
+//
+//   - /haproxy when the active box's agent reports the haproxy gear
+//     available — preserves the historical landing for any
+//     HAProxy-fronted deployment.
+//   - /metrics when haproxy isn't available but the metrics gear is —
+//     the next-most-useful single-pane-of-glass for a host-only agent.
+//   - /bx as the universal fallback so an active box with no advertised
+//     gears still has a place to land.
+//
+// Fail-open to /haproxy when capabilities can't be fetched (agent down,
+// no API key, older agent that pre-dates probing). This matches the
+// dashboard's broader fail-open posture from issue #112: a transient
+// agent outage shouldn't change where the dashboard lands the user.
+func (h *Handler) defaultLandingForActiveBox(r *http.Request) string {
+	boxID := h.resolveBoxIDFromRequest(r)
+	if boxID == "" {
+		return "/haproxy"
+	}
+	caps, ok := h.getBoxCapabilities(boxID)
+	if !ok {
+		return "/haproxy"
+	}
+	if caps.IsAvailable("haproxy") {
+		return "/haproxy"
+	}
+	if caps.IsAvailable("metrics") {
+		return "/metrics"
+	}
+	return "/bx"
 }
 
 // Logout handles user logout.
