@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -32,12 +33,108 @@ const (
 type Client struct {
 	baseURL    string
 	apiKey     string
+	kid        string // optional; when set, sent as X-Gearbox-Kid header
+	onDrift    DriftHandler
 	httpClient *http.Client
+}
+
+// HeaderKID is the request/response header name carrying the keyring
+// entry id. The agent's middleware echoes the matched kid on every
+// authenticated response (see middleware.ResponseHeaderKID); the
+// dashboard sends this kid on outbound requests so the agent + audit
+// log can correlate keys. Drift detection (Phase 5) compares the
+// request-time kid with the echoed response kid.
+const HeaderKID = "X-Gearbox-Kid"
+
+// DriftHandler is invoked when the agent's echoed kid differs from
+// the kid the client sent. Implementations typically log + surface a
+// "rotation drift" banner; the default is to do nothing (set via
+// SetDriftHandler).
+//
+// expected = what the client sent on the request
+// actual   = what the agent echoed back on the response
+//
+// The handler is called on the request goroutine; cheap operations
+// only (logging is fine, network calls are not).
+type DriftHandler func(expected, actual string)
+
+// LogDriftHandler returns a DriftHandler that emits a structured
+// warn-level log line — the lowest-friction wiring for a long-lived
+// agent.Client. The "box_id" tag lets the operator filter the journal
+// to a single box.
+func LogDriftHandler(logger *slog.Logger, boxID int64) DriftHandler {
+	return func(expected, actual string) {
+		logger.Warn("rotation drift: agent matched a different kid than expected",
+			"box_id", boxID,
+			"expected_kid", expected,
+			"actual_kid", actual)
+	}
 }
 
 // NewClient creates a new HAProxy Agent API client.
 func NewClient(baseURL, apiKey string) *Client {
 	return NewClientWithTimeout(baseURL, apiKey, DefaultTimeout)
+}
+
+// NewClientWithKID creates a client that also identifies the keyring
+// entry it's signing with — the agent echoes back the matched kid in
+// X-Gearbox-Kid and the dashboard compares the two to detect rotation
+// drift. Empty kid is fine (legacy single-key boxes); the client just
+// won't send the header.
+func NewClientWithKID(baseURL, apiKey, kid string) *Client {
+	c := NewClient(baseURL, apiKey)
+	c.kid = kid
+	return c
+}
+
+// WithKID returns a shallow copy of c tagged with kid. Useful when a
+// short-lived client wants to be rebuilt to point at a different
+// keyring entry without re-doing TLS setup.
+func (c *Client) WithKID(kid string) *Client {
+	clone := *c
+	clone.kid = kid
+	return &clone
+}
+
+// KID returns the kid this client signs requests with, or "" if it
+// wasn't built with one. Used by the rotator and drift-detection
+// paths.
+func (c *Client) KID() string { return c.kid }
+
+// SetDriftHandler installs a callback invoked when the agent's
+// echoed X-Gearbox-Kid response header differs from the kid the
+// client sent. Nil disables drift detection (the default).
+//
+// Use this on long-lived Client instances cached per box; the rotator
+// builds short-lived clients per call and wouldn't benefit from
+// installing a handler.
+func (c *Client) SetDriftHandler(h DriftHandler) { c.onDrift = h }
+
+// checkDrift inspects resp's X-Gearbox-Kid header against the kid the
+// client sent. Called from each doRequest* path on success. No-op when
+// the client has no kid or no handler is installed.
+func (c *Client) checkDrift(resp *http.Response) {
+	if resp == nil || c.kid == "" || c.onDrift == nil {
+		return
+	}
+	actual := resp.Header.Get(HeaderKID)
+	if actual == "" || actual == c.kid {
+		return
+	}
+	c.onDrift(c.kid, actual)
+}
+
+// setAuthHeaders applies the standard auth + Accept headers and, when
+// the client was built with a kid, the X-Gearbox-Kid request header.
+// Callers must call this BEFORE setting Content-Type so their override
+// wins (the helper deliberately doesn't set Content-Type — varied
+// per-callsite based on whether the request has a body).
+func (c *Client) setAuthHeaders(req *http.Request) {
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	req.Header.Set("Accept", "application/json")
+	if c.kid != "" {
+		req.Header.Set(HeaderKID, c.kid)
+	}
 }
 
 // NewClientWithTimeout creates a new HAProxy Agent API client with a custom timeout.
@@ -88,14 +185,37 @@ func NewClientWithTimeout(baseURL, apiKey string, timeout time.Duration) *Client
 		},
 	}
 
-	return &Client{
+	c := &Client{
 		baseURL: baseURL,
 		apiKey:  apiKey,
-		httpClient: &http.Client{
-			Timeout:   timeout,
-			Transport: transport,
-		},
 	}
+	c.httpClient = &http.Client{
+		Timeout: timeout,
+		// Wrap the base transport so every response is inspected for the
+		// X-Gearbox-Kid header against c.kid. The transport reads c.kid
+		// and c.onDrift at RoundTrip time, so SetDriftHandler is reflected
+		// immediately without rebuilding the client.
+		Transport: &kidObservingTransport{base: transport, c: c},
+	}
+	return c
+}
+
+// kidObservingTransport wraps an http.RoundTripper and invokes the
+// owning Client's checkDrift on every successful response. Implements
+// the drift-detection half of Phase 5 (issue #72) — the dashboard
+// learns immediately when an agent's matched kid disagrees with the
+// kid the dashboard sent, signalling a partial rotation.
+type kidObservingTransport struct {
+	base http.RoundTripper
+	c    *Client
+}
+
+func (t *kidObservingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.base.RoundTrip(req)
+	if err == nil {
+		t.c.checkDrift(resp)
+	}
+	return resp, err
 }
 
 // BuildTLSConfig is the exported alias for createTLSConfig — used by
@@ -214,8 +334,7 @@ func (c *Client) doRequest(method, path string, query url.Values) ([]byte, error
 	}
 
 	// Add bearer token authentication
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	req.Header.Set("Accept", "application/json")
+	c.setAuthHeaders(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -255,8 +374,7 @@ func (c *Client) doRequestLongRunning(method, path string, query url.Values) ([]
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	req.Header.Set("Accept", "application/json")
+	c.setAuthHeaders(req)
 
 	// Use a separate client with extended timeout, sharing the same transport
 	longClient := &http.Client{
@@ -311,8 +429,7 @@ func (c *Client) doRequestWithBodyAndQuery(method, path string, reqBody interfac
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	req.Header.Set("Accept", "application/json")
+	c.setAuthHeaders(req)
 	if reqBody != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -758,7 +875,7 @@ func (c *Client) DownloadCertificate(domain string) ([]byte, string, error) {
 		return nil, "", fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	c.setAuthHeaders(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -1041,8 +1158,7 @@ func (c *Client) UpdateHAProxyConfig(req *HAProxyConfigUpdateRequest) (*HAProxyC
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
-	httpReq.Header.Set("Accept", "application/json")
+	c.setAuthHeaders(httpReq)
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	httpResp, err := c.httpClient.Do(httpReq)
@@ -1137,8 +1253,7 @@ func (c *Client) UpdateFirewallConfig(req *FirewallConfigUpdateRequest) (*Firewa
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
-	httpReq.Header.Set("Accept", "application/json")
+	c.setAuthHeaders(httpReq)
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	httpResp, err := c.httpClient.Do(httpReq)
