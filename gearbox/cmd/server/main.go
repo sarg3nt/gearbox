@@ -381,6 +381,12 @@ func main() {
 	authAdapter.SetEncryptor(encryptor)
 	eventsAdapter := services.NewEventsAdapter(eventHub)
 	serverAdapter := services.NewServerAdapter(db, encryptor, servers, logger)
+	// Share the handler's probe-table cache with the adapter so gear
+	// plugins (HAProxy, Logs, Services, …) can filter their box list by
+	// what the agent actually advertises — see issue #112. Without this,
+	// the HAProxy dashboard fires /htmx/{box}/stats|metrics polls at every
+	// enabled box and gets 503s back from agents that don't run HAProxy.
+	serverAdapter.SetCapabilitiesCache(h.CapabilitiesCache())
 
 	gearDeps := gear.Dependencies{
 		DB:         db.GetDB(), // Get the underlying *sql.DB
