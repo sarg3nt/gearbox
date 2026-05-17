@@ -162,19 +162,22 @@ var accessLogSourceDisplayName = map[string]string{
 // Each entry is {"name", "display_name", "path"} for one discovered
 // web-server access log. Older dashboards that don't know about
 // Resources continue to read the flat Capabilities map; both views
-// are kept in sync.
+// are kept in sync. When no readable log file is found at all, the
+// Resources field is left unset so the JSON envelope omits it and
+// callers fall back to the flat Capabilities map.
+//
+// Side-effect-free: Probe builds the operator-override map as a
+// local rather than mutating g.paths, so the function honors the
+// ProbeableGear contract that probing must be free of state writes.
+// Initialize re-runs the dep-to-paths copy below to populate g.paths
+// for the handler path that needs it.
 func (g *Gear) Probe(ctx context.Context, deps gear.Dependencies) gear.ProbeResult {
-	g.paths = map[string]string{
-		"haproxy": deps.HAProxyAccessLog,
-		"nginx":   deps.NginxAccessLog,
-		"apache":  deps.ApacheAccessLog,
-		"caddy":   deps.CaddyAccessLog,
-	}
+	overrides := pathsFromDeps(deps)
 
 	caps := map[string]string{}
 	logSources := []map[string]string{}
 	for _, src := range []string{"haproxy", "nginx", "apache", "caddy"} {
-		path := g.resolveLogPath(src)
+		path := g.resolveLogPathWith(src, overrides)
 		if path == "" {
 			continue
 		}
@@ -185,27 +188,40 @@ func (g *Gear) Probe(ctx context.Context, deps gear.Dependencies) gear.ProbeResu
 			"path":         path,
 		})
 	}
-	resources := map[string]any{
-		"log_sources": logSources,
+	// Only attach Resources when we actually have a payload — keeps
+	// the JSON envelope's `resources` field truly omitempty.
+	if len(logSources) > 0 {
+		return gear.ProbeAvailableWithResources(
+			"access-log endpoint registered",
+			caps,
+			map[string]any{"log_sources": logSources},
+		)
 	}
-	return gear.ProbeAvailableWithResources("access-log endpoint registered", caps, resources)
+	return gear.ProbeAvailable("access-log endpoint registered", caps)
 }
 
-// Initialize captures the path overrides for later use by the
-// handler. Probe already populated paths; this re-runs it because
-// Probe runs before Initialize on first boot, and we want explicit
-// re-resolution on Initialize so test harnesses that construct a
-// gear without calling Probe still get usable paths.
-func (g *Gear) Initialize(ctx context.Context, deps gear.Dependencies) error {
-	if err := g.BaseGear.Initialize(ctx, deps); err != nil {
-		return err
-	}
-	g.paths = map[string]string{
+// pathsFromDeps extracts the operator-overrides map from
+// gear.Dependencies. Shared by Probe (local-only, side-effect-free)
+// and Initialize (mutates g.paths so handlers can read it later)
+// so the deps→map mapping has one source of truth.
+func pathsFromDeps(deps gear.Dependencies) map[string]string {
+	return map[string]string{
 		"haproxy": deps.HAProxyAccessLog,
 		"nginx":   deps.NginxAccessLog,
 		"apache":  deps.ApacheAccessLog,
 		"caddy":   deps.CaddyAccessLog,
 	}
+}
+
+// Initialize captures the path overrides for later use by the
+// handler. Probe is side-effect-free (#112 review) so this is the
+// single place g.paths gets written; the handler reads g.paths via
+// resolveLogPath during request handling.
+func (g *Gear) Initialize(ctx context.Context, deps gear.Dependencies) error {
+	if err := g.BaseGear.Initialize(ctx, deps); err != nil {
+		return err
+	}
+	g.paths = pathsFromDeps(deps)
 	return nil
 }
 
@@ -316,12 +332,27 @@ func parseWithFallback(primary, fallback accesslog.Parser, raw string) *accesslo
 	return fallback.Parse(raw)
 }
 
-// resolveLogPath returns the access-log path for src: the operator
-// override if set and readable, the well-known default if readable,
-// or "" when neither exists. Apache gets a second-chance lookup
-// against the RHEL-style path.
+// resolveLogPath returns the access-log path for src using the
+// operator-override map captured in g.paths. Thin wrapper over
+// resolveLogPathWith so existing handler callers keep their
+// `g.resolveLogPath(src)` ergonomics; Probe (side-effect-free)
+// uses resolveLogPathWith directly with a local map.
 func (g *Gear) resolveLogPath(src string) string {
-	if override, ok := g.paths[src]; ok && override != "" {
+	return g.resolveLogPathWith(src, g.paths)
+}
+
+// resolveLogPathWith is the underlying resolver. Takes the
+// operator-override map explicitly so the caller (Probe / handler /
+// test) can avoid touching shared state:
+//
+//   - the operator override if set and readable, OR
+//   - the well-known default if readable, OR
+//   - "" when neither exists.
+//
+// Apache gets a second-chance lookup against the RHEL-style path
+// because Debian and RHEL ship the log under different paths.
+func (g *Gear) resolveLogPathWith(src string, overrides map[string]string) string {
+	if override, ok := overrides[src]; ok && override != "" {
 		// Operator explicitly pointed us at a path — trust them.
 		// If the path isn't readable the endpoint surfaces "tail
 		// failed" rather than silently falling back to a

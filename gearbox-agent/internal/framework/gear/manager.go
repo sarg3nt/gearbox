@@ -147,15 +147,79 @@ func (m *Manager) isLoaded(name string) bool {
 }
 
 // ProbeResults returns a snapshot of every gear's probe verdict. Useful
-// for the upcoming /api/v1/system/capabilities endpoint and for tests.
+// for the /api/v1/system/capabilities endpoint and for tests.
+//
+// The returned map and every nested Capabilities / Resources map are
+// independent copies — callers can freely mutate them without racing
+// against background re-probes (when those land) or aliasing the
+// manager's internal state. JSON encoding deeply traverses the
+// Resources tree, so the cost stays in O(snapshot) at the request
+// boundary instead of being a hidden mutation hazard for downstream
+// consumers (issue #112 review).
 func (m *Manager) ProbeResults() map[string]ProbeResult {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	out := make(map[string]ProbeResult, len(m.probed))
 	for k, v := range m.probed {
-		out[k] = v
+		out[k] = cloneProbeResult(v)
 	}
 	return out
+}
+
+// cloneProbeResult returns a deep copy of r — Capabilities is
+// duplicated as a fresh map[string]string, Resources is duplicated by
+// JSON round-trip because each gear picks its own shape and we can't
+// know the concrete types statically. JSON round-trip is the same
+// cost the /api/v1/system/capabilities encoder pays anyway, so it's
+// the cheapest safe option that handles arbitrary nested data.
+//
+// Falls back to a shallow Resources copy if JSON encoding fails (a
+// gear sneaked an un-marshalable value into the map — should never
+// happen because the same value would crash the capabilities
+// endpoint). Aliasing is the worst case here; better than panicking
+// at a fan-out call site.
+func cloneProbeResult(r ProbeResult) ProbeResult {
+	out := ProbeResult{
+		Status: r.Status,
+		Reason: r.Reason,
+	}
+	if r.Capabilities != nil {
+		out.Capabilities = make(map[string]string, len(r.Capabilities))
+		for k, v := range r.Capabilities {
+			out.Capabilities[k] = v
+		}
+	}
+	if len(r.Resources) > 0 {
+		if cloned, err := cloneResourcesViaJSON(r.Resources); err == nil {
+			out.Resources = cloned
+		} else {
+			// Shallow fallback. See function comment.
+			out.Resources = make(map[string]any, len(r.Resources))
+			for k, v := range r.Resources {
+				out.Resources[k] = v
+			}
+		}
+	}
+	return out
+}
+
+// cloneResourcesViaJSON round-trips the map through encoding/json so
+// nested slices and sub-maps come back as fresh allocations. After
+// decode, every leaf is a JSON-typed value (float64, string, bool,
+// nil) — the same shape downstream consumers see when fetching
+// /api/v1/system/capabilities over the wire, so callers can't
+// accidentally rely on Go-typed values that wouldn't survive the
+// JSON boundary.
+func cloneResourcesViaJSON(in map[string]any) (map[string]any, error) {
+	b, err := json.Marshal(in)
+	if err != nil {
+		return nil, err
+	}
+	var out map[string]any
+	if err := json.Unmarshal(b, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // logProbeTable renders the visual probe summary to the table writer and

@@ -332,38 +332,53 @@ func TestCapabilitiesEndpointSurfacesResources(t *testing.T) {
 		t.Fatalf("status = %d, want 200", rr.Code)
 	}
 
-	// Decode through json.RawMessage to confirm the field round-trips
-	// without relying on the in-process Go type — the dashboard sees
-	// JSON over the wire, not a Go struct.
-	var raw struct {
+	// Two-stage decode: first peel the outer envelope into
+	// json.RawMessage per gear so we can verify the `resources` key
+	// is present in the raw bytes (catches name-tag regressions like
+	// renaming the field to "Resources" or "extra"). Then decode
+	// the resources object into a typed shape and check the actual
+	// payload contents. Decoding through RawMessage rather than
+	// straight into map[string]any avoids relying on Go's `any`
+	// decoding quirks for the wire-format guard.
+	var envelope struct {
 		Gears map[string]struct {
-			Status    string         `json:"status"`
-			Resources map[string]any `json:"resources"`
+			Status    string          `json:"status"`
+			Resources json.RawMessage `json:"resources"`
 		} `json:"gears"`
 	}
-	if err := json.Unmarshal(rr.Body.Bytes(), &raw); err != nil {
-		t.Fatalf("decode response: %v", err)
+	if err := json.Unmarshal(rr.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode envelope: %v", err)
 	}
-	alpha, ok := raw.Gears["alpha"]
+	alpha, ok := envelope.Gears["alpha"]
 	if !ok {
 		t.Fatalf("alpha missing from response")
 	}
-	logSources, ok := alpha.Resources["log_sources"].([]any)
-	if !ok {
-		t.Fatalf("alpha.Resources[\"log_sources\"] type = %T, want []any (JSON-decoded slice)", alpha.Resources["log_sources"])
+	if len(alpha.Resources) == 0 {
+		t.Fatalf("alpha.resources missing from envelope; got body %s", rr.Body.String())
 	}
-	if len(logSources) != 1 {
-		t.Fatalf("alpha.Resources[\"log_sources\"] = %v, want one entry", logSources)
+
+	var resources struct {
+		LogSources []struct {
+			Name        string `json:"name"`
+			DisplayName string `json:"display_name"`
+			Path        string `json:"path"`
+		} `json:"log_sources"`
 	}
-	first, ok := logSources[0].(map[string]any)
-	if !ok {
-		t.Fatalf("first log source type = %T, want map[string]any", logSources[0])
+	if err := json.Unmarshal(alpha.Resources, &resources); err != nil {
+		t.Fatalf("decode alpha.resources: %v", err)
 	}
-	if first["name"] != "nginx" {
-		t.Errorf("first.name = %v, want nginx", first["name"])
+	if len(resources.LogSources) != 1 {
+		t.Fatalf("log_sources = %v, want one entry", resources.LogSources)
 	}
-	if first["path"] != "/var/log/nginx/access.log" {
-		t.Errorf("first.path = %v, want /var/log/nginx/access.log", first["path"])
+	got := resources.LogSources[0]
+	if got.Name != "nginx" {
+		t.Errorf("name = %q, want nginx", got.Name)
+	}
+	if got.DisplayName != "nginx" {
+		t.Errorf("display_name = %q, want nginx", got.DisplayName)
+	}
+	if got.Path != "/var/log/nginx/access.log" {
+		t.Errorf("path = %q, want /var/log/nginx/access.log", got.Path)
 	}
 }
 
