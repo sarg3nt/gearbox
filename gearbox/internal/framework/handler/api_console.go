@@ -52,10 +52,10 @@ func (h *Handler) APIConsoleCapabilities(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "Box not found", http.StatusNotFound)
 		return
 	}
-	// Per-box opt-in (#89 Phase 2c). Both this and the agent's
-	// HAPROXY_AGENT_CONSOLE_ENABLED must be true for a session to
-	// open. Returning the same envelope shape the agent uses for
-	// "disabled" so the dashboard JS branches identically.
+	// Per-box opt-in (#89 Phase 2c). The dashboard's per-box
+	// toggle is the sole gate on this proxy path. Returning a
+	// "disabled" envelope so the dashboard JS branches identically
+	// for "box opted out" and "agent unreachable."
 	if !server.ConsoleEnabled {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)

@@ -84,15 +84,6 @@ type Config struct {
 	// 2026-05 security audit P3-2.
 	SwaggerEnabled bool
 
-	// ConsoleEnabled, when true, exposes the remote-console endpoints
-	// (POST /api/v1/console/token, GET /api/v1/console/ws, GET
-	// /api/v1/console/capabilities). Off by default — the surface only
-	// exists on agents an operator has explicitly opted in via the
-	// HAPROXY_AGENT_CONSOLE_ENABLED env var. Belt-and-suspenders with the
-	// per-box opt-in on the dashboard side; both must be true for a
-	// session to open. See [#89] for design and [#117] for Phase 1a scope.
-	ConsoleEnabled bool
-
 	// Metric-source overrides. Each one points a single metric category
 	// at a specific gear, bypassing auto-detection. Empty = pure
 	// auto-detection (built-in preference order). Lowercased at load
@@ -233,10 +224,6 @@ func Load() (*Config, error) {
 
 	// Swagger UI off by default; opt in for dev / API debugging.
 	cfg.SwaggerEnabled = os.Getenv("HAPROXY_AGENT_SWAGGER_ENABLED") == "true"
-
-	// Remote console off by default. When unset, /api/v1/console/* returns
-	// 404 — the surface doesn't exist. See [#89] for the security rationale.
-	cfg.ConsoleEnabled = os.Getenv("HAPROXY_AGENT_CONSOLE_ENABLED") == "true"
 
 	// Metric-source overrides. Lowercased + trimmed so 'HAProxy ' and
 	// 'haproxy' both match the gear's Info().Name. Empty = auto-detect.

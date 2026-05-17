@@ -14,70 +14,33 @@ func newSilentLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-// Off-by-default is the load-bearing security property of the console
-// surface: an agent that hasn't explicitly opted in MUST NOT expose any
-// /api/v1/console/* route. A regression here is silently giving every
-// box in the fleet a shell-by-token, so this test pins the contract
-// from the server-config level (not just the handler level). See [#89].
-func TestNewServer_ConsoleDisabled_RoutesReturn404(t *testing.T) {
+// Console routes are always mounted. The agent-side env-var gate
+// (HAPROXY_AGENT_CONSOLE_ENABLED) was removed in the post-#127
+// cleanup — the dashboard's per-box console_enabled toggle is the
+// sole opt-in. This test pins the contract that the three routes
+// exist and stay behind their respective auth gates (API key on
+// token + capabilities; single-use token on the WS endpoint, which
+// returns 401 when called with no token).
+//
+// A regression that re-introduces a conditional mount here would
+// silently break any deployment that flipped the per-box toggle on
+// but didn't also set a now-defunct env var.
+func TestNewServer_ConsoleRoutesAlwaysMounted(t *testing.T) {
 	bus := events.NewBus()
 	defer bus.Close()
 
 	srv := NewServer(ServerConfig{
-		ListenAddr:     "127.0.0.1:0",
-		APIKey:         "test-key",
-		Logger:         newSilentLogger(),
-		EventBus:       bus,
-		ConsoleEnabled: false, // the property under test
+		ListenAddr: "127.0.0.1:0",
+		APIKey:     "test-key",
+		Logger:     newSilentLogger(),
+		EventBus:   bus,
 	})
 
 	ts := httptest.NewServer(srv.Router())
 	defer ts.Close()
 
-	cases := []struct {
-		method string
-		path   string
-	}{
-		{http.MethodPost, "/api/v1/console/token"},
-		{http.MethodGet, "/api/v1/console/capabilities"},
-		{http.MethodGet, "/api/v1/console/ws"},
-	}
-	for _, tc := range cases {
-		req, _ := http.NewRequest(tc.method, ts.URL+tc.path, nil)
-		req.Header.Set("Authorization", "Bearer test-key")
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatalf("%s %s: %v", tc.method, tc.path, err)
-		}
-		_ = resp.Body.Close()
-		if resp.StatusCode != http.StatusNotFound {
-			t.Errorf("%s %s: status = %d, want 404 (route should not exist when ConsoleEnabled=false)",
-				tc.method, tc.path, resp.StatusCode)
-		}
-	}
-}
-
-// Mirror of the above: when the operator has opted in, the routes
-// exist. We don't exercise the full WS upgrade here (that's covered in
-// console/handler_test.go) — just that the routes are mounted and
-// auth-gated correctly.
-func TestNewServer_ConsoleEnabled_RoutesExist(t *testing.T) {
-	bus := events.NewBus()
-	defer bus.Close()
-
-	srv := NewServer(ServerConfig{
-		ListenAddr:     "127.0.0.1:0",
-		APIKey:         "test-key",
-		Logger:         newSilentLogger(),
-		EventBus:       bus,
-		ConsoleEnabled: true,
-	})
-
-	ts := httptest.NewServer(srv.Router())
-	defer ts.Close()
-
-	// Capabilities is the easiest reach — auth-gated, no token
-	// required, deterministic response shape.
+	// Capabilities — auth-gated, no token required, deterministic
+	// response.
 	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/v1/console/capabilities", nil)
 	req.Header.Set("Authorization", "Bearer test-key")
 	resp, err := http.DefaultClient.Do(req)
@@ -89,8 +52,8 @@ func TestNewServer_ConsoleEnabled_RoutesExist(t *testing.T) {
 		t.Errorf("capabilities status = %d, want 200", resp.StatusCode)
 	}
 
-	// Without auth, the same path must be unauthorized (proves the
-	// route is behind the API-key middleware, not unauth-readable).
+	// Same path without auth → 401 (proves the route is behind the
+	// API-key middleware, not unauth-readable).
 	req2, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/v1/console/capabilities", nil)
 	resp2, err := http.DefaultClient.Do(req2)
 	if err != nil {
@@ -110,5 +73,18 @@ func TestNewServer_ConsoleEnabled_RoutesExist(t *testing.T) {
 	defer resp3.Body.Close()
 	if resp3.StatusCode != http.StatusUnauthorized {
 		t.Errorf("token (no auth) status = %d, want 401", resp3.StatusCode)
+	}
+
+	// WS endpoint requires a single-use console token; no token in
+	// the query string ⇒ 401. (We don't drive the upgrade here;
+	// that lives in console/handler_test.go.)
+	req4, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/v1/console/ws", nil)
+	resp4, err := http.DefaultClient.Do(req4)
+	if err != nil {
+		t.Fatalf("ws (no token) request: %v", err)
+	}
+	defer resp4.Body.Close()
+	if resp4.StatusCode != http.StatusUnauthorized {
+		t.Errorf("ws (no token) status = %d, want 401", resp4.StatusCode)
 	}
 }

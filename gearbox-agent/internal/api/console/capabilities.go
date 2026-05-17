@@ -34,10 +34,10 @@ const (
 // where the operator expected host access, the dashboard hides the
 // console button and surfaces the reason in box settings.
 type CapabilitiesResponse struct {
-	// Enabled mirrors HAPROXY_AGENT_CONSOLE_ENABLED — true iff this
-	// surface is registered at all. Always true when this handler
-	// runs (registration is gated on the same flag), but exposed for
-	// symmetry with future "registered but degraded" states.
+	// Enabled is always true today — the agent unconditionally
+	// mounts the console surface. Kept in the envelope for
+	// symmetry with future "registered but degraded" states
+	// (e.g. a platform that probes negative for PTY support).
 	Enabled bool `json:"enabled" example:"true"`
 
 	// Mode is the exec strategy the agent will use when a session

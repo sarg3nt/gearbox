@@ -42,36 +42,51 @@ If your workflow is "I'm at my terminal anyway and have SSH keys
 distributed," keep using SSH. The console is for the
 "already-in-the-dashboard" path.
 
-## Mode A — Host install (the simple case)
+## Enable for a box
 
-Agent runs directly on the box (systemd unit on Linux, launchd on
-macOS). No container, no bridge — `pty.SpawnUnix` opens a real PTY
-and runs `/bin/bash -l` as the agent's UID.
+Console endpoints are always exposed by the agent — there is no
+agent-side enable flag. To turn on console for a specific box, flip
+the **Remote console** toggle on that box's settings page
+(*Settings → Boxes → \<box\> → Edit*). The dashboard's per-box
+toggle is the sole gate; flipping it off revokes access immediately.
 
-### Enable
+> [!IMPORTANT]
+> The agent's `/api/v1/console/*` endpoints accept any caller
+> holding the agent's API key. The per-box dashboard toggle only
+> gates the *dashboard's* proxy path; anyone who already has the
+> API key can open a session directly. This matches the existing
+> trust model — API key = full administrative control of the box
+> (logs, services, restart, etc.) — but is worth knowing.
 
-Edit the agent's environment (typically `/etc/default/gearbox-agent`
-or a systemd `Environment=` line):
+Optional agent-side configuration (these are runtime config, not
+access control):
 
 ```bash
-HAPROXY_AGENT_CONSOLE_ENABLED=true
-# optional overrides:
-# HAPROXY_AGENT_CONSOLE_SHELL=/bin/bash -l
-# HAPROXY_AGENT_CONSOLE_RUN_AS=1000   # numeric UID; default = inherit
+# /etc/default/gearbox-agent  (or systemd Environment= line)
+HAPROXY_AGENT_CONSOLE_SHELL=/bin/bash -l      # default
+HAPROXY_AGENT_CONSOLE_RUN_AS=1000             # numeric UID; default = inherit agent
+HAPROXY_AGENT_CONSOLE_IDLE_TIMEOUT=2h         # default 15m
+HAPROXY_AGENT_CONSOLE_RECORD=true             # off by default; see "Session recording"
 ```
 
-Restart the agent:
+Restart the agent after editing:
 
 ```bash
 sudo systemctl restart gearbox-agent
 ```
 
-Confirm with `journalctl -u gearbox-agent | grep -i console` — you
-should see:
+Confirm with `journalctl -u gearbox-agent | grep -i console`:
 
 ```text
-Console: ENABLED — token + WS at /api/v1/console/*; sessions inherit agent UID
+Console: endpoints mounted at /api/v1/console/* (per-box opt-in is dashboard-side)
 ```
+
+## Mode A — Host install (the simple case)
+
+Agent runs directly on the box (systemd unit on Linux, launchd on
+macOS). No container, no bridge — `pty.SpawnUnix` opens a real PTY
+and runs `/bin/bash -l` as the agent's UID. Nothing extra to
+configure; just flip the per-box toggle and go.
 
 ## Mode B.1 — Container with `pid:host` + `privileged` (nsenter)
 
@@ -97,7 +112,6 @@ services:
       - /:/host:ro              # so the host's bash path resolves
       - ./data:/var/lib/gearbox-agent
     environment:
-      HAPROXY_AGENT_CONSOLE_ENABLED: "true"
       HAPROXY_AGENT_HOST_EXEC: "nsenter"
       # the shell path is resolved in the HOST's mount ns, not the container's
       HAPROXY_AGENT_CONSOLE_SHELL: "/bin/bash -l"
@@ -107,7 +121,7 @@ Bring it up and check the agent log:
 
 ```text
 console: nsenter host-exec selected (container → host via PID 1 namespaces)
-Console: ENABLED — token + WS at /api/v1/console/*
+Console: endpoints mounted at /api/v1/console/* (per-box opt-in is dashboard-side)
 ```
 
 ## Mode B.2 — Container with SSH bridge (TrueNAS-friendly)
@@ -141,7 +155,6 @@ mount) on the host using a dedicated keypair.
 4. **Set the env vars on the agent**:
 
    ```bash
-   HAPROXY_AGENT_CONSOLE_ENABLED=true
    HAPROXY_AGENT_HOST_EXEC=ssh-bridge
    HAPROXY_AGENT_CONSOLE_SSH_HOST=127.0.0.1:22
    HAPROXY_AGENT_CONSOLE_SSH_USER=root
@@ -212,7 +225,8 @@ No rotation is built in — wire `logrotate` or a cron sweep yourself.
 
 | Symptom                                                       | Likely cause                                             | Fix                                                        |
 |---------------------------------------------------------------|----------------------------------------------------------|------------------------------------------------------------|
-| `/api/v1/console/*` returns 404                               | Agent has console disabled                               | Set `HAPROXY_AGENT_CONSOLE_ENABLED=true` and restart        |
+| `/api/v1/console/*` returns 404                               | Agent build predates this feature                        | Update agent to a build that includes #127 / post-#89       |
+| `/api/v1/console/capabilities` returns 404 from the dashboard | Per-box `console_enabled` toggle is off                  | Flip on at *Settings → Boxes → \<box\> → Edit*              |
 | `console icon missing on Bx tile`                             | User lacks `box_console:connect`                         | Grant via Settings → Users → Permissions                   |
 | `"Failed to open console session"` in browser                 | Agent unreachable, or token exchange failed              | Check agent logs, network from dashboard host to agent     |
 | `nsenter: namespaces unreachable`                             | Container missing `pid:host` or `privileged`             | Add both to compose / k8s manifest                         |
