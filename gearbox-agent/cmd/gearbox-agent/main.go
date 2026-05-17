@@ -542,7 +542,7 @@ func main() {
 	// backoff layered on top — see 2026-05 audit P1-7).
 	rateLimiter := middleware.DefaultRateLimiter(logger)
 	authBackoff := middleware.DefaultBackoffTracker(logger)
-	keyRingHandler := api.NewKeyRingHandler(server.KeyRing(), logger)
+	keyRingHandler := api.NewKeyRingHandler(server.KeyRing(), cfg.KeyRingPath, logger)
 	pluginRouter := server.Router().Group(func(r chi.Router) {
 		r.Use(middleware.RateLimitMiddleware(rateLimiter))
 		r.Use(middleware.APIKeyAuth(server.KeyRing(), logger, authBackoff))
