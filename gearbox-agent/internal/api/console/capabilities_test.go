@@ -2,6 +2,8 @@ package console
 
 import (
 	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -9,48 +11,86 @@ import (
 	"testing"
 )
 
-func TestCapabilities_Phase1aEnvelope(t *testing.T) {
-	// Pin Phase 1a's envelope so a refactor that accidentally claims
-	// "host_console: true" before the PTY lands is caught here. As
-	// later phases extend capabilities, these expectations evolve
-	// deliberately rather than drifting.
+// echoHandler returns a Handler with no Spawner — capabilities should
+// reflect echo mode regardless of platform.
+func echoHandler() *Handler {
+	return &Handler{
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Mode:   ModeEcho,
+	}
+}
+
+func TestCapabilities_EchoMode(t *testing.T) {
+	h := echoHandler()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/console/capabilities", nil)
 	rr := httptest.NewRecorder()
-
-	Capabilities(rr, req)
+	h.HandleCapabilities(rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rr.Code)
 	}
-	if ct := rr.Header().Get("Content-Type"); ct != "application/json" {
-		t.Errorf("Content-Type = %q, want application/json", ct)
-	}
-
 	var resp CapabilitiesResponse
 	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
 	if !resp.Enabled {
-		t.Error("enabled = false; if this handler runs, the surface is enabled")
+		t.Error("enabled = false; handler running ⇒ enabled")
 	}
 	if resp.Mode != ModeEcho {
-		t.Errorf("mode = %q, want %q (Phase 1a is echo-only)", resp.Mode, ModeEcho)
+		t.Errorf("mode = %q, want %q", resp.Mode, ModeEcho)
 	}
 	if resp.HostConsole {
-		t.Error("host_console = true; Phase 1a has no PTY yet so host access must be false")
-	}
-	if resp.Phase != "1a" {
-		t.Errorf("phase = %q, want \"1a\"", resp.Phase)
+		t.Error("host_console = true in echo mode; want false")
 	}
 	if resp.OS != runtime.GOOS {
 		t.Errorf("os = %q, want %q", resp.OS, runtime.GOOS)
 	}
+}
+
+func TestCapabilities_HostPTYMode(t *testing.T) {
+	// When a Spawner is set and Mode is HostPTY, the dashboard sees
+	// host_console=true and learns the actual shell it will get.
+	h := &Handler{
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Mode:   ModeHostPTY,
+		Shell:  []string{"/bin/bash", "-l"},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/console/capabilities", nil)
+	rr := httptest.NewRecorder()
+	h.HandleCapabilities(rr, req)
+
+	var resp CapabilitiesResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Mode != ModeHostPTY {
+		t.Errorf("mode = %q, want %q", resp.Mode, ModeHostPTY)
+	}
+	if !resp.HostConsole {
+		t.Error("host_console = false in host_pty mode; want true")
+	}
+	if len(resp.Shell) != 2 || resp.Shell[0] != "/bin/bash" {
+		t.Errorf("shell = %v, want [/bin/bash -l]", resp.Shell)
+	}
 	if runtime.GOOS == "windows" {
-		// Windows has no UID; we report -1 so dashboards can detect.
 		if resp.DefaultUID != -1 {
 			t.Errorf("default_uid = %d on windows, want -1", resp.DefaultUID)
 		}
 	} else if resp.DefaultUID != os.Geteuid() {
-		t.Errorf("default_uid = %d, want %d (process euid)", resp.DefaultUID, os.Geteuid())
+		t.Errorf("default_uid = %d, want %d", resp.DefaultUID, os.Geteuid())
+	}
+}
+
+func TestCapabilities_NsenterAndSSHBridgeAreHostConsole(t *testing.T) {
+	// These modes don't ship in Phase 1b but the host_console
+	// classifier must already report them correctly so the dashboard
+	// can wire its conditional UI ahead of time.
+	for _, mode := range []string{ModeNsenter, ModeSSHBridge} {
+		if !hostConsoleForMode(mode) {
+			t.Errorf("hostConsoleForMode(%q) = false, want true", mode)
+		}
+	}
+	if hostConsoleForMode(ModeEcho) {
+		t.Error("hostConsoleForMode(echo) = true, want false")
 	}
 }

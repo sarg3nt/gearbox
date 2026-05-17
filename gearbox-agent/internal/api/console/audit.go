@@ -40,7 +40,12 @@ func emitSessionStart(bus auditPublisher, sessionID, remoteAddr, mode string, ef
 // bytesIn / bytesOut count payload bytes (decoded data frames, not the
 // JSON envelopes) so operators can spot "user pasted the entire log"
 // outliers without recording session content.
-func emitSessionEnd(bus auditPublisher, sessionID, reason string, bytesIn, bytesOut int64, duration time.Duration) {
+//
+// exitCode is the child process's exit status when a real PTY was
+// attached; -1 for echo mode (no child), -1 when the child was killed
+// before producing a code. The dashboard distinguishes "operator
+// closed the tab" from "shell exited" by combining reason + exit code.
+func emitSessionEnd(bus auditPublisher, sessionID, reason string, bytesIn, bytesOut int64, duration time.Duration, exitCode int) {
 	if bus == nil {
 		return
 	}
@@ -53,6 +58,7 @@ func emitSessionEnd(bus auditPublisher, sessionID, reason string, bytesIn, bytes
 			"bytes_in":    bytesIn,
 			"bytes_out":   bytesOut,
 			"duration_ms": duration.Milliseconds(),
+			"exit_code":   exitCode,
 		},
 	})
 }

@@ -1,26 +1,31 @@
 package console
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/sarg3nt/gearbox-agent/internal/api/console/pty"
 	"github.com/sarg3nt/gearbox-agent/internal/framework/events"
 )
 
 // Handler owns the runtime state for the /api/v1/console/* surface —
-// the token manager and the audit event bus. Construct one per Server.
+// the token manager, the audit event bus, and the PTY spawner.
+// Construct one per Server.
 type Handler struct {
 	Tokens *TokenManager
 	Logger *slog.Logger
@@ -31,6 +36,34 @@ type Handler struct {
 	// subscribe, it only publishes.
 	Audit auditPublisher
 
+	// Shell is the command run inside the PTY. Defaults to
+	// /bin/bash -l on linux/darwin; the agent reads
+	// HAPROXY_AGENT_CONSOLE_SHELL to override for non-bash hosts
+	// (alpine, BSD, etc.). The split into argv slots avoids ever
+	// running through a parent shell — no opportunity for word
+	// splitting / glob expansion of operator-supplied strings.
+	Shell []string
+
+	// RunAsUID is an optional numeric UID the spawned shell drops
+	// to before exec. Empty (default) means inherit the agent's UID
+	// — which on a root agent yields a root shell, by design.
+	// See [#89] for the privilege model.
+	RunAsUID string
+
+	// Spawner is the function used to attach a PTY to the WS. nil
+	// means "echo mode" — frames are bounced back to the client
+	// without a real shell. This is the Phase 1a path; production
+	// installs set Spawner to pty.SpawnUnix (or its container/SSH
+	// equivalents from later phases). Tests inject directly to
+	// avoid spawning real processes.
+	Spawner pty.Spawner
+
+	// Mode is the string value reported in the capabilities envelope
+	// and in audit events. Defaults to ModeEcho when Spawner is nil,
+	// ModeHostPTY when Spawner is set. Container/SSH wiring in later
+	// phases overrides this at construction.
+	Mode string
+
 	// IdleTimeout bounds how long a session may sit silent before the
 	// server hangs it up. Defaults to 15 minutes — shells left open in
 	// a forgotten browser tab are the most common source of long-lived
@@ -39,31 +72,73 @@ type Handler struct {
 	IdleTimeout time.Duration
 
 	// MaxFrameBytes caps the size of a single inbound frame (after JSON
-	// decode + base64 decode of Data). Phase 1a is echo-only, so any
-	// frame the agent has to copy back into its own buffer is bounded
-	// here. The default 64 KiB matches a generous paste from a
-	// terminal; legitimate interactive use is many orders of magnitude
-	// smaller.
+	// decode + base64 decode of Data). The default 64 KiB matches a
+	// generous paste from a terminal; legitimate interactive use is
+	// many orders of magnitude smaller.
 	MaxFrameBytes int
+
+	// ReadBufBytes sizes the buffer used to pump PTY stdout to the WS.
+	// 4 KiB is a sensible default for character-at-a-time interactive
+	// traffic — a single screen redraw fits in two or three frames.
+	ReadBufBytes int
 }
 
 // NewHandler constructs a Handler with sensible defaults. Pass the
 // production event bus as audit — tests construct the Handler directly
 // with an injected capture instead of calling this.
+//
+// When [pty.SpawnUnix] is available on the build platform, it's wired
+// in as the default spawner so the agent gets a real shell out of the
+// box on Linux and macOS. On Windows the spawner is nil — the handler
+// degrades to echo mode and capabilities reports host_console=false
+// until the ConPTY backend ships in Phase 3.
 func NewHandler(bus *events.Bus, logger *slog.Logger) *Handler {
 	h := &Handler{
 		Tokens:        NewTokenManager(),
 		Logger:        logger,
 		IdleTimeout:   15 * time.Minute,
 		MaxFrameBytes: 64 * 1024,
+		ReadBufBytes:  4 * 1024,
+		Shell:         defaultShell(),
 	}
-	// Storing bus directly as auditPublisher would wrap a nil *events.Bus
-	// in a non-nil interface — emitSessionStart's nil-check wouldn't fire
-	// and we'd panic. Only set Audit when there's a real bus.
 	if bus != nil {
 		h.Audit = bus
 	}
+	if hostSpawnerAvailable() {
+		h.Spawner = pty.SpawnUnix
+		h.Mode = ModeHostPTY
+	} else {
+		h.Mode = ModeEcho
+	}
+	// Allow operator override of the shell via env. Keep the parsing
+	// trivial — split on spaces; operators who need quoting can wrap
+	// in `sh -c`.
+	if v := os.Getenv("HAPROXY_AGENT_CONSOLE_SHELL"); v != "" {
+		h.Shell = strings.Fields(v)
+	}
+	if v := os.Getenv("HAPROXY_AGENT_CONSOLE_RUN_AS"); v != "" {
+		h.RunAsUID = v
+	}
 	return h
+}
+
+// hostSpawnerAvailable reports whether pty.SpawnUnix on this platform
+// actually returns a usable session. unix builds say yes; windows builds
+// link a stub that returns ErrNotImplemented, so we say no there.
+func hostSpawnerAvailable() bool {
+	return runtime.GOOS != "windows"
+}
+
+// defaultShell returns the platform's typical interactive login shell.
+// The empty-array case (Windows) is never used because the spawner is
+// nil there.
+func defaultShell() []string {
+	switch runtime.GOOS {
+	case "windows":
+		return []string{"powershell.exe", "-NoLogo"}
+	default:
+		return []string{"/bin/bash", "-l"}
+	}
 }
 
 // Close releases the token manager's cleanup goroutine.
@@ -166,8 +241,6 @@ func canonicalOrigin(s string) (string, bool) {
 
 func canonicalHost(scheme, hostPort string) string {
 	scheme = strings.ToLower(scheme)
-	// net.SplitHostPort handles IPv6 brackets; fall back to the raw
-	// value when there's no port at all.
 	host, port, err := net.SplitHostPort(strings.ToLower(hostPort))
 	if err != nil {
 		host = strings.Trim(strings.ToLower(hostPort), "[]")
@@ -183,14 +256,15 @@ func canonicalHost(scheme, hostPort string) string {
 // Token is required via the ?token= query parameter; only single-use
 // console tokens issued via POST /api/v1/console/token are accepted.
 //
-// Phase 1a: every inbound FrameTypeData is echoed back verbatim. Resize,
-// signal, and ping frames are accepted and acknowledged but have no
-// side effects (no PTY exists yet). The handler emits
-// EventConsoleSessionStart on successful upgrade and
-// EventConsoleSessionEnd when the connection closes for any reason.
+// When Spawner is set (the production path on Linux/macOS), the
+// handler attaches a real PTY to the WS: stdin/stdout flow through
+// FrameTypeData, resize requests reach the kernel, signals reach the
+// process group, and audit events record the child's exit code. When
+// Spawner is nil (Phase 1a fallback, Windows pre-Phase-3), data
+// frames are echoed back to the client.
 //
 //	@Summary		Console WebSocket
-//	@Description	Upgrades to a WebSocket carrying a JSON-framed console session. Pass a valid token from POST /api/v1/console/token in the ?token= query parameter. Phase 1a echoes data frames back to the client; later phases attach a PTY.
+//	@Description	Upgrades to a WebSocket carrying a JSON-framed console session. Pass a valid token from POST /api/v1/console/token in the ?token= query parameter. When the agent has a PTY backend, a real shell is attached; otherwise data frames are echoed.
 //	@Tags			Console
 //	@Produce		json
 //	@Param			token	query	string	true	"Single-use console token from /api/v1/console/token"
@@ -206,8 +280,6 @@ func (h *Handler) HandleWS(w http.ResponseWriter, r *http.Request) {
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		// Upgrader has already written an HTTP error response; just
-		// log so we have a breadcrumb.
 		if h.Logger != nil {
 			h.Logger.Warn("console: WS upgrade failed", "remote_addr", r.RemoteAddr, "error", err)
 		}
@@ -218,25 +290,37 @@ func (h *Handler) HandleWS(w http.ResponseWriter, r *http.Request) {
 	sessionID := newSessionID()
 	startedAt := time.Now()
 	uid := os.Geteuid()
+	mode := h.Mode
+	if mode == "" {
+		mode = ModeEcho
+	}
 
-	emitSessionStart(h.Audit, sessionID, r.RemoteAddr, ModeEcho, uid, startedAt)
+	emitSessionStart(h.Audit, sessionID, r.RemoteAddr, mode, uid, startedAt)
 	if h.Logger != nil {
 		h.Logger.Info("console: session opened",
 			"session_id", sessionID,
 			"remote_addr", r.RemoteAddr,
-			"mode", ModeEcho,
+			"mode", mode,
 			"effective_uid", uid,
+			"run_as", h.RunAsUID,
 		)
 	}
 
 	var bytesIn, bytesOut atomic.Int64
-	reason := h.echoLoop(conn, &bytesIn, &bytesOut)
+	var reason string
+	var exitCode int
+	if h.Spawner != nil {
+		reason, exitCode = h.ptyLoop(r.Context(), conn, &bytesIn, &bytesOut)
+	} else {
+		reason = h.echoLoop(conn, &bytesIn, &bytesOut)
+	}
 
-	emitSessionEnd(h.Audit, sessionID, reason, bytesIn.Load(), bytesOut.Load(), time.Since(startedAt))
+	emitSessionEnd(h.Audit, sessionID, reason, bytesIn.Load(), bytesOut.Load(), time.Since(startedAt), exitCode)
 	if h.Logger != nil {
 		h.Logger.Info("console: session closed",
 			"session_id", sessionID,
 			"reason", reason,
+			"exit_code", exitCode,
 			"bytes_in", bytesIn.Load(),
 			"bytes_out", bytesOut.Load(),
 			"duration_ms", time.Since(startedAt).Milliseconds(),
@@ -244,9 +328,178 @@ func (h *Handler) HandleWS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// echoLoop reads frames from the client, echoes data frames back, and
-// keeps the connection alive with pings. Returns the close reason
-// (a short tag suitable for the audit event).
+// ptyLoop is the production path. It spawns a shell via h.Spawner,
+// then runs three goroutines: WS reader (client → PTY), PTY reader
+// (PTY → client), and ping ticker. The first one to error wins and
+// drives the close reason.
+//
+// Returns (reason, exitCode). exitCode is the child's exit status
+// when reason == "exit"; -1 otherwise.
+func (h *Handler) ptyLoop(parentCtx context.Context, conn *websocket.Conn, bytesIn, bytesOut *atomic.Int64) (string, int) {
+	conn.SetReadLimit(int64(h.MaxFrameBytes) * 2)
+	_ = conn.SetReadDeadline(time.Now().Add(h.IdleTimeout))
+	conn.SetPongHandler(func(string) error {
+		_ = conn.SetReadDeadline(time.Now().Add(h.IdleTimeout))
+		return nil
+	})
+
+	// Wire context cancellation to PTY child termination — when the
+	// outer request context cancels (server shutdown, client drop),
+	// the SpawnContext-backed exec.Cmd kills the child for us.
+	ctx, cancel := context.WithCancel(parentCtx)
+	defer cancel()
+
+	sess, err := h.Spawner(ctx, h.Shell, h.RunAsUID, 80, 24)
+	if err != nil {
+		h.writeErr(conn, ErrCodeInternal, "failed to start shell")
+		if h.Logger != nil {
+			h.Logger.Error("console: spawner failed", "error", err)
+		}
+		return "spawn_error", -1
+	}
+	defer func() { _ = sess.Close() }()
+
+	// reasonCh is buffered to 1 so the first writer wins and the
+	// others drop their reason silently. Each goroutine that can
+	// terminate the session writes here and then returns.
+	reasonCh := make(chan string, 1)
+
+	// PTY → WS pump. When the child exits (PTY EOF) or the master
+	// FD goes away, we close the WS connection — that wakes up the
+	// WS reader's blocking ReadMessage so the outer loop can collect
+	// the reason and emit the session-end audit event.
+	go func() {
+		defer func() { _ = conn.Close() }()
+		buf := make([]byte, h.ReadBufBytes)
+		for {
+			n, err := sess.Reader().Read(buf)
+			if n > 0 {
+				out := Frame{
+					Type: FrameTypeData,
+					Data: base64.StdEncoding.EncodeToString(buf[:n]),
+				}
+				if werr := h.writeFrame(conn, out); werr != nil {
+					select {
+					case reasonCh <- "write_error":
+					default:
+					}
+					return
+				}
+				bytesOut.Add(int64(n))
+			}
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					select {
+					case reasonCh <- "exit":
+					default:
+					}
+				} else {
+					select {
+					case reasonCh <- "pty_read_error":
+					default:
+					}
+				}
+				return
+			}
+		}
+	}()
+
+	// Ping ticker (keep-alive)
+	pingDone := make(chan struct{})
+	defer close(pingDone)
+	go func() {
+		ticker := time.NewTicker(pingPeriod)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				_ = conn.SetWriteDeadline(time.Now().Add(writeWait))
+				if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+					return
+				}
+			case <-pingDone:
+				return
+			}
+		}
+	}()
+
+	// WS → PTY pump (this goroutine, since we need to block until
+	// some terminal condition).
+	wsReason := h.pumpWStoPTY(conn, sess, bytesIn)
+	// The PTY-side goroutine writes its reason to reasonCh *before*
+	// it closes the WS conn. So if the WS pump just returned because
+	// of a conn close initiated by the PTY pump, reasonCh already
+	// has the real reason. Prefer it over the WS pump's
+	// generic "client_close". A short timeout absorbs the rare
+	// scheduling race where this goroutine wakes up before the
+	// reasonCh write commits.
+	var reason string
+	select {
+	case reason = <-reasonCh:
+	case <-time.After(50 * time.Millisecond):
+		reason = wsReason
+	}
+
+	// Kill the child and wait for the reaper to settle so the exit
+	// code is populated.
+	cancel()
+	exitCode := sess.Wait()
+	return reason, exitCode
+}
+
+// pumpWStoPTY reads frames from the WS and dispatches them to the
+// PTY. Returns the close reason, or "" if the WS pump terminated
+// without owning the close (PTY-side goroutine got there first).
+func (h *Handler) pumpWStoPTY(conn *websocket.Conn, sess pty.Session, bytesIn *atomic.Int64) string {
+	for {
+		_, raw, err := conn.ReadMessage()
+		if err != nil {
+			if isIdleTimeout(err) {
+				return "idle_timeout"
+			}
+			return "client_close"
+		}
+		var f Frame
+		if err := json.Unmarshal(raw, &f); err != nil {
+			h.writeErr(conn, ErrCodeProtocolViolation, "invalid frame")
+			return "protocol_violation"
+		}
+		switch f.Type {
+		case FrameTypeData:
+			payload, err := base64.StdEncoding.DecodeString(f.Data)
+			if err != nil {
+				h.writeErr(conn, ErrCodeProtocolViolation, "invalid base64 in data frame")
+				return "protocol_violation"
+			}
+			if len(payload) > h.MaxFrameBytes {
+				h.writeErr(conn, ErrCodeProtocolViolation, "data frame exceeds max size")
+				return "protocol_violation"
+			}
+			if _, werr := sess.Write(payload); werr != nil {
+				return "pty_write_error"
+			}
+			bytesIn.Add(int64(len(payload)))
+		case FrameTypeResize:
+			if f.Cols > 0 && f.Rows > 0 && f.Cols < 1<<16 && f.Rows < 1<<16 {
+				_ = sess.Resize(uint16(f.Cols), uint16(f.Rows))
+			}
+		case FrameTypeSignal:
+			if f.Signal != "" {
+				_ = sess.Signal(f.Signal)
+			}
+		case FrameTypePing:
+			if err := h.writeFrame(conn, Frame{Type: FrameTypePong}); err != nil {
+				return "write_error"
+			}
+		default:
+			h.writeErr(conn, ErrCodeProtocolViolation, "unknown frame type")
+			return "protocol_violation"
+		}
+	}
+}
+
+// echoLoop is the test/fallback path. Behavior matches Phase 1a: data
+// frames are echoed, resize/signal are no-ops, ping → pong.
 //
 // The loop terminates when:
 //   - the client closes the WS (reason "client_close"),
@@ -254,10 +507,7 @@ func (h *Handler) HandleWS(w http.ResponseWriter, r *http.Request) {
 //   - a malformed frame arrives (reason "protocol_violation"),
 //   - a write fails (reason "write_error").
 func (h *Handler) echoLoop(conn *websocket.Conn, bytesIn, bytesOut *atomic.Int64) string {
-	// Read deadline gets pushed forward on every message; the idle
-	// timeout enforces the gap-between-messages cap. Initial deadline
-	// is the idle timeout itself.
-	conn.SetReadLimit(int64(h.MaxFrameBytes) * 2) // *2 to accommodate base64 + JSON envelope overhead
+	conn.SetReadLimit(int64(h.MaxFrameBytes) * 2)
 	deadline := time.Now().Add(h.IdleTimeout)
 	_ = conn.SetReadDeadline(deadline)
 	conn.SetPongHandler(func(string) error {
@@ -265,8 +515,6 @@ func (h *Handler) echoLoop(conn *websocket.Conn, bytesIn, bytesOut *atomic.Int64
 		return nil
 	})
 
-	// Ping ticker keeps the connection from looking dead to NAT /
-	// load balancer middleware.
 	pingDone := make(chan struct{})
 	defer close(pingDone)
 	go func() {
@@ -305,9 +553,6 @@ func (h *Handler) echoLoop(conn *websocket.Conn, bytesIn, bytesOut *atomic.Int64
 
 		switch f.Type {
 		case FrameTypeData:
-			// Decode just to update the audit byte counter, then
-			// echo the *original* envelope back so the client gets
-			// byte-for-byte what it sent.
 			payload, err := base64.StdEncoding.DecodeString(f.Data)
 			if err != nil {
 				h.writeErr(conn, ErrCodeProtocolViolation, "invalid base64 in data frame")
@@ -318,23 +563,17 @@ func (h *Handler) echoLoop(conn *websocket.Conn, bytesIn, bytesOut *atomic.Int64
 				return "protocol_violation"
 			}
 			bytesIn.Add(int64(len(payload)))
-
 			out := Frame{Type: FrameTypeData, Data: f.Data}
 			if err := h.writeFrame(conn, out); err != nil {
 				return "write_error"
 			}
 			bytesOut.Add(int64(len(payload)))
-
 		case FrameTypePing:
 			if err := h.writeFrame(conn, Frame{Type: FrameTypePong}); err != nil {
 				return "write_error"
 			}
-
 		case FrameTypeResize, FrameTypeSignal:
-			// Phase 1a: accept, no-op. The dashboard can start
-			// sending these now and they'll start mattering in
-			// Phase 1b.
-
+			// Echo mode: accept and ignore.
 		default:
 			h.writeErr(conn, ErrCodeProtocolViolation, "unknown frame type")
 			return "protocol_violation"
@@ -369,9 +608,6 @@ func isIdleTimeout(err error) bool {
 func newSessionID() string {
 	b := make([]byte, 8)
 	if _, err := rand.Read(b); err != nil {
-		// Fall back to a timestamp-derived ID if the OS RNG fails —
-		// extremely unlikely, and we'd rather have a less-unique ID
-		// than no session record at all.
 		return time.Now().UTC().Format("20060102T150405.000000")
 	}
 	return hex.EncodeToString(b)

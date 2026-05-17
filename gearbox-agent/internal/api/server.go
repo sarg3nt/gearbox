@@ -179,7 +179,7 @@ func NewServer(cfg ServerConfig) *Server {
 		// itself uses the single-use token and is mounted above.
 		if consoleHandler != nil {
 			r.Post("/api/v1/console/token", consoleHandler.Tokens.HandleTokenExchange)
-			r.Get("/api/v1/console/capabilities", console.Capabilities)
+			r.Get("/api/v1/console/capabilities", consoleHandler.HandleCapabilities)
 		}
 	})
 
