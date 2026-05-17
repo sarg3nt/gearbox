@@ -1,12 +1,15 @@
 package api
 
 import (
+	"encoding/hex"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/sarg3nt/gearbox-agent/internal/framework/crypto"
 	"github.com/sarg3nt/gearbox-agent/internal/framework/events"
 )
 
@@ -29,9 +32,21 @@ func TestNewServer_ConsoleRoutesAlwaysMounted(t *testing.T) {
 	bus := events.NewBus()
 	defer bus.Close()
 
+	// Build a one-entry keyring whose legacy bare-hex token the test
+	// then sends in the Authorization header. The keyring replaced the
+	// single-string APIKey field on ServerConfig (issue #72).
+	testSecret := strings.Repeat("ab", 32) // 64 hex chars / 32 bytes
+	secretBytes, _ := hex.DecodeString(testSecret)
+	kr := &crypto.KeyRing{
+		Version: 1,
+		Entries: []crypto.KeyRingEntry{{
+			KID: "legacy", Secret: secretBytes, SecretHex: testSecret, Role: "primary",
+		}},
+	}
+
 	srv := NewServer(ServerConfig{
 		ListenAddr: "127.0.0.1:0",
-		APIKey:     "test-key",
+		KeyRing:    crypto.NewKeyRingPointer(kr),
 		Logger:     newSilentLogger(),
 		EventBus:   bus,
 	})
@@ -42,7 +57,7 @@ func TestNewServer_ConsoleRoutesAlwaysMounted(t *testing.T) {
 	// Capabilities — auth-gated, no token required, deterministic
 	// response.
 	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/v1/console/capabilities", nil)
-	req.Header.Set("Authorization", "Bearer test-key")
+	req.Header.Set("Authorization", "Bearer "+testSecret)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("capabilities request: %v", err)
