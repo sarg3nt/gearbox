@@ -35,8 +35,18 @@ type Config struct {
 	// whitespace around each entry is trimmed, empty entries are dropped.
 	TLSHosts []string
 
-	// API key settings
-	APIKeyPath string
+	// API key settings.
+	//
+	// APIKeyPath is the legacy single-key file; retained for backwards
+	// compatibility with installs that pre-date the keyring. On startup
+	// the agent migrates its contents into a single keyring entry
+	// (kid="legacy", role=primary) and the file is left in place as a
+	// read-only fallback for one release cycle.
+	//
+	// KeyRingPath is the new N-entry rotating keyring (issue #72).
+	// Defaults to <DataDir>/keyring.json.
+	APIKeyPath  string
+	KeyRingPath string
 
 	// Data directory for state, certs, etc.
 	DataDir string
@@ -174,6 +184,7 @@ func Load() (*Config, error) {
 	}
 	cfg.TLSHosts = parseCommaList(os.Getenv("HAPROXY_AGENT_TLS_HOSTS"))
 	cfg.APIKeyPath = getEnvOrDefault("HAPROXY_AGENT_API_KEY_PATH", cfg.DataDir+"/api-key")
+	cfg.KeyRingPath = getEnvOrDefault("GEARBOX_AGENT_KEYRING_PATH", cfg.DataDir+"/keyring.json")
 
 	// Logging
 	if v := os.Getenv("HAPROXY_AGENT_LOG_LEVEL"); v != "" {
