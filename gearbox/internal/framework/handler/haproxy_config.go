@@ -95,13 +95,14 @@ func (h *Handler) HAProxyBoxCreatePost(w http.ResponseWriter, r *http.Request) {
 
 	// Parse form into server struct
 	server := &database.BoxDB{
-		BoxID:     strings.TrimSpace(r.FormValue("box_id")),
-		Name:      strings.TrimSpace(r.FormValue("name")),
-		Location:  strings.TrimSpace(r.FormValue("location")),
-		Notes:     strings.TrimSpace(r.FormValue("notes")),
-		AgentURL:  strings.TrimSpace(r.FormValue("agent_url")),
-		Enabled:   r.FormValue("enabled") == "on",
-		CreatedBy: &user.ID,
+		BoxID:          strings.TrimSpace(r.FormValue("box_id")),
+		Name:           strings.TrimSpace(r.FormValue("name")),
+		Location:       strings.TrimSpace(r.FormValue("location")),
+		Notes:          strings.TrimSpace(r.FormValue("notes")),
+		AgentURL:       strings.TrimSpace(r.FormValue("agent_url")),
+		Enabled:        r.FormValue("enabled") == "on",
+		ConsoleEnabled: r.FormValue("console_enabled") == "on",
+		CreatedBy:      &user.ID,
 	}
 
 	// Validate required fields
@@ -230,6 +231,7 @@ func (h *Handler) HAProxyBoxUpdatePost(w http.ResponseWriter, r *http.Request) {
 	server.Notes = strings.TrimSpace(r.FormValue("notes"))
 	server.AgentURL = strings.TrimSpace(r.FormValue("agent_url"))
 	server.Enabled = r.FormValue("enabled") == "on"
+	server.ConsoleEnabled = r.FormValue("console_enabled") == "on"
 
 	// Update API key if provided
 	apiKey := strings.TrimSpace(r.FormValue("api_key"))

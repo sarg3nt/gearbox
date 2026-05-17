@@ -39,6 +39,23 @@ const (
 	EventAptCompleted EventType = "apt.completed"
 	// EventAptFailed is emitted when a package manager operation fails.
 	EventAptFailed EventType = "apt.failed"
+
+	// EventConsoleSessionStart is emitted when a remote-console session
+	// opens (after token validation + WebSocket upgrade). Payload includes
+	// the session ID, effective UID, remote address, mode, and start time.
+	// This is the load-bearing audit record — every shell session must
+	// emit one. See [#89].
+	EventConsoleSessionStart EventType = "console.session.start"
+	// EventConsoleSessionEnd is emitted when a remote-console session
+	// closes for any reason (client disconnect, exit, error, idle
+	// timeout). Payload includes the matching session ID, byte counts in
+	// both directions, exit reason, and duration.
+	EventConsoleSessionEnd EventType = "console.session.end"
+	// EventConsoleConfigChange is emitted when console settings are
+	// modified at the agent (currently env-driven; reserved for future
+	// API-driven config). Operators rely on this to detect surprise
+	// console-enabling.
+	EventConsoleConfigChange EventType = "console.config.change"
 )
 
 // Event represents an event in the system.

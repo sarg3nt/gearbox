@@ -98,6 +98,20 @@ func NewClientWithTimeout(baseURL, apiKey string, timeout time.Duration) *Client
 	}
 }
 
+// BuildTLSConfig is the exported alias for createTLSConfig — used by
+// code paths outside the HTTP client (e.g. the dashboard's console
+// WebSocket proxy in handler/api_console.go) that need to dial agents
+// with the same trust policy as a regular API call.
+//
+// Keeping a single implementation behind one exported entry point
+// means a future operator who sets AGENT_CA_CERT_PATH gets both REST
+// and WebSocket dials pinned in one place, instead of "REST is
+// pinned but the WS proxy quietly accepts anything." See #89
+// follow-up.
+func BuildTLSConfig() *tls.Config {
+	return createTLSConfig()
+}
+
 // createTLSConfig creates a TLS configuration with certificate verification.
 // Supports three modes via environment variables:
 // 1. AGENT_CA_CERT_PATH: Path to CA certificate for validation (RECOMMENDED)

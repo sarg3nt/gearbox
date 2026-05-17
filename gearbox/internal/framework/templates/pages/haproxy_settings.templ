@@ -472,6 +472,24 @@ templ haProxyBoxForm(user *models.User, server *database.BoxDB, isEdit bool, err
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Box will be monitored when enabled</p>
 					</div>
 					<div>
+						<label class="flex items-center">
+							<input
+								type="checkbox"
+								name="console_enabled"
+								if server != nil && server.ConsoleEnabled {
+									checked
+								}
+								class="rounded border-gray-300 dark:border-gray-600 text-emerald-600 focus:ring-emerald-500 dark:bg-slate-700"
+							/>
+							<span class="ml-2 text-sm text-gray-700 dark:text-gray-300">Remote console</span>
+						</label>
+						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+							Allow opening a shell on this box from the dashboard.
+							Off by default. Requires <code class="px-1 rounded bg-gray-100 dark:bg-slate-700 text-xs">HAPROXY_AGENT_CONSOLE_ENABLED=true</code> on the agent and
+							<code class="px-1 rounded bg-gray-100 dark:bg-slate-700 text-xs">box_console:connect</code> on the user. See <a href="https://github.com/sarg3nt/gearbox/issues/89" class="text-blue-600 dark:text-blue-400 hover:underline">#89</a>.
+						</p>
+					</div>
+					<div>
 						<label for="location" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
 							Location
 						</label>

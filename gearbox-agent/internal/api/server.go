@@ -16,6 +16,7 @@ import (
 	httpSwagger "github.com/swaggo/http-swagger"
 
 	_ "github.com/sarg3nt/gearbox-agent/docs" // Swagger docs
+	"github.com/sarg3nt/gearbox-agent/internal/api/console"
 	"github.com/sarg3nt/gearbox-agent/internal/framework/events"
 	frameworkmiddleware "github.com/sarg3nt/gearbox-agent/internal/framework/middleware"
 )
@@ -52,6 +53,14 @@ type ServerConfig struct {
 	// endpoints + schemas. Default false (off in production). See
 	// 2026-05 security audit P3-2.
 	SwaggerEnabled bool
+
+	// ConsoleEnabled, when true, mounts the remote-console endpoints
+	// (POST /api/v1/console/token, GET /api/v1/console/ws, GET
+	// /api/v1/console/capabilities). When false, those paths return
+	// 404 — the surface doesn't exist. Off by default. See [#89]; the
+	// dashboard adds a second per-box opt-in on top of this. Phase 1a
+	// echoes data frames; later phases attach a real PTY.
+	ConsoleEnabled bool
 
 	// WebSocket settings (optional)
 	EventBus *events.Bus
@@ -128,6 +137,21 @@ func NewServer(cfg ServerConfig) *Server {
 		})
 	}
 
+	// Remote console handler (optional, token-gated WebSocket). Mounted
+	// only when HAPROXY_AGENT_CONSOLE_ENABLED=true; otherwise the
+	// routes simply don't exist (404). Phase 1a echo-only — see [#89]
+	// for the staged rollout.
+	var consoleHandler *console.Handler
+	if cfg.ConsoleEnabled {
+		consoleHandler = console.NewHandler(cfg.EventBus, cfg.Logger)
+		// The token-exchange + capabilities endpoints sit behind the
+		// shared API-key + rate-limit + auth-backoff stack; the WS
+		// endpoint trusts the single-use token alone (consistent
+		// with /api/v1/events).
+		r.With(frameworkmiddleware.RateLimitMiddleware(rateLimiter)).Get(
+			"/api/v1/console/ws", consoleHandler.HandleWS)
+	}
+
 	// Protected API routes (require API key auth)
 	r.Group(func(r chi.Router) {
 		r.Use(frameworkmiddleware.RateLimitMiddleware(rateLimiter))
@@ -148,6 +172,14 @@ func NewServer(cfg ServerConfig) *Server {
 			if wsHandler != nil {
 				r.Get("/api/v1/events/info", wsHandler.HandleWSInfo)
 			}
+		}
+
+		// Console token exchange + capabilities (if enabled). These two
+		// sit inside the API-key + auth-backoff group; the WS endpoint
+		// itself uses the single-use token and is mounted above.
+		if consoleHandler != nil {
+			r.Post("/api/v1/console/token", consoleHandler.Tokens.HandleTokenExchange)
+			r.Get("/api/v1/console/capabilities", consoleHandler.HandleCapabilities)
 		}
 	})
 

@@ -77,6 +77,43 @@
         return span;
     }
 
+    // consoleFormatter renders a one-click "open console" icon per row.
+    // The SVG is built with explicit DOM nodes (no innerHTML) to satisfy
+    // the project's CSP and lint hygiene; the icon content is static
+    // anyway. We don't pre-check capabilities here — the click handler
+    // hits /api/console/{id}/capabilities and degrades gracefully if
+    // console isn't enabled on that box. Lazy keeps the grid render
+    // cheap (no per-row fetch on page load).
+    function consoleFormatter(cell) {
+        // Skip rendering for boxes that haven't opted in — keeps the
+        // column visually quiet for fleets where most boxes don't
+        // have console enabled. The data still flows through (so a
+        // live row update can light it up), we just don't paint the
+        // button.
+        const row = cell.getRow().getData();
+        if (!row || !row.console_enabled) {
+            return '';
+        }
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'bx-console-btn inline-flex items-center justify-center w-7 h-7 rounded text-slate-500 hover:text-emerald-500 hover:bg-slate-100 dark:hover:bg-slate-700';
+        btn.title = 'Open console (>_)';
+        const svgNS = 'http://www.w3.org/2000/svg';
+        const svg = document.createElementNS(svgNS, 'svg');
+        svg.setAttribute('class', 'w-4 h-4');
+        svg.setAttribute('fill', 'none');
+        svg.setAttribute('stroke', 'currentColor');
+        svg.setAttribute('viewBox', '0 0 24 24');
+        const path = document.createElementNS(svgNS, 'path');
+        path.setAttribute('stroke-linecap', 'round');
+        path.setAttribute('stroke-linejoin', 'round');
+        path.setAttribute('stroke-width', '2');
+        path.setAttribute('d', 'M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z');
+        svg.appendChild(path);
+        btn.appendChild(svg);
+        return btn;
+    }
+
     function emDashIfEmpty(cell) {
         const v = cell.getValue();
         if (v == null || v === '') {
@@ -201,6 +238,24 @@
                     cssClass: 'bx-col-status',
                 },
                 { title: 'Name', field: 'name', formatter: nameFormatter, minWidth: 140 },
+                {
+                    title: '',
+                    field: '_console',
+                    width: 44,
+                    minWidth: 44,
+                    hozAlign: 'center',
+                    headerSort: false,
+                    formatter: consoleFormatter,
+                    cellClick: function (e, cell) {
+                        e.stopPropagation();
+                        const d = cell.getRow().getData();
+                        if (window.openConsole) {
+                            window.openConsole(d.id, d.name);
+                        }
+                    },
+                    headerTooltip: 'Open remote console (requires box_console:connect)',
+                    cssClass: 'bx-col-console',
+                },
                 { title: 'Location', field: 'location', formatter: emDashIfEmpty, minWidth: 120 },
                 { title: 'Agent', field: 'agent_url', formatter: agentFormatter, minWidth: 200 },
                 {
@@ -299,6 +354,32 @@
             group: 'Bx',
             run: function () { window.location.assign('/settings/boxes/new'); },
         });
+
+        // One "Console: <box>" entry per row in the initial snapshot.
+        // The palette is the keyboard path into console; the tile icon
+        // is the mouse path. Both ultimately call window.openConsole.
+        // We don't filter by per-box console_enabled here — the openConsole
+        // flow itself shows a clear "disabled on agent" if it isn't ready.
+        // Filtering up-front would require a capabilities fetch per box on
+        // page load, which is wasteful for a feature most operators rarely use.
+        const snapshot = loadInitialRows();
+        if (Array.isArray(snapshot)) {
+            snapshot.forEach(function (row) {
+                // Don't pollute the palette with disabled boxes — if
+                // console isn't on for this box, the entry would
+                // just produce a "disabled" error when clicked.
+                if (!row.console_enabled) return;
+                cmds.register({
+                    id: 'bx.console.' + row.id,
+                    label: 'Console: ' + (row.name || row.id),
+                    subtitle: 'Open a remote shell on this box',
+                    group: 'Console',
+                    run: function () {
+                        if (window.openConsole) window.openConsole(row.id, row.name);
+                    },
+                });
+            });
+        }
     }
 
     /* -------------------------------------------------------------- *

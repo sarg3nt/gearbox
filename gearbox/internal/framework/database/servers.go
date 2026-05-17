@@ -19,9 +19,15 @@ type BoxDB struct {
 	APIKeyEncrypted []byte
 	Enabled         bool
 	AutoDiscovery   bool
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	CreatedBy       *string // UUID
+	// ConsoleEnabled is the per-box opt-in for the remote console
+	// feature (see #89). Default 0 — operator flips it on per box from
+	// the box settings UI. Belt-and-suspenders with the agent-side
+	// HAPROXY_AGENT_CONSOLE_ENABLED env var: both must be true for the
+	// proxy to open a session, so revoking either kills access.
+	ConsoleEnabled bool
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	CreatedBy      *string // UUID
 }
 
 // UsesAgentAPI returns true if this box has valid Agent API configuration.
@@ -38,8 +44,8 @@ func (d *DB) CreateBox(box *BoxDB) error {
 	query := `
 		INSERT INTO boxes (
 			box_id, name, location, notes, agent_url, api_key_encrypted,
-			enabled, auto_discovery, created_by, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+			enabled, auto_discovery, console_enabled, created_by, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 	`
 
 	result, err := d.db.Exec(query,
@@ -51,6 +57,7 @@ func (d *DB) CreateBox(box *BoxDB) error {
 		box.APIKeyEncrypted,
 		box.Enabled,
 		box.AutoDiscovery,
+		box.ConsoleEnabled,
 		box.CreatedBy,
 	)
 	if err != nil {
@@ -73,7 +80,7 @@ func (d *DB) GetBoxes() ([]*BoxDB, error) {
 
 	query := `
 		SELECT id, box_id, name, location, notes, agent_url, api_key_encrypted,
-			enabled, auto_discovery, created_at, updated_at, created_by
+			enabled, auto_discovery, console_enabled, created_at, updated_at, created_by
 		FROM boxes
 		ORDER BY name ASC
 	`
@@ -97,6 +104,7 @@ func (d *DB) GetBoxes() ([]*BoxDB, error) {
 			&box.APIKeyEncrypted,
 			&box.Enabled,
 			&box.AutoDiscovery,
+			&box.ConsoleEnabled,
 			&box.CreatedAt,
 			&box.UpdatedAt,
 			&box.CreatedBy,
@@ -122,7 +130,7 @@ func (d *DB) GetEnabledBoxes() ([]*BoxDB, error) {
 
 	query := `
 		SELECT id, box_id, name, location, notes, agent_url, api_key_encrypted,
-			enabled, auto_discovery, created_at, updated_at, created_by
+			enabled, auto_discovery, console_enabled, created_at, updated_at, created_by
 		FROM boxes
 		WHERE enabled = 1
 		ORDER BY name ASC
@@ -147,6 +155,7 @@ func (d *DB) GetEnabledBoxes() ([]*BoxDB, error) {
 			&box.APIKeyEncrypted,
 			&box.Enabled,
 			&box.AutoDiscovery,
+			&box.ConsoleEnabled,
 			&box.CreatedAt,
 			&box.UpdatedAt,
 			&box.CreatedBy,
@@ -172,7 +181,7 @@ func (d *DB) GetBoxByID(id int64) (*BoxDB, error) {
 
 	query := `
 		SELECT id, box_id, name, location, notes, agent_url, api_key_encrypted,
-			enabled, auto_discovery, created_at, updated_at, created_by
+			enabled, auto_discovery, console_enabled, created_at, updated_at, created_by
 		FROM boxes
 		WHERE id = ?
 	`
@@ -188,6 +197,7 @@ func (d *DB) GetBoxByID(id int64) (*BoxDB, error) {
 		&box.APIKeyEncrypted,
 		&box.Enabled,
 		&box.AutoDiscovery,
+		&box.ConsoleEnabled,
 		&box.CreatedAt,
 		&box.UpdatedAt,
 		&box.CreatedBy,
@@ -209,7 +219,7 @@ func (d *DB) GetBoxByBoxID(boxID string) (*BoxDB, error) {
 
 	query := `
 		SELECT id, box_id, name, location, notes, agent_url, api_key_encrypted,
-			enabled, auto_discovery, created_at, updated_at, created_by
+			enabled, auto_discovery, console_enabled, created_at, updated_at, created_by
 		FROM boxes
 		WHERE box_id = ?
 	`
@@ -225,6 +235,7 @@ func (d *DB) GetBoxByBoxID(boxID string) (*BoxDB, error) {
 		&box.APIKeyEncrypted,
 		&box.Enabled,
 		&box.AutoDiscovery,
+		&box.ConsoleEnabled,
 		&box.CreatedAt,
 		&box.UpdatedAt,
 		&box.CreatedBy,
@@ -254,6 +265,7 @@ func (d *DB) UpdateBox(box *BoxDB) error {
 			api_key_encrypted = ?,
 			enabled = ?,
 			auto_discovery = ?,
+			console_enabled = ?,
 			updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?
 	`
@@ -267,6 +279,7 @@ func (d *DB) UpdateBox(box *BoxDB) error {
 		box.APIKeyEncrypted,
 		box.Enabled,
 		box.AutoDiscovery,
+		box.ConsoleEnabled,
 		box.ID,
 	)
 	if err != nil {
