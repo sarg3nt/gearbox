@@ -48,7 +48,22 @@ func (h *Handler) APILogsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // APILogSourcesHandler returns the enabled log sources for a server.
-// If no explicit settings exist, it fetches available sources from the agent.
+//
+// Source resolution precedence (issue #112):
+//  1. Explicit per-box settings in the database — operator opted in.
+//  2. Defaults derived from the agent's probe table — only offer sources
+//     the agent can actually serve. `haproxy` requires the agent's
+//     `access-log` or `logs` gear; `system` requires `logs`.
+//  3. Fail-open: if the agent is unreachable, fall back to the legacy
+//     `[haproxy, system]` pair so an existing deployment still works
+//     through a transient outage.
+//
+// Historically this method returned the legacy pair unconditionally
+// when no settings existed, which caused the Logs page on a box without
+// a `logs` / `access-log` gear (e.g. the mjolnir agent in a distroless
+// container) to immediately ask for haproxy logs the agent couldn't
+// serve, producing the "Failed to..." JSON parse error the page used
+// to render.
 func (h *Handler) APILogSourcesHandler(w http.ResponseWriter, r *http.Request) {
 	boxID := chi.URLParam(r, "boxID")
 	if boxID == "" {
@@ -64,14 +79,13 @@ func (h *Handler) APILogSourcesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If no explicit settings, return default sources (haproxy, system)
+	// If no explicit settings, derive defaults from the agent's probe
+	// table so a Logs page on a box without those gears doesn't immediately
+	// ask for sources the agent can't serve.
 	if len(sources) == 0 {
 		h.writeJSON(w, map[string]interface{}{
-			"server_id": boxID,
-			"sources": []map[string]string{
-				{"name": "haproxy", "display_name": "HAProxy"},
-				{"name": "system", "display_name": "System"},
-			},
+			"server_id":    boxID,
+			"sources":      h.defaultLogSourcesForBox(boxID),
 			"has_settings": false,
 		})
 		return
@@ -91,4 +105,47 @@ func (h *Handler) APILogSourcesHandler(w http.ResponseWriter, r *http.Request) {
 		"sources":      sourcesResp,
 		"has_settings": true,
 	})
+}
+
+// defaultLogSourcesForBox returns the default Logs-page source picker
+// entries for a box, derived from the agent's probe table. Used when
+// the operator hasn't saved explicit log-source settings.
+//
+// Heuristic:
+//   - `haproxy` is offered when EITHER access-log OR logs gear is
+//     available. access-log streams the HAProxy access log directly;
+//     logs streams it via journalctl/file when journalctl is present.
+//   - `system` is offered only when the `logs` gear is available, since
+//     system journal access requires journalctl/tail.
+//
+// Fail-open: if capabilities aren't reachable (agent down, no API key,
+// older agent that pre-dates probing) the legacy pair is returned so
+// existing deployments continue to work through transient outages.
+func (h *Handler) defaultLogSourcesForBox(boxID string) []map[string]string {
+	legacy := []map[string]string{
+		{"name": "haproxy", "display_name": "HAProxy"},
+		{"name": "system", "display_name": "System"},
+	}
+	caps, ok := h.getBoxCapabilities(boxID)
+	if !ok {
+		return legacy
+	}
+
+	hasAccessLog := caps.IsAvailable("access-log")
+	hasLogs := caps.IsAvailable("logs")
+	if !hasAccessLog && !hasLogs {
+		// Agent surfaces a probe table but neither log gear is available.
+		// Returning the empty list lets the JS render an empty dropdown
+		// and skip the immediate fetch — better than 5xx storming.
+		return []map[string]string{}
+	}
+
+	out := make([]map[string]string, 0, 2)
+	if hasAccessLog || hasLogs {
+		out = append(out, map[string]string{"name": "haproxy", "display_name": "HAProxy"})
+	}
+	if hasLogs {
+		out = append(out, map[string]string{"name": "system", "display_name": "System"})
+	}
+	return out
 }
