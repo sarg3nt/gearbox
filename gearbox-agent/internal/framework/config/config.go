@@ -22,10 +22,14 @@ type Config struct {
 	// auto-generated self-signed certificate. Ignored when TLSCustom is
 	// true (the user-provided cert is used verbatim).
 	//
-	// The agent already includes "localhost", "127.0.0.1", "::1", and the
-	// container's os.Hostname() — TLSHosts is for the address the operator
-	// will actually point clients at (e.g. a static container IP, an FQDN
-	// behind a reverse proxy, or both).
+	// The cert generator always covers "localhost", "127.0.0.1", and
+	// "::1"; TLSHosts is for any other address clients will actually
+	// dial (e.g. a static container IP, an FQDN behind a reverse proxy,
+	// or both). The container's os.Hostname() is deliberately NOT added
+	// automatically — in a container it's a random short ID that
+	// changes per recreation, which would force needless cert
+	// regeneration since LoadOrCreateTLSCert regenerates when the
+	// existing cert is missing a requested SAN.
 	//
 	// Parsed from HAPROXY_AGENT_TLS_HOSTS as a comma-separated list;
 	// whitespace around each entry is trimmed, empty entries are dropped.

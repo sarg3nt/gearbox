@@ -461,6 +461,29 @@ func TestLoadOrCreateTLSCert_RegenOnMissingSAN(t *testing.T) {
 	if !containsString(regenerated.DNSNames, "example.com") {
 		t.Errorf("regenerated cert lost example.com SAN: %v", regenerated.DNSNames)
 	}
+	regeneratedSerial := regenerated.SerialNumber.String()
+
+	// Casing change on the same DNS name → reuse, no spurious regen
+	// (RFC 6125 §6.4: DNS host matching is case-insensitive).
+	_, isNew, err = LoadOrCreateTLSCert(certPath, keyPath, []string{"EXAMPLE.com", "172.16.2.3"})
+	if err != nil {
+		t.Fatalf("fourth LoadOrCreateTLSCert() error = %v", err)
+	}
+	if isNew {
+		t.Error("call differing only in DNS casing should not regenerate")
+	}
+	if loadCertForTest(t, certPath).SerialNumber.String() != regeneratedSerial {
+		t.Error("cert serial changed across casing-only difference (unexpected regeneration)")
+	}
+
+	// Trailing-dot equivalence (example.com. == example.com per DNS).
+	_, isNew, err = LoadOrCreateTLSCert(certPath, keyPath, []string{"example.com.", "172.16.2.3"})
+	if err != nil {
+		t.Fatalf("fifth LoadOrCreateTLSCert() error = %v", err)
+	}
+	if isNew {
+		t.Error("trailing-dot variant should not regenerate")
+	}
 }
 
 func loadCertForTest(t *testing.T, certPath string) *x509.Certificate {

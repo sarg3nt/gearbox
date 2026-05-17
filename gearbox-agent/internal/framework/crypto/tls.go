@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -130,6 +131,12 @@ func verifyCert(certPath string) error {
 // verifyCertCoversHosts loads the cert at certPath and confirms every entry
 // in `hosts` is present as a SAN (DNS name for hostnames, IPAddresses entry
 // for IPs). Returns nil if all hosts are covered.
+//
+// DNS comparison is case-insensitive per RFC 6125 §6.4 (TLS host matching),
+// so changing only the casing of an entry in HAPROXY_AGENT_TLS_HOSTS will
+// not force a spurious regeneration. A single trailing dot on FQDNs is also
+// stripped on both sides ("example.com." and "example.com" are equivalent
+// per DNS).
 func verifyCertCoversHosts(certPath string, hosts []string) error {
 	data, err := os.ReadFile(certPath)
 	if err != nil {
@@ -146,7 +153,7 @@ func verifyCertCoversHosts(certPath string, hosts []string) error {
 
 	dnsSet := make(map[string]struct{}, len(cert.DNSNames))
 	for _, d := range cert.DNSNames {
-		dnsSet[d] = struct{}{}
+		dnsSet[normaliseDNSName(d)] = struct{}{}
 	}
 	ipSet := make(map[string]struct{}, len(cert.IPAddresses))
 	for _, ip := range cert.IPAddresses {
@@ -160,11 +167,23 @@ func verifyCertCoversHosts(certPath string, hosts []string) error {
 			}
 			continue
 		}
-		if _, ok := dnsSet[h]; !ok {
+		if _, ok := dnsSet[normaliseDNSName(h)]; !ok {
 			return fmt.Errorf("certificate missing DNS SAN %s", h)
 		}
 	}
 	return nil
+}
+
+// normaliseDNSName lowercases and strips a single trailing dot so that
+// "Example.COM.", "example.com.", and "example.com" all compare equal.
+// DNS names are case-insensitive and the trailing dot is the
+// FQDN/relative distinction, not a real character.
+func normaliseDNSName(s string) string {
+	s = strings.ToLower(s)
+	if len(s) > 0 && s[len(s)-1] == '.' {
+		s = s[:len(s)-1]
+	}
+	return s
 }
 
 // generateSelfSignedCert creates a new self-signed TLS certificate and key.
