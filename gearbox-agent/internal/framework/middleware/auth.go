@@ -34,6 +34,17 @@ const ResponseHeaderKID = "X-Gearbox-Kid"
 func APIKeyAuth(keyring *crypto.KeyRingPointer, logger *slog.Logger, backoff *BackoffTracker) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Fail-closed nil guard. Should be unreachable — the
+			// agent's main.go always passes a non-nil keyring pointer
+			// before this middleware is mounted — but a future wiring
+			// bug should 401 every request instead of panicking the
+			// agent on the auth path.
+			if keyring == nil {
+				logger.Error("AUTH DENIED: middleware constructed with nil keyring pointer", "remote_addr", r.RemoteAddr)
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+
 			ip := clientIPFromRemoteAddr(r.RemoteAddr)
 
 			if backoff != nil && backoff.IsBlocked(ip) {

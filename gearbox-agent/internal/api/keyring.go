@@ -48,6 +48,15 @@ type keyRingResponse struct {
 //	@Router			/api/v1/system/keyring [get]
 func (h *KeyRingHandler) handleGet(w http.ResponseWriter, _ *http.Request) {
 	kr := h.keyring.Load()
+	if kr == nil {
+		// Should be unreachable — main.go calls NewKeyRingPointer(kr)
+		// with a non-nil value before mounting the handler. Defensive
+		// 500 + log so a future wiring bug fails loud rather than
+		// panicking the agent on every keyring request.
+		h.logger.Error("keyring pointer empty when serving /system/keyring")
+		http.Error(w, "keyring unavailable", http.StatusInternalServerError)
+		return
+	}
 	resp := keyRingResponse{
 		Version: kr.Version,
 		Entries: kr.Snapshot(),

@@ -109,25 +109,49 @@ func LoadOrCreateKeyRing(path, legacyAPIKeyPath string) (*KeyRing, bool, error) 
 	}
 
 	// No keyring file. Migrate from legacy api_key file if present.
+	//
+	// Failure modes we distinguish:
+	//   - legacy file doesn't exist        → fall through to fresh-gen
+	//   - legacy file exists but errors    → fatal (caller may have set
+	//                                        GEARBOX_AGENT_ENCRYPTION_KEY
+	//                                        wrong; silently generating
+	//                                        a fresh keyring would lock
+	//                                        the dashboard out for no
+	//                                        good reason)
+	//   - legacy file exists but is malformed (not 64 hex chars) →
+	//                                        fatal for the same reason
+	//                                        (a wedged file is operator-
+	//                                        visible; a silent rotation
+	//                                        is not).
 	if legacyAPIKeyPath != "" {
-		if legacyKey, err := ReadAPIKey(legacyAPIKeyPath); err == nil {
-			secret, derr := hex.DecodeString(strings.TrimSpace(legacyKey))
-			if derr == nil && len(secret) == SecretLength {
-				kr := &KeyRing{
-					Version: 1,
-					Entries: []KeyRingEntry{{
-						KID:       "legacy",
-						Secret:    secret,
-						SecretHex: hex.EncodeToString(secret),
-						Role:      "primary",
-						CreatedAt: time.Now().UTC(),
-					}},
-				}
-				if werr := writeKeyRingFile(path, kr); werr != nil {
-					return nil, false, fmt.Errorf("write migrated keyring: %w", werr)
-				}
-				return kr, false, nil
+		if _, statErr := os.Stat(legacyAPIKeyPath); statErr == nil {
+			legacyKey, rerr := ReadAPIKey(legacyAPIKeyPath)
+			if rerr != nil {
+				return nil, false, fmt.Errorf("read legacy api-key file %q: %w", legacyAPIKeyPath, rerr)
 			}
+			secret, derr := hex.DecodeString(strings.TrimSpace(legacyKey))
+			if derr != nil {
+				return nil, false, fmt.Errorf("legacy api-key file %q is not valid hex: %w", legacyAPIKeyPath, derr)
+			}
+			if len(secret) != SecretLength {
+				return nil, false, fmt.Errorf("legacy api-key file %q has secret length %d, want %d", legacyAPIKeyPath, len(secret), SecretLength)
+			}
+			kr := &KeyRing{
+				Version: 1,
+				Entries: []KeyRingEntry{{
+					KID:       "legacy",
+					Secret:    secret,
+					SecretHex: hex.EncodeToString(secret),
+					Role:      "primary",
+					CreatedAt: time.Now().UTC(),
+				}},
+			}
+			if werr := writeKeyRingFile(path, kr); werr != nil {
+				return nil, false, fmt.Errorf("write migrated keyring: %w", werr)
+			}
+			return kr, false, nil
+		} else if !os.IsNotExist(statErr) {
+			return nil, false, fmt.Errorf("stat legacy api-key file %q: %w", legacyAPIKeyPath, statErr)
 		}
 	}
 
@@ -180,7 +204,14 @@ func (kr *KeyRing) Primary() *KeyRingEntry {
 // 64-hex) and returns the matching entry, or nil + ErrUnknownKID / nil +
 // ErrInvalidToken on failure.
 //
-// All comparisons are constant-time.
+// Comparisons against entry secrets are constant-time (subtle.
+// ConstantTimeCompare). The prefixed-token path walks every entry and
+// performs the compare on each one regardless of whether the kid
+// matched, so total runtime doesn't reveal which kids exist on this
+// agent — kids are not strictly secret (they're sent in the request
+// header), but leaking which ones an agent currently accepts via
+// timing makes rotation-history enumeration cheap, which we'd rather
+// not.
 func (kr *KeyRing) MatchToken(token string) (*KeyRingEntry, error) {
 	if strings.HasPrefix(token, tokenPrefix) {
 		// Prefixed: gbx_<kid>_<b64secret>
@@ -195,18 +226,22 @@ func (kr *KeyRing) MatchToken(token string) (*KeyRingEntry, error) {
 		if err != nil || len(secret) != SecretLength {
 			return nil, ErrInvalidToken
 		}
+		// Walk every entry, compare every secret, record the match
+		// without short-circuiting. The two ConstantTimeEq calls plus
+		// the bitwise AND keep the timing uniform regardless of which
+		// entry (if any) matches.
+		var matched *KeyRingEntry
 		for i := range kr.Entries {
-			if kr.Entries[i].KID != kid {
-				continue
+			kidEq := subtle.ConstantTimeCompare([]byte(kr.Entries[i].KID), []byte(kid))
+			secretEq := subtle.ConstantTimeCompare(kr.Entries[i].Secret, secret)
+			if kidEq&secretEq == 1 {
+				matched = &kr.Entries[i]
 			}
-			if subtle.ConstantTimeCompare(kr.Entries[i].Secret, secret) == 1 {
-				return &kr.Entries[i], nil
-			}
-			// Same kid but secret doesn't match — bail without trying other
-			// entries; the caller's kid claim is wrong.
+		}
+		if matched == nil {
 			return nil, ErrUnknownKID
 		}
-		return nil, ErrUnknownKID
+		return matched, nil
 	}
 
 	// Legacy: 64 hex chars, brute-compare against every entry's secret.
@@ -410,15 +445,22 @@ func hydrateSecrets(kr *KeyRing) error {
 
 // writeKeyRingFile serializes kr to JSON and atomically writes to path,
 // encrypting with the default KeyProvider when configured.
+//
+// Does NOT mutate the input keyring. KeyRing values are shared via
+// [*atomic.Pointer] and treated as immutable; populating SecretHex
+// directly on the live entries would race with concurrent readers in
+// the auth middleware. We marshal off a local snapshot whose entries
+// have SecretHex backfilled from Secret where needed.
 func writeKeyRingFile(path string, kr *KeyRing) error {
-	// Ensure every entry has SecretHex populated for serialization.
-	for i := range kr.Entries {
-		if kr.Entries[i].SecretHex == "" {
-			kr.Entries[i].SecretHex = hex.EncodeToString(kr.Entries[i].Secret)
+	snapshot := &KeyRing{Version: kr.Version, Entries: make([]KeyRingEntry, len(kr.Entries))}
+	for i, e := range kr.Entries {
+		snapshot.Entries[i] = e
+		if snapshot.Entries[i].SecretHex == "" {
+			snapshot.Entries[i].SecretHex = hex.EncodeToString(e.Secret)
 		}
 	}
 
-	plaintext, err := json.MarshalIndent(kr, "", "  ")
+	plaintext, err := json.MarshalIndent(snapshot, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal keyring: %w", err)
 	}

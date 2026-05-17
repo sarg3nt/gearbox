@@ -159,9 +159,10 @@ func main() {
 			os.Exit(1)
 		}
 		fresh := crypto.KeyRingEntry{
-			KID:    kid,
-			Secret: secret,
-			Role:   "primary",
+			KID:       kid,
+			Secret:    secret,
+			Role:      "primary",
+			CreatedAt: time.Now().UTC(),
 		}
 		kr.Entries = []crypto.KeyRingEntry{fresh}
 		if err := crypto.SaveKeyRing(cfg.KeyRingPath, kr); err != nil {

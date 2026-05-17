@@ -19,17 +19,17 @@ func newTestBox(t *testing.T, db *DB, boxIDStr, name string) *BoxDB {
 	return box
 }
 
-func TestBoxAgentKeys_MigrationBackfillsLegacyEntry(t *testing.T) {
+// TestBoxAgentKeys_InsertAndLookup exercises the Insert/Get round-
+// trip — what the rotator (Phase 2) and the per-box rotate handler
+// (Phase 3) rely on for a freshly-created box.
+//
+// This does NOT exercise the migration's backfill INSERT-FROM-boxes
+// path; see TestBoxAgentKeys_MigrationBackfillStatementWorks below
+// for that.
+func TestBoxAgentKeys_InsertAndLookup(t *testing.T) {
 	db := setupTestDB(t)
-	// Insert a box BEFORE we look at the keyring; the schema-init path
-	// runs the box_agent_keys backfill on every startup, but for a row
-	// inserted afterwards the backfill won't fire. Phase 2's create-box
-	// handler is responsible for seating the legacy entry on NEW boxes;
-	// for now, verify the rotation-table is reachable end-to-end via the
-	// direct insert path.
 	box := newTestBox(t, db, "box-a", "Box A")
 
-	// Direct insert simulates what Phase 2's create-box path will do.
 	if err := db.InsertBoxAgentKey(&BoxAgentKey{
 		BoxID:           box.ID,
 		KID:             "legacy",
@@ -45,6 +45,53 @@ func TestBoxAgentKeys_MigrationBackfillsLegacyEntry(t *testing.T) {
 	}
 	if primary == nil || primary.KID != "legacy" {
 		t.Fatalf("expected legacy primary, got %+v", primary)
+	}
+}
+
+// TestBoxAgentKeys_MigrationBackfillStatementWorks exercises the
+// idempotent INSERT-FROM-boxes statement from migration 000002. We
+// can't easily replay the migration on a per-test DB (it only runs
+// once), so this test wipes the migrated rows for a single box, then
+// re-executes the same backfill SQL against the live DB and asserts
+// the expected rows appear. Catches regressions to the SQL itself.
+func TestBoxAgentKeys_MigrationBackfillStatementWorks(t *testing.T) {
+	db := setupTestDB(t)
+	box := newTestBox(t, db, "box-mig", "Migration Box")
+
+	rawDB := db.GetDB()
+	if _, err := rawDB.Exec(`DELETE FROM box_agent_keys WHERE box_id = ?`, box.ID); err != nil {
+		t.Fatalf("wipe: %v", err)
+	}
+
+	const backfillSQL = `
+		INSERT INTO box_agent_keys (box_id, kid, secret_encrypted, role, created_at)
+		SELECT id, 'legacy', api_key_encrypted, 'primary', created_at
+		FROM boxes
+		WHERE id = ? AND NOT EXISTS (
+		    SELECT 1 FROM box_agent_keys WHERE box_id = boxes.id AND kid = 'legacy'
+		)`
+	if _, err := rawDB.Exec(backfillSQL, box.ID); err != nil {
+		t.Fatalf("backfill: %v", err)
+	}
+
+	primary, err := db.GetBoxPrimaryKey(box.ID)
+	if err != nil {
+		t.Fatalf("GetBoxPrimaryKey: %v", err)
+	}
+	if primary == nil || primary.KID != "legacy" {
+		t.Fatalf("backfill: got %+v, want kid=legacy primary", primary)
+	}
+
+	// Re-running the backfill must be a no-op (idempotency guard).
+	if _, err := rawDB.Exec(backfillSQL, box.ID); err != nil {
+		t.Fatalf("backfill rerun: %v", err)
+	}
+	keys, err := db.GetBoxAgentKeys(box.ID)
+	if err != nil {
+		t.Fatalf("GetBoxAgentKeys: %v", err)
+	}
+	if len(keys) != 1 {
+		t.Errorf("backfill rerun was not idempotent: %d rows, want 1", len(keys))
 	}
 }
 
@@ -143,11 +190,34 @@ func TestBoxAgentKeys_TouchLastUsed(t *testing.T) {
 	}
 }
 
-// Cascade-on-DeleteBox is currently declared in the schema (FOREIGN KEY
-// (box_id) REFERENCES boxes(id) ON DELETE CASCADE) but not enforced —
-// the gearbox DB doesn't set `PRAGMA foreign_keys = ON`. Enabling that
-// pragma is a broader change that risks regressing on legacy rows
-// elsewhere in the schema. For now DeleteBox leaves orphan
-// box_agent_keys rows on disk; Phase 2's box-delete path will clean
-// them up explicitly. Not tested here so the gap is visible from the
-// test surface itself.
+// TestBoxAgentKeys_DeleteBoxClearsDependentKeys verifies that
+// DeleteBox removes rows from box_agent_keys for that box, even
+// though SQLite's PRAGMA foreign_keys is off in this codebase (so
+// the schema-declared CASCADE doesn't run). DeleteBox now wipes
+// dependents inside its transaction, which is what this test pins.
+func TestBoxAgentKeys_DeleteBoxClearsDependentKeys(t *testing.T) {
+	db := setupTestDB(t)
+	box := newTestBox(t, db, "box-f", "Box F")
+	if err := db.InsertBoxAgentKey(&BoxAgentKey{
+		BoxID: box.ID, KID: "legacy", SecretEncrypted: []byte("e"), Role: "primary",
+	}); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	if err := db.InsertBoxAgentKey(&BoxAgentKey{
+		BoxID: box.ID, KID: "v2", SecretEncrypted: []byte("e2"), Role: "secondary",
+	}); err != nil {
+		t.Fatalf("insert v2: %v", err)
+	}
+
+	if err := db.DeleteBox(box.ID); err != nil {
+		t.Fatalf("DeleteBox: %v", err)
+	}
+
+	keys, err := db.GetBoxAgentKeys(box.ID)
+	if err != nil {
+		t.Fatalf("GetBoxAgentKeys: %v", err)
+	}
+	if len(keys) != 0 {
+		t.Errorf("keys not removed on box delete: %+v", keys)
+	}
+}

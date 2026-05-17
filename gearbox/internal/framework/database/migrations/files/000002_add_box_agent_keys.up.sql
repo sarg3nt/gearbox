@@ -34,6 +34,14 @@ CREATE INDEX IF NOT EXISTS idx_box_agent_keys_box
 CREATE INDEX IF NOT EXISTS idx_box_agent_keys_role
     ON box_agent_keys(box_id, role);
 
+-- Enforce the "at most one primary per box" invariant the rotator
+-- relies on. Without this constraint a buggy SetBoxPrimaryKey path
+-- could leave two primaries on the same box and GetBoxPrimaryKey
+-- would return an arbitrary one. Partial-unique-index is the
+-- SQLite-supported way to express "unique only when role='primary'".
+CREATE UNIQUE INDEX IF NOT EXISTS idx_box_agent_keys_one_primary
+    ON box_agent_keys(box_id) WHERE role = 'primary';
+
 -- Backfill: every existing box gets a legacy entry that's a copy of its
 -- current `api_key_encrypted` value, marked primary. Idempotent — the
 -- WHERE NOT EXISTS guard means re-running the migration on a partially-
