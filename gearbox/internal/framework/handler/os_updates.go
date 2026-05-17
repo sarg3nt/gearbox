@@ -24,10 +24,7 @@ func (h *Handler) OSUpdatesPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check integration is enabled
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" {
-		boxID = h.getDefaultServerID()
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	enabled, _ := h.db.IsGearEnabled(boxID, database.GearOSUpdates)
 	if !enabled {
@@ -126,10 +123,7 @@ func (h *Handler) OSUpdatesPage(w http.ResponseWriter, r *http.Request) {
 
 // APIUpdateStatusHandler handles GET /api/os-updates/status.
 func (h *Handler) APIUpdateStatusHandler(w http.ResponseWriter, r *http.Request) {
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" {
-		boxID = h.getDefaultServerID()
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
@@ -154,10 +148,7 @@ func (h *Handler) APIUpdateStatusHandler(w http.ResponseWriter, r *http.Request)
 
 // APIListPackagesHandler handles GET /api/os-updates/packages.
 func (h *Handler) APIListPackagesHandler(w http.ResponseWriter, r *http.Request) {
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" {
-		boxID = h.getDefaultServerID()
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
@@ -187,10 +178,7 @@ func (h *Handler) APITriggerUpdateCheckHandler(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" {
-		boxID = h.getDefaultServerID()
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	user, _ := auth.GetUserFromContext(r.Context())
 
@@ -225,10 +213,7 @@ func (h *Handler) APIInstallUpdatesHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" {
-		boxID = h.getDefaultServerID()
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	streaming := r.URL.Query().Get("stream") == "true"
 	user, _ := auth.GetUserFromContext(r.Context())
@@ -301,10 +286,7 @@ func (h *Handler) APIInstallUpdatesHandler(w http.ResponseWriter, r *http.Reques
 
 // APIUpdateHistoryHandler handles GET /api/os-updates/history.
 func (h *Handler) APIUpdateHistoryHandler(w http.ResponseWriter, r *http.Request) {
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" {
-		boxID = h.getDefaultServerID()
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	limit := 50
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
@@ -341,10 +323,7 @@ func (h *Handler) APIScheduleRebootHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" {
-		boxID = h.getDefaultServerID()
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	user, _ := auth.GetUserFromContext(r.Context())
 
@@ -396,10 +375,7 @@ func (h *Handler) APICancelRebootHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" {
-		boxID = h.getDefaultServerID()
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	user, _ := auth.GetUserFromContext(r.Context())
 
@@ -427,10 +403,7 @@ func (h *Handler) APICancelRebootHandler(w http.ResponseWriter, r *http.Request)
 
 // APIListSnapshotsHandler handles GET /api/os-updates/snapshots.
 func (h *Handler) APIListSnapshotsHandler(w http.ResponseWriter, r *http.Request) {
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" {
-		boxID = h.getDefaultServerID()
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
@@ -460,10 +433,7 @@ func (h *Handler) APICreateSnapshotHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" {
-		boxID = h.getDefaultServerID()
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	user, _ := auth.GetUserFromContext(r.Context())
 
@@ -510,10 +480,7 @@ func (h *Handler) APIRestoreSnapshotHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" {
-		boxID = h.getDefaultServerID()
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	user, _ := auth.GetUserFromContext(r.Context())
 
@@ -568,10 +535,7 @@ func (h *Handler) APIDeleteSnapshotHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" {
-		boxID = h.getDefaultServerID()
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	snapshotID := chi.URLParam(r, "id")
 	if snapshotID == "" {
@@ -606,10 +570,7 @@ func (h *Handler) APIDeleteSnapshotHandler(w http.ResponseWriter, r *http.Reques
 
 // APIPreviewSnapshotHandler handles GET /api/os-updates/snapshots/{id}/preview.
 func (h *Handler) APIPreviewSnapshotHandler(w http.ResponseWriter, r *http.Request) {
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" {
-		boxID = h.getDefaultServerID()
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	snapshotID := chi.URLParam(r, "id")
 	if snapshotID == "" {
@@ -640,10 +601,7 @@ func (h *Handler) APIPreviewSnapshotHandler(w http.ResponseWriter, r *http.Reque
 
 // APIListInstalledPackagesHandler handles GET /api/os-updates/packages/installed.
 func (h *Handler) APIListInstalledPackagesHandler(w http.ResponseWriter, r *http.Request) {
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" {
-		boxID = h.getDefaultServerID()
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
@@ -668,10 +626,7 @@ func (h *Handler) APIListInstalledPackagesHandler(w http.ResponseWriter, r *http
 
 // APISearchPackagesHandler handles GET /api/os-updates/packages/search.
 func (h *Handler) APISearchPackagesHandler(w http.ResponseWriter, r *http.Request) {
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" {
-		boxID = h.getDefaultServerID()
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	query := r.URL.Query().Get("q")
 	if query == "" {
@@ -714,10 +669,7 @@ func (h *Handler) APIInstallPackageHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" {
-		boxID = h.getDefaultServerID()
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	user, _ := auth.GetUserFromContext(r.Context())
 
@@ -767,10 +719,7 @@ func (h *Handler) APIRemovePackageHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" {
-		boxID = h.getDefaultServerID()
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	user, _ := auth.GetUserFromContext(r.Context())
 
@@ -824,10 +773,7 @@ func (h *Handler) APIHoldPackageHandler(w http.ResponseWriter, r *http.Request) 
 		h.jsonError(w, "Forbidden", http.StatusForbidden)
 		return
 	}
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" {
-		boxID = h.getDefaultServerID()
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		h.jsonError(w, "Server not found", http.StatusNotFound)
@@ -859,10 +805,7 @@ func (h *Handler) APIUnholdPackageHandler(w http.ResponseWriter, r *http.Request
 		h.jsonError(w, "Forbidden", http.StatusForbidden)
 		return
 	}
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" {
-		boxID = h.getDefaultServerID()
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
 		h.jsonError(w, "Server not found", http.StatusNotFound)
@@ -891,10 +834,7 @@ func (h *Handler) APIUnholdPackageHandler(w http.ResponseWriter, r *http.Request
 
 // APIPipxStatusHandler handles GET /api/os-updates/pipx.
 func (h *Handler) APIPipxStatusHandler(w http.ResponseWriter, r *http.Request) {
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" {
-		boxID = h.getDefaultServerID()
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
@@ -924,10 +864,7 @@ func (h *Handler) APIPipxInstallHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" {
-		boxID = h.getDefaultServerID()
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	user, _ := auth.GetUserFromContext(r.Context())
 
@@ -977,10 +914,7 @@ func (h *Handler) APIPipxUninstallHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" {
-		boxID = h.getDefaultServerID()
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	user, _ := auth.GetUserFromContext(r.Context())
 
@@ -1030,10 +964,7 @@ func (h *Handler) APIPipxUpgradeHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" {
-		boxID = h.getDefaultServerID()
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	user, _ := auth.GetUserFromContext(r.Context())
 
@@ -1086,10 +1017,7 @@ func (h *Handler) APIPipxUpgradeHandler(w http.ResponseWriter, r *http.Request) 
 
 // APIPipStatusHandler handles GET /api/os-updates/pip.
 func (h *Handler) APIPipStatusHandler(w http.ResponseWriter, r *http.Request) {
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" {
-		boxID = h.getDefaultServerID()
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
@@ -1119,10 +1047,7 @@ func (h *Handler) APIPipInstallHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" {
-		boxID = h.getDefaultServerID()
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	user, _ := auth.GetUserFromContext(r.Context())
 
@@ -1172,10 +1097,7 @@ func (h *Handler) APIPipUninstallHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" {
-		boxID = h.getDefaultServerID()
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	user, _ := auth.GetUserFromContext(r.Context())
 
@@ -1225,10 +1147,7 @@ func (h *Handler) APIPipUpgradeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" {
-		boxID = h.getDefaultServerID()
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	user, _ := auth.GetUserFromContext(r.Context())
 
@@ -1282,10 +1201,7 @@ func (h *Handler) APIPipUpgradeHandler(w http.ResponseWriter, r *http.Request) {
 // APIPythonToolsVersionsHandler handles GET /api/os-updates/python-tools/versions.
 // This is the slow endpoint that fetches latest PyPI version info for all packages.
 func (h *Handler) APIPythonToolsVersionsHandler(w http.ResponseWriter, r *http.Request) {
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" {
-		boxID = h.getDefaultServerID()
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
@@ -1365,10 +1281,7 @@ func (h *Handler) APIPyPILookupHandler(w http.ResponseWriter, r *http.Request) {
 
 // APIUnattendedConfigHandler handles GET /api/os-updates/unattended.
 func (h *Handler) APIUnattendedConfigHandler(w http.ResponseWriter, r *http.Request) {
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" {
-		boxID = h.getDefaultServerID()
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	server, err := h.db.GetBoxByBoxID(boxID)
 	if err != nil || server == nil {
@@ -1398,10 +1311,7 @@ func (h *Handler) APIConfigureUnattendedHandler(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" {
-		boxID = h.getDefaultServerID()
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	user, _ := auth.GetUserFromContext(r.Context())
 
@@ -1443,10 +1353,7 @@ func (h *Handler) APIConfigureUnattendedHandler(w http.ResponseWriter, r *http.R
 // APIGetOperationHandler handles GET /api/os-updates/operation/{id}.
 // Proxies to the agent's operation status endpoint for polling fallback.
 func (h *Handler) APIGetOperationHandler(w http.ResponseWriter, r *http.Request) {
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" {
-		boxID = h.getDefaultServerID()
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	operationID := chi.URLParam(r, "id")
 	if operationID == "" {
@@ -1477,10 +1384,7 @@ func (h *Handler) APIGetOperationHandler(w http.ResponseWriter, r *http.Request)
 
 // APIListUpdateLogsHandler handles GET /api/os-updates/logs.
 func (h *Handler) APIListUpdateLogsHandler(w http.ResponseWriter, r *http.Request) {
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" {
-		boxID = h.getDefaultServerID()
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	limit := 50
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
@@ -1512,10 +1416,7 @@ func (h *Handler) APIListUpdateLogsHandler(w http.ResponseWriter, r *http.Reques
 
 // APIGetUpdateLogHandler handles GET /api/os-updates/logs/{id}.
 func (h *Handler) APIGetUpdateLogHandler(w http.ResponseWriter, r *http.Request) {
-	boxID := r.URL.Query().Get("server")
-	if boxID == "" {
-		boxID = h.getDefaultServerID()
-	}
+	boxID := h.resolveBoxIDFromRequest(r)
 
 	logID := chi.URLParam(r, "id")
 	if logID == "" {
