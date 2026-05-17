@@ -219,20 +219,24 @@ func main() {
 		}
 		logger.Info("TLS: Using custom certificate", "path", tlsCfg.CertPath)
 	} else {
-		// Use self-signed certs (generate if needed)
-		hosts := []string{"localhost"}
-		if hostname, err := os.Hostname(); err == nil {
-			hosts = append(hosts, hostname)
-		}
-
+		// Use self-signed certs (generate if needed). The generator
+		// always covers loopback (localhost / 127.0.0.1 / ::1); anything
+		// else clients will dial — a static container IP, an FQDN, a
+		// LAN hostname — must come from HAPROXY_AGENT_TLS_HOSTS.
+		//
+		// We deliberately do NOT add os.Hostname() here: in a container
+		// it's a random short ID that changes on every recreation,
+		// which would force a cert regen each restart for no value.
+		// Operators who want a specific hostname pin it explicitly.
 		var isNewCert bool
-		tlsCfg, isNewCert, err = crypto.LoadOrCreateTLSCert(cfg.TLSCert, cfg.TLSKey, hosts)
+		tlsCfg, isNewCert, err = crypto.LoadOrCreateTLSCert(cfg.TLSCert, cfg.TLSKey, cfg.TLSHosts)
 		if err != nil {
 			logger.Error("Failed to initialize TLS", "error", err)
 			os.Exit(1)
 		}
 		if isNewCert {
-			logger.Info("TLS: Generated new self-signed certificate (valid for 1 year)")
+			logger.Info("TLS: Generated new self-signed certificate (valid for 1 year)",
+				"extra_sans", cfg.TLSHosts)
 		} else {
 			logger.Info("TLS: Using existing self-signed certificate", "path", tlsCfg.CertPath)
 		}
