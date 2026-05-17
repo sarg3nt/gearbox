@@ -3,6 +3,7 @@ package services
 
 import (
 	"log/slog"
+	"sync"
 
 	"github.com/sarg3nt/gearbox/internal/framework/agent"
 	"github.com/sarg3nt/gearbox/internal/framework/services/crypto"
@@ -113,15 +114,22 @@ func (a *ServerAdapter) SetCapabilitiesCache(c *agent.CapabilitiesCache) {
 
 // GetEnabledServersWithGearAvailable returns the subset of enabled servers
 // whose probe table reports the named **agent** gear as Available. Used by
-// the HAProxy / Logs / Services / OS-Updates dashboard pages to skip
-// rendering tiles and tabs for boxes the gear physically can't run on
-// (e.g. an agent in a distroless container has no haproxy binary, so
-// rendering its HAProxy stats tile produces a 503 storm — issue #112).
+// the HAProxy / Logs / OS-Updates dashboard pages to skip rendering tiles
+// and tabs for boxes the gear physically can't run on (e.g. an agent in a
+// distroless container has no haproxy binary, so rendering its HAProxy
+// stats tile produces a 503 storm — issue #112).
 //
-// The gearName argument is the **agent-side** gear name, not the
-// dashboard gear name (see dashboardGearToAgentGear in handler/gears.go
-// for the mapping). Pass "haproxy", "logs", "services", "metrics",
-// "updates", "certificates", or "traffic" as appropriate.
+// The gearName argument is the **agent-side** gear name. The agent's
+// registered gears (see [internal/gears] in the gearbox-agent repo) are:
+//
+//	access-log, apache, caddy, certificates, docker, haproxy, host,
+//	logs, metrics, nginx, security, traefik, traffic, updates
+//
+// Note that some dashboard gears don't map 1:1 to agent gears — the
+// dashboard's "services" / "alerts" / "bx" gears have no agent-side
+// counterpart and shouldn't be filtered via this method. See
+// dashboardGearToAgentGear in handler/gears.go for the dashboard-side
+// mapping that is filtered.
 //
 // Fail-open contract: a box whose capabilities aren't reachable (agent
 // down, no API key, cache miss + fetch failure) is **included** in the
@@ -130,28 +138,53 @@ func (a *ServerAdapter) SetCapabilitiesCache(c *agent.CapabilitiesCache) {
 // capability cache hasn't been wired in (SetCapabilitiesCache wasn't
 // called), every enabled server is returned — same fail-open posture.
 //
+// Performance: cold-cache fetches are fired in parallel (one goroutine
+// per box) so a render path that calls this on N agents pays one round
+// of fetchTimeout latency at most, instead of N × fetchTimeout when
+// agents are unreachable. The underlying CapabilitiesCache memoizes
+// for capabilityCacheTTL, so steady-state renders are lock-only.
+//
 // The result is in the same order as GetEnabledServersAsModels.
 func (a *ServerAdapter) GetEnabledServersWithGearAvailable(gearName string) []models.BoxConfig {
 	all := a.GetEnabledServersAsModels()
-	if a.capabilities == nil || gearName == "" {
+	if a.capabilities == nil || gearName == "" || len(all) == 0 {
 		return all
 	}
+
+	// Fetch every box's capabilities in parallel — cold-cache requests
+	// can each block up to the cache's fetchTimeout, so sequential
+	// resolution would push page render latency to O(N * timeout) when
+	// agents are unreachable. Bounded by len(all) goroutines per call;
+	// the cache itself memoizes, so warm-cache renders take only the
+	// per-box read-lock latency.
+	keep := make([]bool, len(all))
+	var wg sync.WaitGroup
+	wg.Add(len(all))
+	for i := range all {
+		go func(i int) {
+			defer wg.Done()
+			srv := all[i]
+			caps, err := a.capabilities.Get(srv.ID, srv.AgentURL, srv.APIKey)
+			if err != nil || caps == nil {
+				// Fail-open: include the box if we can't see its probe table.
+				keep[i] = true
+				return
+			}
+			entry, present := caps.Entry(gearName)
+			if !present {
+				// Agent didn't report this gear at all (older agent that
+				// pre-dates it). Fail-open — keep the box.
+				keep[i] = true
+				return
+			}
+			keep[i] = entry.IsAvailable()
+		}(i)
+	}
+	wg.Wait()
+
 	out := make([]models.BoxConfig, 0, len(all))
-	for _, srv := range all {
-		caps, err := a.capabilities.Get(srv.ID, srv.AgentURL, srv.APIKey)
-		if err != nil || caps == nil {
-			// Fail-open: include the box if we can't see its probe table.
-			out = append(out, srv)
-			continue
-		}
-		entry, present := caps.Entry(gearName)
-		if !present {
-			// Agent didn't report this gear at all (older agent that
-			// pre-dates it). Fail-open — keep the box.
-			out = append(out, srv)
-			continue
-		}
-		if entry.IsAvailable() {
+	for i, srv := range all {
+		if keep[i] {
 			out = append(out, srv)
 		}
 	}
