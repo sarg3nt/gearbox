@@ -75,7 +75,7 @@ func TestKeyRing_Install_AddsSecondary(t *testing.T) {
 
 	newSecret, _ := crypto.NewSecret()
 	body, _ := json.Marshal(map[string]string{
-		"kid":        "abc123",
+		"kid":        "abcdef",
 		"secret_b64": base64.RawURLEncoding.EncodeToString(newSecret),
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/system/keyring/install", bytes.NewReader(body))
@@ -92,7 +92,7 @@ func TestKeyRing_Install_AddsSecondary(t *testing.T) {
 	// Find the new one.
 	found := false
 	for _, e := range kr.Entries {
-		if e.KID == "abc123" {
+		if e.KID == "abcdef" {
 			if e.Role != "secondary" {
 				t.Errorf("new entry role = %q, want secondary", e.Role)
 			}
@@ -109,7 +109,7 @@ func TestKeyRing_Install_Idempotent(t *testing.T) {
 
 	newSecret, _ := crypto.NewSecret()
 	body, _ := json.Marshal(map[string]string{
-		"kid":        "abc123",
+		"kid":        "abcdef",
 		"secret_b64": base64.RawURLEncoding.EncodeToString(newSecret),
 	})
 
@@ -135,7 +135,7 @@ func TestKeyRing_Install_KIDClashDifferentSecret_409(t *testing.T) {
 
 	secretA, _ := crypto.NewSecret()
 	bodyA, _ := json.Marshal(map[string]string{
-		"kid": "shared", "secret_b64": base64.RawURLEncoding.EncodeToString(secretA),
+		"kid": "abcdef", "secret_b64": base64.RawURLEncoding.EncodeToString(secretA),
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/system/keyring/install", bytes.NewReader(bodyA))
 	w := httptest.NewRecorder()
@@ -146,7 +146,7 @@ func TestKeyRing_Install_KIDClashDifferentSecret_409(t *testing.T) {
 
 	secretB, _ := crypto.NewSecret()
 	bodyB, _ := json.Marshal(map[string]string{
-		"kid": "shared", "secret_b64": base64.RawURLEncoding.EncodeToString(secretB),
+		"kid": "abcdef", "secret_b64": base64.RawURLEncoding.EncodeToString(secretB),
 	})
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/system/keyring/install", bytes.NewReader(bodyB))
 	w = httptest.NewRecorder()
@@ -159,7 +159,7 @@ func TestKeyRing_Install_KIDClashDifferentSecret_409(t *testing.T) {
 func TestKeyRing_Install_BadSecretLength(t *testing.T) {
 	_, r, _, _ := newKeyRingTestHandler(t)
 	body, _ := json.Marshal(map[string]string{
-		"kid": "ok", "secret_b64": base64.RawURLEncoding.EncodeToString([]byte("short")),
+		"kid": "aaaaaa", "secret_b64": base64.RawURLEncoding.EncodeToString([]byte("short")),
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/system/keyring/install", bytes.NewReader(body))
 	w := httptest.NewRecorder()
@@ -175,14 +175,14 @@ func TestKeyRing_Use_FlipsPrimary(t *testing.T) {
 	// Add a secondary.
 	newSecret, _ := crypto.NewSecret()
 	body, _ := json.Marshal(map[string]string{
-		"kid":        "v2",
+		"kid":        "abcdef",
 		"secret_b64": base64.RawURLEncoding.EncodeToString(newSecret),
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/system/keyring/install", bytes.NewReader(body))
 	r.ServeHTTP(httptest.NewRecorder(), req)
 
 	// Use it.
-	body, _ = json.Marshal(map[string]string{"kid": "v2"})
+	body, _ = json.Marshal(map[string]string{"kid": "abcdef"})
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/system/keyring/use", bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -192,7 +192,7 @@ func TestKeyRing_Use_FlipsPrimary(t *testing.T) {
 
 	kr := ptr.Load()
 	primary := kr.Primary()
-	if primary == nil || primary.KID != "v2" {
+	if primary == nil || primary.KID != "abcdef" {
 		t.Errorf("primary after use = %+v, want kid=v2", primary)
 	}
 }
@@ -214,7 +214,7 @@ func TestKeyRing_Remove_OK(t *testing.T) {
 	// Add a secondary first.
 	secret, _ := crypto.NewSecret()
 	body, _ := json.Marshal(map[string]string{
-		"kid": "v2", "secret_b64": base64.RawURLEncoding.EncodeToString(secret),
+		"kid": "abcdef", "secret_b64": base64.RawURLEncoding.EncodeToString(secret),
 	})
 	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/api/v1/system/keyring/install", bytes.NewReader(body)))
 
@@ -222,7 +222,7 @@ func TestKeyRing_Remove_OK(t *testing.T) {
 		t.Fatalf("setup: entries = %d, want 2", got)
 	}
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/system/keyring/v2", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/system/keyring/abcdef", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -254,10 +254,10 @@ func TestKeyRing_Mutations_PersistAcrossReload(t *testing.T) {
 	// Install + use a second key.
 	secret, _ := crypto.NewSecret()
 	body, _ := json.Marshal(map[string]string{
-		"kid": "v2", "secret_b64": base64.RawURLEncoding.EncodeToString(secret),
+		"kid": "abcdef", "secret_b64": base64.RawURLEncoding.EncodeToString(secret),
 	})
 	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/api/v1/system/keyring/install", bytes.NewReader(body)))
-	useBody, _ := json.Marshal(map[string]string{"kid": "v2"})
+	useBody, _ := json.Marshal(map[string]string{"kid": "abcdef"})
 	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/api/v1/system/keyring/use", bytes.NewReader(useBody)))
 
 	// Reload from disk; the change should be there.
@@ -266,12 +266,12 @@ func TestKeyRing_Mutations_PersistAcrossReload(t *testing.T) {
 		t.Fatalf("reload: %v", err)
 	}
 	prim := reloaded.Primary()
-	if prim == nil || prim.KID != "v2" {
+	if prim == nil || prim.KID != "abcdef" {
 		t.Errorf("reloaded primary = %+v, want kid=v2", prim)
 	}
 
 	// In-memory pointer should match.
-	if got := ptr.Load().Primary().KID; got != "v2" {
+	if got := ptr.Load().Primary().KID; got != "abcdef" {
 		t.Errorf("in-memory primary = %q", got)
 	}
 
@@ -292,7 +292,7 @@ func TestKeyRing_Install_FullKeyRing_507(t *testing.T) {
 	for i := 0; i < crypto.MaxKeyRingEntries-1; i++ {
 		s, _ := crypto.NewSecret()
 		body, _ := json.Marshal(map[string]string{
-			"kid":        fmt.Sprintf("k%d", i),
+			"kid":        fmt.Sprintf("aaaa%02d", i),
 			"secret_b64": base64.RawURLEncoding.EncodeToString(s),
 		})
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/system/keyring/install", bytes.NewReader(body))
@@ -306,7 +306,7 @@ func TestKeyRing_Install_FullKeyRing_507(t *testing.T) {
 	// One more should overflow.
 	s, _ := crypto.NewSecret()
 	body, _ := json.Marshal(map[string]string{
-		"kid": "overflow", "secret_b64": base64.RawURLEncoding.EncodeToString(s),
+		"kid": "ffffff", "secret_b64": base64.RawURLEncoding.EncodeToString(s),
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/system/keyring/install", bytes.NewReader(body))
 	w := httptest.NewRecorder()
