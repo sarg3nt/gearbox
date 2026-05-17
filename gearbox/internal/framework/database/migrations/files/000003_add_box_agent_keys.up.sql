@@ -1,19 +1,24 @@
 -- Issue #72 Phase 1: per-box keyring for zero-downtime rotation.
 --
 -- Adds a one-to-many `box_agent_keys` table where each row is one
--- accepted API key for that box. Replaces the single
--- `boxes.api_key_encrypted` field (which stays in place for one release
--- as a read-only fallback). New writes go to this table; Phase 2 wires
--- the rotation endpoints + UI on top.
+-- accepted API key for that box, and idempotently backfills one
+-- `kid='legacy'` row per existing box from `boxes.api_key_encrypted`.
+--
+-- Scope of THIS migration: table creation + one-shot backfill of
+-- existing boxes only. The dashboard's `CreateBox` / `UpdateBox`
+-- still write to `boxes.api_key_encrypted` exclusively; the in-app
+-- rotator (Phase 2) is the only path that writes to
+-- `box_agent_keys` after migration. Aligning CreateBox/UpdateBox to
+-- mirror writes into this table is a planned follow-up so freshly
+-- created boxes get a keyring entry without a manual rotate; the
+-- legacy column stays in place for one release as a read-through
+-- fallback regardless.
 --
 -- Roles:
 --   primary   = the key the dashboard signs outbound requests with
 --   secondary = still accepted by the agent during overlap, but the
 --               dashboard has demoted it; will be removed after
 --               retired_at + the overlap window.
---
--- The migration backfills one `kid='legacy'` row per existing box so
--- existing fleets keep working before any rotation happens.
 
 CREATE TABLE IF NOT EXISTS box_agent_keys (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

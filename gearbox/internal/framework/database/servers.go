@@ -298,13 +298,22 @@ func (d *DB) UpdateBox(box *BoxDB) error {
 }
 
 // DeleteBox deletes a box configuration from the database, along with
-// any rotation-keyring entries that reference it.
+// every dependent table that schema-declares ON DELETE CASCADE on a
+// foreign key to boxes.
 //
-// The schema declares ON DELETE CASCADE on box_agent_keys.box_id, but
-// this codebase doesn't set PRAGMA foreign_keys=ON (enabling it is a
+// The schema declares ON DELETE CASCADE on those FKs, but this
+// codebase doesn't set PRAGMA foreign_keys=ON (enabling it is a
 // broader change that risks regressing on legacy rows elsewhere). To
-// avoid leaving orphaned rows that hold encrypted secrets, the
-// dependent table is wiped explicitly inside the same transaction.
+// avoid leaving orphaned rows on box delete — including ones that
+// hold encrypted secrets (box_agent_keys) — the dependent tables are
+// wiped explicitly inside the same transaction. Add new tables here
+// when introducing them.
+//
+// Tables wiped:
+//   - box_agent_keys (issue #72)
+//   - log_source_settings
+//   - box_git_config
+//   - config_changes
 func (d *DB) DeleteBox(id int64) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -315,8 +324,21 @@ func (d *DB) DeleteBox(id int64) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if _, err := tx.Exec(`DELETE FROM box_agent_keys WHERE box_id = ?`, id); err != nil {
-		return fmt.Errorf("delete dependent keys: %w", err)
+	dependents := []struct {
+		table  string
+		column string
+	}{
+		{"box_agent_keys", "box_id"},
+		{"log_source_settings", "box_id"},
+		{"box_git_config", "haproxy_box_id"},
+		{"config_changes", "haproxy_box_id"},
+	}
+	for _, dep := range dependents {
+		// Quoting via constant strings — table/column come from the
+		// fixed list above, not user input, so this is safe.
+		if _, err := tx.Exec(`DELETE FROM `+dep.table+` WHERE `+dep.column+` = ?`, id); err != nil {
+			return fmt.Errorf("delete dependent %s: %w", dep.table, err)
+		}
 	}
 
 	result, err := tx.Exec(`DELETE FROM boxes WHERE id = ?`, id)

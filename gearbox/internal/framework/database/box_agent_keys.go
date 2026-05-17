@@ -180,9 +180,11 @@ func (d *DB) DeleteBoxAgentKey(boxID int64, kid string) error {
 func (d *DB) TouchBoxAgentKeyLastUsed(boxID int64, kid string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	_, err := d.db.Exec(`
+	if _, err := d.db.Exec(`
 		UPDATE box_agent_keys SET last_used_at = CURRENT_TIMESTAMP
 		WHERE box_id = ? AND kid = ?
-	`, boxID, kid)
-	return err
+	`, boxID, kid); err != nil {
+		return fmt.Errorf("touch last_used_at: %w", err)
+	}
+	return nil
 }

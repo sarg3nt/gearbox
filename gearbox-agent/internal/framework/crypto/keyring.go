@@ -230,6 +230,12 @@ func (kr *KeyRing) MatchToken(token string) (*KeyRingEntry, error) {
 		}
 		kid := rest[:sep]
 		secB64 := rest[sep+1:]
+		// Reject by length BEFORE base64-decoding so a maliciously
+		// oversized Authorization header can't force a large
+		// allocation in DecodeString.
+		if len(secB64) != roundedSecLen {
+			return nil, ErrInvalidToken
+		}
 		secret, err := base64.RawURLEncoding.DecodeString(secB64)
 		if err != nil || len(secret) != SecretLength {
 			return nil, ErrInvalidToken
@@ -437,16 +443,70 @@ func readKeyRingFile(path string) (*KeyRing, error) {
 
 // hydrateSecrets decodes the on-disk hex strings into raw bytes on each
 // entry. Returns an error if any entry's secret is malformed.
+// hydrateSecrets decodes each entry's hex secret into raw bytes AND
+// validates the persisted invariants we depend on at runtime:
+//
+//   - entry count is in [1, MaxKeyRingEntries]
+//   - role ∈ {primary, secondary}
+//   - at most one primary
+//   - kid is a non-empty string of length kidLength, hex chars (or
+//     the literal "legacy" kept verbatim for backward compatibility
+//     with the one-shot migration)
+//   - kids are unique within the keyring
+//   - secret hex decodes to exactly SecretLength bytes
+//
+// Catches manually-edited / corrupted keyring.json files at load time
+// rather than letting them surprise the auth path.
 func hydrateSecrets(kr *KeyRing) error {
+	n := len(kr.Entries)
+	if n == 0 {
+		return errors.New("keyring has no entries")
+	}
+	if n > MaxKeyRingEntries {
+		return fmt.Errorf("keyring has %d entries, max %d", n, MaxKeyRingEntries)
+	}
+
+	seenKID := make(map[string]struct{}, n)
+	primaryCount := 0
 	for i := range kr.Entries {
-		raw, err := hex.DecodeString(kr.Entries[i].SecretHex)
+		e := &kr.Entries[i]
+
+		if e.KID == "" {
+			return fmt.Errorf("entry %d: empty kid", i)
+		}
+		if e.KID != "legacy" {
+			if len(e.KID) != kidLength {
+				return fmt.Errorf("entry %q: kid length %d, want %d (or literal \"legacy\")", e.KID, len(e.KID), kidLength)
+			}
+			if _, err := hex.DecodeString(e.KID); err != nil {
+				return fmt.Errorf("entry %q: kid not hex: %w", e.KID, err)
+			}
+		}
+		if _, dup := seenKID[e.KID]; dup {
+			return fmt.Errorf("entry %q: duplicate kid", e.KID)
+		}
+		seenKID[e.KID] = struct{}{}
+
+		switch e.Role {
+		case "primary":
+			primaryCount++
+		case "secondary":
+		default:
+			return fmt.Errorf("entry %q: role %q not in {primary, secondary}", e.KID, e.Role)
+		}
+
+		raw, err := hex.DecodeString(e.SecretHex)
 		if err != nil {
-			return fmt.Errorf("entry %q: decode secret: %w", kr.Entries[i].KID, err)
+			return fmt.Errorf("entry %q: decode secret: %w", e.KID, err)
 		}
 		if len(raw) != SecretLength {
-			return fmt.Errorf("entry %q: secret length %d, want %d", kr.Entries[i].KID, len(raw), SecretLength)
+			return fmt.Errorf("entry %q: secret length %d, want %d", e.KID, len(raw), SecretLength)
 		}
-		kr.Entries[i].Secret = raw
+		e.Secret = raw
+	}
+
+	if primaryCount > 1 {
+		return fmt.Errorf("keyring has %d primary entries, expected 1", primaryCount)
 	}
 	return nil
 }

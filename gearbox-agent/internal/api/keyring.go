@@ -47,6 +47,11 @@ type keyRingResponse struct {
 //	@Failure		401	{string}	string	"Unauthorized"
 //	@Router			/api/v1/system/keyring [get]
 func (h *KeyRingHandler) handleGet(w http.ResponseWriter, _ *http.Request) {
+	if h.keyring == nil {
+		h.logger.Error("keyring pointer field nil when serving /system/keyring")
+		http.Error(w, "keyring unavailable", http.StatusInternalServerError)
+		return
+	}
 	kr := h.keyring.Load()
 	if kr == nil {
 		// Should be unreachable — main.go calls NewKeyRingPointer(kr)
