@@ -579,7 +579,11 @@ func TestClientTimeout(t *testing.T) {
 		t.Fatal("expected timeout error")
 	}
 
-	if !strings.Contains(err.Error(), "context deadline exceeded") && !strings.Contains(err.Error(), "timeout") {
+	// The error message format varies by Go version + timing: sometimes
+	// "context deadline exceeded", sometimes "Client.Timeout exceeded
+	// while awaiting headers" (capital T). Match either by lower-casing.
+	msg := strings.ToLower(err.Error())
+	if !strings.Contains(msg, "context deadline exceeded") && !strings.Contains(msg, "timeout") {
 		t.Errorf("expected timeout error, got %v", err)
 	}
 }
