@@ -943,6 +943,18 @@ type CapabilityEntry struct {
 	Status       string            `json:"status"`
 	Reason       string            `json:"reason,omitempty"`
 	Capabilities map[string]string `json:"capabilities,omitempty"`
+
+	// Resources carries structured, gear-specific data the agent
+	// advertises beyond what fits in the flat Capabilities map. The
+	// dashboard reads each gear's known keys explicitly — e.g. the
+	// access-log gear publishes `log_sources` as a slice of
+	// {name, display_name, path} maps that the Logs page renders in
+	// its source picker. See issue #112 Phase 2.
+	//
+	// Decoded as map[string]any so the dashboard can do per-gear
+	// JSON decoding into typed shapes without forcing every gear's
+	// resource schema into a shared Go struct.
+	Resources map[string]any `json:"resources,omitempty"`
 }
 
 // CapabilitiesResponse mirrors the agent's CapabilitiesResponse.
