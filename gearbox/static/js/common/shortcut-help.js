@@ -1,34 +1,42 @@
 /**
- * Shortcut Help — "?" overlay with the global keyboard shortcut reference.
+ * Shortcut Help — `?`-opens reference (issue #92 redesign).
  *
- * Smoked-glass styling per the issue: full-viewport backdrop, blurred
- * background; content panel uses bg-white/5 + backdrop-blur so the page
- * behind shows through. Open with `?` (Shift+/) from anywhere except
- * inside a text input. Close with `?`, Esc, or click outside.
+ * Now a full-window smoked-glass overlay (no panel, no card, no border).
+ * Shortcuts render in centered two-column grid directly on the blurred
+ * backdrop. Close with `?`, `Esc`, or click anywhere on the backdrop.
  *
- * The shortcut list is data-driven so future additions don't need to
- * touch the HTML — extend SHORTCUTS and the table re-renders on open.
+ * Also owns the universal-Esc handler: priority order top-to-bottom is
+ *   1. A per-modal handler already called preventDefault → bail.
+ *   2. A visible dialog → close the topmost (covers cmdk, alert,
+ *      confirm, prompt, plus the mobile Filters sheet and sidebar
+ *      context menu).
+ *   3. A gear is in edit mode (a `.gear-cog-btn[aria-pressed="true"]`)
+ *      → click the cog to exit.
+ *   4. A focusable control has focus → blur.
+ *   5. Fall through to history.back() as a last resort.
+ *
+ * Note: `/`-to-focus-the-page-filter is no longer here. The unified
+ * HeaderSearch input owns the `/` shortcut and dispatches keystrokes
+ * to whatever filter the current gear registered via
+ * window.gearbox.filter.register (see common/gear-commands.js).
  */
 (function () {
     'use strict';
 
-    // `join` controls the visual separator between kbd chips for
-    // multi-key shortcuts: '+' for a chord (press together), 'then' for
-    // a sequence (press in order), '/' for "either of these keys".
-    // Single-key rows leave `join` unset and render no separator.
+    // Multi-key separator: '+' = press together, 'then' = press in
+    // sequence, '/' = either. Single-key rows leave join unset.
     const SHORTCUTS = [
-        { keys: ['?'],                    label: 'Show this help' },
-        { keys: ['Cmd/Ctrl', 'K'],        label: 'Open command palette',                              join: '+' },
-        { keys: ['g', 'b'],               label: 'Switch box (palette)',                              join: 'then' },
-        { keys: ['/'],                    label: 'Focus the page search input' },
-        { keys: ['Esc'],                  label: 'Close dialog · exit edit mode · blur input · go back' },
-        { keys: ['↑', '↓'],               label: 'Navigate dialog items',                             join: '/' },
-        { keys: ['↵'],                    label: 'Select highlighted item' },
-        { keys: ['Tab'],                  label: 'Cycle focus within a dialog' },
-        { keys: ['Ctrl+↵'],               label: 'In palette: switch box but keep palette open' },
+        { keys: ['?'],                  label: 'Show this help' },
+        { keys: ['/'],                  label: 'Focus the search bar' },
+        { keys: ['Cmd/Ctrl', 'K'],      label: 'Open command palette',                                 join: '+' },
+        { keys: ['>'],                  label: 'In search bar: switch to palette mode' },
+        { keys: ['g', 'b'],             label: 'Open palette (legacy chord)',                          join: 'then' },
+        { keys: ['Esc'],                label: 'Close dialog · exit edit mode · clear search · go back' },
+        { keys: ['↑', '↓'],             label: 'Navigate palette items',                               join: '/' },
+        { keys: ['↵'],                  label: 'Select / run highlighted item' },
+        { keys: ['Tab'],                label: 'Cycle focus within a dialog' },
+        { keys: ['Ctrl+↵'],             label: 'In palette: switch box but keep palette open' },
     ];
-
-    let trap = null;
 
     function renderShortcuts() {
         const list = document.getElementById('shortcuts-help-list');
@@ -37,9 +45,9 @@
         const km = window.GearboxKeymap;
         SHORTCUTS.forEach(function (s) {
             const row = document.createElement('div');
-            row.className = 'flex items-center justify-between gap-3 px-4 py-2.5 rounded-lg hover:bg-white/5 transition-colors';
+            row.className = 'flex items-center justify-between gap-3 px-2 py-2 border-b border-white/5 last:border-b-0';
             const label = document.createElement('span');
-            label.className = 'text-sm text-white/90';
+            label.className = 'text-sm text-white/85';
             label.textContent = s.label;
             row.appendChild(label);
 
@@ -48,14 +56,13 @@
             s.keys.forEach(function (k, i) {
                 if (i > 0 && s.join) {
                     const sep = document.createElement('span');
-                    sep.className = 'text-[10px] text-white/50 px-0.5';
+                    sep.className = 'text-[10px] text-white/40 px-0.5';
                     sep.textContent = s.join;
                     keys.appendChild(sep);
                 }
                 const kbd = document.createElement('kbd');
                 kbd.className = 'inline-flex items-center justify-center min-w-[1.75rem] px-2 h-6 text-[11px] font-mono ' +
                     'text-white/90 bg-white/10 border border-white/20 rounded';
-                // Map common labels to the right symbol on macOS.
                 if (km && km.isMacOS() && k === 'Cmd/Ctrl') {
                     kbd.textContent = '⌘';
                 } else if (k === 'Cmd/Ctrl') {
@@ -70,20 +77,37 @@
         });
     }
 
+    let returnFocusEl = null;
+
     function open() {
         const overlay = document.getElementById('shortcuts-help-overlay');
         if (!overlay) return;
         renderShortcuts();
+        // Remember whoever had focus so we can hand it back on close.
+        returnFocusEl = document.activeElement;
         overlay.classList.remove('hidden');
-        const panel = overlay.querySelector('.shortcuts-help-panel');
-        if (!trap) trap = window.createFocusTrap(panel || overlay);
-        trap.activate(panel || overlay);
+        // The overlay is role="dialog" aria-modal="true"; move focus
+        // into it so the dialog is announced by screen readers and
+        // subsequent Tab/Esc keystrokes land here, not on the page
+        // behind. The overlay has no interactive controls (clicking
+        // anywhere closes), so a single focusable container is enough
+        // — no formal trap needed (Copilot a11y review).
+        overlay.setAttribute('tabindex', '-1');
+        try { overlay.focus({ preventScroll: true }); }
+        catch (_) { overlay.focus(); }
     }
     function close() {
         const overlay = document.getElementById('shortcuts-help-overlay');
         if (!overlay) return;
         overlay.classList.add('hidden');
-        if (trap) trap.deactivate();
+        // Restore focus to whatever opened the overlay (typically the
+        // page body or a button), so keyboard users don't get dumped
+        // back at the top of the document.
+        if (returnFocusEl && typeof returnFocusEl.focus === 'function') {
+            try { returnFocusEl.focus({ preventScroll: true }); }
+            catch (_) { returnFocusEl.focus(); }
+        }
+        returnFocusEl = null;
     }
 
     function init() {
@@ -91,18 +115,15 @@
         if (!overlay) return;
 
         overlay.addEventListener('click', function (e) {
-            if (e.target === overlay) close();
-        });
-        overlay.addEventListener('keydown', function (e) {
-            if (e.key === 'Escape') {
-                e.preventDefault();
-                close();
-            }
+            // Click anywhere on the backdrop closes the help — there
+            // is no panel and no close button. The shortcut rows
+            // themselves are non-interactive text so clicking them
+            // is treated as backdrop, too.
+            close();
         });
 
         const km = window.GearboxKeymap;
         document.addEventListener('keydown', function (e) {
-            // `?` (Shift+/) — global. Skipped when typing in inputs.
             if (e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey) {
                 if (km && km.isTypingTarget(e.target)) return;
                 e.preventDefault();
@@ -110,22 +131,9 @@
             }
         });
 
-        // `Esc` — universal "back out" key. Priority order, top wins:
-        //   1. A per-modal handler already called preventDefault — bail.
-        //      (cmdk input, shortcuts-help overlay, etc.)
-        //   2. A dialog is open — close the topmost one. Catches the
-        //      pre-existing list (cmdk/help/confirm/prompt/alert) plus
-        //      every `[role="dialog"]` that lacks its own Esc handler.
-        //   3. A gear is in edit mode (a `.gear-cog-btn` is pressed) —
-        //      click the cog to exit. Home, Metrics, and future gears.
-        //   4. A focusable control has focus — blur it. Lets the user
-        //      `/`→type→Esc→Esc to bounce back to the previous gear.
-        //   5. Fall through to `history.back()` as a last resort.
-        //
-        // Browsers dropped native Esc-as-back because of accidental
-        // form-data loss; the priority chain above mirrors that intent
-        // by handling every "back out of something on the page" case
-        // before nav is even considered.
+        // Universal Esc handler — unchanged behaviour from the prior
+        // implementation, just kept here since this file already owns
+        // the help overlay's open state.
         function isBlurrableTarget(el) {
             if (!el) return false;
             const tag = el.tagName;
@@ -141,10 +149,6 @@
             return true;
         }
         function visibleDialogs() {
-            // Anything tagged as a dialog/modal by ARIA. Backstops:
-            // a couple of legacy overlays that don't carry role yet
-            // (#cmdk-overlay does carry it; the narrow-viewport
-            // Filters sheet and the sidebar context menu don't).
             const out = [];
             document.querySelectorAll('[role="dialog"], [aria-modal="true"]').forEach(function (el) {
                 if (isVisible(el)) out.push(el);
@@ -158,10 +162,6 @@
             return out;
         }
         function pickTopDialog(list) {
-            // Highest z-index wins; ties broken by DOM order (later =
-            // on top in the painting model). Crude but good enough —
-            // we just need to avoid closing a dialog underneath an
-            // open one.
             let top = null;
             let topZ = -Infinity;
             let topIdx = -1;
@@ -177,11 +177,6 @@
             return top;
         }
         function clickCloseButton(dialog) {
-            // Try to invoke any existing close button so per-modal
-            // cleanup (state resets, focus restoration, persistence)
-            // runs. Selector list covers every close-button convention
-            // I found in the templates: aria-label, generic data-*,
-            // and the per-modal `data-<name>-close|dismiss` flavour.
             const buttons = dialog.querySelectorAll('button, [role="button"], a');
             for (let i = 0; i < buttons.length; i++) {
                 const btn = buttons[i];
@@ -209,16 +204,17 @@
             if (list.length === 0) return false;
             const top = pickTopDialog(list);
             if (!top) return false;
-            // Special-case the narrow-viewport Filters sheet: it has
-            // a dedicated toggler that also flips header layout state.
             if (top.id === 'header-page-content' &&
                 typeof window.toggleHeaderFilters === 'function') {
                 window.toggleHeaderFilters();
                 return true;
             }
+            // Help overlay has no close button — handle directly.
+            if (top.id === 'shortcuts-help-overlay') {
+                close();
+                return true;
+            }
             if (clickCloseButton(top)) return true;
-            // Last resort: just hide it. Better than letting Esc fall
-            // through to history.back() with a modal still on screen.
             top.classList.add('hidden');
             return true;
         }
@@ -231,8 +227,6 @@
         document.addEventListener('keydown', function (e) {
             if (e.key !== 'Escape') return;
             if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
-            // A per-modal handler already consumed it (cmdk, help,
-            // icon-picker, etc. all call preventDefault).
             if (e.defaultPrevented) return;
             if (closeTopmostDialog()) { e.preventDefault(); return; }
             if (exitGearEditMode())   { e.preventDefault(); return; }
@@ -242,61 +236,9 @@
                 e.preventDefault();
                 return;
             }
-            // Same-origin back nav only — `document.referrer` is empty
-            // on direct loads, so checking history.length > 1 is the
-            // best proxy we have in-browser.
             if (window.history.length > 1) {
                 e.preventDefault();
                 window.history.back();
-            }
-        });
-
-        // `/` — focus the page's primary search/filter input if one
-        // exists. Universal "start searching" convention (GitHub, Linear,
-        // Slack). The candidate list is in priority order: each page is
-        // expected to have *one* primary filter, and the first existing
-        // match wins. Pages that have no filter (Metrics, Settings)
-        // simply do nothing on `/`. The Home page wires its own `/`
-        // handler in static/js/gears/home.js; it fires first and the
-        // isTypingTarget guard below makes this listener bail once its
-        // input is focused, so there's no double-trigger.
-        const FILTER_CANDIDATES = [
-            '#bx-search',              // Bx fleet
-            '#pkg-search',             // OS Updates packages
-            '#filter-input',           // Logs
-            '#alert-search',           // Alerts
-            '#service-filter',         // Services
-            '#global-backend-filter',  // HAProxy overview (backends)
-            '#blocked-ip-search',      // Security dashboard
-            '#viz-filter',             // Traffic visualization
-            '#search-entity',          // Disabled entities (admin)
-            '#home-search-input',      // Home bookmark search (also bound by home.js)
-        ];
-        document.addEventListener('keydown', function (e) {
-            if (e.key !== '/') return;
-            if (km && km.isTypingTarget(e.target)) return;
-            for (let i = 0; i < FILTER_CANDIDATES.length; i++) {
-                const el = document.querySelector(FILTER_CANDIDATES[i]);
-                if (!el) continue;
-                e.preventDefault();
-                // If the target sits inside #header-page-content and the
-                // viewport is below md, the page-toolbar is hidden behind
-                // the Filters pill. Pop the sheet open first so the focus
-                // call lands on something visible.
-                const headerContent = document.getElementById('header-page-content');
-                const narrow = window.matchMedia('(max-width: 767px)').matches;
-                if (narrow && headerContent && headerContent.contains(el) &&
-                    !headerContent.classList.contains('filters-open') &&
-                    typeof window.toggleHeaderFilters === 'function') {
-                    window.toggleHeaderFilters();
-                }
-                // Defer focus so the popover paints before focus moves —
-                // focusing a display:none element silently fails.
-                setTimeout(function () {
-                    el.focus();
-                    if (typeof el.select === 'function') el.select();
-                }, 0);
-                return;
             }
         });
     }

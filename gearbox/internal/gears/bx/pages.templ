@@ -62,19 +62,12 @@ templ pageHeader(total int) {
 			}
 		</p>
 		if total > 0 {
-			<div class="datagrid-search-wrap w-72">
-				<svg class="datagrid-search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z"></path>
-				</svg>
-				<input
-					type="search"
-					id="bx-search"
-					placeholder="Search boxes…"
-					aria-label="Search boxes"
-					autocomplete="off"
-					class="w-full"
-				/>
-			</div>
+			<!-- #bx-search moved to the global HeaderSearch (issue #92).
+			     Hidden input kept so the Tabulator-backed datagrid
+			     (createDataGrid({searchInput: '#bx-search'})) still
+			     latches onto it; bx-page.js dispatches an `input`
+			     event each time HeaderSearch fires. -->
+			<input type="search" id="bx-search" class="hidden" autocomplete="off"/>
 			<select
 				id="bx-view-filter"
 				aria-label="Filter boxes view"

@@ -12,14 +12,9 @@ templ AlertsPage(user *models.User, servers []models.BoxConfig, perms *models.Us
 		<div id="page-header-source" class="hidden">
 			<div class="flex-1"></div>
 			<div class="flex items-center space-x-3">
-				<!-- Search input -->
-				<input
-					type="text"
-					id="alert-search"
-					placeholder="Search alerts..."
-					oninput="filterAlerts(this.value)"
-					class="w-48 h-[38px] px-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-				/>
+				<!-- Search input moved to the global HeaderSearch
+				     (issue #92). filterAlerts() is wired through a
+				     window.gearbox.filter.register call by alerts.js. -->
 				<!-- Status filter -->
 				<select
 					id="status-filter"
@@ -353,6 +348,39 @@ templ AlertsPage(user *models.User, servers []models.BoxConfig, perms *models.Us
 				currentServerID = serverInput.value;
 				refreshAlertsData();
 				initSSE();
+			}
+
+			// HeaderSearch + command palette wiring (issue #92).
+			if (window.gearbox && window.gearbox.filter) {
+				window.gearbox.filter.register({
+					placeholder: 'Search alerts…',
+					onInput: function (q) { if (typeof filterAlerts === 'function') filterAlerts(q || ''); },
+					onClear: function () { if (typeof filterAlerts === 'function') filterAlerts(''); },
+				});
+			}
+			if (window.gearbox && window.gearbox.commands) {
+				const cmds = window.gearbox.commands;
+				const statusSel = document.getElementById('status-filter');
+				if (statusSel) {
+					Array.from(statusSel.options).forEach(function (opt) {
+						cmds.register({
+							id: 'alerts.status.' + opt.value,
+							label: 'Status: ' + opt.text,
+							subtitle: 'Show ' + opt.text.toLowerCase(),
+							group: 'Alerts',
+							run: function () {
+								statusSel.value = opt.value;
+								if (typeof changeStatusFilter === 'function') changeStatusFilter(opt.value);
+							},
+						});
+					});
+				}
+				cmds.register({
+					id: 'alerts.refresh',
+					label: 'Refresh alerts',
+					group: 'Alerts',
+					run: function () { if (typeof refreshAlertsData === 'function') refreshAlertsData(); },
+				});
 			}
 		});
 

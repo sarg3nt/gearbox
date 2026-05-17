@@ -36,26 +36,12 @@ templ Overview(user *models.User, servers []models.BoxConfig) {
 					<option value="active">Active Only</option>
 					<option value="disabled">Disabled Only</option>
 				</select>
-				<!-- Global text filter -->
-				<div class="relative">
-					<input
-						type="text"
-						id="global-backend-filter"
-						placeholder="Filter backends..."
-						class="h-[38px] w-40 px-3 py-1.5 pr-8 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-						oninput="applyGlobalFilters()"
-					/>
-					<button
-						type="button"
-						id="global-filter-clear"
-						class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hidden"
-						onclick="clearGlobalFilter()"
-					>
-						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-						</svg>
-					</button>
-				</div>
+				<!-- Global text filter moved to the HeaderSearch
+				     (issue #92). applyGlobalFilters() now reads the
+				     query from __backendFilterQuery, set by a
+				     window.gearbox.filter registration in
+				     static/js/haproxy_dashboard/overview.js (or inline
+				     overview script). -->
 				<!-- Manual refresh button with SSE status indicator -->
 				<button
 					id="refresh-btn"
@@ -386,19 +372,14 @@ templ Overview(user *models.User, servers []models.BoxConfig) {
 			setTimeout(() => icon.classList.remove('animate-spin'), 1000);
 		}
 
-		// Global filter functions
+		// Global filter functions. Text query now flows through the
+		// HeaderSearch (issue #92); applyGlobalFilters() reads it from
+		// __backendFilterQuery instead of an on-page input.
+		let __backendFilterQuery = '';
 		function applyGlobalFilters() {
-			const textFilter = document.getElementById('global-backend-filter').value.toLowerCase();
+			const textFilter = __backendFilterQuery;
 			const healthFilter = document.getElementById('global-health-filter').value;
 			const disabledFilter = document.getElementById('global-disabled-filter').value;
-			const clearBtn = document.getElementById('global-filter-clear');
-
-			// Show/hide clear button
-			if (textFilter.length > 0) {
-				clearBtn.classList.remove('hidden');
-			} else {
-				clearBtn.classList.add('hidden');
-			}
 
 			// Apply filters to all backend cards across all containers
 			document.querySelectorAll('.backend-card').forEach(card => {
@@ -431,16 +412,10 @@ templ Overview(user *models.User, servers []models.BoxConfig) {
 		}
 
 		function clearGlobalFilter() {
-			const input = document.getElementById('global-backend-filter');
+			__backendFilterQuery = '';
 			const select = document.getElementById('global-health-filter');
-			const clearBtn = document.getElementById('global-filter-clear');
-
-			input.value = '';
-			select.value = 'all';
-			clearBtn.classList.add('hidden');
-
+			if (select) select.value = 'all';
 			applyGlobalFilters();
-			input.focus();
 		}
 
 		// Certificate warning functions
@@ -597,17 +572,66 @@ templ Overview(user *models.User, servers []models.BoxConfig) {
 			// Move page header content to main header
 			setupPageHeader();
 
-			// Restore global filters from localStorage
+			// HeaderSearch + command palette wiring (issue #92).
+			// Register BEFORE replaying the saved filter so setValue()'s
+			// dispatch flows through the registered onInput and keeps
+			// __backendFilterQuery in sync (Copilot review).
+			if (window.gearbox && window.gearbox.filter) {
+				window.gearbox.filter.register({
+					placeholder: 'Filter backends…',
+					onInput: function (q) {
+						__backendFilterQuery = (q || '').toLowerCase();
+						applyGlobalFilters();
+					},
+					onClear: function () { __backendFilterQuery = ''; applyGlobalFilters(); },
+				});
+			}
+
+			// Restore global filters from localStorage. The text query
+			// flows through HeaderSearch → registered onInput now; the
+			// health select is still a per-page dropdown.
 			const savedTextFilter = localStorage.getItem('global-text-filter') || '';
 			const savedHealthFilter = localStorage.getItem('global-health-filter') || 'all';
-			const textInput = document.getElementById('global-backend-filter');
 			const healthSelect = document.getElementById('global-health-filter');
 
-			if (textInput && savedTextFilter) {
-				textInput.value = savedTextFilter;
+			if (savedTextFilter && window.HeaderSearch) {
+				window.HeaderSearch.setValue(savedTextFilter);
 			}
 			if (healthSelect && savedHealthFilter) {
 				healthSelect.value = savedHealthFilter;
+			}
+			if (window.gearbox && window.gearbox.commands) {
+				const cmds = window.gearbox.commands;
+				const hSel = document.getElementById('global-health-filter');
+				if (hSel) {
+					Array.from(hSel.options).forEach(function (opt) {
+						cmds.register({
+							id: 'haproxy.health.' + opt.value,
+							label: 'Health: ' + opt.text,
+							subtitle: 'Filter backends by aggregate health',
+							group: 'HAProxy',
+							run: function () { hSel.value = opt.value; applyGlobalFilters(); },
+						});
+					});
+				}
+				const dSel = document.getElementById('global-disabled-filter');
+				if (dSel) {
+					Array.from(dSel.options).forEach(function (opt) {
+						cmds.register({
+							id: 'haproxy.disabled.' + opt.value,
+							label: 'Disabled: ' + opt.text,
+							subtitle: 'Filter by enabled/disabled state',
+							group: 'HAProxy',
+							run: function () { dSel.value = opt.value; applyGlobalFilters(); },
+						});
+					});
+				}
+				cmds.register({
+					id: 'haproxy.refresh',
+					label: 'Refresh HAProxy view',
+					group: 'HAProxy',
+					run: function () { if (typeof manualRefresh === 'function') manualRefresh(); },
+				});
 			}
 
 			// Restore server selection using global ServerSelector (sessionStorage for tab isolation)

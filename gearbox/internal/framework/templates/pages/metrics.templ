@@ -2822,6 +2822,27 @@ templ Metrics(user *models.User, servers []models.BoxConfig) {
 			if (slider) {
 				slider.addEventListener('input', updateResolutionLabel);
 			}
+
+			// Command palette wiring (issue #92).
+			if (window.gearbox && window.gearbox.commands) {
+				const cmds = window.gearbox.commands;
+				cmds.register({
+					id: 'metrics.toggle-edit',
+					label: 'Toggle edit mode',
+					subtitle: 'Enter drag-to-arrange + resize mode for chart tiles',
+					group: 'Metrics',
+					run: function () {
+						const btn = document.getElementById('metrics-edit-toggle');
+						if (btn) btn.click();
+					},
+				});
+				cmds.register({
+					id: 'metrics.refresh',
+					label: 'Refresh metrics',
+					group: 'Metrics',
+					run: function () { if (typeof loadHistoryData === 'function') loadHistoryData(); },
+				});
+			}
 		});
 
 		// Cleanup on page unload

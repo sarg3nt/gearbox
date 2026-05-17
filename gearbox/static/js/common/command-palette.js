@@ -1,33 +1,35 @@
 /**
- * Command Palette — Cmd/Ctrl+K to open, search to filter, ↵ to select.
+ * Command Palette — slide-down panel anchored to the HeaderSearch input
+ * (issue #92 redesign).
  *
- * Subsumes the old box-switcher dialog: the palette is the single entry
- * point for "go to box X", "go to gear Y", and a small set of quick
- * actions (theme toggle, sidebar toggle, reorder sidebar, show shortcuts,
- * log out).
+ * No dedicated input anymore: the unified header-search input drives the
+ * palette. When its value starts with `>`, the panel below opens and
+ * lists boxes / gears / settings pages / global actions / per-gear
+ * commands ranked against the substring after `>`. Backspace from a
+ * single-`>` value closes the panel (handled by header-search.js).
  *
- * Catalog source: server-rendered JSON islands inside CommandPalette()
- * (#cmdk-boxes, #cmdk-gears) so first open is instant and survives offline.
- * Live status (the box dot) is hydrated from /bx/api/status and kept in
- * sync via SSE, exactly like the legacy switcher.
+ * Visuals:
+ *   - position: fixed, just below the header (top: 55px), horizontally
+ *     centered on the HeaderSearch input. No backdrop blur, no dim —
+ *     the rest of the page stays visible and interactive (VS Code).
+ *   - Width matches the search input (clamped to its computed width).
  *
  * Special interactions:
- *   - Enter on a Box   → switch to that box and close.
- *   - Ctrl+Enter on a Box → switch box, KEEP the palette open with the
- *                           input cleared, so the user can immediately
- *                           drill to a gear within that box.
- *   - Enter on a Gear  → navigate.
- *   - Enter on Action  → invoke the action's handler.
+ *   - Enter on Box → switch to that box and close. Ctrl+Enter keeps the
+ *     palette open with the active box flipped (rapid drill-down).
+ *   - Enter on Gear / Page → navigate.
+ *   - Enter on Action / per-gear Command → invoke handler.
  *
- * Recents: each successful selection pushes onto a localStorage list, capped
- * at 5 entries. Empty until the user picks something.
+ * Per-gear commands come from window.gearbox.commands.list() (registered
+ * via window.gearbox.commands.register in each gear's page script).
+ *
+ * Recents: last 5 picks of any kind, stored in localStorage.
  */
 (function () {
     'use strict';
 
     const RECENTS_KEY = 'gearbox-cmdk-recents';
     const RECENTS_MAX = 5;
-    const SVG_NS = 'http://www.w3.org/2000/svg';
 
     const STATUS_DOT_CLASSES = {
         green:   'bg-green-500 ring-1 ring-inset ring-green-600/40',
@@ -40,12 +42,13 @@
     /* -------------------------------------------------------------- *
      * Catalog
      * -------------------------------------------------------------- */
-    let boxes = [];   // [{id, name}]
-    let gears = [];   // [{name, label, path, enabled}]
-    let pages = [];   // [{name, label, path}]   (settings + profile pages, perm-filtered)
-    let actions = []; // [{id, label, subtitle?, run(), kbd?}]
+    let boxes = [];
+    let gears = [];
+    let pages = [];
+    let actions = [];
     const statusByBox = new Map();
     let activeBoxID = '';
+    let catalogLoaded = false;
 
     function loadJSONIsland(id) {
         const node = document.getElementById(id);
@@ -61,55 +64,33 @@
         const overlay = document.getElementById('cmdk-overlay');
         if (overlay) activeBoxID = overlay.dataset.activeBoxId || '';
         actions = buildActions();
+        catalogLoaded = true;
     }
 
     /* -------------------------------------------------------------- *
-     * Quick actions
+     * Quick actions (global)
      * -------------------------------------------------------------- */
     function buildActions() {
-        const list = [];
-        list.push({
-            id: 'theme:light', label: 'Theme: Light',
-            subtitle: 'Force the light theme for this device',
-            run: function () { if (typeof setTheme === 'function') setTheme('light'); },
-        });
-        list.push({
-            id: 'theme:dark', label: 'Theme: Dark',
-            subtitle: 'Force the dark theme for this device',
-            run: function () { if (typeof setTheme === 'function') setTheme('dark'); },
-        });
-        list.push({
-            id: 'theme:system', label: 'Theme: System',
-            subtitle: 'Match the OS theme preference',
-            run: function () { if (typeof setTheme === 'function') setTheme('system'); },
-        });
-        list.push({
-            id: 'sidebar:toggle', label: 'Toggle sidebar',
-            subtitle: 'Collapse or expand the navigation sidebar',
-            run: function () { if (typeof toggleSidebar === 'function') toggleSidebar(); },
-        });
-        list.push({
-            id: 'sidebar:reorder', label: 'Reorder sidebar',
-            subtitle: 'Enter drag-to-reorder mode for the gear list',
-            run: function () { if (typeof toggleSidebarEditMode === 'function') toggleSidebarEditMode(); },
-        });
-        list.push({
-            id: 'shortcuts:show', label: 'Show keyboard shortcuts',
-            subtitle: 'Open the shortcut reference', kbd: '?',
-            run: function () { if (typeof window.openShortcutHelp === 'function') window.openShortcutHelp(); },
-        });
-        list.push({
-            id: 'logout', label: 'Log out',
-            subtitle: 'End the current session',
-            run: function () {
-                const f = document.createElement('form');
-                f.method = 'POST';
-                f.action = '/logout';
-                document.body.appendChild(f);
-                f.submit();
-            },
-        });
-        return list;
+        return [
+            { id: 'theme:light',     label: 'Theme: Light',     subtitle: 'Force the light theme for this device',
+              run: function () { if (typeof setTheme === 'function') setTheme('light'); } },
+            { id: 'theme:dark',      label: 'Theme: Dark',      subtitle: 'Force the dark theme for this device',
+              run: function () { if (typeof setTheme === 'function') setTheme('dark'); } },
+            { id: 'theme:system',    label: 'Theme: System',    subtitle: 'Match the OS theme preference',
+              run: function () { if (typeof setTheme === 'function') setTheme('system'); } },
+            { id: 'sidebar:toggle',  label: 'Toggle sidebar',   subtitle: 'Collapse or expand the navigation sidebar',
+              run: function () { if (typeof toggleSidebar === 'function') toggleSidebar(); } },
+            { id: 'sidebar:reorder', label: 'Reorder sidebar',  subtitle: 'Enter drag-to-reorder mode for the gear list',
+              run: function () { if (typeof toggleSidebarEditMode === 'function') toggleSidebarEditMode(); } },
+            { id: 'shortcuts:show',  label: 'Show keyboard shortcuts', subtitle: 'Open the shortcut reference', kbd: '?',
+              run: function () { if (typeof window.openShortcutHelp === 'function') window.openShortcutHelp(); } },
+            { id: 'logout',          label: 'Log out',          subtitle: 'End the current session',
+              run: function () {
+                  const f = document.createElement('form');
+                  f.method = 'POST'; f.action = '/logout';
+                  document.body.appendChild(f); f.submit();
+              } },
+        ];
     }
 
     /* -------------------------------------------------------------- *
@@ -127,22 +108,17 @@
         const list = loadRecents();
         const filtered = list.filter(function (e) { return e.id !== entry.id; });
         filtered.unshift({ id: entry.id, kind: entry.kind });
-        const capped = filtered.slice(0, RECENTS_MAX);
-        try { localStorage.setItem(RECENTS_KEY, JSON.stringify(capped)); }
-        catch (_) { /* localStorage may be disabled */ }
+        try { localStorage.setItem(RECENTS_KEY, JSON.stringify(filtered.slice(0, RECENTS_MAX))); }
+        catch (_) {}
     }
     function getRecentItems() {
-        const recent = loadRecents();
-        const out = [];
-        recent.forEach(function (r) {
-            const item = lookupItem(r.kind, r.id);
-            if (item) out.push(item);
-        });
-        return out;
+        return loadRecents()
+            .map(function (r) { return lookupItem(r.kind, r.id); })
+            .filter(Boolean);
     }
 
     /* -------------------------------------------------------------- *
-     * Item lookup
+     * Item factories
      * -------------------------------------------------------------- */
     function gearItems() {
         return gears
@@ -158,6 +134,16 @@
     function actionItems() {
         return actions.map(function (a) {
             return { kind: 'action', id: a.id, label: a.label, subtitle: a.subtitle || '', kbd: a.kbd || '', action: a };
+        });
+    }
+    function gearCommandItems() {
+        if (!window.gearbox || !window.gearbox.commands) return [];
+        return window.gearbox.commands.list().map(function (c) {
+            return {
+                kind: 'gear-command', id: 'cmd:' + c.id, label: c.label,
+                subtitle: c.subtitle || '', kbd: c.kbd || '', group: c.group || 'Page',
+                command: c,
+            };
         });
     }
     function lookupItem(kind, id) {
@@ -182,6 +168,12 @@
                 if (!a) return null;
                 return { kind: 'action', id: id, label: a.label, subtitle: a.subtitle || '', kbd: a.kbd || '', action: a };
             }
+            case 'gear-command': {
+                // gear-command lookup intentionally skipped — these are
+                // page-scoped and won't survive recents across navigation
+                // anyway. Returning null filters the recent entry.
+                return null;
+            }
         }
         return null;
     }
@@ -196,11 +188,8 @@
         if (l === q) return 1000;
         const idx = l.indexOf(q);
         if (idx === 0) return 800;
-        if (idx > 0 && (l[idx - 1] === ' ' || l[idx - 1] === '/' || l[idx - 1] === '-')) {
-            return 700;
-        }
+        if (idx > 0 && (l[idx - 1] === ' ' || l[idx - 1] === '/' || l[idx - 1] === '-')) return 700;
         if (idx !== -1) return 500 - idx;
-        // Subsequence fallback.
         let li = 0;
         for (let qi = 0; qi < q.length; qi++) {
             const c = q[qi];
@@ -212,8 +201,11 @@
     }
 
     /* -------------------------------------------------------------- *
-     * Render helpers
+     * Render
      * -------------------------------------------------------------- */
+    let cursor = 0;
+    let lastVisible = [];
+
     function makeStatusDot(level) {
         const dot = document.createElement('span');
         dot.className = 'inline-block w-2.5 h-2.5 rounded-full flex-shrink-0 ' +
@@ -221,18 +213,16 @@
         return dot;
     }
     function makeKindBadge(kind) {
-        // Simple, accessible kind glyph — colored bullet, no SVG.
-        const badge = document.createElement('span');
-        badge.className = 'inline-block w-2 h-2 rounded-sm flex-shrink-0 ' +
-            (kind === 'gear' ? 'bg-blue-400 dark:bg-blue-500' : 'bg-gray-300 dark:bg-gray-600');
-        return badge;
+        const cls = (
+            kind === 'gear' ? 'bg-blue-400 dark:bg-blue-500' :
+            kind === 'gear-command' ? 'bg-emerald-400 dark:bg-emerald-500' :
+            kind === 'page' ? 'bg-purple-400 dark:bg-purple-500' :
+            'bg-gray-300 dark:bg-gray-600'
+        );
+        const b = document.createElement('span');
+        b.className = 'inline-block w-2 h-2 rounded-sm flex-shrink-0 ' + cls;
+        return b;
     }
-
-    /* -------------------------------------------------------------- *
-     * Render
-     * -------------------------------------------------------------- */
-    let cursor = 0;
-    let lastVisible = [];
 
     function buildSection(title, items) {
         if (items.length === 0) return null;
@@ -292,7 +282,11 @@
                 paintCursor();
             }
         });
-        row.addEventListener('click', function (e) {
+        row.addEventListener('mousedown', function (e) {
+            // mousedown not click — click fires after blur on the input,
+            // which would race with our re-render. mousedown lets us
+            // capture the pick before the focus-leave repaints empty.
+            e.preventDefault();
             const idx = lastVisible.indexOf(item);
             if (idx >= 0) cursor = idx;
             pick({ keepOpen: !!(e.ctrlKey || e.metaKey) });
@@ -310,7 +304,6 @@
             row.classList.toggle('dark:bg-slate-700', isCursor);
             row.setAttribute('aria-selected', isCursor ? 'true' : 'false');
             if (isCursor) {
-                // Auto-scroll to keep cursor in view.
                 const top = row.offsetTop;
                 const height = row.offsetHeight;
                 if (top < listEl.scrollTop) {
@@ -331,21 +324,44 @@
             .map(function (x) { return x.item; });
     }
 
+    function groupByGearCommands(items) {
+        // Group gear-command items by their `group` field. Returns an
+        // object keyed by group name → items[].
+        const out = {};
+        items.forEach(function (it) {
+            const g = (it.command && it.command.group) || 'Page';
+            if (!out[g]) out[g] = [];
+            out[g].push(it);
+        });
+        return out;
+    }
+
     function render() {
         const listEl = document.getElementById('cmdk-list');
-        const input = document.getElementById('cmdk-input');
-        if (!listEl || !input) return;
-        const q = (input.value || '').trim();
+        if (!listEl) return;
+        if (!catalogLoaded) loadCatalog();
+
+        const q = (window.HeaderSearch && window.HeaderSearch.getQuery() || '').trim();
         while (listEl.firstChild) listEl.removeChild(listEl.firstChild);
         lastVisible = [];
 
-        const sections = [
-            { title: 'Recent', items: q ? [] : getRecentItems() },
-            { title: 'Boxes', items: rankItems(boxItems(), q) },
-            { title: 'Gears', items: rankItems(gearItems(), q) },
-            { title: 'Settings', items: rankItems(pageItems(), q) },
-            { title: 'Actions', items: rankItems(actionItems(), q) },
-        ];
+        const sections = [];
+
+        // Gear-scoped commands are grouped by their `group` so a page
+        // with multiple categories of commands (e.g. "Logs: source"
+        // vs "Logs: actions") can split itself sensibly.
+        const gearCmds = rankItems(gearCommandItems(), q);
+        const groups = groupByGearCommands(gearCmds);
+        Object.keys(groups).forEach(function (groupName) {
+            sections.push({ title: groupName, items: groups[groupName] });
+        });
+
+        if (!q) sections.unshift({ title: 'Recent', items: getRecentItems() });
+        sections.push({ title: 'Boxes',    items: rankItems(boxItems(), q) });
+        sections.push({ title: 'Gears',    items: rankItems(gearItems(), q) });
+        sections.push({ title: 'Settings', items: rankItems(pageItems(), q) });
+        sections.push({ title: 'Actions',  items: rankItems(actionItems(), q) });
+
         sections.forEach(function (s) {
             const block = buildSection(s.title, s.items);
             if (block) {
@@ -365,28 +381,62 @@
     }
 
     /* -------------------------------------------------------------- *
-     * Open / close / pick
+     * Open / close / position
      * -------------------------------------------------------------- */
-    let trap = null;
-    function open() {
-        const overlay = document.getElementById('cmdk-overlay');
-        const input = document.getElementById('cmdk-input');
-        if (!overlay || !input) return;
-        loadCatalog();
-        overlay.classList.remove('hidden');
-        cursor = 0;
-        input.value = '';
-        render();
-        if (!trap) trap = window.createFocusTrap(overlay.querySelector('.cmdk-panel') || overlay);
-        trap.activate(input);
-    }
-    function close() {
-        const overlay = document.getElementById('cmdk-overlay');
-        if (!overlay) return;
-        overlay.classList.add('hidden');
-        if (trap) trap.deactivate();
+    function panel() { return document.getElementById('header-search-panel'); }
+
+    function position() {
+        const p = panel();
+        const wrap = document.getElementById('header-search');
+        if (!p || !wrap) return;
+        const rect = wrap.getBoundingClientRect();
+
+        // Width: at least MIN_W so the list stays readable, at most
+        // MAX_W so it doesn't dominate wide monitors, and never wider
+        // than the viewport. Decoupled from the search wrap's own
+        // width, which on narrow viewports collapses to a 34px
+        // magnifying-glass button (issue #92 follow-up: the palette
+        // used to inherit that 34px and become an unusable strip).
+        const MIN_W = 360;
+        const MAX_W = 640;
+        const margin = 16;                       // 8px gutter each side
+        const available = window.innerWidth - margin;
+        const width = Math.min(MAX_W, Math.max(MIN_W, rect.width), available);
+
+        // Anchor centered on the search input, then clamp so the panel
+        // stays inside the viewport (relevant when the input is a tiny
+        // compact button sitting near the right edge on a phone).
+        let left = rect.left + rect.width / 2 - width / 2;
+        left = Math.max(margin / 2, Math.min(left, window.innerWidth - width - margin / 2));
+
+        p.style.left  = left + 'px';
+        p.style.width = width + 'px';
+        p.style.top   = (rect.bottom + 6) + 'px';
     }
 
+    function isOpen() {
+        const p = panel();
+        return !!(p && !p.classList.contains('hidden'));
+    }
+
+    function open() {
+        const p = panel();
+        if (!p) return;
+        if (!catalogLoaded) loadCatalog();
+        cursor = 0;
+        p.classList.remove('hidden');
+        position();
+        render();
+    }
+    function close() {
+        const p = panel();
+        if (!p) return;
+        p.classList.add('hidden');
+    }
+
+    /* -------------------------------------------------------------- *
+     * Pick
+     * -------------------------------------------------------------- */
     function pick(opts) {
         opts = opts || {};
         const item = lastVisible[cursor];
@@ -395,47 +445,51 @@
             case 'box':
                 pushRecent(item);
                 if (opts.keepOpen) {
-                    // Switch box without leaving — write the cookie via a
-                    // background request, then re-render so the gear list
-                    // reflects the new active box. Subsequent gear pick
-                    // will navigate to the right place.
                     activeBoxID = item.box.id;
-                    const input = document.getElementById('cmdk-input');
-                    if (input) input.value = '';
+                    if (window.HeaderSearch) window.HeaderSearch.setValue('>');
                     cursor = 0;
                     render();
                     fetch('/?box_id=' + encodeURIComponent(item.box.id), {
                         credentials: 'same-origin',
                         headers: { 'Accept': 'application/json' },
                         redirect: 'manual',
-                    }).catch(function () { /* best-effort */ });
+                    }).catch(function () {});
                     return;
                 }
-                window.switchBox(item.box.id, '/home');
-                close();
+                exitAndDo(function () { window.switchBox(item.box.id, '/home'); });
                 return;
             case 'gear':
                 pushRecent(item);
-                close();
-                window.location.assign(item.gear.path);
+                exitAndDo(function () { window.location.assign(item.gear.path); });
                 return;
             case 'page':
                 pushRecent(item);
-                close();
-                window.location.assign(item.page.path);
+                exitAndDo(function () { window.location.assign(item.page.path); });
                 return;
             case 'action':
                 pushRecent(item);
-                close();
-                if (item.action && typeof item.action.run === 'function') {
-                    setTimeout(item.action.run, 0);
-                }
+                exitAndDo(function () {
+                    if (item.action && typeof item.action.run === 'function') item.action.run();
+                });
+                return;
+            case 'gear-command':
+                // Per-page commands don't go in recents (the page may
+                // not be the same on next visit). Run and close.
+                exitAndDo(function () {
+                    if (item.command && typeof item.command.run === 'function') item.command.run();
+                });
                 return;
         }
     }
 
+    function exitAndDo(fn) {
+        if (window.HeaderSearch) window.HeaderSearch.exitPaletteMode();
+        close();
+        setTimeout(fn, 0);
+    }
+
     /* -------------------------------------------------------------- *
-     * Status sync (boxes)
+     * Status sync (boxes — unchanged from the prior implementation)
      * -------------------------------------------------------------- */
     function applyStatus(s) {
         if (!s || !s.box_id) return;
@@ -448,8 +502,7 @@
                     (STATUS_DOT_CLASSES[level] || STATUS_DOT_CLASSES.unknown);
             }
         }
-        const overlay = document.getElementById('cmdk-overlay');
-        if (overlay && !overlay.classList.contains('hidden')) render();
+        if (isOpen()) render();
     }
     function fetchStatus() {
         fetch('/bx/api/status', { credentials: 'same-origin' })
@@ -457,7 +510,7 @@
             .then(function (data) {
                 if (!data || !Array.isArray(data.rows)) return;
                 data.rows.forEach(applyStatus);
-            }).catch(function () { /* best-effort */ });
+            }).catch(function () {});
     }
     let evt = null;
     function subscribeSSE() {
@@ -480,49 +533,71 @@
     }
 
     /* -------------------------------------------------------------- *
-     * Wiring
+     * Wiring — drive open/close from HeaderSearch mode + Enter from
+     * the input itself (palette mode preempts header-search.dispatchSubmit).
      * -------------------------------------------------------------- */
     function init() {
-        const overlay = document.getElementById('cmdk-overlay');
-        const input = document.getElementById('cmdk-input');
-        if (!overlay || !input) return;
-
-        overlay.addEventListener('click', function (e) {
-            if (e.target === overlay) close();
+        if (!window.HeaderSearch) {
+            // header-search.js failed to load; nothing to attach.
+            return;
+        }
+        window.HeaderSearch.onModeChange(function (mode) {
+            if (mode === 'palette') open(); else close();
         });
-
-        input.addEventListener('input', function () {
+        window.HeaderSearch.onQueryChange(function () {
+            if (!isOpen()) return;
             cursor = 0;
             render();
         });
-        input.addEventListener('keydown', function (e) {
-            if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                cursor = Math.min(cursor + 1, lastVisible.length - 1);
-                paintCursor();
-            } else if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                cursor = Math.max(cursor - 1, 0);
-                paintCursor();
-            } else if (e.key === 'Enter') {
-                e.preventDefault();
-                pick({ keepOpen: e.ctrlKey || e.metaKey });
-            } else if (e.key === 'Escape') {
-                e.preventDefault();
-                close();
-            }
+
+        const input = document.getElementById('header-search-input');
+        if (input) {
+            input.addEventListener('keydown', function (e) {
+                if (!isOpen()) return;
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    cursor = Math.min(cursor + 1, lastVisible.length - 1);
+                    paintCursor();
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    cursor = Math.max(cursor - 1, 0);
+                    paintCursor();
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    pick({ keepOpen: e.ctrlKey || e.metaKey });
+                }
+            });
+        }
+
+        // Reposition on viewport changes so the panel stays glued to
+        // the search box.
+        window.addEventListener('resize', function () { if (isOpen()) position(); });
+        window.addEventListener('scroll', function () { if (isOpen()) position(); }, true);
+
+        // Click outside → close. Click on the panel itself doesn't bubble
+        // through (we handle that via the row's own mousedown handler).
+        document.addEventListener('mousedown', function (e) {
+            if (!isOpen()) return;
+            const p = panel();
+            const wrap = document.getElementById('header-search');
+            if (p && p.contains(e.target)) return;
+            if (wrap && wrap.contains(e.target)) return;
+            // Outside click: drop palette mode (also closes the panel).
+            window.HeaderSearch.exitPaletteMode();
         });
 
+        // Live updates when a gear registers commands while the panel
+        // is open (e.g. lazy page-init wins the race).
+        if (window.gearbox && window.gearbox.commands) {
+            window.gearbox.commands.onChange(function () { if (isOpen()) render(); });
+        }
+
+        // `g b` legacy shortcut: still works, but now just enters
+        // palette mode (Cmd+K's job).
         const km = window.GearboxKeymap;
         let gPressed = false;
         let gTimer = 0;
         document.addEventListener('keydown', function (e) {
-            // Cmd/Ctrl+K — open from anywhere (also inside text inputs).
-            if (e.key === 'k' && km && km.isMeta(e) && !e.shiftKey && !e.altKey) {
-                e.preventDefault();
-                if (overlay.classList.contains('hidden')) open(); else close();
-                return;
-            }
             if (!km || km.isTypingTarget(e.target)) return;
             if (e.key === 'g' && !km.isMeta(e) && !e.altKey) {
                 gPressed = true;
@@ -533,7 +608,7 @@
             if (gPressed && e.key === 'b') {
                 e.preventDefault();
                 gPressed = false;
-                open();
+                window.HeaderSearch.enterPaletteMode();
             }
         });
 
@@ -541,11 +616,17 @@
         subscribeSSE();
     }
 
-    // Public entry points.
-    window.openCommandPalette = open;
-    window.closeCommandPalette = close;
-    // Back-compat: the chip's onclick handler still calls openBoxSwitcher().
-    window.openBoxSwitcher = open;
+    /* -------------------------------------------------------------- *
+     * Public surface
+     * -------------------------------------------------------------- */
+    window.openCommandPalette = function () {
+        if (window.HeaderSearch) window.HeaderSearch.enterPaletteMode();
+    };
+    window.closeCommandPalette = function () {
+        if (window.HeaderSearch) window.HeaderSearch.exitPaletteMode();
+    };
+    // Box-switcher chip still calls openBoxSwitcher() — keep the alias.
+    window.openBoxSwitcher = window.openCommandPalette;
 
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);

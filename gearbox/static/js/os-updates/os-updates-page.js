@@ -188,6 +188,59 @@ document.addEventListener('DOMContentLoaded', function() {
 			setTimeout(autoCheckForUpdates, 500);
 		}
 	}
+
+	// HeaderSearch wiring (issue #92). #pkg-search is now a hidden
+	// input that the Tabulator datagrid latches onto via its searchInput
+	// option; the global HeaderSearch dispatches `input` events on it so
+	// the existing datagrid filter pipeline keeps working unchanged.
+	if (window.gearbox && window.gearbox.filter) {
+		const pkgSearch = document.getElementById('pkg-search');
+		window.gearbox.filter.register({
+			placeholder: 'Search packages…',
+			onInput: function (q) {
+				if (!pkgSearch) return;
+				pkgSearch.value = q || '';
+				pkgSearch.dispatchEvent(new Event('input', { bubbles: true }));
+			},
+			onClear: function () {
+				if (!pkgSearch) return;
+				pkgSearch.value = '';
+				pkgSearch.dispatchEvent(new Event('input', { bubbles: true }));
+			},
+		});
+	}
+	if (window.gearbox && window.gearbox.commands) {
+		const cmds = window.gearbox.commands;
+		const viewSel = document.getElementById('pkg-view-filter');
+		if (viewSel) {
+			Array.from(viewSel.options).forEach(function (opt) {
+				cmds.register({
+					id: 'osupdates.view.' + opt.value,
+					label: 'View: ' + opt.text,
+					subtitle: 'Filter the package list',
+					group: 'OS Updates',
+					run: function () {
+						viewSel.value = opt.value;
+						if (typeof onPkgViewFilterChange === 'function') onPkgViewFilterChange(opt.value);
+					},
+				});
+			});
+		}
+		cmds.register({
+			id: 'osupdates.check',
+			label: 'Check for updates',
+			subtitle: 'Run apt update on the active host',
+			group: 'OS Updates',
+			run: function () { if (typeof checkForUpdates === 'function') checkForUpdates(); },
+		});
+		cmds.register({
+			id: 'osupdates.install-package',
+			label: 'Install package…',
+			subtitle: 'Open the apt-install dialog',
+			group: 'OS Updates',
+			run: function () { if (typeof showAptInstallModal === 'function') showAptInstallModal(); },
+		});
+	}
 });
 
 // Central Escape key handler — closes whichever modal is currently visible.
