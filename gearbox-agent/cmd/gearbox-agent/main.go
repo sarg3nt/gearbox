@@ -21,6 +21,9 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/pem"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -28,6 +31,8 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+
+	"golang.org/x/crypto/ssh"
 	"syscall"
 	"time"
 
@@ -74,6 +79,7 @@ func main() {
 	generateWebhookSecret := flag.Bool("generate-webhook-secret", false, "Generate webhook secret (if not exists) and display it")
 	showVersion := flag.Bool("version", false, "Show version and exit")
 	syncOnce := flag.Bool("sync-once", false, "Run one sync cycle and exit")
+	generateConsoleKey := flag.Bool("generate-console-key", false, "Generate an ed25519 SSH key pair under HAPROXY_AGENT_DATA_DIR for the console ssh_bridge mode and print the public key for authorized_keys")
 	flag.Parse()
 
 	if *showVersion {
@@ -174,6 +180,51 @@ func main() {
 		fmt.Println(secret)
 		fmt.Println("")
 		fmt.Println("Use this secret when configuring the webhook in GitHub.")
+		os.Exit(0)
+	}
+
+	if *generateConsoleKey {
+		// Generate an ed25519 keypair under DataDir/console-ssh/agent.
+		// Print the public key so the operator can paste it into the
+		// host's authorized_keys. Refuses to overwrite an existing
+		// key — rotation is a deliberate "delete the old one then
+		// re-run" step, not an implicit clobber.
+		keyDir := cfg.DataDir + "/console-ssh"
+		privPath := keyDir + "/agent"
+		pubPath := privPath + ".pub"
+		if _, err := os.Stat(privPath); err == nil {
+			fmt.Fprintf(os.Stderr, "Console SSH key already exists at %s — delete it first if you want to rotate.\n", privPath)
+			os.Exit(1)
+		}
+		if err := os.MkdirAll(keyDir, 0o700); err != nil {
+			logger.Error("Failed to create console-ssh dir", "error", err)
+			os.Exit(1)
+		}
+		pub, priv, err := generateConsoleEd25519()
+		if err != nil {
+			logger.Error("Failed to generate console SSH key", "error", err)
+			os.Exit(1)
+		}
+		if err := os.WriteFile(privPath, priv, 0o600); err != nil {
+			logger.Error("Failed to write console SSH private key", "error", err)
+			os.Exit(1)
+		}
+		if err := os.WriteFile(pubPath, pub, 0o644); err != nil {
+			logger.Error("Failed to write console SSH public key", "error", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Console SSH key pair generated:\n  private: %s (mode 0600)\n  public:  %s\n\n", privPath, pubPath)
+		fmt.Println("Install the public key on the host's authorized_keys (typically /root/.ssh/authorized_keys),")
+		fmt.Println("then set the following env vars on the agent:")
+		fmt.Println("")
+		fmt.Println("  HAPROXY_AGENT_HOST_EXEC=ssh-bridge")
+		fmt.Println("  HAPROXY_AGENT_CONSOLE_SSH_HOST=127.0.0.1:22")
+		fmt.Println("  HAPROXY_AGENT_CONSOLE_SSH_USER=root  # or whatever user owns the authorized_keys")
+		fmt.Printf("  HAPROXY_AGENT_CONSOLE_SSH_KEY=%s\n", privPath)
+		fmt.Println("  HAPROXY_AGENT_CONSOLE_SSH_HOSTKEY=/path/to/expected/host.pub  # ssh-keyscan -t ed25519 <host>")
+		fmt.Println("")
+		fmt.Println("Public key (paste into authorized_keys):")
+		fmt.Println(string(pub))
 		os.Exit(0)
 	}
 
@@ -610,4 +661,29 @@ func buildSourceOverrides(cfg *config.Config) map[gear.MetricCategory]string {
 		out[gear.CategoryHTTPRequests] = cfg.HTTPSource
 	}
 	return out
+}
+
+// generateConsoleEd25519 mints an ed25519 keypair encoded in the
+// formats sshd expects: OpenSSH PEM for the private side, single-line
+// authorized_keys format for the public side. Used only by the
+// --generate-console-key one-shot flag, so we keep the implementation
+// inline rather than scattering it across the framework.
+func generateConsoleEd25519() (pub, priv []byte, err error) {
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, nil, fmt.Errorf("generate ed25519: %w", err)
+	}
+	sshPub, err := ssh.NewPublicKey(publicKey)
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshal public: %w", err)
+	}
+	// "gearbox-agent" comment makes the key easy to identify on the
+	// host (`grep gearbox-agent ~/.ssh/authorized_keys`).
+	pub = append(ssh.MarshalAuthorizedKey(sshPub)[:len(ssh.MarshalAuthorizedKey(sshPub))-1], []byte(" gearbox-agent\n")...)
+	pemBlock, err := ssh.MarshalPrivateKey(privateKey, "gearbox-agent console bridge")
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshal private: %w", err)
+	}
+	priv = pem.EncodeToMemory(pemBlock)
+	return pub, priv, nil
 }

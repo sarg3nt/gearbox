@@ -127,12 +127,18 @@ func NewHandler(bus *events.Bus, logger *slog.Logger) *Handler {
 			logger.Info("console: nsenter host-exec selected (container → host via PID 1 namespaces)")
 		}
 	case modeSSHBridge:
-		// Spawner stays nil — the real wiring lands in Phase 2.
-		// Mode advertises ssh_bridge so the dashboard can light up
-		// the UI today; sessions fail loud until then.
-		h.Mode = ModeSSHBridge
-		if logger != nil {
-			logger.Warn("console: ssh_bridge mode configured but not yet implemented (Phase 2)")
+		cfg, err := pty.LoadSSHBridgeConfigFromEnv()
+		if err != nil {
+			if logger != nil {
+				logger.Error("console: ssh_bridge requested but config is invalid; degrading to echo mode", "error", err)
+			}
+			h.Mode = ModeEcho
+		} else {
+			h.Spawner = pty.SSHBridgeSpawner(cfg)
+			h.Mode = ModeSSHBridge
+			if logger != nil {
+				logger.Info("console: ssh_bridge host-exec selected", "host", cfg.Host, "user", cfg.User)
+			}
 		}
 	default:
 		h.Spawner = pty.SpawnUnix
