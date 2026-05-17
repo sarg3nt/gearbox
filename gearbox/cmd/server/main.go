@@ -25,6 +25,7 @@ import (
 	gbmiddleware "github.com/sarg3nt/gearbox/internal/framework/middleware"
 	"github.com/sarg3nt/gearbox/internal/framework/models"
 	"github.com/sarg3nt/gearbox/internal/framework/services"
+	"github.com/sarg3nt/gearbox/internal/framework/services/agent_keyring"
 	"github.com/sarg3nt/gearbox/internal/framework/services/alerts"
 	"github.com/sarg3nt/gearbox/internal/framework/services/crypto"
 	"github.com/sarg3nt/gearbox/internal/framework/services/email"
@@ -343,6 +344,24 @@ func main() {
 	alertEvaluator := alerts.NewEvaluator(db, registry, eventHub, logger)
 	alertEvaluator.Start(30 * time.Second) // Evaluate alerts every 30 seconds
 	logger.Info("alert evaluator initialized")
+
+	// Initialize retired-key cleaner. Each manual or scheduled rotation
+	// leaves the demoted key in box_agent_keys with retired_at stamped
+	// but role=secondary so the overlap window can preserve recovery.
+	// The cleaner walks every box every CleanerInterval and removes
+	// keys whose retired_at + overlap window has passed — both on the
+	// agent and in the DB. See issue #72 Phase 4.
+	keyringCleaner := agent_keyring.NewCleaner(
+		agent_keyring.New(db, encryptor, logger),
+		db,
+		agent_keyring.DefaultOverlapWindow,
+		agent_keyring.CleanerInterval,
+		logger,
+	)
+	keyringCleanerCtx, cancelKeyringCleaner := context.WithCancel(context.Background())
+	defer cancelKeyringCleaner()
+	go keyringCleaner.Run(keyringCleanerCtx)
+	logger.Info("retired-key cleaner initialized")
 
 	// Initialize WebSocket manager for Agent connections
 	wsManager := collector.NewWebSocketManager(eventHub, registry, logger)
