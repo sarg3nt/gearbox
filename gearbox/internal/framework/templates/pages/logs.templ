@@ -489,14 +489,38 @@ templ Logs(user *models.User, servers []models.BoxConfig) {
 			const url = `/api/${serverID}/logs/${logName}?lines=${lines}`;
 
 			fetch(url)
-				.then(response => response.json())
+				.then(async response => {
+					// Backend returns a JSON envelope for both success and
+					// error (see errors.WriteHTTPError) — try to parse it and
+					// surface .message on error instead of letting JSON.parse
+					// failures bubble up as confusing "Unexpected token" toasts.
+					const contentType = response.headers.get('content-type') || '';
+					const isJSON = contentType.includes('application/json');
+					if (!response.ok) {
+						let msg = response.statusText || `HTTP ${response.status}`;
+						if (isJSON) {
+							try {
+								const body = await response.json();
+								if (body && (body.message || body.error)) {
+									msg = body.message || body.error;
+								}
+							} catch (_) { /* fall through */ }
+						}
+						throw new Error(msg);
+					}
+					return isJSON ? response.json() : { logs: await response.text() };
+				})
 				.then(data => {
 					rawLogContent = data.logs || 'No logs available';
 					displayLogs(rawLogContent);
 				})
 				.catch(error => {
-					document.getElementById('log-container').innerHTML =
-						'<div class="text-red-400">Error loading logs: ' + error.message + '</div>';
+					const container = document.getElementById('log-container');
+					container.replaceChildren();
+					const div = document.createElement('div');
+					div.className = 'text-red-400';
+					div.textContent = 'Error loading logs: ' + error.message;
+					container.appendChild(div);
 				});
 		}
 
