@@ -32,12 +32,59 @@ const (
 type Client struct {
 	baseURL    string
 	apiKey     string
+	kid        string // optional; when set, sent as X-Gearbox-Kid header
 	httpClient *http.Client
 }
+
+// HeaderKID is the request/response header name carrying the keyring
+// entry id. The agent's middleware echoes the matched kid on every
+// authenticated response (see middleware.ResponseHeaderKID); the
+// dashboard sends this kid on outbound requests so the agent + audit
+// log can correlate keys. Phase 5 (drift detection) compares the
+// request-time kid with the echoed response kid.
+const HeaderKID = "X-Gearbox-Kid"
 
 // NewClient creates a new HAProxy Agent API client.
 func NewClient(baseURL, apiKey string) *Client {
 	return NewClientWithTimeout(baseURL, apiKey, DefaultTimeout)
+}
+
+// NewClientWithKID creates a client that also identifies the keyring
+// entry it's signing with — the agent echoes back the matched kid in
+// X-Gearbox-Kid and the dashboard compares the two to detect rotation
+// drift. Empty kid is fine (legacy single-key boxes); the client just
+// won't send the header.
+func NewClientWithKID(baseURL, apiKey, kid string) *Client {
+	c := NewClient(baseURL, apiKey)
+	c.kid = kid
+	return c
+}
+
+// WithKID returns a shallow copy of c tagged with kid. Useful when a
+// short-lived client wants to be rebuilt to point at a different
+// keyring entry without re-doing TLS setup.
+func (c *Client) WithKID(kid string) *Client {
+	clone := *c
+	clone.kid = kid
+	return &clone
+}
+
+// KID returns the kid this client signs requests with, or "" if it
+// wasn't built with one. Used by the rotator and drift-detection
+// paths.
+func (c *Client) KID() string { return c.kid }
+
+// setAuthHeaders applies the standard auth + Accept headers and, when
+// the client was built with a kid, the X-Gearbox-Kid request header.
+// Callers must call this BEFORE setting Content-Type so their override
+// wins (the helper deliberately doesn't set Content-Type — varied
+// per-callsite based on whether the request has a body).
+func (c *Client) setAuthHeaders(req *http.Request) {
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	req.Header.Set("Accept", "application/json")
+	if c.kid != "" {
+		req.Header.Set(HeaderKID, c.kid)
+	}
 }
 
 // NewClientWithTimeout creates a new HAProxy Agent API client with a custom timeout.
@@ -214,8 +261,7 @@ func (c *Client) doRequest(method, path string, query url.Values) ([]byte, error
 	}
 
 	// Add bearer token authentication
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	req.Header.Set("Accept", "application/json")
+	c.setAuthHeaders(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -255,8 +301,7 @@ func (c *Client) doRequestLongRunning(method, path string, query url.Values) ([]
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	req.Header.Set("Accept", "application/json")
+	c.setAuthHeaders(req)
 
 	// Use a separate client with extended timeout, sharing the same transport
 	longClient := &http.Client{
@@ -311,8 +356,7 @@ func (c *Client) doRequestWithBodyAndQuery(method, path string, reqBody interfac
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	req.Header.Set("Accept", "application/json")
+	c.setAuthHeaders(req)
 	if reqBody != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -758,7 +802,7 @@ func (c *Client) DownloadCertificate(domain string) ([]byte, string, error) {
 		return nil, "", fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	c.setAuthHeaders(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -1041,8 +1085,7 @@ func (c *Client) UpdateHAProxyConfig(req *HAProxyConfigUpdateRequest) (*HAProxyC
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
-	httpReq.Header.Set("Accept", "application/json")
+	c.setAuthHeaders(httpReq)
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	httpResp, err := c.httpClient.Do(httpReq)
@@ -1137,8 +1180,7 @@ func (c *Client) UpdateFirewallConfig(req *FirewallConfigUpdateRequest) (*Firewa
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
-	httpReq.Header.Set("Accept", "application/json")
+	c.setAuthHeaders(httpReq)
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	httpResp, err := c.httpClient.Do(httpReq)
