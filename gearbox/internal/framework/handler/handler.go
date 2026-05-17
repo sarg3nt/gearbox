@@ -314,14 +314,28 @@ func (h *Handler) resolveBoxIDFromRequest(r *http.Request) string {
 
 // resolveActiveBox returns the full BoxConfig for the box the request is
 // acting on, using resolveBoxIDFromRequest for resolution. Returns
-// (nil, false) when no enabled box matches the resolved ID — this is
-// the all-boxes / no-box context (e.g. /bx, /settings).
+// (nil, false) when:
 //
-// Handlers that need an agent client, an agent URL, or other BoxConfig
-// fields should prefer this over resolveBoxIDFromRequest + a separate
-// getServerConfig call: it makes the "single helper for active box"
-// invariant from issue #112 Phase 4 visible in the code, and it folds
-// the existence check into one call site.
+//   - There are no servers configured at all (resolveBoxIDFromRequest's
+//     getDefaultServerID fallback has nothing to return), OR
+//   - The resolved ID doesn't match any entry in the static
+//     h.servers list or the database — e.g. a stale link with
+//     ?server=<deleted-box-id>.
+//
+// Note: this does NOT return (nil, false) for an "all-boxes
+// dashboard context". When at least one server is configured,
+// resolveBoxIDFromRequest falls back to the first enabled box, and
+// getServerConfig accepts entries from the static h.servers list
+// whether or not they're DB-enabled, so any time at least one
+// server exists this helper resolves to one. Handlers that need to
+// distinguish "no active box" from "first enabled box" should
+// consult the auth-context active-box set by
+// InjectIntegrationStatus, not call this helper.
+//
+// Handlers that need an agent client, an agent URL, or other
+// BoxConfig fields should prefer this over resolveBoxIDFromRequest +
+// a separate getServerConfig call: it folds the existence check
+// into one call site (issue #112 Phase 4).
 func (h *Handler) resolveActiveBox(r *http.Request) (*models.BoxConfig, bool) {
 	boxID := h.resolveBoxIDFromRequest(r)
 	if boxID == "" {
