@@ -338,6 +338,15 @@ func main() {
 	}
 	logger.Info("WebSocket: Enabled - real-time events at GET /api/v1/events")
 
+	// [#89] Phase 1a: log the console-surface state on startup. Loud
+	// enough for `journalctl -u gearbox-agent` to surface, but no PII —
+	// just whether the endpoints exist.
+	if cfg.ConsoleEnabled {
+		logger.Warn("Console: ENABLED — token + WS at /api/v1/console/*; sessions inherit agent UID, see [#89]")
+	} else {
+		logger.Info("Console: Disabled (set HAPROXY_AGENT_CONSOLE_ENABLED=true to enable)")
+	}
+
 	// Create and start API server
 	serverCfg := api.ServerConfig{
 		ListenAddr:     cfg.ListenAddr,
@@ -347,6 +356,7 @@ func main() {
 		Version:        Version,
 		Logger:         logger,
 		SwaggerEnabled: cfg.SwaggerEnabled, // P3-2: off by default; opt in via GEARBOX_AGENT_SWAGGER_ENABLED=true
+		ConsoleEnabled: cfg.ConsoleEnabled, // [#89] Phase 1a: off by default; opt in via HAPROXY_AGENT_CONSOLE_ENABLED=true
 	}
 	// Only set MetadataProvider if sync service is configured
 	// (Go interfaces holding nil pointers are not themselves nil)
