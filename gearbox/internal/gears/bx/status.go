@@ -32,12 +32,17 @@ type BoxStatus struct {
 	Name        string      `json:"name"`
 	Location    string      `json:"location,omitempty"`
 	Enabled     bool        `json:"enabled"`
-	Level       StatusLevel `json:"level"`
-	Reachable   bool        `json:"reachable"`
-	AgentURL    string      `json:"agent_url,omitempty"`
-	Contributors []string   `json:"contributors,omitempty"` // human-readable reasons feeding non-green
-	LastChecked time.Time   `json:"last_checked"`
-	LatencyMs   int64       `json:"latency_ms,omitempty"`
+	// ConsoleEnabled mirrors the per-box console_enabled DB column.
+	// Surfaced on the wire so the Bx tile's JS can hide the console
+	// affordance for boxes that haven't opted in without making a
+	// per-box capabilities round-trip on page load. See #89 Phase 2c.
+	ConsoleEnabled bool        `json:"console_enabled"`
+	Level          StatusLevel `json:"level"`
+	Reachable      bool        `json:"reachable"`
+	AgentURL       string      `json:"agent_url,omitempty"`
+	Contributors   []string    `json:"contributors,omitempty"` // human-readable reasons feeding non-green
+	LastChecked    time.Time   `json:"last_checked"`
+	LatencyMs      int64       `json:"latency_ms,omitempty"`
 }
 
 // statusMonitor is the per-install poller that keeps a map of every box's
@@ -146,12 +151,13 @@ func (m *statusMonitor) pollAll(ctx context.Context) {
 func (m *statusMonitor) probe(ctx context.Context, b *database.BoxDB, apiKey string) BoxStatus {
 	now := time.Now()
 	bs := BoxStatus{
-		BoxID:       b.BoxID,
-		Name:        b.Name,
-		Location:    b.Location,
-		Enabled:     b.Enabled,
-		AgentURL:    b.AgentURL,
-		LastChecked: now,
+		BoxID:          b.BoxID,
+		Name:           b.Name,
+		Location:       b.Location,
+		Enabled:        b.Enabled,
+		ConsoleEnabled: b.ConsoleEnabled,
+		AgentURL:       b.AgentURL,
+		LastChecked:    now,
 	}
 	if !b.Enabled {
 		bs.Level = StatusGray

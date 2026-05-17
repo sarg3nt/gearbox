@@ -84,7 +84,16 @@
     // hits /api/console/{id}/capabilities and degrades gracefully if
     // console isn't enabled on that box. Lazy keeps the grid render
     // cheap (no per-row fetch on page load).
-    function consoleFormatter() {
+    function consoleFormatter(cell) {
+        // Skip rendering for boxes that haven't opted in — keeps the
+        // column visually quiet for fleets where most boxes don't
+        // have console enabled. The data still flows through (so a
+        // live row update can light it up), we just don't paint the
+        // button.
+        const row = cell.getRow().getData();
+        if (!row || !row.console_enabled) {
+            return '';
+        }
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'bx-console-btn inline-flex items-center justify-center w-7 h-7 rounded text-slate-500 hover:text-emerald-500 hover:bg-slate-100 dark:hover:bg-slate-700';
@@ -356,6 +365,10 @@
         const snapshot = loadInitialRows();
         if (Array.isArray(snapshot)) {
             snapshot.forEach(function (row) {
+                // Don't pollute the palette with disabled boxes — if
+                // console isn't on for this box, the entry would
+                // just produce a "disabled" error when clicked.
+                if (!row.console_enabled) return;
                 cmds.register({
                     id: 'bx.console.' + row.id,
                     label: 'Console: ' + (row.name || row.id),
