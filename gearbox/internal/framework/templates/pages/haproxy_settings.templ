@@ -708,9 +708,12 @@ templ haProxyBoxForm(user *models.User, server *database.BoxDB, isEdit bool, err
 			spinner.classList.remove('hidden');
 			resultDiv.classList.add('hidden');
 
-			// Build form data for Gearbox Agent API connection test
+			// Build form data for Gearbox Agent API connection test.
+			// On edit the api_key field is empty (we never surface the stored
+			// secret to the browser); box_id lets the backend look up and
+			// decrypt the stored key server-side. See haproxy_config.go.
 			const formData = new URLSearchParams();
-			formData.append('server_id', document.getElementById('server_id')?.value || '');
+			formData.append('box_id', document.getElementById('box_id')?.value || '');
 			formData.append('agent_url', document.getElementById('agent_url')?.value || '');
 			formData.append('api_key', document.getElementById('api_key')?.value || '');
 
