@@ -164,7 +164,7 @@ func (a *ServerAdapter) GetEnabledServersWithGearAvailable(gearName string) []mo
 		go func(i int) {
 			defer wg.Done()
 			srv := all[i]
-			caps, err := a.capabilities.Get(srv.ID, srv.AgentURL, srv.APIKey)
+			caps, err := a.capabilities.Get(srv.ID, srv.AgentURL, srv.APIKey, srv.SkipTLSVerify)
 			if err != nil || caps == nil {
 				// Fail-open: include the box if we can't see its probe table.
 				keep[i] = true

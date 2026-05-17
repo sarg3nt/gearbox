@@ -91,7 +91,7 @@ func (r *Rotator) RotateBox(boxID int64, overlapWindow time.Duration) (*Rotation
 		return nil, fmt.Errorf("box %d has no primary key — bootstrap a key first", boxID)
 	}
 
-	client, err := r.clientForKey(box.AgentURL, current)
+	client, err := r.clientForKey(box.AgentURL, current, box.SkipTLSVerify)
 	if err != nil {
 		return nil, fmt.Errorf("build agent client: %w", err)
 	}
@@ -182,7 +182,7 @@ func (r *Rotator) CleanupRetiredKeys(boxID int64, overlapWindow time.Duration) (
 		return 0, fmt.Errorf("load keys: %w", err)
 	}
 
-	client, err := r.clientForKey(box.AgentURL, primary)
+	client, err := r.clientForKey(box.AgentURL, primary, box.SkipTLSVerify)
 	if err != nil {
 		return 0, fmt.Errorf("build agent client: %w", err)
 	}
@@ -222,7 +222,11 @@ func (r *Rotator) CleanupRetiredKeys(boxID int64, overlapWindow time.Duration) (
 
 // clientForKey decrypts the given key entry and builds an authenticated
 // agent.Client tagged with its kid (so X-Gearbox-Kid gets echoed back).
-func (r *Rotator) clientForKey(agentURL string, key *database.BoxAgentKey) (*agent.Client, error) {
+// skipTLSVerify mirrors the box's per-box TLS-verification opt-out
+// (issue #37) so rotation calls trust the same agent the rest of the
+// dashboard does — without this the rotator would refuse to connect to
+// boxes whose UI marked their self-signed certs as accepted.
+func (r *Rotator) clientForKey(agentURL string, key *database.BoxAgentKey, skipTLSVerify bool) (*agent.Client, error) {
 	hexSecret, err := r.encryptor.DecryptString(key.SecretEncrypted)
 	if err != nil {
 		return nil, fmt.Errorf("decrypt secret: %w", err)
@@ -234,7 +238,7 @@ func (r *Rotator) clientForKey(agentURL string, key *database.BoxAgentKey) (*age
 	// Agent accepts both legacy 64-hex and prefixed gbx_<kid>_<b64>;
 	// always send the prefixed form so the audit log sees a real kid.
 	token := "gbx_" + key.KID + "_" + base64URLNoPad(secret)
-	return agent.NewClientWithKID(agentURL, token, key.KID), nil
+	return agent.NewClientWithKID(agentURL, token, key.KID, skipTLSVerify), nil
 }
 
 // isNotFoundOrConflict is true for APIError 404 / 409 — meaning the

@@ -113,13 +113,17 @@ func NewCapabilitiesCache(ttl, fetchTimeout time.Duration) *CapabilitiesCache {
 // so config edits take effect on the next call rather than waiting out
 // the TTL. The previous entry expires naturally; no explicit cleanup
 // needed for the rare case of an operator-driven URL change.
-func (c *CapabilitiesCache) Get(boxID, agentURL, apiKey string) (*BoxCapabilities, error) {
+//
+// skipTLSVerify mirrors the per-box TLS-verification opt-out (issue
+// #37). Callers pass the BoxConfig.SkipTLSVerify value so capability
+// fetches honor the same trust policy as the rest of the dashboard.
+func (c *CapabilitiesCache) Get(boxID, agentURL, apiKey string, skipTLSVerify bool) (*BoxCapabilities, error) {
 	k := cacheKey{boxID: boxID, agentURL: agentURL}
 	if entry, ok := c.lookup(k); ok {
 		return entry.caps, entry.err
 	}
 
-	client := NewClientWithTimeout(agentURL, apiKey, c.fetchTimeout)
+	client := NewClientWithTimeout(agentURL, apiKey, skipTLSVerify, c.fetchTimeout)
 	resp, err := client.GetCapabilities()
 
 	now := time.Now()

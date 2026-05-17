@@ -787,7 +787,7 @@ func (h *Handler) getAgentClient(server *database.BoxDB) (*agent.Client, error) 
 		return nil, fmt.Errorf("failed to decrypt API key: %w", err)
 	}
 
-	return agent.NewClient(server.AgentURL, apiKey), nil
+	return agent.NewClient(server.AgentURL, apiKey, server.SkipTLSVerify), nil
 }
 
 func (h *Handler) jsonError(w http.ResponseWriter, message string, status int) {

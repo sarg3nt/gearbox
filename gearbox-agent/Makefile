@@ -1,4 +1,4 @@
-.PHONY: help build build-linux build-release test lint clean deploy run swagger swagger-install upload-binary docker-build docker-push docker-run docker-stop
+.PHONY: help build build-linux build-release test lint clean deploy run swagger swagger-install upload-binary docker-build docker-push docker-push-dev docker-run docker-stop
 
 # Variables
 APP_NAME := gearbox-agent
@@ -169,6 +169,18 @@ docker-build: ## Build Docker image
 		-t $(DOCKER_IMAGE):latest \
 		.
 	@echo "Docker image built successfully"
+
+docker-push-dev: ## Build and push Docker image to ghcr.io with the 'dev' tag (linux/amd64)
+	@echo "Building and pushing $(DOCKER_IMAGE):dev..."
+	@docker buildx build \
+		--platform linux/amd64 \
+		--build-arg VERSION=dev \
+		--build-arg COMMIT_SHA=$(COMMIT_SHA) \
+		--build-arg BUILD_DATE=$(BUILD_DATE) \
+		-t $(DOCKER_IMAGE):dev \
+		--push \
+		.
+	@echo "✓ Pushed $(DOCKER_IMAGE):dev"
 
 docker-push: docker-build ## Build and push Docker image to registry
 	@echo "Pushing Docker image: $(DOCKER_IMAGE):$(DOCKER_TAG)"

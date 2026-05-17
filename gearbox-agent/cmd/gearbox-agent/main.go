@@ -50,6 +50,7 @@ import (
 	_ "github.com/sarg3nt/gearbox-agent/internal/gears/apache"
 	_ "github.com/sarg3nt/gearbox-agent/internal/gears/caddy"
 	_ "github.com/sarg3nt/gearbox-agent/internal/gears/certs"
+	_ "github.com/sarg3nt/gearbox-agent/internal/gears/containers"
 	_ "github.com/sarg3nt/gearbox-agent/internal/gears/docker"
 	_ "github.com/sarg3nt/gearbox-agent/internal/gears/haproxy"
 	_ "github.com/sarg3nt/gearbox-agent/internal/gears/host"

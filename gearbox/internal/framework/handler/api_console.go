@@ -164,7 +164,7 @@ func (h *Handler) APIConsoleWS(w http.ResponseWriter, r *http.Request) {
 	// See #89 follow-up.
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
-		TLSClientConfig:  agent.BuildTLSConfig(),
+		TLSClientConfig:  agent.BuildTLSConfig(server.SkipTLSVerify),
 	}
 	upstream, upstreamResp, err := dialer.Dial(upstreamURL, nil)
 	if err != nil {

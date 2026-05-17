@@ -67,7 +67,7 @@ func (m *WebSocketManager) Connect(serverConfig models.BoxConfig) error {
 	}
 
 	// Create agent client
-	agentClient := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey)
+	agentClient := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey, serverConfig.SkipTLSVerify)
 
 	// Create event handler that processes events and triggers actions
 	handler := m.createEventHandler(serverConfig.ID, serverConfig.Name)

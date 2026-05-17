@@ -124,7 +124,7 @@ func (h *Handler) getBoxCapabilities(boxID string) (*agent.BoxCapabilities, bool
 	if !exists || !serverConfig.UsesAgentAPI() {
 		return nil, false
 	}
-	caps, err := h.capabilities.Get(boxID, serverConfig.AgentURL, serverConfig.APIKey)
+	caps, err := h.capabilities.Get(boxID, serverConfig.AgentURL, serverConfig.APIKey, serverConfig.SkipTLSVerify)
 	if err != nil {
 		h.logger.Debug("capabilities fetch failed",
 			"box_id", boxID, "error", err)

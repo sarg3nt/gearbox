@@ -1,0 +1,1 @@
+ALTER TABLE boxes ADD COLUMN skip_tls_verify INTEGER NOT NULL DEFAULT 0;

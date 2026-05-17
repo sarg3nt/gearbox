@@ -664,7 +664,7 @@ func (h *Handler) APIMetricsLogErrorsHandler(w http.ResponseWriter, r *http.Requ
 	}
 	backendFilter := strings.TrimSpace(r.URL.Query().Get("backend"))
 
-	client := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey)
+	client := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey, serverConfig.SkipTLSVerify)
 	resp, err := client.GetLogs("haproxy", lines)
 	if err != nil {
 		// Don't 500 — return an empty result with a hint. The metrics page

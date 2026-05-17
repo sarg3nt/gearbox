@@ -17,7 +17,7 @@ func TestDriftHandler_FiresOnKIDMismatch(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClientWithKID(srv.URL, "ignored", "expected-kid")
+	c := NewClientWithKID(srv.URL, "ignored", "expected-kid", false)
 	var fired atomic.Bool
 	var seenExpected, seenActual string
 	c.SetDriftHandler(func(expected, actual string) {
@@ -44,7 +44,7 @@ func TestDriftHandler_DoesNotFireOnMatch(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClientWithKID(srv.URL, "ignored", "matched")
+	c := NewClientWithKID(srv.URL, "ignored", "matched", false)
 	var fired atomic.Bool
 	c.SetDriftHandler(func(_, _ string) { fired.Store(true) })
 
@@ -65,7 +65,7 @@ func TestDriftHandler_DoesNotFireWhenAgentDoesNotEchoKID(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClientWithKID(srv.URL, "ignored", "expected-kid")
+	c := NewClientWithKID(srv.URL, "ignored", "expected-kid", false)
 	var fired atomic.Bool
 	c.SetDriftHandler(func(_, _ string) { fired.Store(true) })
 
@@ -85,7 +85,7 @@ func TestDriftHandler_DoesNotFireWhenClientHasNoKID(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "ignored") // no kid
+	c := NewClient(srv.URL, "ignored", false) // no kid
 	var fired atomic.Bool
 	c.SetDriftHandler(func(_, _ string) { fired.Store(true) })
 

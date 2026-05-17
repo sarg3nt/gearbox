@@ -34,6 +34,7 @@ import (
 	_ "github.com/sarg3nt/gearbox/internal/gears/alerts"
 	_ "github.com/sarg3nt/gearbox/internal/gears/bx"
 	_ "github.com/sarg3nt/gearbox/internal/gears/certificates"
+	_ "github.com/sarg3nt/gearbox/internal/gears/containers"
 	_ "github.com/sarg3nt/gearbox/internal/gears/haproxy"
 	_ "github.com/sarg3nt/gearbox/internal/gears/home"
 	_ "github.com/sarg3nt/gearbox/internal/gears/logs"
@@ -658,10 +659,13 @@ func main() {
 			r.Get("/backup", h.BackupPage)
 		})
 
+		// Root redirect - sends "/" to the first enabled gear in nav order
+		r.Get("/", h.RootHandler)
+
 		// Gear-registered routes
 		// Gears handle: / (haproxy overview), /status-grid (haproxy), /logs (logs),
 		// /services (services), /metrics (metrics gear), /certificates (certificates),
-		// /traffic (traffic), /alerts (alerts)
+		// /traffic (traffic), /alerts (alerts), /containers (containers)
 		gearManager.RegisterRoutes(r)
 
 		// Page routes (non-gear)

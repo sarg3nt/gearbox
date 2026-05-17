@@ -212,7 +212,7 @@ func (h *Handler) APIMetricsSourceLogErrorsHandler(w http.ResponseWriter, r *htt
 		limit = l
 	}
 
-	client := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey)
+	client := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey, serverConfig.SkipTLSVerify)
 	resp, err := client.GetAccessLogRecent(source, statusMin, limit)
 	if err != nil {
 		// Don't 500 — return an empty envelope with a hint. The

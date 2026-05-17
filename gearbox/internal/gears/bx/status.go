@@ -175,7 +175,7 @@ func (m *statusMonitor) probe(ctx context.Context, b *database.BoxDB, apiKey str
 	// to Yellow with an explanatory contributor once Health() returns ok.
 	// Per-probe timeout bounds the HTTP request itself so a single hung
 	// agent can't stall the poll cycle past m.timeout.
-	client := agent.NewClientWithTimeout(b.AgentURL, apiKey, m.timeout)
+	client := agent.NewClientWithTimeout(b.AgentURL, apiKey, b.SkipTLSVerify, m.timeout)
 	t0 := time.Now()
 	_, err := client.Health()
 	bs.LatencyMs = time.Since(t0).Milliseconds()

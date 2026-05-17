@@ -783,7 +783,7 @@ func (h *Handler) getAvailableLogSources(boxID string) []pages.LogSourceInfo {
 	}
 
 	// Fetch available log sources from agent
-	agentClient := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey)
+	agentClient := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey, serverConfig.SkipTLSVerify)
 	sourcesResp, err := agentClient.GetLogSources()
 	if err != nil {
 		h.logger.Error("failed to get log sources from agent for server", "server_id", boxID, "error", err)
@@ -812,7 +812,7 @@ func (h *Handler) getInstalledServices(boxID string) []string {
 	}
 
 	// Fetch available services from agent
-	agentClient := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey)
+	agentClient := agent.NewClient(serverConfig.AgentURL, serverConfig.APIKey, serverConfig.SkipTLSVerify)
 	availableResp, err := agentClient.GetAvailableServices()
 	if err != nil {
 		h.logger.Error("failed to get available services from agent for server", "server_id", boxID, "error", err)

@@ -1,0 +1,191 @@
+package containers
+
+import (
+	"github.com/sarg3nt/gearbox/internal/framework/models"
+	"github.com/sarg3nt/gearbox/internal/framework/templates/layouts"
+)
+
+// ContainersPage renders the main containers management page.
+templ ContainersPage(user *models.User, servers []models.BoxConfig) {
+	@layouts.Base("Containers", user, "/containers") {
+		<!-- Page header content -->
+		<div id="page-header-source" class="hidden">
+			<div class="flex items-center">
+				<h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">
+					Containers
+					if len(servers) > 1 {
+						<span class="text-gray-400 dark:text-gray-500 mx-2">:</span>
+						<span class="inline-block relative">
+							<select
+								id="server-selector"
+								class="appearance-none bg-transparent text-xl font-bold text-gray-800 dark:text-gray-100 pr-7 cursor-pointer focus:outline-none hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+								onchange="switchServer(this.value)"
+							>
+								for _, server := range servers {
+									<option value={ server.ID }>{ server.Name }</option>
+								}
+							</select>
+							<svg class="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+							</svg>
+						</span>
+					} else if len(servers) == 1 {
+						<span class="text-gray-400 dark:text-gray-500 mx-2">:</span>
+						<span>{ servers[0].Name }</span>
+					}
+				</h2>
+			</div>
+			<div class="flex-1"></div>
+			<div class="flex items-center space-x-3">
+				<!-- View toggle: Stacks / All Containers -->
+				<div class="flex rounded-lg border border-gray-200 dark:border-slate-600 overflow-hidden text-sm">
+					<button
+						id="view-stacks-btn"
+						onclick="setView('stacks')"
+						class="px-3 py-1.5 bg-blue-600 text-white"
+					>
+						Stacks
+					</button>
+					<button
+						id="view-all-btn"
+						onclick="setView('all')"
+						class="px-3 py-1.5 bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700"
+					>
+						All Containers
+					</button>
+				</div>
+				<!-- Search -->
+				<input
+					id="container-search"
+					type="text"
+					placeholder="Search..."
+					oninput="filterContainers(this.value)"
+					class="px-3 py-1.5 text-sm border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-blue-500"
+				/>
+				<!-- Refresh toggle -->
+				<button
+					id="auto-refresh-btn"
+					onclick="toggleAutoRefresh()"
+					class="px-3 py-1.5 text-sm bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-1"
+					title="Toggle auto-refresh"
+				>
+					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+					</svg>
+					<span id="auto-refresh-label">Auto-refresh: On</span>
+				</button>
+			</div>
+		</div>
+
+		<!-- Server ID for JS -->
+		if len(servers) > 0 {
+			<input type="hidden" id="current-server-id" value={ servers[0].ID }/>
+		}
+
+		<!-- Main content area -->
+		<div class="p-4 space-y-4">
+			<!-- Loading state -->
+			<div id="containers-loading" class="flex items-center justify-center py-16">
+				<div class="flex flex-col items-center gap-3 text-gray-500 dark:text-gray-400">
+					<svg class="w-8 h-8 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+					</svg>
+					<span class="text-sm">Loading containers...</span>
+				</div>
+			</div>
+
+			<!-- Error state -->
+			<div id="containers-error" class="hidden rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-4">
+				<div class="flex items-start gap-3">
+					<svg class="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+					</svg>
+					<div>
+						<p class="text-sm font-medium text-red-800 dark:text-red-200">Failed to load containers</p>
+						<p id="containers-error-msg" class="text-sm text-red-700 dark:text-red-300 mt-1"></p>
+					</div>
+				</div>
+			</div>
+
+			<!-- No runtime state -->
+			<div id="containers-no-runtime" class="hidden rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 p-6 text-center">
+				<svg class="w-12 h-12 mx-auto text-yellow-500 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>
+				</svg>
+				<p class="text-base font-medium text-yellow-800 dark:text-yellow-200">No container runtime detected</p>
+				<p class="text-sm text-yellow-700 dark:text-yellow-300 mt-1">Docker is not installed or not running on this server.</p>
+			</div>
+
+			<!-- Stacks view -->
+			<div id="stacks-view" class="hidden space-y-3">
+				<div id="stacks-list"></div>
+				<!-- Ungrouped containers -->
+				<div id="ungrouped-section" class="hidden">
+					<h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 px-1">Ungrouped Containers</h3>
+					<div id="ungrouped-list" class="bg-white dark:bg-slate-800 rounded-lg shadow border border-gray-100 dark:border-slate-700 overflow-hidden">
+						<table class="w-full text-sm">
+							<thead>
+								<tr class="border-b border-gray-100 dark:border-slate-700 text-left">
+									<th class="px-4 py-2 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Name</th>
+									<th class="px-4 py-2 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Image</th>
+									<th class="px-4 py-2 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Status</th>
+									<th class="px-4 py-2 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">CPU</th>
+									<th class="px-4 py-2 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Memory</th>
+									<th class="px-4 py-2 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Ports</th>
+									<th class="px-4 py-2 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Actions</th>
+								</tr>
+							</thead>
+							<tbody id="ungrouped-tbody"></tbody>
+						</table>
+					</div>
+				</div>
+			</div>
+
+			<!-- All containers view -->
+			<div id="all-containers-view" class="hidden">
+				<div class="bg-white dark:bg-slate-800 rounded-lg shadow border border-gray-100 dark:border-slate-700 overflow-hidden">
+					<table class="w-full text-sm">
+						<thead>
+							<tr class="border-b border-gray-100 dark:border-slate-700 text-left">
+								<th class="px-4 py-2 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Name</th>
+								<th class="px-4 py-2 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Image</th>
+								<th class="px-4 py-2 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Stack</th>
+								<th class="px-4 py-2 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Status</th>
+								<th class="px-4 py-2 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">CPU</th>
+								<th class="px-4 py-2 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Memory</th>
+								<th class="px-4 py-2 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Ports</th>
+								<th class="px-4 py-2 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Actions</th>
+							</tr>
+						</thead>
+						<tbody id="all-containers-tbody"></tbody>
+					</table>
+				</div>
+			</div>
+		</div>
+
+		<!-- Confirm action modal -->
+		<div id="confirm-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+			<div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-6 max-w-sm w-full mx-4">
+				<h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2" id="confirm-title">Confirm Action</h3>
+				<p class="text-sm text-gray-600 dark:text-gray-400 mb-6" id="confirm-message"></p>
+				<div class="flex gap-3 justify-end">
+					<button
+						onclick="closeConfirmModal()"
+						class="px-4 py-2 text-sm bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-600 transition-colors"
+					>
+						Cancel
+					</button>
+					<button
+						id="confirm-action-btn"
+						class="px-4 py-2 text-sm bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+					>
+						Confirm
+					</button>
+				</div>
+			</div>
+		</div>
+
+		<!-- Load containers JS -->
+		<script src="/static/js/containers/containers-page.js"></script>
+	}
+}
