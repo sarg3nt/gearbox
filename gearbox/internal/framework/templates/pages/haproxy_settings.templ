@@ -30,6 +30,19 @@ templ HAProxyBoxesPageContent(user *models.User, servers []*database.BoxDB) {
 				</p>
 			</div>
 			<div class="flex items-center space-x-3">
+				if len(servers) > 0 {
+					<button
+						type="button"
+						onclick="rotateAllKeys(this)"
+						class="inline-flex items-center px-4 py-2 border border-amber-300 dark:border-amber-700 text-sm font-medium rounded-md text-amber-700 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/40"
+					>
+						<svg id="rotate-all-spinner" class="hidden animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
+							<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+							<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+						</svg>
+						Rotate All Keys
+					</button>
+				}
 				<a
 					href="/settings/boxes/new"
 					class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
@@ -318,6 +331,55 @@ templ HAProxyBoxesPageContent(user *models.User, servers []*database.BoxDB) {
 					closeDeleteModal();
 				}
 			});
+
+			async function rotateAllKeys(buttonEl) {
+				const confirmed = await showConfirmDialog({
+					title: 'Rotate keys for every enabled box?',
+					message: 'A new API key will be generated and installed on each agent. The old keys stay accepted for 24 hours so partial rotations are recoverable. Boxes that fail rotation are reported individually; others succeed independently.',
+					confirmText: 'Rotate All Keys',
+					type: 'warning',
+				});
+				if (!confirmed) return;
+
+				const spinner = document.getElementById('rotate-all-spinner');
+				spinner.classList.remove('hidden');
+				buttonEl.disabled = true;
+				try {
+					const resp = await fetch('/settings/boxes/rotate-key-all', {
+						method: 'POST',
+						headers: { 'Accept': 'application/json' },
+					});
+					const data = await resp.json();
+					if (resp.ok) {
+						const failures = (data.results || []).filter(r => !r.success);
+						if (failures.length === 0) {
+							window.showToast('Rotated ' + data.rotated + ' of ' + data.total + ' boxes.', 'success');
+						} else {
+							const msg = failures.map(r => r.name + ' (id=' + r.box_id + '): ' + r.error).join('\n');
+							await showAlertDialog({
+								title: 'Some rotations failed',
+								message: 'Succeeded: ' + data.rotated + ' / ' + data.total + '\n\nFailed:\n' + msg,
+								type: 'error',
+							});
+						}
+					} else {
+						await showAlertDialog({
+							title: 'Rotation failed',
+							message: (data && data.message) || 'Unknown server error.',
+							type: 'error',
+						});
+					}
+				} catch (err) {
+					await showAlertDialog({
+						title: 'Rotation failed',
+						message: err.message || String(err),
+						type: 'error',
+					});
+				} finally {
+					spinner.classList.add('hidden');
+					buttonEl.disabled = false;
+				}
+			}
 		</script>
 }
 
@@ -578,6 +640,30 @@ templ haProxyBoxForm(user *models.User, server *database.BoxDB, isEdit bool, err
 							<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Leave blank to keep existing API key</p>
 						}
 					</div>
+					if isEdit && server != nil {
+						<div class="pt-2 border-t border-gray-200 dark:border-gray-700">
+							<div class="flex items-start justify-between gap-4">
+								<div>
+									<h3 class="text-sm font-medium text-gray-900 dark:text-white">Rotate API key</h3>
+									<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+										Generates a fresh key, installs it on the agent, and demotes the current key to secondary. The old key keeps working for 24 hours so a partial rotation can be recovered from without bricking the box.
+									</p>
+								</div>
+								<button
+									type="button"
+									data-box-id={ fmt.Sprintf("%d", server.ID) }
+									onclick="rotateApiKey(this)"
+									class="shrink-0 inline-flex items-center px-4 py-2 border border-amber-300 dark:border-amber-700 text-sm font-medium rounded-md text-amber-700 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/40 whitespace-nowrap"
+								>
+									<svg id="rotate-spinner" class="hidden animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
+										<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+										<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+									</svg>
+									Rotate Key
+								</button>
+							</div>
+						</div>
+					}
 				</div>
 			</div>
 			<!-- Form Actions -->
@@ -718,6 +804,46 @@ templ haProxyBoxForm(user *models.User, server *database.BoxDB, isEdit bool, err
 				closeApiKeyModal();
 			}
 		});
+
+		async function rotateApiKey(buttonEl) {
+			const boxID = buttonEl.dataset.boxId;
+			const confirmed = await showConfirmDialog({
+				title: 'Rotate this box\'s API key?',
+				message: 'A new key will be generated and installed on the agent. The old key stays accepted on the agent for 24 hours so a partial rotation can be recovered. After 24 hours the old key is removed automatically on the next cleanup run.',
+				confirmText: 'Rotate Key',
+				type: 'warning',
+			});
+			if (!confirmed) return;
+
+			const spinner = document.getElementById('rotate-spinner');
+			spinner.classList.remove('hidden');
+			buttonEl.disabled = true;
+			try {
+				const resp = await fetch('/settings/boxes/' + encodeURIComponent(boxID) + '/rotate-key', {
+					method: 'POST',
+					headers: { 'Accept': 'application/json' },
+				});
+				const data = await resp.json();
+				if (resp.ok && data.success) {
+					window.showToast('Rotation complete. New kid: ' + data.new_kid + '. Old kid (' + data.old_kid + ') retires after ' + new Date(data.retire_after).toLocaleString() + '.', 'success');
+				} else {
+					await showAlertDialog({
+						title: 'Rotation failed',
+						message: data.message || 'Unknown error during rotation.',
+						type: 'error',
+					});
+				}
+			} catch (err) {
+				await showAlertDialog({
+					title: 'Rotation failed',
+					message: err.message || String(err),
+					type: 'error',
+				});
+			} finally {
+				spinner.classList.add('hidden');
+				buttonEl.disabled = false;
+			}
+		}
 
 		async function testConnection() {
 			const spinner = document.getElementById('test-spinner');
