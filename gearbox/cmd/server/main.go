@@ -616,6 +616,8 @@ func main() {
 			r.Post("/boxes/{id}/edit", h.HAProxyBoxUpdatePost)
 			r.Post("/boxes/{id}/delete", h.HAProxyBoxDeletePost)
 			r.Post("/boxes/{id}/toggle", h.HAProxyBoxTogglePost)
+			r.Post("/boxes/{id}/rotate-key", h.HAProxyBoxRotateKeyPost)
+			r.Post("/boxes/rotate-key-all", h.HAProxyBoxesRotateKeyAllPost)
 			r.Post("/boxes/test", h.HAProxyBoxTestConnectionPost)
 			r.Get("/boxes/{id}/logs", h.HAProxyBoxLogSettingsPage)
 			r.Post("/boxes/{id}/logs", h.HAProxyBoxLogSettingsPost)
