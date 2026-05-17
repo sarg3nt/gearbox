@@ -87,11 +87,24 @@ type Handler struct {
 // production event bus as audit — tests construct the Handler directly
 // with an injected capture instead of calling this.
 //
-// When [pty.SpawnUnix] is available on the build platform, it's wired
-// in as the default spawner so the agent gets a real shell out of the
-// box on Linux and macOS. On Windows the spawner is nil — the handler
-// degrades to echo mode and capabilities reports host_console=false
-// until the ConPTY backend ships in Phase 3.
+// Mode selection cascade (first match wins):
+//
+//  1. Agent on Windows → Spawner = nil, Mode = echo. Capabilities
+//     reports host_console=false until ConPTY ships in Phase 3.
+//  2. Agent in a container with HAPROXY_AGENT_HOST_EXEC=nsenter AND
+//     nsenter is usable → Spawner = SpawnNsenter, Mode = nsenter.
+//     This is the TrueNAS/docker-host path; requires pid:host +
+//     privileged on the container.
+//  3. Agent in a container with HAPROXY_AGENT_HOST_EXEC=ssh-bridge →
+//     Mode = ssh_bridge, Spawner = nil for now (Phase 2 wires the
+//     real bridge). Capabilities advertises the mode so the
+//     dashboard can preview the UI; sessions return a clear
+//     "not implemented yet" error.
+//  4. Agent on Linux/macOS host (no container, or container without
+//     a configured bridge) → Spawner = SpawnUnix, Mode = host_pty.
+//
+// Operators set the shell + run-as via HAPROXY_AGENT_CONSOLE_SHELL
+// and HAPROXY_AGENT_CONSOLE_RUN_AS regardless of mode.
 func NewHandler(bus *events.Bus, logger *slog.Logger) *Handler {
 	h := &Handler{
 		Tokens:        NewTokenManager(),
@@ -104,15 +117,27 @@ func NewHandler(bus *events.Bus, logger *slog.Logger) *Handler {
 	if bus != nil {
 		h.Audit = bus
 	}
-	if hostSpawnerAvailable() {
+	switch pickHostExecMode() {
+	case modeWindows:
+		h.Mode = ModeEcho
+	case modeNsenter:
+		h.Spawner = pty.SpawnNsenter
+		h.Mode = ModeNsenter
+		if logger != nil {
+			logger.Info("console: nsenter host-exec selected (container → host via PID 1 namespaces)")
+		}
+	case modeSSHBridge:
+		// Spawner stays nil — the real wiring lands in Phase 2.
+		// Mode advertises ssh_bridge so the dashboard can light up
+		// the UI today; sessions fail loud until then.
+		h.Mode = ModeSSHBridge
+		if logger != nil {
+			logger.Warn("console: ssh_bridge mode configured but not yet implemented (Phase 2)")
+		}
+	default:
 		h.Spawner = pty.SpawnUnix
 		h.Mode = ModeHostPTY
-	} else {
-		h.Mode = ModeEcho
 	}
-	// Allow operator override of the shell via env. Keep the parsing
-	// trivial — split on spaces; operators who need quoting can wrap
-	// in `sh -c`.
 	if v := os.Getenv("HAPROXY_AGENT_CONSOLE_SHELL"); v != "" {
 		h.Shell = strings.Fields(v)
 	}
@@ -120,6 +145,32 @@ func NewHandler(bus *events.Bus, logger *slog.Logger) *Handler {
 		h.RunAsUID = v
 	}
 	return h
+}
+
+// pickHostExecMode collapses the platform + host-exec detection into a
+// single tag used by NewHandler's switch. Pure function for testability
+// (the pty subpackage's detector is platform-specific and hard to mock).
+type internalMode int
+
+const (
+	modeHostDirect internalMode = iota
+	modeWindows
+	modeNsenter
+	modeSSHBridge
+)
+
+func pickHostExecMode() internalMode {
+	if !hostSpawnerAvailable() {
+		return modeWindows
+	}
+	switch pty.HostExecDetect() {
+	case pty.HostExecNsenter:
+		return modeNsenter
+	case pty.HostExecSSHBridge:
+		return modeSSHBridge
+	default:
+		return modeHostDirect
+	}
 }
 
 // hostSpawnerAvailable reports whether pty.SpawnUnix on this platform
