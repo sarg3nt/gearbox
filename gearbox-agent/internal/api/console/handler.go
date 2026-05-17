@@ -101,19 +101,22 @@ type Handler struct {
 //
 // Mode selection cascade (first match wins):
 //
-//  1. Agent on Windows → Spawner = nil, Mode = echo. Capabilities
-//     reports host_console=false until ConPTY ships in Phase 3.
-//  2. Agent in a container with HAPROXY_AGENT_HOST_EXEC=nsenter AND
+//  1. Agent in a container with HAPROXY_AGENT_HOST_EXEC=nsenter AND
 //     nsenter is usable → Spawner = SpawnNsenter, Mode = nsenter.
 //     This is the TrueNAS/docker-host path; requires pid:host +
 //     privileged on the container.
-//  3. Agent in a container with HAPROXY_AGENT_HOST_EXEC=ssh-bridge →
-//     Mode = ssh_bridge, Spawner = nil for now (Phase 2 wires the
-//     real bridge). Capabilities advertises the mode so the
-//     dashboard can preview the UI; sessions return a clear
-//     "not implemented yet" error.
-//  4. Agent on Linux/macOS host (no container, or container without
-//     a configured bridge) → Spawner = SpawnUnix, Mode = host_pty.
+//  2. Agent in a container with HAPROXY_AGENT_HOST_EXEC=ssh-bridge
+//     AND the four SSH env vars validate → Spawner = SSHBridgeSpawner,
+//     Mode = ssh_bridge. The TrueNAS-friendly fallback.
+//  3. Agent on host (or container without a configured bridge) →
+//     Spawner = SpawnUnix (POSIX) or SpawnUnix's ConPTY-backed Windows
+//     equivalent (same exported name across builds), Mode = host_pty.
+//
+// Notes:
+//   - No "platform unsupported → echo" case exists today; every
+//     platform Go builds for has a PTY backend. If a future platform
+//     genuinely lacks one, hostSpawnerAvailable() returns false and
+//     we degrade to echo.
 //
 // Operators set the shell + run-as via HAPROXY_AGENT_CONSOLE_SHELL
 // and HAPROXY_AGENT_CONSOLE_RUN_AS regardless of mode.
@@ -130,7 +133,9 @@ func NewHandler(bus *events.Bus, logger *slog.Logger) *Handler {
 		h.Audit = bus
 	}
 	switch pickHostExecMode() {
-	case modeWindows:
+	case modeUnavailable:
+		// No PTY backend on this platform. Drops to echo mode so
+		// the dashboard's UI still works for protocol prototyping.
 		h.Mode = ModeEcho
 	case modeNsenter:
 		h.Spawner = pty.SpawnNsenter
@@ -183,14 +188,14 @@ type internalMode int
 
 const (
 	modeHostDirect internalMode = iota
-	modeWindows
+	modeUnavailable
 	modeNsenter
 	modeSSHBridge
 )
 
 func pickHostExecMode() internalMode {
 	if !hostSpawnerAvailable() {
-		return modeWindows
+		return modeUnavailable
 	}
 	switch pty.HostExecDetect() {
 	case pty.HostExecNsenter:
@@ -203,10 +208,14 @@ func pickHostExecMode() internalMode {
 }
 
 // hostSpawnerAvailable reports whether pty.SpawnUnix on this platform
-// actually returns a usable session. unix builds say yes; windows builds
-// link a stub that returns ErrNotImplemented, so we say no there.
+// actually returns a usable session. Phase 1b shipped Linux + macOS
+// (unix build tag); Phase 3 added a ConPTY-backed Windows
+// implementation (also exported as SpawnUnix for handler symmetry).
+// So today the answer is "yes" on every platform Go builds for —
+// kept as a function so a future platform that genuinely has no PTY
+// support (plan9?) can opt out.
 func hostSpawnerAvailable() bool {
-	return runtime.GOOS != "windows"
+	return true
 }
 
 // defaultShell returns the platform's typical interactive login shell.
