@@ -217,7 +217,10 @@ templ Services(user *models.User, servers []models.BoxConfig) {
 					// Backend returns a JSON envelope for both success and
 					// error (see errors.WriteHTTPError); surface .message on
 					// error so the UI doesn't show raw 'Unexpected token' from
-					// JSON.parse on plain-text bodies.
+					// JSON.parse on plain-text bodies. A 2xx response with a
+					// non-JSON body (e.g. an auth-redirect HTML page leaking
+					// through) is a protocol error and must surface as such,
+					// not be silently swallowed as an empty list.
 					const contentType = response.headers.get('content-type') || '';
 					const isJSON = contentType.includes('application/json');
 					if (!response.ok) {
@@ -232,7 +235,10 @@ templ Services(user *models.User, servers []models.BoxConfig) {
 						}
 						throw new Error(msg);
 					}
-					return isJSON ? response.json() : { services: [] };
+					if (!isJSON) {
+						throw new Error('Unexpected non-JSON response from services API (content-type=' + contentType + ')');
+					}
+					return response.json();
 				})
 				.then(function(data) {
 					if (data.error) {
@@ -520,8 +526,23 @@ templ Services(user *models.User, servers []models.BoxConfig) {
 				});
 
 				if (!response.ok) {
-					const text = await response.text();
-					throw new Error(text || 'Failed to ' + action + ' service');
+					// errors.WriteHTTPError now returns a JSON envelope; older
+					// http.Error paths still return text/plain. Try JSON first
+					// so the toast surfaces the structured .message field
+					// rather than the raw '{"success":false,...}' blob.
+					const ct = response.headers.get('content-type') || '';
+					let msg;
+					if (ct.includes('application/json')) {
+						try {
+							const body = await response.json();
+							msg = (body && (body.message || body.error)) || JSON.stringify(body);
+						} catch (_) {
+							msg = await response.text();
+						}
+					} else {
+						msg = await response.text();
+					}
+					throw new Error(msg || 'Failed to ' + action + ' service');
 				}
 
 				const data = await response.json();

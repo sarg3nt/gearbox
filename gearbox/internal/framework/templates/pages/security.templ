@@ -200,6 +200,24 @@ templ SecurityPage(user *models.User, servers []models.BoxConfig, perms *models.
 		let blockedIPsData = [];
 		const canAction = { if perms != nil && perms.HasPermission(models.ComponentSecurity, models.PermissionAction) { "true" } else { "false" } } === 'true';
 
+		// extractErrorMessage normalizes the body of a non-2xx fetch response
+		// into a user-facing string. errors.WriteHTTPError now returns a JSON
+		// envelope `{success:false, message:...}`; older `http.Error` paths
+		// still return text/plain. Try JSON first so the toast surfaces
+		// .message instead of the raw envelope, then fall back to text.
+		async function extractErrorMessage(response) {
+			const ct = response.headers.get('content-type') || '';
+			if (ct.includes('application/json')) {
+				try {
+					const body = await response.json();
+					return (body && (body.message || body.error)) || JSON.stringify(body);
+				} catch (_) {
+					return await response.text();
+				}
+			}
+			return await response.text();
+		}
+
 		document.addEventListener('DOMContentLoaded', function() {
 			const serverInput = document.getElementById('default-server-id');
 			if (serverInput) {
@@ -363,8 +381,7 @@ templ SecurityPage(user *models.User, servers []models.BoxConfig, perms *models.
 				});
 
 				if (!response.ok) {
-					const error = await response.text();
-					throw new Error(error);
+					throw new Error(await extractErrorMessage(response));
 				}
 
 				// Clear form and refresh
@@ -391,8 +408,7 @@ templ SecurityPage(user *models.User, servers []models.BoxConfig, perms *models.
 				});
 
 				if (!response.ok) {
-					const error = await response.text();
-					throw new Error(error);
+					throw new Error(await extractErrorMessage(response));
 				}
 
 				await loadBlockedIPs();

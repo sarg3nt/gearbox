@@ -494,6 +494,9 @@ templ Logs(user *models.User, servers []models.BoxConfig) {
 					// error (see errors.WriteHTTPError) — try to parse it and
 					// surface .message on error instead of letting JSON.parse
 					// failures bubble up as confusing "Unexpected token" toasts.
+					// A 2xx response with a non-JSON body is a protocol error
+					// (e.g. an auth-redirect HTML page leaking through) and
+					// must surface as such, not be rendered as log lines.
 					const contentType = response.headers.get('content-type') || '';
 					const isJSON = contentType.includes('application/json');
 					if (!response.ok) {
@@ -508,7 +511,10 @@ templ Logs(user *models.User, servers []models.BoxConfig) {
 						}
 						throw new Error(msg);
 					}
-					return isJSON ? response.json() : { logs: await response.text() };
+					if (!isJSON) {
+						throw new Error(`Unexpected non-JSON response from logs API (content-type=${contentType})`);
+					}
+					return response.json();
 				})
 				.then(data => {
 					rawLogContent = data.logs || 'No logs available';
