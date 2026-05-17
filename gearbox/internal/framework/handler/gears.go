@@ -82,14 +82,29 @@ func (h *Handler) GearsPage(w http.ResponseWriter, r *http.Request) {
 
 // dashboardGearToAgentGear maps a dashboard gear name to the agent gear
 // whose probe verdict gates its visibility. Dashboard gears not in this map
-// have no agent counterpart and are always shown (services & alerts are
-// always-on dashboard concepts; certbot piggy-backs on certificates;
-// system gears like home don't probe any host capability).
+// have no agent counterpart and are always shown:
+//
+//   - alerts is a dashboard-only concept (rules, notifiers, history) that
+//     evaluates signals already surfaced by the gated gears above. Hiding
+//     it would orphan still-firing alerts when their source gear flickers,
+//     so it stays unconditional.
+//   - certbot piggy-backs on certificates.
+//   - system gears like home don't probe any host capability.
+//
+// The services dashboard gear maps to the agent's `metrics` gear because
+// /api/v1/services is registered by the metrics plugin (see
+// gearbox-agent/internal/gears/metrics/plugin.go); this is imprecise —
+// the agent's metrics gear can be Available on a host where systemd
+// isn't introspectable from the container, so the services entry can
+// still surface on a box where it'll come up empty. A tighter gate
+// (e.g. an explicit `services` capability advertising systemd
+// reachability) is part of the Phase 2 extension in issue #112.
 var dashboardGearToAgentGear = map[string]string{
 	database.GearHAProxy:      "haproxy",
 	database.GearLogs:         "logs",
 	database.GearCertificates: "certificates",
 	database.GearMetrics:      "metrics",
+	database.GearServices:     "metrics",
 	database.GearTraffic:      "traffic",
 	database.GearOSUpdates:    "updates",
 }
