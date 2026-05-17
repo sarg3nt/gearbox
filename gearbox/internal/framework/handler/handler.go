@@ -524,6 +524,13 @@ func (h *Handler) InjectIntegrationStatus(next http.Handler) http.Handler {
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
+			// Filter the per-box gear list by the agent's probe table —
+			// if the agent reports a gear as unavailable, hide it from
+			// the sidebar entirely so the operator doesn't click into a
+			// page the box physically can't serve (issue #112). The
+			// filter fails OPEN: when the agent is unreachable the full
+			// list is preserved, matching the Gears-settings-page filter.
+			integrations = h.filterGearsByAgentCapabilities(activeBox.ID, integrations)
 			for _, i := range integrations {
 				status[i.Name] = i.Enabled
 				orderedIntegrations = append(orderedIntegrations, auth.SidebarIntegration{
