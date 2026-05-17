@@ -769,6 +769,13 @@ func main() {
 			r.Get("/{boxID}/firewall/config/backups", h.APIFirewallConfigBackups)
 			r.Post("/{boxID}/firewall/config/restore", h.APIFirewallConfigRestore)
 
+			// Remote console API (per #89). Capabilities is a JSON
+			// proxy; the WS endpoint pipes the JSON-framed shell
+			// session between the browser and the agent. Both gate
+			// on the box_console component permissions.
+			r.Get("/console/{boxID}/capabilities", h.APIConsoleCapabilities)
+			r.Get("/console/{boxID}/ws", h.APIConsoleWS)
+
 			// User permissions API
 			r.Route("/users", func(r chi.Router) {
 				r.Get("/{userID}/permissions", h.APIGetUserPermissions)
