@@ -246,8 +246,30 @@ type ProbeResult struct {
 
 	// Capabilities is optional detected facts the gear wants to surface
 	// (e.g. "haproxy_version": "2.8.5", "stats_socket": "/run/haproxy/admin.sock").
-	// Populated mainly when Status == Available.
+	// Populated mainly when Status == Available. Flat key/value map —
+	// use Resources for structured lists.
 	Capabilities map[string]string
+
+	// Resources is optional structured data the gear wants to advertise
+	// to the dashboard, beyond what fits in the flat Capabilities map.
+	// The shape is gear-specific; the dashboard reads each gear's
+	// known keys explicitly. Typical use:
+	//
+	//   - access-log: "log_sources" → []map[string]string of
+	//     {"name", "display_name", "path"} per discovered web server
+	//     log file. The dashboard's Logs page populates its source
+	//     dropdown from this instead of inferring sources from gear
+	//     availability flags.
+	//
+	// Stable across the wire: serialized to JSON as part of the
+	// /api/v1/system/capabilities response. Gears that omit it stay
+	// fully backward-compatible — the dashboard treats a missing
+	// Resources as "fall back to the older capability-flag heuristic".
+	//
+	// Issue #112 Phase 2 extension: dashboard consumers in
+	// gearbox/internal/framework/agent.CapabilityEntry mirror this
+	// field as map[string]json.RawMessage for typed-per-gear decoding.
+	Resources map[string]any
 }
 
 // IsAvailable reports whether the gear should be loaded.
@@ -259,6 +281,20 @@ func (r ProbeResult) IsAvailable() bool {
 // (typically the detected version or path) and capabilities map.
 func ProbeAvailable(reason string, capabilities map[string]string) ProbeResult {
 	return ProbeResult{Status: ProbeStatusAvailable, Reason: reason, Capabilities: capabilities}
+}
+
+// ProbeAvailableWithResources is ProbeAvailable plus the structured
+// Resources field. Gears that need to publish typed resource lists
+// (log sources, service catalogs, metric sources, …) to the dashboard
+// use this constructor; gears that only need the flat Capabilities map
+// continue to use ProbeAvailable. Issue #112 Phase 2 extension.
+func ProbeAvailableWithResources(reason string, capabilities map[string]string, resources map[string]any) ProbeResult {
+	return ProbeResult{
+		Status:       ProbeStatusAvailable,
+		Reason:       reason,
+		Capabilities: capabilities,
+		Resources:    resources,
+	}
 }
 
 // ProbeNotInstalled returns a result for the case where the software the

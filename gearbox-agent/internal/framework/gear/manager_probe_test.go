@@ -297,6 +297,76 @@ func TestCapabilitiesEndpointReportsEveryGearWithVerdict(t *testing.T) {
 	}
 }
 
+// TestCapabilitiesEndpointSurfacesResources guards the Resources field
+// added in issue #112 Phase 2: gears that publish structured resources
+// (log sources, services, metric sources, …) must round-trip them
+// through the /api/v1/system/capabilities JSON envelope so the
+// dashboard's capability-driven UI can read them directly instead of
+// reverse-engineering them from gear-availability flags.
+func TestCapabilitiesEndpointSurfacesResources(t *testing.T) {
+	g := &mockProbeGear{
+		info: Info{Name: "alpha"},
+		probeResult: ProbeAvailableWithResources(
+			"ok",
+			map[string]string{"version": "1.0"},
+			map[string]any{
+				"log_sources": []map[string]string{
+					{"name": "nginx", "display_name": "nginx", "path": "/var/log/nginx/access.log"},
+				},
+			},
+		),
+	}
+	withTestRegistry(t, g)
+
+	m, _ := newTestManager(t)
+	m.ProbeAll(context.Background())
+
+	r := chi.NewRouter()
+	m.RegisterSystemRoutes(r)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/system/capabilities", nil)
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+
+	// Decode through json.RawMessage to confirm the field round-trips
+	// without relying on the in-process Go type — the dashboard sees
+	// JSON over the wire, not a Go struct.
+	var raw struct {
+		Gears map[string]struct {
+			Status    string         `json:"status"`
+			Resources map[string]any `json:"resources"`
+		} `json:"gears"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	alpha, ok := raw.Gears["alpha"]
+	if !ok {
+		t.Fatalf("alpha missing from response")
+	}
+	logSources, ok := alpha.Resources["log_sources"].([]any)
+	if !ok {
+		t.Fatalf("alpha.Resources[\"log_sources\"] type = %T, want []any (JSON-decoded slice)", alpha.Resources["log_sources"])
+	}
+	if len(logSources) != 1 {
+		t.Fatalf("alpha.Resources[\"log_sources\"] = %v, want one entry", logSources)
+	}
+	first, ok := logSources[0].(map[string]any)
+	if !ok {
+		t.Fatalf("first log source type = %T, want map[string]any", logSources[0])
+	}
+	if first["name"] != "nginx" {
+		t.Errorf("first.name = %v, want nginx", first["name"])
+	}
+	if first["path"] != "/var/log/nginx/access.log" {
+		t.Errorf("first.path = %v, want /var/log/nginx/access.log", first["path"])
+	}
+}
+
 func TestProbeResultsIsCopy(t *testing.T) {
 	// Returning a copy prevents downstream callers (e.g. the capabilities
 	// API handler) from accidentally mutating manager state under load.

@@ -508,6 +508,14 @@ type CapabilityEntry struct {
 	Status       ProbeStatus       `json:"status"`
 	Reason       string            `json:"reason,omitempty"`
 	Capabilities map[string]string `json:"capabilities,omitempty"`
+
+	// Resources carries structured, gear-specific data the dashboard
+	// consumes for capability-driven UI. See ProbeResult.Resources for
+	// the keys each gear publishes (e.g. access-log → "log_sources").
+	// Omitted from the JSON envelope when empty so older dashboards
+	// that don't know about Resources see the unchanged shape (issue
+	// #112 Phase 2 extension).
+	Resources map[string]any `json:"resources,omitempty"`
 }
 
 // CapabilitiesResponse is the envelope for GET /api/v1/system/capabilities.

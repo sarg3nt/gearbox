@@ -139,10 +139,30 @@ func (g *Gear) Info() gear.Info {
 	}
 }
 
+// accessLogSourceDisplayName names the access-log source as the
+// dashboard's Logs page renders it in the source picker dropdown.
+// Centralized here so the agent stays the single source of truth for
+// what each source is called — the dashboard's old hardcoded
+// "haproxy" → "HAProxy" mapping (api_logs.go) goes away once
+// dashboards consume the Resources field added in issue #112.
+var accessLogSourceDisplayName = map[string]string{
+	"haproxy": "HAProxy",
+	"nginx":   "nginx",
+	"apache":  "Apache",
+	"caddy":   "Caddy",
+}
+
 // Probe always reports Available — the gear's only job is to read
 // files on demand, which is universally possible. Capabilities map
 // records which sources have a readable log path; the dashboard
 // uses this to gate the "Error Insights" panel per source.
+//
+// Resources["log_sources"] is the structured form the dashboard's
+// Logs page reads to populate its source picker (issue #112 Phase 2).
+// Each entry is {"name", "display_name", "path"} for one discovered
+// web-server access log. Older dashboards that don't know about
+// Resources continue to read the flat Capabilities map; both views
+// are kept in sync.
 func (g *Gear) Probe(ctx context.Context, deps gear.Dependencies) gear.ProbeResult {
 	g.paths = map[string]string{
 		"haproxy": deps.HAProxyAccessLog,
@@ -152,12 +172,23 @@ func (g *Gear) Probe(ctx context.Context, deps gear.Dependencies) gear.ProbeResu
 	}
 
 	caps := map[string]string{}
+	logSources := []map[string]string{}
 	for _, src := range []string{"haproxy", "nginx", "apache", "caddy"} {
-		if path := g.resolveLogPath(src); path != "" {
-			caps[src+"_log"] = path
+		path := g.resolveLogPath(src)
+		if path == "" {
+			continue
 		}
+		caps[src+"_log"] = path
+		logSources = append(logSources, map[string]string{
+			"name":         src,
+			"display_name": accessLogSourceDisplayName[src],
+			"path":         path,
+		})
 	}
-	return gear.ProbeAvailable("access-log endpoint registered", caps)
+	resources := map[string]any{
+		"log_sources": logSources,
+	}
+	return gear.ProbeAvailableWithResources("access-log endpoint registered", caps, resources)
 }
 
 // Initialize captures the path overrides for later use by the
