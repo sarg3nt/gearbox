@@ -114,6 +114,48 @@ func TestProbeHonorsOverridePath(t *testing.T) {
 	}
 }
 
+// TestProbePopulatesLogSourcesResource exercises the structured Resources
+// field added in issue #112 Phase 2. The dashboard's Logs page populates
+// its source-picker dropdown from Resources["log_sources"] instead of
+// inferring sources from gear-availability flags, so each entry needs
+// name + display_name + path; missing files must not appear.
+func TestProbePopulatesLogSourcesResource(t *testing.T) {
+	g := newTestGear()
+	g.stat = statExisting("/var/log/nginx/access.log", "/var/log/apache2/access.log")
+
+	res := g.Probe(context.Background(), gear.Dependencies{})
+	raw, ok := res.Resources["log_sources"]
+	if !ok {
+		t.Fatalf("Resources[\"log_sources\"] missing; got %v", res.Resources)
+	}
+	sources, ok := raw.([]map[string]string)
+	if !ok {
+		t.Fatalf("Resources[\"log_sources\"] type = %T, want []map[string]string", raw)
+	}
+
+	got := map[string]map[string]string{}
+	for _, src := range sources {
+		got[src["name"]] = src
+	}
+
+	if nginx, ok := got["nginx"]; !ok {
+		t.Errorf("log_sources missing nginx entry")
+	} else if nginx["display_name"] != "nginx" || nginx["path"] != "/var/log/nginx/access.log" {
+		t.Errorf("nginx entry = %+v, want display_name=nginx and the readable path", nginx)
+	}
+	if apache, ok := got["apache"]; !ok {
+		t.Errorf("log_sources missing apache entry")
+	} else if apache["display_name"] != "Apache" {
+		t.Errorf("apache.display_name = %q, want Apache", apache["display_name"])
+	}
+	if _, ok := got["haproxy"]; ok {
+		t.Errorf("haproxy entry should be absent — file not readable, but it appeared in log_sources")
+	}
+	if _, ok := got["caddy"]; ok {
+		t.Errorf("caddy entry should be absent — file not readable, but it appeared in log_sources")
+	}
+}
+
 func TestHandleRecentRejectsUnknownSource(t *testing.T) {
 	g := newTestGear()
 	r := chi.NewRouter()

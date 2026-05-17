@@ -297,6 +297,91 @@ func TestCapabilitiesEndpointReportsEveryGearWithVerdict(t *testing.T) {
 	}
 }
 
+// TestCapabilitiesEndpointSurfacesResources guards the Resources field
+// added in issue #112 Phase 2: gears that publish structured resources
+// (log sources, services, metric sources, …) must round-trip them
+// through the /api/v1/system/capabilities JSON envelope so the
+// dashboard's capability-driven UI can read them directly instead of
+// reverse-engineering them from gear-availability flags.
+func TestCapabilitiesEndpointSurfacesResources(t *testing.T) {
+	g := &mockProbeGear{
+		info: Info{Name: "alpha"},
+		probeResult: ProbeAvailableWithResources(
+			"ok",
+			map[string]string{"version": "1.0"},
+			map[string]any{
+				"log_sources": []map[string]string{
+					{"name": "nginx", "display_name": "nginx", "path": "/var/log/nginx/access.log"},
+				},
+			},
+		),
+	}
+	withTestRegistry(t, g)
+
+	m, _ := newTestManager(t)
+	m.ProbeAll(context.Background())
+
+	r := chi.NewRouter()
+	m.RegisterSystemRoutes(r)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/system/capabilities", nil)
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+
+	// Two-stage decode: first peel the outer envelope into
+	// json.RawMessage per gear so we can verify the `resources` key
+	// is present in the raw bytes (catches name-tag regressions like
+	// renaming the field to "Resources" or "extra"). Then decode
+	// the resources object into a typed shape and check the actual
+	// payload contents. Decoding through RawMessage rather than
+	// straight into map[string]any avoids relying on Go's `any`
+	// decoding quirks for the wire-format guard.
+	var envelope struct {
+		Gears map[string]struct {
+			Status    string          `json:"status"`
+			Resources json.RawMessage `json:"resources"`
+		} `json:"gears"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode envelope: %v", err)
+	}
+	alpha, ok := envelope.Gears["alpha"]
+	if !ok {
+		t.Fatalf("alpha missing from response")
+	}
+	if len(alpha.Resources) == 0 {
+		t.Fatalf("alpha.resources missing from envelope; got body %s", rr.Body.String())
+	}
+
+	var resources struct {
+		LogSources []struct {
+			Name        string `json:"name"`
+			DisplayName string `json:"display_name"`
+			Path        string `json:"path"`
+		} `json:"log_sources"`
+	}
+	if err := json.Unmarshal(alpha.Resources, &resources); err != nil {
+		t.Fatalf("decode alpha.resources: %v", err)
+	}
+	if len(resources.LogSources) != 1 {
+		t.Fatalf("log_sources = %v, want one entry", resources.LogSources)
+	}
+	got := resources.LogSources[0]
+	if got.Name != "nginx" {
+		t.Errorf("name = %q, want nginx", got.Name)
+	}
+	if got.DisplayName != "nginx" {
+		t.Errorf("display_name = %q, want nginx", got.DisplayName)
+	}
+	if got.Path != "/var/log/nginx/access.log" {
+		t.Errorf("path = %q, want /var/log/nginx/access.log", got.Path)
+	}
+}
+
 func TestProbeResultsIsCopy(t *testing.T) {
 	// Returning a copy prevents downstream callers (e.g. the capabilities
 	// API handler) from accidentally mutating manager state under load.
