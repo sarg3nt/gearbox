@@ -677,6 +677,11 @@ func main() {
 		r.Get("/config/haproxy/{boxID}", h.HAProxyConfigPage)
 		r.Get("/config/firewall/{boxID}", h.FirewallConfigPage)
 
+		// Chromeless console popout (#140). Opened via window.open()
+		// from the in-page console manager. Auth + per-box opt-in
+		// gating matches /api/console/{boxID}/capabilities.
+		r.Get("/console/popout/{boxID}", h.ConsolePopoutPage)
+
 		// HTMX partial routes (return HTML fragments)
 		r.Get("/htmx/sidebar-nav", h.SidebarNavPartialHandler)
 		r.Get("/htmx/{boxID}/status-summary", h.StatusSummaryPartialHandler)

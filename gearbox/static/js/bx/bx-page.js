@@ -238,24 +238,6 @@
                     cssClass: 'bx-col-status',
                 },
                 { title: 'Name', field: 'name', formatter: nameFormatter, minWidth: 140 },
-                {
-                    title: '',
-                    field: '_console',
-                    width: 44,
-                    minWidth: 44,
-                    hozAlign: 'center',
-                    headerSort: false,
-                    formatter: consoleFormatter,
-                    cellClick: function (e, cell) {
-                        e.stopPropagation();
-                        const d = cell.getRow().getData();
-                        if (window.openConsole) {
-                            window.openConsole(d.id, d.name);
-                        }
-                    },
-                    headerTooltip: 'Open remote console (requires box_console:connect)',
-                    cssClass: 'bx-col-console',
-                },
                 { title: 'Location', field: 'location', formatter: emDashIfEmpty, minWidth: 120 },
                 { title: 'Agent', field: 'agent_url', formatter: agentFormatter, minWidth: 200 },
                 {
@@ -278,10 +260,45 @@
                         return ta - tb;
                     },
                 },
+                {
+                    title: 'Tools',
+                    field: '_tools',
+                    width: 72,
+                    minWidth: 72,
+                    hozAlign: 'center',
+                    headerSort: false,
+                    // Intentionally not frozen — Tabulator paints a divider
+                    // box-shadow on frozen columns that looked ugly against
+                    // the rest of the grid. Horizontal scroll on this grid
+                    // is rare enough that we don't need it pinned.
+                    formatter: consoleFormatter,
+                    cellClick: function (e, cell) {
+                        // Tabulator delivers its own `rowClick` independently
+                        // of DOM bubbling, so stopPropagation alone won't keep
+                        // the row handler from firing. The rowClick handler
+                        // below checks for `.bx-col-tools` and bails out —
+                        // keep both guards in sync if you rename the class.
+                        e.stopPropagation();
+                        const d = cell.getRow().getData();
+                        if (window.openConsole) {
+                            window.openConsole(d.box_id, d.name);
+                        }
+                    },
+                    headerTooltip: 'Open remote console (requires box_console:connect)',
+                    cssClass: 'bx-col-tools',
+                },
             ],
         });
 
         grid.on('rowClick', function (e, row) {
+            // Tools-column buttons (e.g. the shell icon) have their own
+            // cellClick handlers — Tabulator fires rowClick anyway because
+            // it runs from its own event delegation, so we filter here. If
+            // the click originated inside an action button we treat it as
+            // a button click and skip the row navigation.
+            if (e && e.target && e.target.closest && e.target.closest('.bx-col-tools')) {
+                return;
+            }
             const data = row.getData();
             if (!data || !data.box_id) return;
             // /home with the cookie-driven box selection — switchBox writes
@@ -370,12 +387,12 @@
                 // just produce a "disabled" error when clicked.
                 if (!row.console_enabled) return;
                 cmds.register({
-                    id: 'bx.console.' + row.id,
-                    label: 'Console: ' + (row.name || row.id),
+                    id: 'bx.console.' + row.box_id,
+                    label: 'Console: ' + (row.name || row.box_id),
                     subtitle: 'Open a remote shell on this box',
                     group: 'Console',
                     run: function () {
-                        if (window.openConsole) window.openConsole(row.id, row.name);
+                        if (window.openConsole) window.openConsole(row.box_id, row.name);
                     },
                 });
             });
