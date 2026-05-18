@@ -65,7 +65,9 @@ body.console-dock-open {
 .console-tool-btn.hidden,
 .console-tab-dot.hidden,
 .console-tab-new.hidden,
-.console-tab-bar.hidden {
+.console-tab-bar.hidden,
+.console-search-bar.hidden,
+.console-paste-modal.hidden {
 	display: none;
 }
 
@@ -203,6 +205,20 @@ body.console-dock-open {
 	cursor: pointer;
 	padding: 0;
 }
+
+/* Inline rename input — sized to match the original label so the tab
+ * doesn't jump width on edit. */
+.console-tab-rename {
+	background: rgb(2, 6, 23);
+	color: rgb(226, 232, 240);
+	border: 1px solid rgb(52, 211, 153);
+	border-radius: 2px;
+	font: inherit;
+	font-size: 12px;
+	padding: 0 4px;
+	min-width: 80px;
+	max-width: 200px;
+}
 .console-tab-close {
 	background: none;
 	border: none;
@@ -229,6 +245,116 @@ body.console-dock-open {
 #console-drawer.console-popout .console-tab-bar,
 #console-drawer.console-popout .console-dock-handle {
 	display: none;
+}
+
+/* ---------- search overlay ---------- */
+
+/* Floats below the header in drawer/dock; absolute so it doesn't push
+ * the xterm host. Width matches the panel content area. */
+.console-search-bar {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 4px 8px;
+	background: rgb(15, 23, 42);
+	border-bottom: 1px solid rgb(51, 65, 85);
+}
+.console-search-input {
+	flex: 1 1 auto;
+	min-width: 0;
+	background: rgb(2, 6, 23);
+	color: rgb(226, 232, 240);
+	border: 1px solid rgb(51, 65, 85);
+	border-radius: 4px;
+	padding: 4px 8px;
+	font-size: 12px;
+	font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+.console-search-input:focus {
+	outline: none;
+	border-color: rgb(52, 211, 153);
+}
+.console-search-count {
+	font-size: 11px;
+	color: rgb(148, 163, 184);
+	min-width: 50px;
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+}
+
+/* ---------- paste-confirm modal ---------- */
+
+.console-paste-modal {
+	position: absolute;
+	inset: 0;
+	z-index: 5;
+	background: rgba(0, 0, 0, 0.7);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 24px;
+}
+.console-paste-modal-panel {
+	background: rgb(15, 23, 42);
+	border: 1px solid rgb(51, 65, 85);
+	border-radius: 6px;
+	max-width: 560px;
+	width: 100%;
+	padding: 16px;
+	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+.console-paste-modal-title {
+	font-size: 14px;
+	font-weight: 600;
+	color: rgb(226, 232, 240);
+	margin: 0 0 4px 0;
+}
+.console-paste-modal-hint {
+	font-size: 12px;
+	color: rgb(148, 163, 184);
+	margin: 0 0 8px 0;
+}
+.console-paste-modal-preview {
+	background: rgb(2, 6, 23);
+	color: rgb(203, 213, 225);
+	border: 1px solid rgb(51, 65, 85);
+	border-radius: 4px;
+	padding: 8px;
+	font-size: 11px;
+	font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+	max-height: 200px;
+	overflow: auto;
+	white-space: pre-wrap;
+	word-break: break-all;
+	margin: 0 0 12px 0;
+}
+.console-paste-modal-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+}
+.console-paste-modal-btn {
+	padding: 6px 12px;
+	border-radius: 4px;
+	font-size: 12px;
+	font-weight: 500;
+	border: 1px solid rgb(51, 65, 85);
+	cursor: pointer;
+}
+.console-paste-modal-cancel {
+	background: rgb(30, 41, 59);
+	color: rgb(226, 232, 240);
+}
+.console-paste-modal-cancel:hover {
+	background: rgb(51, 65, 85);
+}
+.console-paste-modal-confirm {
+	background: rgb(52, 211, 153);
+	color: rgb(2, 6, 23);
+	border-color: rgb(52, 211, 153);
+}
+.console-paste-modal-confirm:hover {
+	background: rgb(110, 231, 183);
 }
 
 /* ---------- xterm padding ---------- */
