@@ -83,8 +83,9 @@ func runningInContainer() bool {
 
 // nsenterUsable reports whether nsenter into PID 1's namespaces would
 // work right now. Requires:
-//   - the nsenter binary somewhere on PATH (checked by Spawner at exec
-//     time; here we just verify the rest)
+//   - the nsenter binary reachable from the container (probed against
+//     resolveHostNsenter; distroless containers don't ship util-linux,
+//     so we expect to find it on the host via /proc/1/root)
 //   - /proc/1/ns/mnt readable (proves we have access to the host's mount
 //     ns reference)
 //   - that ns differs from our own (proves there's actually a host to
@@ -104,7 +105,44 @@ func nsenterUsable() bool {
 		// exist because distroless).
 		return false
 	}
+	if resolveHostNsenter() == "" {
+		return false
+	}
 	return true
+}
+
+// hostNsenterCandidates is the search list for the host's nsenter
+// binary as seen from inside the container. With pid:host the kernel
+// exposes the host's root filesystem at /proc/1/root (a magic symlink
+// resolved by the host PID 1's mount namespace), so absolute paths
+// under /proc/1/root/... reach the host's util-linux install.
+//
+// Order: most-common location first; /usr/bin covers Debian/Ubuntu/
+// modern RHEL; /bin covers older trees; /usr/sbin and /sbin cover
+// distros that consider nsenter a privileged util.
+var hostNsenterCandidates = []string{
+	"/proc/1/root/usr/bin/nsenter",
+	"/proc/1/root/bin/nsenter",
+	"/proc/1/root/usr/sbin/nsenter",
+	"/proc/1/root/sbin/nsenter",
+}
+
+// resolveHostNsenter returns the first reachable nsenter binary path
+// from hostNsenterCandidates, or "" if none exist. Cached results are
+// not appropriate — operator upgrades on the host could move the
+// binary; the call is cheap (a few stat()s).
+func resolveHostNsenter() string {
+	for _, p := range hostNsenterCandidates {
+		if st, err := os.Stat(p); err == nil && !st.IsDir() {
+			return p
+		}
+	}
+	// Last-ditch: maybe the container itself ships nsenter (some
+	// non-distroless agent flavors might). exec.LookPath uses $PATH.
+	if _, err := os.Stat("/usr/bin/nsenter"); err == nil {
+		return "/usr/bin/nsenter"
+	}
+	return ""
 }
 
 // SpawnNsenter wraps SpawnUnix in an nsenter invocation. The argv
@@ -127,8 +165,12 @@ func SpawnNsenter(ctx context.Context, command []string, runAs string, cols, row
 	if runAs != "" {
 		return nil, fmt.Errorf("nsenter: run-as UID override not supported in this mode (got %q)", runAs)
 	}
+	nsenterBin := resolveHostNsenter()
+	if nsenterBin == "" {
+		return nil, errors.New("nsenter: binary not found (looked under /proc/1/root and /usr/bin)")
+	}
 	argv := append([]string{
-		"nsenter",
+		nsenterBin,
 		"--target", "1",
 		"--mount", "--uts", "--ipc", "--net", "--pid",
 		"--",
