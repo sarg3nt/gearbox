@@ -63,6 +63,19 @@
         while (node.firstChild) node.removeChild(node.firstChild);
     }
 
+    // Cookie reader used by the global shortcut to pull the active box_id
+    // out of the switchBox cookie. Returns '' when not found.
+    function readCookie(name) {
+        const parts = (document.cookie || '').split(';');
+        for (let i = 0; i < parts.length; i++) {
+            const p = parts[i].trim();
+            if (p.indexOf(name + '=') === 0) {
+                return decodeURIComponent(p.substring(name.length + 1));
+            }
+        }
+        return '';
+    }
+
     function clampInt(n, lo, hi) {
         n = parseInt(n, 10);
         if (!isFinite(n)) n = lo;
@@ -138,17 +151,25 @@
     function ConsoleSession(descriptor) {
         this.id = nextSessionID();
         this.descriptor = descriptor;
-        this.label = descriptor.label || descriptor.boxID || this.id;
+        // baseLabel is the descriptor-derived name; label may be overridden by
+        // user rename (double-click on tab). Both are tracked so the rename
+        // sticks across status updates but the underlying box name stays
+        // available for tooltips.
+        this.baseLabel = descriptor.label || descriptor.boxID || this.id;
+        this.label = this.baseLabel;
         this.status = 'idle';
         this.mode = '';
         this.uid = null;
         this.errorMsg = '';
         this.term = null;
         this.fitAddon = null;
+        this.searchAddon = null;     // lazy-loaded on first search
         this.ws = null;
         this.host = null;            // wrapper that gets attached/detached
         this.onStatusChange = null;  // ConsoleManager wires this
+        this.onSearchResults = null; // ConsoleManager wires this for count updates
         this.fontSize = FONT_DEFAULT;
+        this.onKeyIntercept = null;  // ConsoleManager wires this for Ctrl-F, etc.
     }
 
     ConsoleSession.prototype._setStatus = function (status) {
@@ -183,6 +204,66 @@
             const enc = new TextEncoder();
             self._sendData(enc.encode(data));
         });
+
+        // Key interception: Ctrl-F / Cmd-F opens the search bar instead
+        // of bubbling to the shell. Returning false from this handler
+        // tells xterm NOT to send the keystroke onward. Any other shortcut
+        // we want to capture at the manager level rides through here too.
+        this.term.attachCustomKeyEventHandler(function (e) {
+            if (e.type !== 'keydown') return true;
+            // Ctrl-F (Linux/Win) or Cmd-F (mac) → open search
+            if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'f' || e.key === 'F')) {
+                if (typeof self.onKeyIntercept === 'function') {
+                    if (self.onKeyIntercept('search-open')) return false;
+                }
+            }
+            return true;
+        });
+    };
+
+    // Lazy-load the search addon on first use. Only sessions whose user
+    // opens the find bar pay the cost of constructing it.
+    ConsoleSession.prototype._ensureSearch = function () {
+        if (this.searchAddon || !this.term) return this.searchAddon;
+        if (typeof SearchAddon === 'undefined' || !SearchAddon.SearchAddon) {
+            console.error('[console] xterm-addon-search not loaded');
+            return null;
+        }
+        this.searchAddon = new SearchAddon.SearchAddon();
+        this.term.loadAddon(this.searchAddon);
+        const self = this;
+        if (this.searchAddon.onDidChangeResults) {
+            this.searchAddon.onDidChangeResults(function (res) {
+                if (typeof self.onSearchResults === 'function') self.onSearchResults(res);
+            });
+        }
+        return this.searchAddon;
+    };
+
+    // Find next / previous match. `term` is the active session; manager
+    // routes the search input to whichever tab is active.
+    ConsoleSession.prototype.searchNext = function (q, opts) {
+        const addon = this._ensureSearch();
+        if (!addon || !q) return false;
+        return addon.findNext(q, opts || { decorations: { activeMatchBackground: '#facc15', matchBackground: '#facc1540' } });
+    };
+    ConsoleSession.prototype.searchPrev = function (q, opts) {
+        const addon = this._ensureSearch();
+        if (!addon || !q) return false;
+        return addon.findPrevious(q, opts || { decorations: { activeMatchBackground: '#facc15', matchBackground: '#facc1540' } });
+    };
+    ConsoleSession.prototype.searchClear = function () {
+        if (this.searchAddon && this.searchAddon.clearDecorations) {
+            this.searchAddon.clearDecorations();
+        }
+    };
+
+    // Write a buffer of bytes to the PTY. Used by the paste-confirm flow
+    // once the user OKs a large paste — bypasses the term.onData path.
+    ConsoleSession.prototype.sendText = function (text) {
+        if (!text) return;
+        const enc = new TextEncoder();
+        this._sendData(enc.encode(text));
     };
 
     ConsoleSession.prototype.attach = function (parent) {
@@ -403,7 +484,164 @@
         });
 
         this._wireDockResize();
+        this._wireSearch();
+        this._wirePasteConfirm();
+        this._wireGlobalShortcut();
         this._wired = true;
+    };
+
+    /* ---------- search ---------- */
+
+    ConsoleManager.prototype._wireSearch = function () {
+        const bar = this._$('console-search-bar');
+        const input = this._$('console-search-input');
+        const closeBtn = this._$('console-search-close');
+        const nextBtn = this._$('console-search-next');
+        const prevBtn = this._$('console-search-prev');
+        if (!bar || !input) return;
+        const self = this;
+
+        const runSearch = function (dir) {
+            const s = self._active();
+            if (!s) return;
+            const q = input.value;
+            // Wire result-count callback once per session.
+            s.onSearchResults = self._renderSearchCount.bind(self);
+            if (dir === 'prev') s.searchPrev(q);
+            else s.searchNext(q);
+        };
+
+        input.addEventListener('input', function () { runSearch('next'); });
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                runSearch(e.shiftKey ? 'prev' : 'next');
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                self.closeSearch();
+            }
+        });
+        if (nextBtn) nextBtn.addEventListener('click', function () { runSearch('next'); });
+        if (prevBtn) prevBtn.addEventListener('click', function () { runSearch('prev'); });
+        if (closeBtn) closeBtn.addEventListener('click', self.closeSearch.bind(self));
+    };
+
+    ConsoleManager.prototype.openSearch = function () {
+        const bar = this._$('console-search-bar');
+        const input = this._$('console-search-input');
+        if (!bar || !input) return;
+        bar.classList.remove('hidden');
+        input.focus();
+        input.select();
+    };
+
+    ConsoleManager.prototype.closeSearch = function () {
+        const bar = this._$('console-search-bar');
+        const input = this._$('console-search-input');
+        if (bar) bar.classList.add('hidden');
+        if (input) input.value = '';
+        const s = this._active();
+        if (s) s.searchClear();
+        const count = this._$('console-search-count');
+        if (count) count.textContent = '';
+        if (s) s.focus();
+    };
+
+    ConsoleManager.prototype._renderSearchCount = function (res) {
+        const count = this._$('console-search-count');
+        if (!count) return;
+        if (!res || res.resultCount === 0) {
+            count.textContent = 'no matches';
+            return;
+        }
+        // resultIndex is 0-based; show 1-based to the user.
+        const idx = (res.resultIndex === undefined || res.resultIndex < 0) ? 0 : res.resultIndex + 1;
+        count.textContent = idx + ' / ' + res.resultCount;
+    };
+
+    /* ---------- paste confirm ---------- */
+
+    // Per #142 spec: ≥ 20 newlines triggers an inline confirm modal so a
+    // multi-command paste can't accidentally run the entire clipboard.
+    // Bracketed paste mode (DECSET 2004) is enabled by the remote shell;
+    // xterm wraps pasted content with ESC[200~ … ESC[201~ automatically
+    // when the shell asked for it. This modal is the operator-side guard.
+    const PASTE_CONFIRM_LINES = 20;
+
+    ConsoleManager.prototype._wirePasteConfirm = function () {
+        const modal = this._$('console-paste-modal');
+        const cancelBtn = this._$('console-paste-modal-cancel');
+        const confirmBtn = this._$('console-paste-modal-confirm');
+        if (!modal || !cancelBtn || !confirmBtn) return;
+
+        const self = this;
+        this._pendingPaste = null;
+
+        const closeModal = function () {
+            modal.classList.add('hidden');
+            self._pendingPaste = null;
+            const s = self._active();
+            if (s) s.focus();
+        };
+
+        cancelBtn.addEventListener('click', closeModal);
+        confirmBtn.addEventListener('click', function () {
+            const text = self._pendingPaste;
+            closeModal();
+            const s = self._active();
+            if (text && s) s.sendText(text);
+        });
+
+        // Listen at document level so paste lands here before xterm's
+        // own paste handling runs. We only intercept when the panel is
+        // visible and the active session is focused (or in the panel
+        // bounds — defensive).
+        document.addEventListener('paste', function (e) {
+            const drawer = self._$('console-drawer');
+            if (!drawer || drawer.classList.contains('hidden')) return;
+            const active = document.activeElement;
+            const xterm = self._$('console-xterm');
+            if (!xterm || !active || !xterm.contains(active)) return;
+            if (!e.clipboardData) return;
+            const text = e.clipboardData.getData('text');
+            if (!text) return;
+            const lines = text.split('\n').length;
+            if (lines < PASTE_CONFIRM_LINES) return; // let xterm handle it normally
+            e.preventDefault();
+            e.stopPropagation();
+            self._pendingPaste = text;
+            const linesEl = self._$('console-paste-modal-lines');
+            const previewEl = self._$('console-paste-modal-preview');
+            if (linesEl) linesEl.textContent = String(lines);
+            if (previewEl) {
+                // Cap preview at ~1200 chars + first ~30 lines so a huge
+                // paste doesn't blow up the modal. textContent is safe.
+                let preview = text.split('\n').slice(0, 30).join('\n');
+                if (preview.length > 1200) preview = preview.slice(0, 1200) + '…';
+                previewEl.textContent = preview;
+            }
+            modal.classList.remove('hidden');
+            confirmBtn.focus();
+        });
+    };
+
+    /* ---------- global shortcut ---------- */
+
+    // Ctrl-Shift-` opens the console for the active box. Reads box_id from
+    // the cookie set by switchBox; no cookie → no-op (palette is the
+    // fallback path for users who haven't pinned a box yet).
+    ConsoleManager.prototype._wireGlobalShortcut = function () {
+        const self = this;
+        document.addEventListener('keydown', function (e) {
+            if (!e.ctrlKey || !e.shiftKey || e.altKey || e.metaKey) return;
+            // Match both literal backtick and "Backquote" code so Dvorak
+            // and other non-QWERTY layouts work too.
+            if (e.key !== '`' && e.code !== 'Backquote') return;
+            e.preventDefault();
+            const boxID = readCookie('box_id');
+            if (!boxID) return;
+            self.open({ kind: 'box', boxID: boxID, label: boxID });
+        });
     };
 
     ConsoleManager.prototype._wireDockResize = function () {
@@ -505,6 +743,16 @@
         const sess = new ConsoleSession(descriptor);
         sess.fontSize = this.fontSize;
         sess.onStatusChange = this._renderStatus.bind(this);
+        // Route per-session keyboard shortcuts (currently just Ctrl-F for
+        // search) up to the manager so the chrome can react.
+        const self = this;
+        sess.onKeyIntercept = function (action) {
+            if (action === 'search-open') {
+                self.openSearch();
+                return true;
+            }
+            return false;
+        };
         this.sessions.push(sess);
         this._setActive(sess.id);
         this._show();
@@ -615,6 +863,46 @@
     // we don't want to rip a live shell or stack a second connect on
     // top of one already in flight. Also makes the clicked tab active
     // so the reconnect happens where the user can see it.
+    // Inline rename: replace the label button with a text input scoped
+    // to this tab, commit on blur / Enter, revert on Escape. Re-renders
+    // the tab strip after commit so the # disambiguation suffixes
+    // update if needed.
+    ConsoleManager.prototype._beginRename = function (sessionID, labelEl) {
+        const idx = this._indexByID(sessionID);
+        if (idx < 0 || !labelEl) return;
+        const s = this.sessions[idx];
+        const original = s.label;
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'console-tab-rename';
+        input.value = original;
+        input.setAttribute('aria-label', 'Rename tab');
+        labelEl.replaceWith(input);
+        input.focus();
+        input.select();
+
+        const self = this;
+        let committed = false;
+        const commit = function (next) {
+            if (committed) return;
+            committed = true;
+            const v = (next || '').trim();
+            s.label = v || s.baseLabel;
+            self._renderTabs();
+        };
+
+        input.addEventListener('blur', function () { commit(input.value); });
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                commit(input.value);
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                commit(original);
+            }
+        });
+    };
+
     ConsoleManager.prototype._tabDotClick = function (sessionID) {
         const idx = this._indexByID(sessionID);
         if (idx < 0) return;
@@ -739,13 +1027,24 @@
             label.type = 'button';
             label.className = 'console-tab-label';
             label.textContent = display;
-            label.title = display + ' (' + s.status + ')';
+            label.title = display + ' (' + s.status + ') — double-click to rename';
             // Label button carries the role="tab" semantics so screen
             // readers expose the tab list correctly (one role="tab" per
             // tab, focusable, with aria-selected reflecting active).
             label.setAttribute('role', 'tab');
             label.setAttribute('aria-selected', s.id === self.activeID ? 'true' : 'false');
             label.addEventListener('click', function () { self._setActive(s.id); });
+
+            // Double-click swaps the label into an inline text input.
+            // Blur or Enter commits; Escape reverts. The rename is
+            // per-session (lives on s.label) and persists for as long
+            // as the tab is open — no localStorage, since the box's
+            // canonical name still lives in s.baseLabel.
+            label.addEventListener('dblclick', function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                self._beginRename(s.id, label);
+            });
 
             const close = document.createElement('button');
             close.type = 'button';

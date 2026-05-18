@@ -116,11 +116,64 @@ templ ConsoleDrawer() {
 				</svg>
 			</button>
 		</div>
+		// Search overlay — hidden until Ctrl-F/Cmd-F triggers it.
+		// Powered by xterm-addon-search; input wired in console.js.
+		<div id="console-search-bar" class="console-search-bar hidden" role="search">
+			<input
+				type="text"
+				id="console-search-input"
+				class="console-search-input"
+				placeholder="Find in terminal…"
+				aria-label="Find in terminal"
+			/>
+			<span id="console-search-count" class="console-search-count" aria-live="polite"></span>
+			<button type="button"
+				id="console-search-prev"
+				class="console-tool-btn"
+				aria-label="Previous match"
+				title="Previous match (Shift-Enter)">
+				<svg class="w-4 h-4" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"></path>
+				</svg>
+			</button>
+			<button type="button"
+				id="console-search-next"
+				class="console-tool-btn"
+				aria-label="Next match"
+				title="Next match (Enter)">
+				<svg class="w-4 h-4" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+				</svg>
+			</button>
+			<button type="button"
+				id="console-search-close"
+				class="console-tool-btn"
+				aria-label="Close search"
+				title="Close (Esc)">
+				<svg class="w-4 h-4" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+				</svg>
+			</button>
+		</div>
 		// xterm host. Sessions attach their own xterm <div> into this.
 		// `console-xterm-pad` adds breathing room so cursor/text isn't
 		// flush against the panel border.
 		<div class="console-xterm-pad flex-1 overflow-hidden bg-black">
 			<div id="console-xterm" class="w-full h-full"></div>
+		</div>
+		// Large-paste confirmation modal. Triggered by ConsoleManager
+		// when clipboard content exceeds the paste-confirm threshold
+		// (default 20 newlines). Buttons wired in console.js.
+		<div id="console-paste-modal" class="console-paste-modal hidden" role="dialog" aria-modal="true" aria-labelledby="console-paste-modal-title">
+			<div class="console-paste-modal-panel">
+				<h3 id="console-paste-modal-title" class="console-paste-modal-title">Paste <span id="console-paste-modal-lines">?</span> lines?</h3>
+				<p class="console-paste-modal-hint">Large pastes run many commands in sequence. Review the preview before confirming.</p>
+				<pre id="console-paste-modal-preview" class="console-paste-modal-preview" aria-label="Paste preview"></pre>
+				<div class="console-paste-modal-actions">
+					<button type="button" id="console-paste-modal-cancel" class="console-paste-modal-btn console-paste-modal-cancel">Cancel</button>
+					<button type="button" id="console-paste-modal-confirm" class="console-paste-modal-btn console-paste-modal-confirm">Paste</button>
+				</div>
+			</div>
 		</div>
 	</div>
 }
@@ -133,5 +186,6 @@ templ ConsoleAssets() {
 	<link rel="stylesheet" href="/static/css/components/console.css"/>
 	<script src="/static/js/vendor/xterm.min.js" defer></script>
 	<script src="/static/js/vendor/xterm-addon-fit.min.js" defer></script>
+	<script src="/static/js/vendor/xterm-addon-search.min.js" defer></script>
 	<script src="/static/js/console/console.js" defer></script>
 }
