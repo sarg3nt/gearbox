@@ -11,10 +11,14 @@ import (
 // — just the ConsoleDrawer in fullscreen mode plus the assets needed to
 // drive it.
 //
-// On load the inline boot script calls markPopout (which hides the
-// layout-switch buttons that don't apply here) and opens a session
-// against the given box. Closing the drawer here means closing the
-// browser tab — handled by overriding the close button to window.close().
+// On load the inline boot script calls markPopout which:
+//   1. Tags the drawer with .console-popout so CSS hides the entire
+//      header (incl. the close button) and the tab bar — the popout
+//      window is single-session, all chrome controls are meaningless.
+//   2. Forces the layout to drawer (fullscreen) and disables Esc-to-close.
+//
+// The only way to exit a popout is closing the OS window (Cmd-W /
+// red close button) — by design, since the chrome's gone anyway.
 templ ConsolePopoutPage(boxID string, boxName string) {
 	<!DOCTYPE html>
 	<html lang="en" class="h-full">

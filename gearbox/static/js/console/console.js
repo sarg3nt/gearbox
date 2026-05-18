@@ -237,6 +237,15 @@
         this.ws.send(JSON.stringify({ t: 'resize', cols: cols, rows: rows }));
     };
 
+    // Emit a visible error line into the xterm buffer. The status dot
+    // also reflects the state via color, but the terminal needs its own
+    // surface so a failing session isn't a silent black void. Matches
+    // the server-side 'err' frame path which already writes red text.
+    ConsoleSession.prototype._writeError = function (msg) {
+        if (!this.term) return;
+        this.term.write('\r\n\x1b[31m[console] ' + msg + '\x1b[0m\r\n');
+    };
+
     ConsoleSession.prototype.connect = function () {
         this._ensureTerm();
         if (this.ws) { try { this.ws.close(); } catch (_) {} }
@@ -255,6 +264,7 @@
                     self.mode = '';
                     self.uid = null;
                     self.errorMsg = 'disabled on agent';
+                    self._writeError('console disabled on this agent');
                     self._setStatus('error');
                     return;
                 }
@@ -264,6 +274,7 @@
             })
             .catch(function (e) {
                 self.errorMsg = e.message;
+                self._writeError('capabilities fetch failed: ' + e.message);
                 self._setStatus('error');
             });
     };
@@ -304,6 +315,7 @@
         };
         ws.onerror = function () {
             self.errorMsg = 'socket error';
+            self._writeError('websocket error');
             self._setStatus('error');
         };
         ws.onclose = function () {
@@ -399,31 +411,50 @@
         if (!handle) return;
         const self = this;
         let dragging = false;
+        let pointerID = null;
         let startY = 0;
         let startH = 0;
 
-        handle.addEventListener('mousedown', function (e) {
-            dragging = true;
-            startY = e.clientY;
-            startH = self.dockHeight;
-            document.body.style.cursor = 'row-resize';
-            document.body.style.userSelect = 'none';
-            e.preventDefault();
-        });
-        window.addEventListener('mousemove', function (e) {
-            if (!dragging) return;
-            const dy = startY - e.clientY;
-            self.dockHeight = clampInt(startH + dy, DOCK_MIN, window.innerHeight - 100);
-            self._applyDockHeight();
-        });
-        window.addEventListener('mouseup', function () {
+        // Pointer Events with setPointerCapture so drag state survives
+        // the cursor leaving the window — mouseup-outside used to leave
+        // the dock in a stuck "still resizing" state. visibilitychange
+        // and blur are additional belt-and-suspenders cleanups.
+        const stopDrag = function () {
             if (!dragging) return;
             dragging = false;
+            try { if (pointerID !== null) handle.releasePointerCapture(pointerID); } catch (_) {}
+            pointerID = null;
             document.body.style.cursor = '';
             document.body.style.userSelect = '';
             prefSet('dockHeight', self.dockHeight);
             const s = self._active();
             if (s) s.fit();
+        };
+
+        handle.addEventListener('pointerdown', function (e) {
+            dragging = true;
+            pointerID = e.pointerId;
+            startY = e.clientY;
+            startH = self.dockHeight;
+            document.body.style.cursor = 'row-resize';
+            document.body.style.userSelect = 'none';
+            try { handle.setPointerCapture(e.pointerId); } catch (_) {}
+            e.preventDefault();
+        });
+        handle.addEventListener('pointermove', function (e) {
+            if (!dragging || e.pointerId !== pointerID) return;
+            const dy = startY - e.clientY;
+            self.dockHeight = clampInt(startH + dy, DOCK_MIN, window.innerHeight - 100);
+            self._applyDockHeight();
+        });
+        handle.addEventListener('pointerup', stopDrag);
+        handle.addEventListener('pointercancel', stopDrag);
+        // If the user alt-tabs or the page is hidden mid-drag, treat it
+        // as drop — without these the body cursor/userSelect overrides
+        // can linger after the user returns.
+        window.addEventListener('blur', stopDrag);
+        document.addEventListener('visibilitychange', function () {
+            if (document.hidden) stopDrag();
         });
     };
 
@@ -665,10 +696,14 @@
                 ? s.label + ' #' + labelIdx[s.label]
                 : s.label;
 
+            // Tab wrapper is layout-only — the focusable element with
+            // role="tab" is the label button. This keeps ARIA semantics
+            // happy: nested interactive children (dot, close) sit inside
+            // the wrapper but are siblings of the role="tab" element,
+            // not nested inside it. See Copilot review on PR #141.
             const tab = document.createElement('div');
             tab.className = 'console-tab' + (s.id === self.activeID ? ' active' : '');
-            tab.setAttribute('role', 'tab');
-            tab.setAttribute('aria-selected', s.id === self.activeID ? 'true' : 'false');
+            tab.setAttribute('role', 'presentation');
 
             // Per-tab status dot. Doubles as a reconnect button when the
             // session is closed/errored — clicking switches active to
@@ -678,17 +713,22 @@
             dot.type = 'button';
             dot.className = 'console-tab-dot is-' + s.status;
             const isReconnectable = s.status === 'closed' || s.status === 'error';
+            const dotStateText = ({
+                connected: 'Connected',
+                connecting: 'Connecting',
+                idle: 'Idle',
+                closed: 'Closed',
+                error: 'Error: ' + (s.errorMsg || 'unknown'),
+            })[s.status] || s.status;
             if (isReconnectable) {
                 dot.classList.add('is-clickable');
-                dot.title = (s.status === 'error'
-                    ? 'Error: ' + (s.errorMsg || 'unknown')
-                    : 'Closed') + ' — click to reconnect';
+                dot.title = dotStateText + ' — click to reconnect';
+                dot.setAttribute('aria-label', display + ' — ' + dotStateText + '. Click to reconnect.');
+                dot.removeAttribute('aria-disabled');
             } else {
-                dot.title = ({
-                    connected: 'Connected',
-                    connecting: 'Connecting…',
-                    idle: '',
-                })[s.status] || s.status;
+                dot.title = dotStateText;
+                dot.setAttribute('aria-label', display + ' — ' + dotStateText);
+                dot.setAttribute('aria-disabled', 'true');
             }
             dot.addEventListener('click', function (e) {
                 e.stopPropagation();
@@ -700,6 +740,11 @@
             label.className = 'console-tab-label';
             label.textContent = display;
             label.title = display + ' (' + s.status + ')';
+            // Label button carries the role="tab" semantics so screen
+            // readers expose the tab list correctly (one role="tab" per
+            // tab, focusable, with aria-selected reflecting active).
+            label.setAttribute('role', 'tab');
+            label.setAttribute('aria-selected', s.id === self.activeID ? 'true' : 'false');
             label.addEventListener('click', function () { self._setActive(s.id); });
 
             const close = document.createElement('button');
