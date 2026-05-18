@@ -1,0 +1,253 @@
+/* console.css — chrome for the multi-session console panel.
+ *
+ * The drawer lives in two visual modes driven by a class on
+ * #console-drawer:
+ *
+ *   .console-layout-drawer  fullscreen overlay (default)
+ *   .console-layout-dock    pinned bottom strip, drag-resizable
+ *
+ * Tab strip, toolbar buttons, and dock handle are styled here so the
+ * templ component stays Tailwind-light and the visual rules live in one
+ * place.
+ */
+
+/* ---------- layout modes ---------- */
+
+#console-drawer.console-layout-drawer {
+	position: fixed;
+	inset: 0;
+	z-index: 200;
+}
+
+#console-drawer.console-layout-dock {
+	position: fixed;
+	left: 16rem;            /* matches expanded #main-content margin-left */
+	right: 0;
+	bottom: 0;
+	height: 320px;          /* JS overrides on each frame from persisted pref */
+	z-index: 200;
+	box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.4);
+	transition: left 0.3s ease-in-out;
+}
+
+/* Track the sidebar collapse state. #main-content's `.ml-16` is added by
+ * the sidebar toggle JS in base.templ; since #console-drawer is a
+ * following sibling of #main-content in the body, the ~ selector picks
+ * it up automatically and the transition above syncs the slide with the
+ * sidebar's own width animation. */
+#main-content.ml-16 ~ #console-drawer.console-layout-dock {
+	left: 4rem;
+}
+@media (max-width: 767px) {
+	#console-drawer.console-layout-dock {
+		left: 4rem;
+	}
+}
+
+/* When the dock is open, push the main app content up so it isn't hidden
+ * underneath. The dock height tracks --gearbox-console-dock-h (set by
+ * ConsoleManager on every resize); falls back to 320px so the rule still
+ * works before JS runs. */
+:root {
+	--gearbox-console-dock-h: 320px;
+}
+body.console-dock-open {
+	padding-bottom: var(--gearbox-console-dock-h);
+}
+
+/* ---------- hidden override ----------
+ *
+ * Tailwind's utility `.hidden` (display: none) loses the cascade tie to
+ * our component display rules (`.console-tool-btn { display: inline-flex
+ * }`, etc.) because console.css is loaded after Tailwind's injected
+ * style block. Re-assert the rule with a 2-class selector so it wins on
+ * specificity wherever we toggle visibility from JS. */
+.console-tool-btn.hidden,
+.console-tab-dot.hidden,
+.console-tab-new.hidden,
+.console-tab-bar.hidden {
+	display: none;
+}
+
+/* ---------- dock drag handle ---------- */
+
+.console-dock-handle {
+	height: 5px;
+	cursor: row-resize;
+	background: linear-gradient(to bottom, transparent 0, rgba(148, 163, 184, 0.2) 50%, transparent 100%);
+	flex-shrink: 0;
+}
+.console-dock-handle:hover {
+	background: linear-gradient(to bottom, transparent 0, rgba(52, 211, 153, 0.35) 50%, transparent 100%);
+}
+#console-drawer.console-layout-drawer .console-dock-handle {
+	display: none;
+}
+
+/* ---------- toolbar buttons ---------- */
+
+.console-tool-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	border-radius: 4px;
+	color: rgb(148, 163, 184);
+	background: transparent;
+	transition: background-color 100ms ease, color 100ms ease;
+}
+.console-tool-btn:hover {
+	background: rgb(51, 65, 85);
+	color: rgb(226, 232, 240);
+}
+
+/* ---------- tab strip ---------- */
+
+/* The bar wraps the dynamic tabs and the static "+ new tab" button. The
+ * tabs scroll horizontally if many sessions are open; the "+" stays
+ * pinned to the right edge of the visible tabs. */
+.console-tab-bar {
+	display: flex;
+	align-items: center;
+	background: rgb(15, 23, 42);
+	border-bottom: 1px solid rgb(51, 65, 85);
+	padding: 4px 8px 0 8px;
+	gap: 4px;
+	flex-shrink: 0;
+}
+
+.console-tabs {
+	display: flex;
+	gap: 2px;
+	overflow-x: auto;
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+.console-tab-new {
+	flex-shrink: 0;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 24px;
+	height: 24px;
+	margin-bottom: 1px;
+	background: transparent;
+	color: rgb(148, 163, 184);
+	border: 1px solid transparent;
+	border-radius: 4px;
+	cursor: pointer;
+}
+.console-tab-new:hover {
+	background: rgb(51, 65, 85);
+	color: rgb(52, 211, 153);
+}
+.console-tab {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 4px 4px 4px 10px;
+	background: rgb(30, 41, 59);
+	border: 1px solid rgb(51, 65, 85);
+	border-bottom: none;
+	border-top-left-radius: 4px;
+	border-top-right-radius: 4px;
+	font-size: 12px;
+	color: rgb(203, 213, 225);
+	white-space: nowrap;
+}
+.console-tab.active {
+	background: rgb(2, 6, 23);
+	border-color: rgb(71, 85, 105);
+	color: rgb(226, 232, 240);
+}
+/* Per-tab status dot — connection indicator + reconnect affordance.
+ * green = connected, slate-gray = anything else. Only the
+ * closed / error states pick up `is-clickable` (pointer + hover);
+ * the in-between states stay inert. */
+.console-tab-dot {
+	display: inline-block;
+	width: 8px;
+	height: 8px;
+	border-radius: 999px;
+	background: rgb(100, 116, 139);     /* slate-500 — "not connected" */
+	border: none;
+	padding: 0;
+	margin-right: 2px;
+	cursor: default;
+	flex-shrink: 0;
+	transition: background-color 120ms ease, box-shadow 120ms ease;
+}
+.console-tab-dot.is-connected {
+	background: rgb(52, 211, 153);       /* emerald-400 */
+}
+.console-tab-dot.is-error {
+	background: rgb(248, 113, 113);      /* red-400 — surface errors louder than plain closed */
+}
+.console-tab-dot.is-connecting {
+	background: rgb(250, 204, 21);       /* yellow-400 */
+}
+.console-tab-dot.is-clickable {
+	cursor: pointer;
+}
+.console-tab-dot.is-clickable:hover {
+	box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.35);
+}
+
+.console-tab-label {
+	background: none;
+	border: none;
+	color: inherit;
+	font: inherit;
+	cursor: pointer;
+	padding: 0;
+}
+.console-tab-close {
+	background: none;
+	border: none;
+	color: rgb(148, 163, 184);
+	font-size: 16px;
+	line-height: 1;
+	cursor: pointer;
+	padding: 0 4px;
+	border-radius: 3px;
+}
+.console-tab-close:hover {
+	background: rgb(51, 65, 85);
+	color: rgb(248, 113, 113);
+}
+
+/* ---------- popout mode: no chrome, just the terminal ---------- */
+
+/* In a popout window all the chrome is wasted space — the layout
+ * buttons are meaningless (we're already popped out), the close
+ * button is redundant with the OS window controls, and the tab
+ * bar / status pills don't add value for a single-session window.
+ * The class is added by ConsoleManager.markPopout(). */
+#console-drawer.console-popout .console-header,
+#console-drawer.console-popout .console-tab-bar,
+#console-drawer.console-popout .console-dock-handle {
+	display: none;
+}
+
+/* ---------- xterm padding ---------- */
+
+/* xterm.js paints right up to its container's edges by default. The
+ * .console-xterm-pad wrapper adds breathing room around the terminal
+ * without affecting xterm's own cols/rows math — xterm reads the inner
+ * div's size, so padding lives on the wrapper. */
+.console-xterm-pad {
+	padding: 8px 10px;
+}
+
+.console-session-host {
+	width: 100%;
+	height: 100%;
+}
+
+/* The .xterm viewport already handles its own scrollbar; suppress the
+ * outer wrapper's so we don't get two stacked tracks during transitions. */
+.console-xterm-pad > .console-session-host > .xterm {
+	height: 100%;
+}

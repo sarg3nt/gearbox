@@ -1,0 +1,69 @@
+package pages
+
+import (
+	"github.com/sarg3nt/gearbox/internal/framework/middleware"
+	"github.com/sarg3nt/gearbox/internal/framework/templates/components"
+)
+
+// ConsolePopoutPage renders a chromeless full-window console session for a
+// single box. Reached via window.open() from the in-page console manager
+// (the popout button). No sidebar, no header chrome, no Tailwind app shell
+// — just the ConsoleDrawer in fullscreen mode plus the assets needed to
+// drive it.
+//
+// On load the inline boot script calls markPopout (which hides the
+// layout-switch buttons that don't apply here) and opens a session
+// against the given box. Closing the drawer here means closing the
+// browser tab — handled by overriding the close button to window.close().
+templ ConsolePopoutPage(boxID string, boxName string) {
+	<!DOCTYPE html>
+	<html lang="en" class="h-full">
+	<head>
+		<meta charset="UTF-8"/>
+		<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+		<title>Console: { boxName } - Gearbox</title>
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
+		if middleware.UseLocalAssets(ctx) {
+			<script src="/static/js/vendor/tailwind.js"></script>
+		} else {
+			<script src="https://cdn.tailwindcss.com"></script>
+		}
+		<style>
+			html, body { height: 100%; margin: 0; background: #000; }
+			/* Force the drawer to always be visible and fullscreen in a
+			 * popout — the manager handles layout state for the in-page
+			 * case, but here we want zero chrome and zero hidden state. */
+			#console-drawer { display: flex !important; }
+			#console-drawer.hidden { display: flex !important; }
+		</style>
+	</head>
+	<body class="h-full m-0 bg-black">
+		<div id="console-popout-data" data-box-id={ boxID } data-label={ boxName } class="hidden"></div>
+		@components.ConsoleDrawer()
+		@components.ConsoleAssets()
+		<script>
+			(function () {
+				function boot() {
+					const node = document.getElementById('console-popout-data');
+					if (!node) return;
+					const boxID = node.getAttribute('data-box-id') || '';
+					const label = node.getAttribute('data-label') || boxID;
+					if (!window.gearbox || !window.gearbox.console) {
+						setTimeout(boot, 50);
+						return;
+					}
+					// markPopout hides the header + tab bar; the only way to
+					// exit is closing the window (Cmd-W / OS chrome).
+					window.gearbox.console.markPopout();
+					window.gearbox.console.open({ kind: 'box', boxID: boxID, label: label });
+				}
+				if (document.readyState === 'loading') {
+					document.addEventListener('DOMContentLoaded', boot);
+				} else {
+					boot();
+				}
+			})();
+		</script>
+	</body>
+	</html>
+}
