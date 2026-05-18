@@ -561,12 +561,15 @@
 
     /* ---------- paste confirm ---------- */
 
-    // Per #142 spec: ≥ 20 newlines triggers an inline confirm modal so a
-    // multi-command paste can't accidentally run the entire clipboard.
-    // Bracketed paste mode (DECSET 2004) is enabled by the remote shell;
+    // Per #142 spec: ≥ 20 newline characters in clipboard text triggers
+    // an inline confirm modal so a multi-command paste can't accidentally
+    // run the entire clipboard. We count actual '\n' occurrences (not
+    // lines) so a trailing newline doesn't shift the threshold off by one.
+    // Bracketed paste mode (DECSET 2004) is the remote shell's job;
     // xterm wraps pasted content with ESC[200~ … ESC[201~ automatically
-    // when the shell asked for it. This modal is the operator-side guard.
-    const PASTE_CONFIRM_LINES = 20;
+    // when the shell asked for it. Confirmed pastes route through
+    // term.paste() so that wrapping still happens.
+    const PASTE_CONFIRM_NEWLINES = 20;
 
     ConsoleManager.prototype._wirePasteConfirm = function () {
         const modal = this._$('console-paste-modal');
@@ -589,7 +592,14 @@
             const text = self._pendingPaste;
             closeModal();
             const s = self._active();
-            if (text && s) s.sendText(text);
+            // Route through term.paste() so xterm applies its normal
+            // paste pipeline (bracketed-paste wrapping, normalization).
+            // sendText would bypass DECSET 2004 framing.
+            if (text && s && s.term && typeof s.term.paste === 'function') {
+                s.term.paste(text);
+            } else if (text && s) {
+                s.sendText(text);
+            }
         });
 
         // Listen at document level so paste lands here before xterm's
@@ -605,14 +615,21 @@
             if (!e.clipboardData) return;
             const text = e.clipboardData.getData('text');
             if (!text) return;
-            const lines = text.split('\n').length;
-            if (lines < PASTE_CONFIRM_LINES) return; // let xterm handle it normally
+            // Count actual newline characters — robust against trailing-newline
+            // quirks vs. counting lines via split().length.
+            let newlines = 0;
+            for (let i = 0; i < text.length; i++) {
+                if (text.charCodeAt(i) === 10) newlines++;
+            }
+            if (newlines < PASTE_CONFIRM_NEWLINES) return; // let xterm handle it normally
             e.preventDefault();
             e.stopPropagation();
             self._pendingPaste = text;
             const linesEl = self._$('console-paste-modal-lines');
             const previewEl = self._$('console-paste-modal-preview');
-            if (linesEl) linesEl.textContent = String(lines);
+            // Visible "N lines" count = newlines + 1 (the line after the
+            // final newline). Matches how the user thinks about it.
+            if (linesEl) linesEl.textContent = String(newlines + 1);
             if (previewEl) {
                 // Cap preview at ~1200 chars + first ~30 lines so a huge
                 // paste doesn't blow up the modal. textContent is safe.
@@ -628,9 +645,15 @@
     /* ---------- global shortcut ---------- */
 
     // Ctrl-Shift-` opens the console for the active box. Reads box_id from
-    // the cookie set by switchBox; no cookie → no-op (palette is the
-    // fallback path for users who haven't pinned a box yet).
+    // the gearbox_active_box cookie set by the box-resolver middleware;
+    // no cookie → no-op (palette is the fallback path for users who
+    // haven't pinned a box yet).
+    //
+    // Registered eagerly on DOMContentLoaded — must not depend on the
+    // user having opened the console at least once.
     ConsoleManager.prototype._wireGlobalShortcut = function () {
+        if (this._globalShortcutWired) return;
+        this._globalShortcutWired = true;
         const self = this;
         document.addEventListener('keydown', function (e) {
             if (!e.ctrlKey || !e.shiftKey || e.altKey || e.metaKey) return;
@@ -638,7 +661,7 @@
             // and other non-QWERTY layouts work too.
             if (e.key !== '`' && e.code !== 'Backquote') return;
             e.preventDefault();
-            const boxID = readCookie('box_id');
+            const boxID = readCookie('gearbox_active_box');
             if (!boxID) return;
             self.open({ kind: 'box', boxID: boxID, label: boxID });
         });
@@ -1093,6 +1116,19 @@
         setLayout: function (mode) { manager.setLayout(mode); },
         manager: manager,
     };
+
+    // Eagerly wire the global Ctrl-Shift-` shortcut so it works even
+    // before the user has opened the console once. Other wiring (dock
+    // resize, search bar, paste modal) needs the drawer markup present
+    // and stays inside the lazy _wire() path.
+    function eagerWire() {
+        try { manager._wireGlobalShortcut(); } catch (_) {}
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', eagerWire);
+    } else {
+        eagerWire();
+    }
 
     window.gearbox.console.markPopout = function () {
         manager.popoutMode = true;

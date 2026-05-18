@@ -65,7 +65,9 @@ body.console-dock-open {
 .console-tool-btn.hidden,
 .console-tab-dot.hidden,
 .console-tab-new.hidden,
-.console-tab-bar.hidden {
+.console-tab-bar.hidden,
+.console-search-bar.hidden,
+.console-paste-modal.hidden {
 	display: none;
 }
 
@@ -292,9 +294,6 @@ body.console-dock-open {
 	justify-content: center;
 	padding: 24px;
 }
-.console-paste-modal.hidden {
-	display: none;
-}
 .console-paste-modal-panel {
 	background: rgb(15, 23, 42);
 	border: 1px solid rgb(51, 65, 85);
@@ -356,14 +355,6 @@ body.console-dock-open {
 }
 .console-paste-modal-confirm:hover {
 	background: rgb(110, 231, 183);
-}
-
-/* xterm-addon-search highlight tweaks for our dark theme */
-.xterm .xterm-decoration.console-search-active {
-	background: rgba(250, 204, 21, 0.6);
-}
-.xterm .xterm-decoration.console-search-other {
-	background: rgba(250, 204, 21, 0.25);
 }
 
 /* ---------- xterm padding ---------- */
