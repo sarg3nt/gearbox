@@ -54,10 +54,25 @@ func (g *Gear) Initialize(ctx context.Context, deps gear.Dependencies) error {
 	return nil
 }
 
-// Start launches the per-box status poller.
+// Start launches the per-box status poller and subscribes to
+// box-config-changed events so toggle/edit operations refresh the
+// monitor's snapshot for the affected box immediately, instead of
+// waiting on the next 30s poll. Without this subscription, /bx would
+// keep rendering stale ConsoleEnabled / Enabled values for up to 30s
+// after the user clicked save.
 func (g *Gear) Start(ctx context.Context) error {
 	if g.monitor != nil {
 		g.monitor.Start(ctx)
+	}
+	if g.monitor != nil {
+		if hub := g.GetEventHub(); hub != nil {
+			hub.Subscribe("box.config_changed", func(e gear.Event) {
+				if e.ServerID == "" {
+					return
+				}
+				g.monitor.PokeBox(ctx, e.ServerID)
+			})
+		}
 	}
 	return nil
 }

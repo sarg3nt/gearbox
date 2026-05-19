@@ -116,6 +116,36 @@ func (m *statusMonitor) run(ctx context.Context) {
 	}
 }
 
+// PokeBox triggers an immediate out-of-band probe of a single box,
+// updates the snapshot, and broadcasts to SSE subscribers. Used by the
+// box-config-changed event subscriber so settings edits (enable toggle,
+// console-enabled toggle, agent URL change, …) reflect on /bx without
+// waiting on the next 30s tick. Safe to call concurrently with the
+// regular poll loop — m.set is mutex-guarded.
+func (m *statusMonitor) PokeBox(ctx context.Context, boxID string) {
+	if m.db == nil {
+		return
+	}
+	box, err := m.db.GetBoxByBoxID(boxID)
+	if err != nil || box == nil {
+		// Box was deleted, or the DB call failed — drop any stale
+		// snapshot for that ID so /bx renders default-state rather
+		// than the last-known-good values for a now-missing box.
+		m.mu.Lock()
+		delete(m.statuses, boxID)
+		m.mu.Unlock()
+		return
+	}
+	apiKey := ""
+	if enc := m.encryptor(); enc != nil && len(box.APIKeyEncrypted) > 0 {
+		if dec, err := enc.DecryptString(box.APIKeyEncrypted); err == nil {
+			apiKey = dec
+		}
+	}
+	status := m.probe(ctx, box, apiKey)
+	m.set(status)
+}
+
 // pollAll fans out a reachability check per configured box. The check is
 // the unauthenticated `/health` endpoint of each agent — same probe as the
 // HAProxy backend health check, with the same 5s budget.

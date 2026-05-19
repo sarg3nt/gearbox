@@ -258,6 +258,15 @@ func (h *Handler) HAProxyBoxUpdatePost(w http.ResponseWriter, r *http.Request) {
 	// TTL expires.
 	h.invalidateBoxCapabilities(server.BoxID)
 
+	// Notify caches keyed on per-box settings (Bx status monitor's
+	// ConsoleEnabled mirror, etc.) so toggles propagate immediately
+	// instead of waiting on the next 30s poll. Without this, a user
+	// flipping console_enabled on/off in this form would not see the
+	// shell icon appear/disappear on /bx until the next periodic poll.
+	if h.eventHub != nil {
+		h.eventHub.PublishBoxConfigChanged(server.BoxID)
+	}
+
 	// Log audit
 	h.logAudit(r, user.ID, "haproxy_box_update", fmt.Sprintf("Updated HAProxy box: %s (%s)", server.Name, server.BoxID))
 
@@ -363,6 +372,13 @@ func (h *Handler) HAProxyBoxTogglePost(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("Failed to toggle HAProxy server", "error", err)
 		http.Error(w, "Failed to toggle server", http.StatusInternalServerError)
 		return
+	}
+
+	// Notify caches keyed on per-box settings — same reasoning as the
+	// update-form path. Toggling enabled on/off should reflect on /bx
+	// immediately, not after the next 30s monitor tick.
+	if h.eventHub != nil {
+		h.eventHub.PublishBoxConfigChanged(server.BoxID)
 	}
 
 	// Log audit
