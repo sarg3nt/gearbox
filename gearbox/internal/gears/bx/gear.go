@@ -16,6 +16,7 @@ import (
 	"github.com/a-h/templ"
 	"github.com/go-chi/chi/v5"
 
+	"github.com/sarg3nt/gearbox/internal/framework/events"
 	"github.com/sarg3nt/gearbox/internal/framework/gear"
 )
 
@@ -26,8 +27,9 @@ func init() {
 // Gear implements the Bx fleet-view gear.
 type Gear struct {
 	gear.BaseGear
-	handlers *Handlers
-	monitor  *statusMonitor
+	handlers           *Handlers
+	monitor            *statusMonitor
+	configChangeUnsub  func() // returned by EventHub.Subscribe; called in Stop
 }
 
 // Info returns gear metadata.
@@ -66,7 +68,7 @@ func (g *Gear) Start(ctx context.Context) error {
 	}
 	if g.monitor != nil {
 		if hub := g.GetEventHub(); hub != nil {
-			hub.Subscribe("box.config_changed", func(e gear.Event) {
+			g.configChangeUnsub = hub.Subscribe(string(events.EventTypeBoxConfigChanged), func(e gear.Event) {
 				if e.ServerID == "" {
 					return
 				}
@@ -77,8 +79,15 @@ func (g *Gear) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop signals the background poller to wind down.
+// Stop signals the background poller to wind down and releases the
+// event subscription so the forwarder goroutine inside the events
+// adapter exits cleanly and no further PokeBox calls reach a
+// shutting-down monitor.
 func (g *Gear) Stop(ctx context.Context) error {
+	if g.configChangeUnsub != nil {
+		g.configChangeUnsub()
+		g.configChangeUnsub = nil
+	}
 	if g.monitor != nil {
 		g.monitor.Stop()
 	}
