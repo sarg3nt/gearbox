@@ -111,36 +111,44 @@ func nsenterUsable() bool {
 	return true
 }
 
-// hostNsenterCandidates is the search list for the host's nsenter
-// binary as seen from inside the container. With pid:host the kernel
-// exposes the host's root filesystem at /proc/1/root (a magic symlink
-// resolved by the host PID 1's mount namespace), so absolute paths
-// under /proc/1/root/... reach the host's util-linux install.
+// nsenterCandidates is the search list for an nsenter binary the
+// agent can exec. Container-local paths come first because they're
+// guaranteed to have a working ELF interpreter in the agent's mount
+// namespace; the official agent image bundles a statically-linked
+// busybox at /usr/bin/nsenter for exactly this reason.
 //
-// Order: most-common location first; /usr/bin covers Debian/Ubuntu/
-// modern RHEL; /bin covers older trees; /usr/sbin and /sbin cover
-// distros that consider nsenter a privileged util.
-var hostNsenterCandidates = []string{
+// The /proc/1/root candidates remain as a last-ditch fallback for
+// non-distroless agent flavors that happen to share enough libc
+// layout with the host to make exec succeed — but in practice, with
+// the official distroless image, the kernel resolves the host's
+// nsenter binary fine for stat() yet fails the subsequent execve()
+// because the binary's PT_INTERP (e.g. /lib64/ld-linux-x86-64.so.2)
+// isn't visible in the container's mount namespace.
+var nsenterCandidates = []string{
+	// Container-local (bundled by Dockerfile, or operator-installed):
+	"/usr/bin/nsenter",
+	"/bin/nsenter",
+	"/usr/sbin/nsenter",
+	"/sbin/nsenter",
+	// Host fallback via /proc/1/root — only loads when libc paths
+	// happen to line up. Kept for completeness; never relied on.
+	// Mirrors the container-local list (incl. sbin) so non-distroless
+	// agent flavors that match host layout get parity coverage.
 	"/proc/1/root/usr/bin/nsenter",
 	"/proc/1/root/bin/nsenter",
 	"/proc/1/root/usr/sbin/nsenter",
 	"/proc/1/root/sbin/nsenter",
 }
 
-// resolveHostNsenter returns the first reachable nsenter binary path
-// from hostNsenterCandidates, or "" if none exist. Cached results are
-// not appropriate — operator upgrades on the host could move the
-// binary; the call is cheap (a few stat()s).
+// resolveHostNsenter returns the first reachable nsenter binary path,
+// or "" if none exist. Not cached — cheap stat()s, and operator
+// changes (image upgrade, host package install) could affect the
+// answer between calls.
 func resolveHostNsenter() string {
-	for _, p := range hostNsenterCandidates {
+	for _, p := range nsenterCandidates {
 		if st, err := os.Stat(p); err == nil && !st.IsDir() {
 			return p
 		}
-	}
-	// Last-ditch: maybe the container itself ships nsenter (some
-	// non-distroless agent flavors might). exec.LookPath uses $PATH.
-	if _, err := os.Stat("/usr/bin/nsenter"); err == nil {
-		return "/usr/bin/nsenter"
 	}
 	return ""
 }
@@ -167,7 +175,7 @@ func SpawnNsenter(ctx context.Context, command []string, runAs string, cols, row
 	}
 	nsenterBin := resolveHostNsenter()
 	if nsenterBin == "" {
-		return nil, errors.New("nsenter: binary not found (looked under /proc/1/root and /usr/bin)")
+		return nil, fmt.Errorf("nsenter: binary not found (searched %v)", nsenterCandidates)
 	}
 	argv := append([]string{
 		nsenterBin,

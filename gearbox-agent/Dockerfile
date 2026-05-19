@@ -37,6 +37,24 @@ WORKDIR /app
 COPY --from=go-builder /build/gearbox-agent .
 COPY --from=go-builder --chown=65532:65532 /var/lib/gearbox-agent /var/lib/gearbox-agent
 
+# busybox (statically linked, musl) supplies the `nsenter` applet for the
+# console gear's host-exec mode (#142). When the agent runs with
+# pid:host + privileged on a Docker host, sessions need to setns into
+# host PID 1's namespaces — but the host's own nsenter binary can't be
+# exec'd from the container because its ELF interpreter
+# (/lib64/ld-linux-x86-64.so.2 + libc) isn't visible in the distroless
+# mount namespace. busybox is statically linked, ~1MB, and dispatches
+# applets by argv[0], so dropping it in as /usr/bin/nsenter is enough.
+# Operators not running host-exec mode pay only the 1MB image cost.
+#
+# Pinned by index digest (not just tag) so the build is reproducible
+# across busybox tag rebuilds. The buildx multi-arch resolver picks
+# the right platform manifest from this index automatically. busybox
+# 1.37.0's nsenter applet supports -t/--target, -m/--mount,
+# -u/--uts, -i/--ipc, -n/--net, -p/--pid (which is what SpawnNsenter
+# emits); verified against the upstream applet list before pinning.
+COPY --from=busybox:1.37.0-musl@sha256:19b646668802469d968a05342a601e78da4322a414a7c09b1c9ee25165042138 /bin/busybox /usr/bin/nsenter
+
 # Expose API port
 EXPOSE 8405
 
