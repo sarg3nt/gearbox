@@ -36,6 +36,13 @@ const (
 	// EventTypeMetadataRefreshed indicates metadata was refreshed.
 	EventTypeMetadataRefreshed EventType = "metadata.refreshed"
 
+	// EventTypeBoxConfigChanged indicates a box's persisted settings have
+	// changed (enabled flag, console toggle, agent URL, etc.). Consumers
+	// that cache box state (e.g. the Bx status monitor) should invalidate
+	// their cache for ServerID and re-probe so user-visible toggles
+	// propagate without waiting on the next periodic poll.
+	EventTypeBoxConfigChanged EventType = "box.config_changed"
+
 	// EventTypeStatsUpdated indicates HAProxy stats have been updated.
 	EventTypeStatsUpdated EventType = "stats.updated"
 
@@ -338,6 +345,17 @@ func (h *Hub) PublishServerDisconnected(serverID string, serverName string) {
 func (h *Hub) PublishMetadataRefreshed(serverID string) {
 	h.Publish(Event{
 		Type:      EventTypeMetadataRefreshed,
+		ServerID:  serverID,
+		Timestamp: time.Now(),
+	})
+}
+
+// PublishBoxConfigChanged publishes a box-config-changed event. Caches
+// keyed on the box's settings (Bx status monitor, capabilities cache,
+// etc.) should treat this as a signal to invalidate and re-probe.
+func (h *Hub) PublishBoxConfigChanged(serverID string) {
+	h.Publish(Event{
+		Type:      EventTypeBoxConfigChanged,
 		ServerID:  serverID,
 		Timestamp: time.Now(),
 	})

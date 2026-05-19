@@ -116,6 +116,48 @@ func (m *statusMonitor) run(ctx context.Context) {
 	}
 }
 
+// PokeBox triggers an immediate out-of-band probe of a single box,
+// updates the snapshot, and broadcasts to SSE subscribers. Used by the
+// box-config-changed event subscriber so settings edits (enable toggle,
+// console-enabled toggle, agent URL change, …) reflect on /bx without
+// waiting on the next 30s tick. Safe to call concurrently with the
+// regular poll loop — set/setAndBroadcast are mutex-guarded.
+func (m *statusMonitor) PokeBox(ctx context.Context, boxID string) {
+	if m.db == nil {
+		return
+	}
+	box, err := m.db.GetBoxByBoxID(boxID)
+	if err != nil {
+		// Transient DB error — don't poison the snapshot by dropping
+		// last-known-good values. Log and bail; the next 30s poll
+		// will reconcile.
+		if m.deps.Logger != nil {
+			m.deps.Logger.Warn("bx PokeBox: db lookup failed; preserving last-known status", "box_id", boxID, "error", err)
+		}
+		return
+	}
+	if box == nil {
+		// Box was deleted — drop the stale snapshot so /bx doesn't
+		// keep rendering last-known-good values for a now-missing box.
+		m.mu.Lock()
+		delete(m.statuses, boxID)
+		m.mu.Unlock()
+		return
+	}
+	apiKey := ""
+	if enc := m.encryptor(); enc != nil && len(box.APIKeyEncrypted) > 0 {
+		if dec, err := enc.DecryptString(box.APIKeyEncrypted); err == nil {
+			apiKey = dec
+		}
+	}
+	status := m.probe(ctx, box, apiKey)
+	// Force-broadcast: a config edit may have flipped only a non-level
+	// field (e.g. ConsoleEnabled). The default set() suppresses chatter
+	// on equal-level updates, which is exactly the case we need to NOT
+	// suppress here.
+	m.setAndBroadcast(status)
+}
+
 // pollAll fans out a reachability check per configured box. The check is
 // the unauthenticated `/health` endpoint of each agent — same probe as the
 // HAProxy backend health check, with the same 5s budget.
@@ -239,6 +281,19 @@ func (m *statusMonitor) set(s BoxStatus) {
 	if !had || prev.Level != s.Level || prev.Reachable != s.Reachable {
 		m.broadcast(s)
 	}
+}
+
+// setAndBroadcast stores a status and ALWAYS broadcasts to subscribers,
+// even when level/reachable haven't changed. Used by PokeBox so a flip
+// of a non-level field (ConsoleEnabled, Enabled, Name, …) reaches open
+// /bx tabs immediately — the chatter-suppression in set() is desirable
+// for the steady-state poll loop but defeats the purpose of an
+// out-of-band config-change refresh.
+func (m *statusMonitor) setAndBroadcast(s BoxStatus) {
+	m.mu.Lock()
+	m.statuses[s.BoxID] = s
+	m.mu.Unlock()
+	m.broadcast(s)
 }
 
 // Subscribe returns a channel of status events and an unsubscribe func.

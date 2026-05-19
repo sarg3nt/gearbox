@@ -16,6 +16,7 @@ import (
 	"github.com/a-h/templ"
 	"github.com/go-chi/chi/v5"
 
+	"github.com/sarg3nt/gearbox/internal/framework/events"
 	"github.com/sarg3nt/gearbox/internal/framework/gear"
 )
 
@@ -26,8 +27,9 @@ func init() {
 // Gear implements the Bx fleet-view gear.
 type Gear struct {
 	gear.BaseGear
-	handlers *Handlers
-	monitor  *statusMonitor
+	handlers           *Handlers
+	monitor            *statusMonitor
+	configChangeUnsub  func() // returned by EventHub.Subscribe; called in Stop
 }
 
 // Info returns gear metadata.
@@ -54,16 +56,38 @@ func (g *Gear) Initialize(ctx context.Context, deps gear.Dependencies) error {
 	return nil
 }
 
-// Start launches the per-box status poller.
+// Start launches the per-box status poller and subscribes to
+// box-config-changed events so toggle/edit operations refresh the
+// monitor's snapshot for the affected box immediately, instead of
+// waiting on the next 30s poll. Without this subscription, /bx would
+// keep rendering stale ConsoleEnabled / Enabled values for up to 30s
+// after the user clicked save.
 func (g *Gear) Start(ctx context.Context) error {
 	if g.monitor != nil {
 		g.monitor.Start(ctx)
 	}
+	if g.monitor != nil {
+		if hub := g.GetEventHub(); hub != nil {
+			g.configChangeUnsub = hub.Subscribe(string(events.EventTypeBoxConfigChanged), func(e gear.Event) {
+				if e.ServerID == "" {
+					return
+				}
+				g.monitor.PokeBox(ctx, e.ServerID)
+			})
+		}
+	}
 	return nil
 }
 
-// Stop signals the background poller to wind down.
+// Stop signals the background poller to wind down and releases the
+// event subscription so the forwarder goroutine inside the events
+// adapter exits cleanly and no further PokeBox calls reach a
+// shutting-down monitor.
 func (g *Gear) Stop(ctx context.Context) error {
+	if g.configChangeUnsub != nil {
+		g.configChangeUnsub()
+		g.configChangeUnsub = nil
+	}
 	if g.monitor != nil {
 		g.monitor.Stop()
 	}
