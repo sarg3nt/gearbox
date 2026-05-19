@@ -132,8 +132,12 @@ var nsenterCandidates = []string{
 	"/sbin/nsenter",
 	// Host fallback via /proc/1/root — only loads when libc paths
 	// happen to line up. Kept for completeness; never relied on.
+	// Mirrors the container-local list (incl. sbin) so non-distroless
+	// agent flavors that match host layout get parity coverage.
 	"/proc/1/root/usr/bin/nsenter",
 	"/proc/1/root/bin/nsenter",
+	"/proc/1/root/usr/sbin/nsenter",
+	"/proc/1/root/sbin/nsenter",
 }
 
 // resolveHostNsenter returns the first reachable nsenter binary path,
@@ -171,7 +175,7 @@ func SpawnNsenter(ctx context.Context, command []string, runAs string, cols, row
 	}
 	nsenterBin := resolveHostNsenter()
 	if nsenterBin == "" {
-		return nil, errors.New("nsenter: binary not found (looked under /proc/1/root and /usr/bin)")
+		return nil, fmt.Errorf("nsenter: binary not found (searched %v)", nsenterCandidates)
 	}
 	argv := append([]string{
 		nsenterBin,
