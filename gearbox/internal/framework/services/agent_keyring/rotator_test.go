@@ -191,7 +191,7 @@ func setupRotator(t *testing.T) (*Rotator, *agentMock, *database.DB, *database.B
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	enc, err := dashcrypto.NewEncryptor("test-encryption-secret-32-bytes!")
+	enc, err := dashcrypto.NewFromHashedKey("test-encryption-secret-32-bytes!")
 	if err != nil {
 		t.Fatalf("NewEncryptor: %v", err)
 	}
