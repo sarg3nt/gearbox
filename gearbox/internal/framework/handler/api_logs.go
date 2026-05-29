@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	apperrors "github.com/sarg3nt/gearbox/internal/framework/errors"
+	apperrors "github.com/sarg3nt/webcore/core/errors"
 	"github.com/sarg3nt/gearbox/internal/framework/models"
 )
 
