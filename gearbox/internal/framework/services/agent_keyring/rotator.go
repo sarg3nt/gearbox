@@ -20,7 +20,7 @@ import (
 
 	"github.com/sarg3nt/gearbox/internal/framework/agent"
 	"github.com/sarg3nt/gearbox/internal/framework/database"
-	"github.com/sarg3nt/gearbox/internal/framework/services/crypto"
+	"github.com/sarg3nt/webcore/core/crypto"
 )
 
 // DefaultOverlapWindow is the time that elapses between flipping

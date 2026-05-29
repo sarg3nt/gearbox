@@ -27,7 +27,7 @@ import (
 	"github.com/sarg3nt/gearbox/internal/framework/services"
 	"github.com/sarg3nt/gearbox/internal/framework/services/agent_keyring"
 	"github.com/sarg3nt/gearbox/internal/framework/services/alerts"
-	"github.com/sarg3nt/gearbox/internal/framework/services/crypto"
+	"github.com/sarg3nt/webcore/core/crypto"
 	"github.com/sarg3nt/gearbox/internal/framework/services/email"
 
 	// Import gears - blank identifier triggers init() registration
@@ -188,7 +188,7 @@ func main() {
 	logger.Info("email service initialized")
 
 	// Initialize encryptor for secrets
-	encryptor, err := crypto.NewEncryptor(cfg.SessionSecret)
+	encryptor, err := crypto.NewFromHashedKey(cfg.SessionSecret)
 	if err != nil {
 		log.Fatalf("Failed to create encryptor: %v", err)
 	}

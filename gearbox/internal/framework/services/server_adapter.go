@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	"github.com/sarg3nt/gearbox/internal/framework/agent"
-	"github.com/sarg3nt/gearbox/internal/framework/services/crypto"
+	"github.com/sarg3nt/webcore/core/crypto"
 	"github.com/sarg3nt/gearbox/internal/framework/database"
 	"github.com/sarg3nt/gearbox/internal/framework/gear"
 	"github.com/sarg3nt/gearbox/internal/framework/models"

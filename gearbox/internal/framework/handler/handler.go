@@ -13,7 +13,7 @@ import (
 	"github.com/sarg3nt/gearbox/internal/framework/database"
 	"github.com/sarg3nt/gearbox/internal/framework/events"
 	"github.com/sarg3nt/gearbox/internal/framework/models"
-	"github.com/sarg3nt/gearbox/internal/framework/services/crypto"
+	"github.com/sarg3nt/webcore/core/crypto"
 	"github.com/sarg3nt/gearbox/internal/framework/services/email"
 	"github.com/sarg3nt/gearbox/internal/framework/services/geoip"
 )

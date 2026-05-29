@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/sarg3nt/gearbox/internal/framework/database"
-	dashcrypto "github.com/sarg3nt/gearbox/internal/framework/services/crypto"
+	dashcrypto "github.com/sarg3nt/webcore/core/crypto"
 )
 
 // agentMock fakes the subset of the agent's /api/v1/system/keyring/*
