@@ -30,7 +30,7 @@ jobs:
       apps: ${{ steps.apps.outputs.apps }}
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2
         with:
           egress-policy: audit
 
@@ -84,7 +84,7 @@ jobs:
 
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2
         with:
           egress-policy: audit
 
@@ -111,7 +111,7 @@ jobs:
       - name: Upload coverage to Codecov
         # Codecov tokens aren't available on fork PRs; skip rather than fail noisily.
         if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
-        uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v5
+        uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354 # v5
         with:
           files: ./${{ matrix.app }}/coverage.out
           flags: ${{ matrix.app }}
@@ -136,7 +136,7 @@ jobs:
 
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2
         with:
           egress-policy: audit
 
@@ -158,7 +158,7 @@ jobs:
         run: templ generate
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9
+        uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9
         with:
           version: v2.8.0
           working-directory: ./${{ matrix.app }}
@@ -181,7 +181,7 @@ jobs:
 
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2
         with:
           egress-policy: audit
 

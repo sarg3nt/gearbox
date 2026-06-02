@@ -25,7 +25,7 @@ jobs:
 
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2
         with:
           egress-policy: audit
 
@@ -36,7 +36,7 @@ jobs:
 
       - name: Generate changelog
         id: changelog
-        uses: mikepenz/release-changelog-builder-action@bcae7115752d4ed746ff92feb666574428a79415 # v6
+        uses: mikepenz/release-changelog-builder-action@348e88fab4c37338b1e803ceb2d4a7a5db6c0833 # v6
         with:
           configuration: ".github/changelog-config.json"
         env:
@@ -73,7 +73,7 @@ jobs:
 
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2
         with:
           egress-policy: audit
 
@@ -155,7 +155,7 @@ jobs:
 
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2
         with:
           egress-policy: audit
 
@@ -223,7 +223,7 @@ jobs:
 
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2
         with:
           egress-policy: audit
 
