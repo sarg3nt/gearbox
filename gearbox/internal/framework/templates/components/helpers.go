@@ -50,8 +50,3 @@ func calculateCPUPercentage(loadAvg float64) float64 {
 	return percentage
 }
 
-// intToString converts an integer to a string.
-// Used by settings components for HTML attribute values.
-func intToString(n int) string {
-	return fmt.Sprintf("%d", n)
-}
