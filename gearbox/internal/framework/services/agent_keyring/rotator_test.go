@@ -193,7 +193,7 @@ func setupRotator(t *testing.T) (*Rotator, *agentMock, *database.DB, *database.B
 
 	enc, err := dashcrypto.NewFromHashedKey("test-encryption-secret-32-bytes!")
 	if err != nil {
-		t.Fatalf("NewEncryptor: %v", err)
+		t.Fatalf("NewFromHashedKey: %v", err)
 	}
 
 	box := &database.BoxDB{
