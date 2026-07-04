@@ -3,9 +3,9 @@ package auth
 import (
 	"context"
 	"net/http"
-	"net/url"
 
 	"github.com/sarg3nt/gearbox/internal/framework/models"
+	webcoreauth "github.com/sarg3nt/webcore/core/auth"
 )
 
 type contextKey string
@@ -24,98 +24,37 @@ type SidebarIntegration struct {
 	SortOrder int
 }
 
-// RequireAuth is middleware that requires authentication.
+// RequireAuth is middleware that requires authentication. It delegates to
+// webcore's RequireAuth (which owns the session validation, the /login
+// redirect with return URL, and the dev-only loopback bypass in `-tags dev`
+// builds), then re-maps the authenticated user from webcore's context slot
+// into gearbox's as a concrete *models.User for the 60+ GetUserFromContext
+// call sites.
 func (m *Manager) RequireAuth(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Dev-only loopback bypass — short-circuits the session check when
-		// the binary is built with `-tags dev`, GEARBOX_DEV_AUTO_LOGIN=1,
-		// and the request originates from a loopback IP. In production
-		// builds tryDevBypass is a hard-coded `nil, false` stub (see
-		// dev_bypass_off.go); no codepath exists to enable the bypass.
-		if devUser, ok := tryDevBypass(m, r); ok {
-			ctx := context.WithValue(r.Context(), userContextKey, devUser)
-			next.ServeHTTP(w, r.WithContext(ctx))
-			return
-		}
-
-		user, err := m.GetUser(r)
-		if err != nil {
-			// Not authenticated, redirect to login with return URL
-			returnURL := r.URL.Path
-			if r.URL.RawQuery != "" {
-				returnURL += "?" + r.URL.RawQuery
+	remap := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if wcUser, ok := webcoreauth.GetUserFromContext(r.Context()); ok {
+			if user := unwrapUser(wcUser); user != nil {
+				r = r.WithContext(context.WithValue(r.Context(), userContextKey, user))
 			}
-
-			// Construct redirect URL with return parameter
-			// Note: Don't show "session expired" message here - on first visit there's no session
-			// Messages are handled by specific handlers (logout, etc.)
-			redirectURL := "/login"
-			if returnURL != "/" && returnURL != "" {
-				redirectURL += "?return=" + url.QueryEscape(returnURL)
-			}
-
-			http.Redirect(w, r, redirectURL, http.StatusSeeOther)
-			return
 		}
-
-		// Add user to request context
-		ctx := context.WithValue(r.Context(), userContextKey, user)
-		next.ServeHTTP(w, r.WithContext(ctx))
+		next.ServeHTTP(w, r)
 	})
+	return m.wc.RequireAuth(remap)
 }
 
-// RequirePasswordChange is middleware that enforces password change before allowing any other action.
-// This MUST be placed after RequireAuth in the middleware chain.
+// RequirePasswordChange is middleware that enforces password change before
+// allowing any other action. MUST be placed after RequireAuth in the chain
+// (it reads the webcore context RequireAuth populates). Delegates to webcore
+// with gearbox's historical allowlist: the account-setup page, /logout, and
+// /static/* (always allowed by webcore).
 func (m *Manager) RequirePasswordChange(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		user, ok := GetUserFromContext(r.Context())
-		if !ok {
-			// Should not happen if RequireAuth is before this middleware
-			http.Redirect(w, r, "/login", http.StatusSeeOther)
-			return
-		}
-
-		// Allow access to account setup, logout, and static assets
-		allowedPaths := map[string]bool{
-			"/settings/complete-account-setup": true,
-			"/logout":                          true,
-			"/static/":                         true, // Allow static assets
-		}
-
-		// Check if the current path is allowed
-		for allowedPath := range allowedPaths {
-			if r.URL.Path == allowedPath || (allowedPath == "/static/" && len(r.URL.Path) > 8 && r.URL.Path[:8] == "/static/") {
-				next.ServeHTTP(w, r)
-				return
-			}
-		}
-
-		// If user must change password, redirect to account setup page
-		if user.MustChangePassword {
-			// Only redirect if not already on the account setup page
-			if r.URL.Path != "/settings/complete-account-setup" {
-				http.Redirect(w, r, "/settings/complete-account-setup", http.StatusSeeOther)
-				return
-			}
-		}
-
-		next.ServeHTTP(w, r)
-	})
+	return m.wc.RequirePasswordChange("/settings/complete-account-setup", "/logout")(next)
 }
 
-// RequireCSRF is middleware that validates CSRF tokens for POST requests.
+// RequireCSRF is middleware that validates CSRF tokens for state-changing
+// requests (POST/PUT/DELETE/PATCH).
 func (m *Manager) RequireCSRF(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Only check CSRF for state-changing methods
-		if r.Method == "POST" || r.Method == "PUT" || r.Method == "DELETE" || r.Method == "PATCH" {
-			if err := m.ValidateCSRFToken(r); err != nil {
-				http.Error(w, "Invalid CSRF token", http.StatusForbidden)
-				return
-			}
-		}
-
-		next.ServeHTTP(w, r)
-	})
+	return m.wc.RequireCSRF(next)
 }
 
 // RequireAdmin is middleware that requires admin role.
