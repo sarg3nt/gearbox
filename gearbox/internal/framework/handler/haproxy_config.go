@@ -11,7 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/sarg3nt/gearbox/internal/framework/agent"
 	"github.com/sarg3nt/gearbox/internal/framework/auth"
-	"github.com/sarg3nt/gearbox/internal/framework/services/crypto"
+	"github.com/sarg3nt/webcore/core/crypto"
 	"github.com/sarg3nt/gearbox/internal/framework/database"
 	"github.com/sarg3nt/gearbox/internal/framework/models"
 	"github.com/sarg3nt/gearbox/internal/framework/templates/pages"

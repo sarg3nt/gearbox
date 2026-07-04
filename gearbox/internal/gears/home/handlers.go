@@ -9,7 +9,7 @@ import (
 	"github.com/sarg3nt/gearbox/internal/framework/gear"
 	"github.com/sarg3nt/gearbox/internal/framework/models"
 	"github.com/sarg3nt/gearbox/internal/framework/services"
-	"github.com/sarg3nt/gearbox/internal/framework/services/crypto"
+	"github.com/sarg3nt/webcore/core/crypto"
 )
 
 // Handlers serves the Home dashboard pages and APIs.

@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/sarg3nt/gearbox/internal/framework/database"
-	dashcrypto "github.com/sarg3nt/gearbox/internal/framework/services/crypto"
+	dashcrypto "github.com/sarg3nt/webcore/core/crypto"
 )
 
 // agentMock fakes the subset of the agent's /api/v1/system/keyring/*
@@ -191,9 +191,9 @@ func setupRotator(t *testing.T) (*Rotator, *agentMock, *database.DB, *database.B
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	enc, err := dashcrypto.NewEncryptor("test-encryption-secret-32-bytes!")
+	enc, err := dashcrypto.NewFromHashedKey("test-encryption-secret-32-bytes!")
 	if err != nil {
-		t.Fatalf("NewEncryptor: %v", err)
+		t.Fatalf("NewFromHashedKey: %v", err)
 	}
 
 	box := &database.BoxDB{

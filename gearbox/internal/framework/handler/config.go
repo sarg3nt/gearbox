@@ -11,7 +11,7 @@ import (
 	"github.com/sarg3nt/gearbox/internal/framework/agent"
 	"github.com/sarg3nt/gearbox/internal/framework/auth"
 	"github.com/sarg3nt/gearbox/internal/framework/database"
-	apperrors "github.com/sarg3nt/gearbox/internal/framework/errors"
+	apperrors "github.com/sarg3nt/webcore/core/errors"
 	"github.com/sarg3nt/gearbox/internal/framework/models"
 	"github.com/sarg3nt/gearbox/internal/framework/templates/pages"
 )

@@ -137,6 +137,7 @@ type Hub struct {
 	register    chan *Subscriber
 	unregister  chan *Subscriber
 	done        chan struct{}
+	stopOnce    sync.Once
 	// subscriberDrops is owned by run() and must not be touched from other
 	// goroutines.
 	subscriberDrops map[dropKey]*dropAggregator
@@ -166,9 +167,10 @@ func (h *Hub) Start() {
 	go h.run()
 }
 
-// Stop gracefully shuts down the hub.
+// Stop gracefully shuts down the hub. Safe to call more than once (e.g. from
+// both a signal handler and a defer).
 func (h *Hub) Stop() {
-	close(h.done)
+	h.stopOnce.Do(func() { close(h.done) })
 }
 
 // run is the main event loop.
@@ -221,7 +223,11 @@ func (h *Hub) run() {
 	}
 }
 
-// Subscribe creates a new subscriber.
+// Subscribe creates a new subscriber. If the hub has already been stopped,
+// the returned subscriber's Events channel is pre-closed so consumers (e.g.
+// the SSE handler's `event, ok := <-sub.Events`) observe !ok and exit —
+// instead of this call blocking forever on a registration that nothing will
+// ever drain (shutdown-race goroutine/connection leak).
 func (h *Hub) Subscribe(id string, serverID string) *Subscriber {
 	sub := &Subscriber{
 		ID:       id,
@@ -230,7 +236,11 @@ func (h *Hub) Subscribe(id string, serverID string) *Subscriber {
 		done:     make(chan struct{}),
 	}
 
-	h.register <- sub
+	select {
+	case h.register <- sub:
+	case <-h.done:
+		close(sub.Events)
+	}
 	return sub
 }
 

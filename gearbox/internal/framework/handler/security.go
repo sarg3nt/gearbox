@@ -7,7 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sarg3nt/gearbox/internal/framework/auth"
-	apperrors "github.com/sarg3nt/gearbox/internal/framework/errors"
+	apperrors "github.com/sarg3nt/webcore/core/errors"
 	"github.com/sarg3nt/gearbox/internal/framework/models"
 	"github.com/sarg3nt/gearbox/internal/framework/templates/pages"
 )

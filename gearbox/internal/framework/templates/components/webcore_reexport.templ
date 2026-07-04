@@ -1,0 +1,59 @@
+package components
+
+// Re-exports of UI components that now live in webcore. These thin wrappers
+// keep gearbox's existing `components.X` call sites working while the actual
+// markup/JS/CSS is owned by github.com/sarg3nt/webcore/ui/components — a single
+// source of truth, no duplicated HTML. Gearbox-only components (console,
+// container_diagram, metrics/SystemMetrics, doughnut) remain in this package.
+
+import wc "github.com/sarg3nt/webcore/ui/components"
+
+templ InfoTooltip(text string) {
+	@wc.InfoTooltip(text)
+}
+
+templ SettingsSection(title, description string) {
+	@wc.SettingsSection(title, description) {
+		{ children... }
+	}
+}
+
+templ SettingsCheckbox(id, label, helpText string, checked bool) {
+	@wc.SettingsCheckbox(id, label, helpText, checked)
+}
+
+templ SettingsSelect(id, label, helpText string, options []SelectOption) {
+	@wc.SettingsSelect(id, label, helpText, options)
+}
+
+templ SettingsTextInput(id, label, placeholder, helpText, value string) {
+	@wc.SettingsTextInput(id, label, placeholder, helpText, value)
+}
+
+templ SettingsNumberInput(id, label, helpText string, value, min, max int) {
+	@wc.SettingsNumberInput(id, label, helpText, value, min, max)
+}
+
+templ SortableTableHeader(tableID string, columns []TableColumn, defaultSort string, defaultOrder string) {
+	@wc.SortableTableHeader(tableID, columns, defaultSort, defaultOrder)
+}
+
+templ TableToolbar(tableID string, config TableConfig) {
+	@wc.TableToolbar(tableID, config)
+}
+
+templ TablePagination(tableID string, pageSize int) {
+	@wc.TablePagination(tableID, pageSize)
+}
+
+templ EnhancedTableScripts() {
+	@wc.EnhancedTableScripts()
+}
+
+templ LiveRefreshButton() {
+	@wc.LiveRefreshButton()
+}
+
+templ LiveRefreshButtonScript() {
+	@wc.LiveRefreshButtonScript()
+}

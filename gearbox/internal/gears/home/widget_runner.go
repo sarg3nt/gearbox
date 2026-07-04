@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/sarg3nt/gearbox/internal/framework/database"
-	"github.com/sarg3nt/gearbox/internal/framework/services/crypto"
+	"github.com/sarg3nt/webcore/core/crypto"
 	"github.com/sarg3nt/gearbox/internal/gears/home/widget"
 )
 
